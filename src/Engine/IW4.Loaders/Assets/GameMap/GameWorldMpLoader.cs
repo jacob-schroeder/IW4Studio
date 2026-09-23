@@ -7,62 +7,17 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.GameMap;
 
-public sealed class GameWorldMpLoader
+public sealed class GameWorldMpLoader : XAssetLoader<GameWorldMpAsset>
 {
     private readonly GGlassDataLoader _glassDataLoader = new();
 
-    public GameWorldMpAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    protected override bool ValidatePackedPointerRange => false;
+
+    public GameWorldMpLoader() : base(XAssetType.GameMapMp, GameWorldMpAsset.SerializedSize, "GameWorldMp")
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level GameWorldMp pointer is null.");
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            GameWorldMpAsset canonical = context.ResolveCanonicalAsset<GameWorldMpAsset>(
-                    pointer,
-                    XAssetType.GameMapMp)
-                ?? throw new InvalidDataException(
-                    $"Top-level GameWorldMp pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical GameMapMp asset.");
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed GameWorldMp pointer has no destination cell.",
-                "Canonical GameWorldMp has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"Top-level GameWorldMp pointer 0x{pointer.Raw:X8} does not reference inline/insert payload data.");
-        }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            GameWorldMpAsset gameWorld = ReadGameWorldMp(cursor, rootAddress, context);
-            GameWorldMpAsset canonical = context.DB_AddXAsset(
-                XAssetType.GameMapMp,
-                gameWorld.Name,
-                gameWorld,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
     }
 
-    private GameWorldMpAsset ReadGameWorldMp(
+    protected override GameWorldMpAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

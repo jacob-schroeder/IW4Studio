@@ -3,108 +3,29 @@ using IW4.Game.Assets.Physics;
 using IW4.Game.Math;
 using IW4.Game.Pointers;
 using IW4.Game.Zone;
-using IW4.Runtime.Database;
 using IW4.Game.IO;
 using XString = IW4.Game.Pointers.XPointer<string>;
 
 namespace IW4.Loaders.Assets.Physics;
 
-public sealed class PhysCollmapLoader
+public sealed class PhysCollmapLoader : XAssetLoader<PhysCollmapAsset>
 {
-    public PhysCollmapAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public PhysCollmapLoader() : base(XAssetType.PhysCollmap, PhysCollmapAsset.SerializedSize, "PhysCollmap")
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: true)
-            ?? throw new InvalidDataException("Top-level PhysCollmap pointer resolved to null.");
     }
 
-    public PhysCollmapAsset? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
-    {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
-    }
-
-    private static PhysCollmapAsset? LoadFromPointerCore(
-        FastFileCursor cursor,
+    protected override PhysCollmapAsset? HandleUnresolvedReference(
         XPointerReference pointer,
         DbLoadExecutionContext context,
         bool requireAsset)
     {
-        if (pointer.Type == PointerType.Null)
-        {
-            if (requireAsset)
-                throw new InvalidDataException("Top-level PhysCollmap pointer is null.");
-
+        if (!requireAsset)
             return null;
-        }
 
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<PhysCollmapAsset>(
-                pointer,
-                PhysCollmapAsset.SerializedSize,
-                "PhysCollmap");
-            PhysCollmapAsset? canonical = context.ResolveCanonicalAsset<PhysCollmapAsset>(
-                pointer,
-                XAssetType.PhysCollmap);
-            if (canonical is null)
-            {
-                if (!requireAsset)
-                    return null;
-
-                throw new InvalidDataException(
-                    $"Top-level PhysCollmap pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical PhysCollmap asset.");
-            }
-
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed PhysCollmap pointer has no destination cell.",
-                "Canonical PhysCollmap has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"PhysCollmap pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-        }
-
-        return LoadInlineOrInsert(cursor, pointer, context);
+        return base.HandleUnresolvedReference(pointer, context, requireAsset);
     }
 
-    private static PhysCollmapAsset LoadInlineOrInsert(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
-    {
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            PhysCollmapAsset asset = ReadPhysCollmap(cursor, rootAddress, context);
-            PhysCollmapAsset canonical = context.DB_AddXAsset(
-                XAssetType.PhysCollmap,
-                asset.Name,
-                asset,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
-    }
-
-    private static PhysCollmapAsset ReadPhysCollmap(
+    protected override PhysCollmapAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

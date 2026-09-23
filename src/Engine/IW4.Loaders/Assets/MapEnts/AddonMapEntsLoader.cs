@@ -8,68 +8,17 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.MapEnts;
 
-public sealed class AddonMapEntsLoader
+public sealed class AddonMapEntsLoader : XAssetLoader<AddonMapEntsAsset>
 {
     private readonly MapTriggersLoader _mapTriggersLoader = new();
 
-    public AddonMapEntsAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public AddonMapEntsLoader() : base(XAssetType.AddonMapEnts, AddonMapEntsAsset.SerializedSize, "AddonMapEnts")
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level AddonMapEnts pointer is null.");
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<AddonMapEntsAsset>(
-                pointer,
-                AddonMapEntsAsset.SerializedSize,
-                "AddonMapEnts");
-            AddonMapEntsAsset canonical = context.ResolveCanonicalAsset<AddonMapEntsAsset>(
-                    pointer,
-                    XAssetType.AddonMapEnts)
-                ?? throw new InvalidDataException(
-                    $"Top-level AddonMapEnts pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical AddonMapEnts asset.");
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed AddonMapEnts pointer has no destination cell.",
-                "Canonical AddonMapEnts has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"AddonMapEnts pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-        }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            AddonMapEntsAsset addonMapEnts = ReadAddonMapEnts(cursor, rootAddress, context);
-            AddonMapEntsAsset canonical = context.DB_AddXAsset(
-                XAssetType.AddonMapEnts,
-                addonMapEnts.Name,
-                addonMapEnts,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
     }
 
     // The fixed 0x24-byte root is staged in TEMP, followed by its name, entity
     // bytes, and embedded MapTriggers payloads in LARGE.
-    private AddonMapEntsAsset ReadAddonMapEnts(
+    protected override AddonMapEntsAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

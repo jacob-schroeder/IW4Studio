@@ -11,60 +11,18 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.FxMap;
 
-public sealed class FxWorldLoader
+public sealed class FxWorldLoader : XAssetLoader<FxWorldAsset>
 {
     private readonly MaterialLoader _materialLoader = new();
     private readonly PhysPresetLoader _physPresetLoader = new();
 
-    public FxWorldAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    protected override bool ValidatePackedPointerRange => false;
+
+    public FxWorldLoader() : base(XAssetType.FxMap, FxWorldAsset.SerializedSize, "FxWorld")
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level FxWorld pointer is null.");
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            FxWorldAsset canonical = context.ResolveCanonicalAsset<FxWorldAsset>(
-                    pointer,
-                    XAssetType.FxMap)
-                ?? throw new InvalidDataException(
-                    $"Top-level FxWorld pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical FxMap asset.");
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed FxWorld pointer has no destination cell.",
-                "Canonical FxWorld has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-            throw new InvalidDataException($"Top-level FxWorld pointer 0x{pointer.Raw:X8} does not reference inline/insert payload data.");
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            FxWorldAsset fxWorld = ReadFxWorld(cursor, rootAddress, context);
-            FxWorldAsset canonical = context.DB_AddXAsset(
-                XAssetType.FxMap,
-                fxWorld.Name,
-                fxWorld,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
     }
 
-    private FxWorldAsset ReadFxWorld(
+    protected override FxWorldAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

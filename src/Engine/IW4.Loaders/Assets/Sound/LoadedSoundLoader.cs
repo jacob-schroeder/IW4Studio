@@ -2,108 +2,48 @@ using IW4.Loaders.Database;
 using IW4.Game.Assets.Sound;
 using IW4.Game.Pointers;
 using IW4.Game.Zone;
-using IW4.Runtime.Database;
 using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.Sound;
 
-public sealed class LoadedSoundLoader
+public sealed class LoadedSoundLoader : XAssetLoader<LoadedSound>
 {
-    public LoadedSound LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public LoadedSoundLoader() : base(XAssetType.LoadedSound, LoadedSound.SerializedSize, "LoadedSound")
     {
-        return LoadFromPointerCore(
-                cursor,
-                pointer,
-                context,
-                requireAsset: true)
-            ?? throw new InvalidDataException("Top-level LoadedSound pointer resolved to null.");
     }
 
-    public LoadedSound? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
-    {
-        return LoadFromPointerCore(
-            cursor,
-            pointer,
-            context,
-            requireAsset: false);
-    }
-
-    private static LoadedSound? LoadFromPointerCore(
-        FastFileCursor cursor,
+    protected override LoadedSound? HandleUnresolvedReference(
         XPointerReference pointer,
         DbLoadExecutionContext context,
         bool requireAsset)
     {
-        if (pointer.Type == PointerType.Null)
-        {
-            if (requireAsset)
-                throw new InvalidDataException("Top-level LoadedSound pointer is null.");
-
+        if (!requireAsset)
             return null;
-        }
 
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<LoadedSound>(
-                pointer,
-                LoadedSound.SerializedSize,
-                "LoadedSound");
-            LoadedSound? canonical = context.ResolveCanonicalAsset<LoadedSound>(
-                pointer,
-                XAssetType.LoadedSound);
-            if (canonical is null)
-            {
-                if (!requireAsset)
-                    return null;
+        return base.HandleUnresolvedReference(pointer, context, requireAsset);
+    }
 
-                throw new InvalidDataException(
-                    $"Top-level LoadedSound pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical LoadedSound asset.");
-            }
+    protected override LoadedSound? ResolvePackedPointer(
+        XPointerReference pointer,
+        DbLoadExecutionContext context,
+        bool requireAsset)
+    {
+        context.PointerReader.ValidateOffsetPointerRange<LoadedSound>(
+            pointer, LoadedSound.SerializedSize, "LoadedSound");
+        LoadedSound? canonical = context.ResolveCanonicalAsset<LoadedSound>(pointer, XAssetType.LoadedSound);
+        if (canonical is null)
+            return HandleUnresolvedReference(pointer, context, requireAsset);
 
-            context.PatchCanonicalAssetPointerCellIfPresent(
-                pointer,
-                canonical,
-                "Canonical LoadedSound has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"LoadedSound pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-        }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            LoadedSound loadedSound = ReadLoadedSound(cursor, rootAddress, context);
-            LoadedSound canonical = context.DB_AddXAsset(
-                XAssetType.LoadedSound,
-                loadedSound.Name,
-                loadedSound,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
+        context.PatchCanonicalAssetPointerCellIfPresent(
+            pointer,
+            canonical,
+            "Canonical LoadedSound has no runtime address.");
+        return canonical;
     }
 
     // The fixed 0x1C-byte root is staged in TEMP. The seek table is loaded in
     // LARGE and PCM/codec bytes are loaded in PHYSICAL at 64-byte alignment.
-    private static LoadedSound ReadLoadedSound(
+    protected override LoadedSound ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

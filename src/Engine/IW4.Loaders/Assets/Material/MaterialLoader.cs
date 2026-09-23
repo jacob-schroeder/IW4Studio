@@ -12,7 +12,7 @@ using MaterialAssetModel = IW4.Game.Assets.Material.MaterialAsset;
 
 namespace IW4.Loaders.Assets.Material;
 
-public sealed class MaterialLoader
+public sealed class MaterialLoader : XAssetLoader<MaterialAssetModel>
 {
     private const int MaterialSize = 0xa8;
     private const int TechniqueSlotCount = (int)MaterialTechniqueType.Count;
@@ -23,170 +23,156 @@ public sealed class MaterialLoader
     private const int WaterSize = 0x48;
     private static readonly GfxImageLoader ImageLoader = new();
 
-    public MaterialAssetModel LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public MaterialLoader()
+        : base(XAssetType.Material, MaterialSize, "Material")
     {
-        if (pointer.Type == PointerType.Offset)
-        {
-            ResolveAliasCellOffset(pointer, context, MaterialSize, "Material");
-            context.PointerReader.ValidateOffsetPointerRange<MaterialAssetModel>(
-                pointer,
-                MaterialSize,
-                XPointerNullability.Required,
-                "Material");
-            return context.ResolveMaterial(pointer)
-                ?? throw new InvalidDataException(
-                    $"Top-level Material pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical Material asset.");
-        }
-
-        if (!context.PointerReader.HasInlinePayload(pointer))
-            throw new InvalidDataException($"Top-level Material pointer 0x{pointer.Raw:X8} does not reference inline payload data.");
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-        MaterialAssetModel material = LoadInlineMaterial(cursor, pointer, context);
-        return context.DB_AddXAsset(material, providerRegistration);
     }
 
-    public MaterialAssetModel? LoadFromPointer(
-        FastFileCursor cursor,
+    protected override MaterialAssetModel? ResolvePackedPointer(
         XPointerReference pointer,
-        DbLoadExecutionContext context)
+        DbLoadExecutionContext context,
+        bool requireAsset)
     {
-        if (pointer.Type == PointerType.Null)
+        int? aliasedRaw = ResolveAndPatchAliasCell(pointer, context);
+        context.PointerReader.ValidateOffsetPointerRange<MaterialAssetModel>(
+            pointer,
+            MaterialSize,
+            requireAsset ? XPointerNullability.Required : XPointerNullability.Nullable,
+            "Material");
+        if (!requireAsset && aliasedRaw == 0)
             return null;
 
-        if (pointer.Type == PointerType.Offset)
-        {
-            int? aliasedRaw = ResolveAliasCellOffset(pointer, context, MaterialSize, "Material");
-            context.PointerReader.ValidateOffsetPointerRange<MaterialAssetModel>(
-                pointer,
-                MaterialSize,
-                XPointerNullability.Nullable,
-                "Material");
-            if (aliasedRaw == 0)
-                return null;
-
-            return context.ResolveMaterial(pointer)
-                ?? throw new InvalidDataException(
-                    $"Material pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical Material asset.");
-        }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        MaterialAssetModel material = LoadInlineMaterial(cursor, pointer, context);
-        MaterialAssetModel canonical = context.DB_AddXAsset(material, providerRegistration);
-
-        return canonical;
+        return context.ResolveMaterial(pointer)
+            ?? throw new InvalidDataException(
+                $"Material pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical Material asset.");
     }
 
-    private static MaterialAssetModel LoadInlineMaterial(
+    protected override MaterialAssetModel LoadInline(
         FastFileCursor cursor,
         XPointerReference pointer,
         DbLoadExecutionContext context)
     {
-        int offset = cursor.Offset;
+        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
+        MaterialAssetModel material;
         context.Blocks.Push(XFileBlockType.TEMP);
         try
         {
-            XBlockAddress targetAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            byte[] rootBytes = context.Blocks.Load(cursor, MaterialSize, out XBlockAddress rootAddress);
-            if (rootAddress != targetAddress)
-                throw new InvalidDataException($"Material pointer patched to {targetAddress}, but root loaded at {rootAddress}.");
+            material = ReadInlineBody(cursor, pointer, context);
+        }
+        finally
+        {
+            context.Blocks.Pop();
+        }
 
-            var rootCursor = new FastFileCursor(rootBytes, rootAddress);
+        // Material registration follows the root's TEMP scope.
+        return RegisterAsset(material, providerRegistration, context);
+    }
 
-            XPointer<string> namePointer = ReadXStringPointer(rootCursor, context);
-            MaterialGameFlags gameFlags = (MaterialGameFlags)rootCursor.ReadByte();
-            byte sortKey = rootCursor.ReadByte();
-            byte textureAtlasRowCount = rootCursor.ReadByte();
-            byte textureAtlasColumnCount = rootCursor.ReadByte();
-            ulong drawSurfPacked = rootCursor.ReadUInt64();
-            uint surfaceTypeBits = rootCursor.ReadUInt32();
-            ushort hashIndex = rootCursor.ReadUInt16();
-            ushort materialInfoPad16 = rootCursor.ReadUInt16();
-            MaterialStateBitsEntry[] stateBitsEntries = ReadStateBitsEntries(rootCursor, TechniqueSlotCount);
-            byte textureCount = rootCursor.ReadByte();
-            byte constantCount = rootCursor.ReadByte();
-            byte stateBitsCount = rootCursor.ReadByte();
-            MaterialStateFlags stateFlags = (MaterialStateFlags)rootCursor.ReadByte();
-            GfxCameraRegionType cameraRegion = (GfxCameraRegionType)rootCursor.ReadByte();
-            byte xstringCount = rootCursor.ReadByte();
-            byte pad43 = rootCursor.ReadByte();
-            ushort[] inlineTechniqueSlotStateBits = ReadUshorts(rootCursor, TechniqueSlotCount);
-            ushort pad8E = rootCursor.ReadUInt16();
-            XPointerReference runtimeUshortPayload = ReadRawCell(rootCursor, context, XPointerResolutionMode.Direct);
-            XPointerReference techniqueSetPointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.AliasCell);
-            XPointerReference textureTablePointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
-            XPointerReference constantTablePointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
-            XPointerReference stateBitsPointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
-            XPointerReference xstringTablePointer = ReadRawCell(rootCursor, context, XPointerResolutionMode.Direct);
+    protected override MaterialAssetModel RegisterAsset(
+        MaterialAssetModel asset,
+        ProviderRegistrationOccurrence providerRegistration,
+        DbLoadExecutionContext context)
+    {
+        return context.DB_AddXAsset(asset, providerRegistration);
+    }
 
-            if (rootCursor.Offset != MaterialSize)
-                throw new InvalidDataException($"Material consumed 0x{rootCursor.Offset:X} bytes instead of 0x{MaterialSize:X}.");
+    protected override MaterialAssetModel ReadBody(
+        FastFileCursor cursor,
+        XBlockAddress targetAddress,
+        DbLoadExecutionContext context)
+    {
+        int offset = cursor.Offset;
+        byte[] rootBytes = context.Blocks.Load(cursor, MaterialSize, out XBlockAddress rootAddress);
+        if (rootAddress != targetAddress)
+            throw new InvalidDataException($"Material pointer patched to {targetAddress}, but root loaded at {rootAddress}.");
+
+        var rootCursor = new FastFileCursor(rootBytes, rootAddress);
+
+        XPointer<string> namePointer = ReadXStringPointer(rootCursor, context);
+        MaterialGameFlags gameFlags = (MaterialGameFlags)rootCursor.ReadByte();
+        byte sortKey = rootCursor.ReadByte();
+        byte textureAtlasRowCount = rootCursor.ReadByte();
+        byte textureAtlasColumnCount = rootCursor.ReadByte();
+        ulong drawSurfPacked = rootCursor.ReadUInt64();
+        uint surfaceTypeBits = rootCursor.ReadUInt32();
+        ushort hashIndex = rootCursor.ReadUInt16();
+        ushort materialInfoPad16 = rootCursor.ReadUInt16();
+        MaterialStateBitsEntry[] stateBitsEntries = ReadStateBitsEntries(rootCursor, TechniqueSlotCount);
+        byte textureCount = rootCursor.ReadByte();
+        byte constantCount = rootCursor.ReadByte();
+        byte stateBitsCount = rootCursor.ReadByte();
+        MaterialStateFlags stateFlags = (MaterialStateFlags)rootCursor.ReadByte();
+        GfxCameraRegionType cameraRegion = (GfxCameraRegionType)rootCursor.ReadByte();
+        byte xstringCount = rootCursor.ReadByte();
+        byte pad43 = rootCursor.ReadByte();
+        ushort[] inlineTechniqueSlotStateBits = ReadUshorts(rootCursor, TechniqueSlotCount);
+        ushort pad8E = rootCursor.ReadUInt16();
+        XPointerReference runtimeUshortPayload = ReadRawCell(rootCursor, context, XPointerResolutionMode.Direct);
+        XPointerReference techniqueSetPointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.AliasCell);
+        XPointerReference textureTablePointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
+        XPointerReference constantTablePointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
+        XPointerReference stateBitsPointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
+        XPointerReference xstringTablePointer = ReadRawCell(rootCursor, context, XPointerResolutionMode.Direct);
+
+        if (rootCursor.Offset != MaterialSize)
+            throw new InvalidDataException($"Material consumed 0x{rootCursor.Offset:X} bytes instead of 0x{MaterialSize:X}.");
 
 
-            context.Blocks.Push(XFileBlockType.LARGE);
-            try
+        context.Blocks.Push(XFileBlockType.LARGE);
+        try
+        {
+            string? name = ReadXString(cursor, namePointer, context);
+            IReadOnlyList<ushort> runtimeTechniqueSlotStateBits = ReadRuntimeUshortPayload(cursor, runtimeUshortPayload, context);
+            MaterialTechniqueSetAsset? techniqueSet = ReadTechniqueSetPointer(
+                cursor,
+                techniqueSetPointer,
+                context);
+            IReadOnlyList<MaterialTextureDef> textures = ReadTextureDefArray(cursor, textureTablePointer, textureCount, context);
+            IReadOnlyList<MaterialConstantDef> constants = ReadMaterialConstantArray(cursor, constantTablePointer, constantCount, context);
+            IReadOnlyList<GfxStateBits> stateBits = ReadGfxStateBitsArray(cursor, stateBitsPointer, stateBitsCount, context);
+            IReadOnlyList<MaterialXStringEntry> xstrings = ReadXStringPointerArray(cursor, xstringTablePointer, xstringCount, context);
+
+
+            return new MaterialAssetModel
             {
-                string? name = ReadXString(cursor, namePointer, context);
-                IReadOnlyList<ushort> runtimeTechniqueSlotStateBits = ReadRuntimeUshortPayload(cursor, runtimeUshortPayload, context);
-                MaterialTechniqueSetAsset? techniqueSet = ReadTechniqueSetPointer(
-                    cursor,
-                    techniqueSetPointer,
-                    context);
-                IReadOnlyList<MaterialTextureDef> textures = ReadTextureDefArray(cursor, textureTablePointer, textureCount, context);
-                IReadOnlyList<MaterialConstantDef> constants = ReadMaterialConstantArray(cursor, constantTablePointer, constantCount, context);
-                IReadOnlyList<GfxStateBits> stateBits = ReadGfxStateBitsArray(cursor, stateBitsPointer, stateBitsCount, context);
-                IReadOnlyList<MaterialXStringEntry> xstrings = ReadXStringPointerArray(cursor, xstringTablePointer, xstringCount, context);
-
-
-                return new MaterialAssetModel
+                Offset = offset,
+                RuntimeAddress = rootAddress,
+                Info = new MaterialInfo
                 {
-                    Offset = offset,
-                    RuntimeAddress = rootAddress,
-                    Info = new MaterialInfo
-                    {
-                        NamePointer = namePointer,
-                        Name = name,
-                        GameFlags = gameFlags,
-                        SortKey = (MaterialSortKey)sortKey,
-                        TextureAtlasRowCount = textureAtlasRowCount,
-                        TextureAtlasColumnCount = textureAtlasColumnCount,
-                        DrawSurf = new GfxDrawSurf(drawSurfPacked),
-                        SurfaceTypeBits = (MaterialSurfaceTypeBits)surfaceTypeBits,
-                        HashIndex = hashIndex,
-                        Pad16 = materialInfoPad16
-                    },
-                    StateBitsEntries = stateBitsEntries,
-                    TextureCount = textureCount,
-                    ConstantCount = constantCount,
-                    StateBitsCount = stateBitsCount,
-                    StateFlags = stateFlags,
-                    CameraRegion = cameraRegion,
-                    XStringCount = xstringCount,
-                    Pad43 = pad43,
-                    InlineTechniqueSlotStateBits = inlineTechniqueSlotStateBits,
-                    Pad8E = pad8E,
-                    RuntimeTechniqueSlotStateBitsPointer = runtimeUshortPayload,
-                    RuntimeTechniqueSlotStateBits = runtimeTechniqueSlotStateBits,
-                    TechniqueSetPointer = techniqueSetPointer.AsPointer<MaterialTechniqueSetAsset>(),
-                    TechniqueSet = techniqueSet,
-                    TextureTablePointer = textureTablePointer,
-                    Textures = textures,
-                    ConstantTablePointer = constantTablePointer,
-                    Constants = constants,
-                    StateBitsPointer = stateBitsPointer,
-                    StateBits = stateBits,
-                    XStringTablePointer = xstringTablePointer,
-                    XStrings = xstrings
-                };
-            }
-            finally
-            {
-                context.Blocks.Pop();
-            }
+                    NamePointer = namePointer,
+                    Name = name,
+                    GameFlags = gameFlags,
+                    SortKey = (MaterialSortKey)sortKey,
+                    TextureAtlasRowCount = textureAtlasRowCount,
+                    TextureAtlasColumnCount = textureAtlasColumnCount,
+                    DrawSurf = new GfxDrawSurf(drawSurfPacked),
+                    SurfaceTypeBits = (MaterialSurfaceTypeBits)surfaceTypeBits,
+                    HashIndex = hashIndex,
+                    Pad16 = materialInfoPad16
+                },
+                StateBitsEntries = stateBitsEntries,
+                TextureCount = textureCount,
+                ConstantCount = constantCount,
+                StateBitsCount = stateBitsCount,
+                StateFlags = stateFlags,
+                CameraRegion = cameraRegion,
+                XStringCount = xstringCount,
+                Pad43 = pad43,
+                InlineTechniqueSlotStateBits = inlineTechniqueSlotStateBits,
+                Pad8E = pad8E,
+                RuntimeTechniqueSlotStateBitsPointer = runtimeUshortPayload,
+                RuntimeTechniqueSlotStateBits = runtimeTechniqueSlotStateBits,
+                TechniqueSetPointer = techniqueSetPointer.AsPointer<MaterialTechniqueSetAsset>(),
+                TechniqueSet = techniqueSet,
+                TextureTablePointer = textureTablePointer,
+                Textures = textures,
+                ConstantTablePointer = constantTablePointer,
+                Constants = constants,
+                StateBitsPointer = stateBitsPointer,
+                StateBits = stateBits,
+                XStringTablePointer = xstringTablePointer,
+                XStrings = xstrings
+            };
         }
         finally
         {
@@ -229,35 +215,6 @@ public sealed class MaterialLoader
         {
             context.Blocks.Pop();
         }
-    }
-
-    private static int? ResolveAliasCellOffset(
-        XPointerReference pointer,
-        DbLoadExecutionContext context,
-        int targetByteCount,
-        string targetName)
-    {
-        if (pointer.Type != PointerType.Offset || pointer.ResolutionMode != XPointerResolutionMode.AliasCell)
-            return null;
-
-        if (pointer.CellAddress is not { } destinationCell)
-            throw new InvalidDataException($"Alias-cell pointer 0x{pointer.Raw:X8} has no destination cell to patch.");
-
-        int aliasedRaw = context.PointerReader.ReadAliasCellRaw(pointer);
-        if (aliasedRaw != 0)
-        {
-            if (XPointerCodec.GetType(aliasedRaw) != PointerType.Offset)
-                throw new InvalidDataException(
-                    $"Alias-cell pointer 0x{pointer.Raw:X8} resolved to unresolved sentinel 0x{aliasedRaw:X8} for {targetName}.");
-
-            context.PointerReader.ValidateOffsetPointerRange<MaterialAssetModel>(
-                XPointerReference.FromRaw(aliasedRaw, XPointerResolutionMode.Direct, pointer.PackedAddress),
-                targetByteCount,
-                targetName);
-        }
-
-        context.Blocks.WriteInt32(destinationCell, aliasedRaw);
-        return aliasedRaw;
     }
 
     private static MaterialTechniqueSetAsset? ReadTechniqueSetPointer(

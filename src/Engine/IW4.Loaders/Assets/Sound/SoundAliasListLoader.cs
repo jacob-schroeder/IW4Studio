@@ -3,106 +3,53 @@ using System.Buffers.Binary;
 using IW4.Game.Assets.Sound;
 using IW4.Game.Pointers;
 using IW4.Game.Zone;
-using IW4.Runtime.Database;
 using IW4.Game.IO;
 using XString = IW4.Game.Pointers.XPointer<string>;
 
 namespace IW4.Loaders.Assets.Sound;
 
-public sealed class SoundAliasListLoader
+public sealed class SoundAliasListLoader : XAssetLoader<SoundAliasListAsset>
 {
     private static readonly SndCurveLoader SndCurveLoader = new();
     private static readonly LoadedSoundLoader LoadedSoundLoader = new();
 
-    public SoundAliasListAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public SoundAliasListLoader() : base(XAssetType.Sound, SoundAliasListAsset.SerializedSize, "Sound")
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: true)
-            ?? throw new InvalidDataException("Top-level Sound pointer resolved to null.");
     }
 
-    public SoundAliasListAsset? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
-    {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
-    }
-
-    private static SoundAliasListAsset? LoadFromPointerCore(
-        FastFileCursor cursor,
+    protected override SoundAliasListAsset? HandleUnresolvedReference(
         XPointerReference pointer,
         DbLoadExecutionContext context,
         bool requireAsset)
     {
-        if (pointer.Type == PointerType.Null)
-        {
-            if (requireAsset)
-                throw new InvalidDataException("Top-level Sound pointer is null.");
-
+        if (!requireAsset)
             return null;
-        }
 
-        if (pointer.Type == PointerType.Offset)
-        {
-            XPointerNullability nullability = requireAsset
-                ? XPointerNullability.Required
-                : XPointerNullability.Nullable;
-            context.PointerReader.ValidateOffsetPointerRange<SoundAliasListAsset>(
-                pointer,
-                SoundAliasListAsset.SerializedSize,
-                nullability,
-                "Sound");
-            SoundAliasListAsset? canonical = context.ResolveCanonicalAsset<SoundAliasListAsset>(
-                pointer,
-                XAssetType.Sound);
-            if (canonical is null)
-            {
-                if (!requireAsset)
-                    return null;
-
-                throw new InvalidDataException(
-                    $"Top-level Sound pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical Sound asset.");
-            }
-
-            context.PatchCanonicalAssetPointerCellIfPresent(
-                pointer,
-                canonical,
-                "Canonical Sound has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"Sound pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-        }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            SoundAliasListAsset sound = ReadSoundAliasList(cursor, rootAddress, context);
-            SoundAliasListAsset canonical = context.DB_AddXAsset(
-                XAssetType.Sound,
-                sound.AliasName,
-                sound,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
+        return base.HandleUnresolvedReference(pointer, context, requireAsset);
     }
 
-    private static SoundAliasListAsset ReadSoundAliasList(
+    protected override SoundAliasListAsset? ResolvePackedPointer(
+        XPointerReference pointer,
+        DbLoadExecutionContext context,
+        bool requireAsset)
+    {
+        XPointerNullability nullability = requireAsset
+            ? XPointerNullability.Required
+            : XPointerNullability.Nullable;
+        context.PointerReader.ValidateOffsetPointerRange<SoundAliasListAsset>(
+            pointer, SoundAliasListAsset.SerializedSize, nullability, "Sound");
+        SoundAliasListAsset? canonical = context.ResolveCanonicalAsset<SoundAliasListAsset>(pointer, XAssetType.Sound);
+        if (canonical is null)
+            return HandleUnresolvedReference(pointer, context, requireAsset);
+
+        context.PatchCanonicalAssetPointerCellIfPresent(
+            pointer,
+            canonical,
+            "Canonical Sound has no runtime address.");
+        return canonical;
+    }
+
+    protected override SoundAliasListAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

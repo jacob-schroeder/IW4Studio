@@ -10,98 +10,29 @@ using XString = IW4.Game.Pointers.XPointer<string>;
 
 namespace IW4.Loaders.Assets.ImpactFx;
 
-public sealed class FxImpactTableLoader
+public sealed class FxImpactTableLoader : XAssetLoader<FxImpactTableAsset>
 {
     private readonly FxEffectDefLoader _fxLoader = new();
 
-    public FxImpactTableAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public FxImpactTableLoader() : base(XAssetType.ImpactFx, FxImpactTableAsset.SerializedSize, "ImpactFx")
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: true)
-            ?? throw new InvalidDataException("Top-level ImpactFx pointer resolved to null.");
     }
 
-    public FxImpactTableAsset? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
+    protected override FxImpactTableAsset RegisterAsset(
+        FxImpactTableAsset asset,
+        ProviderRegistrationOccurrence providerRegistration,
         DbLoadExecutionContext context)
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
-    }
-
-    private FxImpactTableAsset? LoadFromPointerCore(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context,
-        bool requireAsset)
-    {
-        if (pointer.Type == PointerType.Null)
-        {
-            if (requireAsset)
-                throw new InvalidDataException("Top-level ImpactFx pointer is null.");
-
-            return null;
-        }
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<FxImpactTableAsset>(
-                pointer,
-                FxImpactTableAsset.SerializedSize,
-                "ImpactFx");
-            FxImpactTableAsset? canonical = context.ResolveCanonicalAsset<FxImpactTableAsset>(
-                pointer,
-                XAssetType.ImpactFx);
-            if (canonical is null)
-            {
-                throw new InvalidDataException(
-                    $"ImpactFx pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical ImpactFx asset.");
-            }
-
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed ImpactFx pointer has no destination cell.",
-                "Canonical ImpactFx has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
+        if (asset.Name is null)
         {
             throw new InvalidDataException(
-                $"ImpactFx pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
+                $"ImpactFx root at source 0x{asset.Offset:X} has null name pointer " +
+                $"0x{unchecked((uint)asset.NamePointer.Raw):X8}.");
         }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            FxImpactTableAsset table = ReadFxImpactTable(cursor, rootAddress, context);
-            if (table.Name is null)
-            {
-                throw new InvalidDataException(
-                    $"ImpactFx root at source 0x{table.Offset:X} has null name pointer " +
-                    $"0x{unchecked((uint)table.NamePointer.Raw):X8}.");
-            }
-            FxImpactTableAsset canonical = context.DB_AddXAsset(
-                XAssetType.ImpactFx,
-                table.Name,
-                table,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
+        return base.RegisterAsset(asset, providerRegistration, context);
     }
 
-    private FxImpactTableAsset ReadFxImpactTable(
+    protected override FxImpactTableAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

@@ -7,57 +7,23 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.RawFile;
 
-public sealed class RawFileLoader
+public sealed class RawFileLoader : XAssetLoader<RawFileAsset>
 {
-    public RawFileAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
+    public RawFileLoader() : base(XAssetType.RawFile, RawFileAsset.SerializedSize, "RawFile")
+    {
+    }
+
+    protected override RawFileAsset RegisterAsset(
+        RawFileAsset asset,
+        ProviderRegistrationOccurrence providerRegistration,
         DbLoadExecutionContext context)
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level RawFile pointer is null.");
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<RawFileAsset>(
-                pointer,
-                RawFileAsset.SerializedSize,
-                "RawFile");
-            RawFileAsset canonical = context.ResolveRawFile(pointer)
-                ?? throw new InvalidDataException(
-                    $"Top-level RawFile pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical RawFile asset.");
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed RawFile pointer has no destination cell.",
-                "Canonical RawFile has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-            throw new InvalidDataException(
-                $"Top-level RawFile pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            RawFileAsset rawFile = ReadRawFile(cursor, rootAddress, context);
-            RawFileAsset canonical = context.DB_AddXAsset(rawFile, providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
+        return context.DB_AddXAsset(asset, providerRegistration);
     }
 
     // The root is staged in TEMP; its name and buffer payload are materialized
     // in LARGE before registration.
-    private static RawFileAsset ReadRawFile(
+    protected override RawFileAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress rootAddress,
         DbLoadExecutionContext context)

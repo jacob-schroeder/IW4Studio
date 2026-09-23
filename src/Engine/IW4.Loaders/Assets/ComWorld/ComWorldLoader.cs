@@ -8,57 +8,15 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.ComWorld;
 
-public sealed class ComWorldLoader
+public sealed class ComWorldLoader : XAssetLoader<ComWorldAsset>
 {
-    public ComWorldAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    protected override bool ValidatePackedPointerRange => false;
+
+    public ComWorldLoader() : base(XAssetType.ComMap, ComWorldAsset.SerializedSize, "ComWorld")
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level ComWorld pointer is null.");
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            ComWorldAsset canonical = context.ResolveCanonicalAsset<ComWorldAsset>(
-                    pointer,
-                    XAssetType.ComMap)
-                ?? throw new InvalidDataException(
-                    $"Top-level ComWorld pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical ComMap asset.");
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed ComWorld pointer has no destination cell.",
-                "Canonical ComWorld has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-            throw new InvalidDataException($"Top-level ComWorld pointer 0x{pointer.Raw:X8} does not reference inline/insert payload data.");
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            ComWorldAsset comWorld = ReadComWorld(cursor, rootAddress, context);
-            ComWorldAsset canonical = context.DB_AddXAsset(
-                XAssetType.ComMap,
-                comWorld.Name,
-                comWorld,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
     }
 
-    private static ComWorldAsset ReadComWorld(
+    protected override ComWorldAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

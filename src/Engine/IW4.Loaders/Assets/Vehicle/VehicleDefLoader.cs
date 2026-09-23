@@ -15,68 +15,18 @@ using XString = IW4.Game.Pointers.XPointer<string>;
 
 namespace IW4.Loaders.Assets.Vehicle;
 
-public sealed class VehicleDefLoader
+public sealed class VehicleDefLoader : XAssetLoader<VehicleDefAsset>
 {
     private const int MaterialSize = 0xA8;
     private readonly MaterialLoader _materialLoader = new();
     private readonly PhysPresetLoader _physPresetLoader = new();
     private readonly WeaponLoader _weaponLoader = new();
 
-    public VehicleDefAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public VehicleDefLoader() : base(XAssetType.Vehicle, VehicleDefAsset.SerializedSize, "VehicleDef")
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level Vehicle pointer is null.");
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<VehicleDefAsset>(
-                pointer,
-                VehicleDefAsset.SerializedSize,
-                "Vehicle");
-            VehicleDefAsset canonical = context.ResolveCanonicalAsset<VehicleDefAsset>(
-                    pointer,
-                    XAssetType.Vehicle)
-                ?? throw new InvalidDataException(
-                    $"Top-level Vehicle pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical Vehicle asset.");
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed Vehicle pointer has no destination cell.",
-                "Canonical Vehicle has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"Vehicle pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-        }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            VehicleDefAsset vehicle = ReadVehicleDef(cursor, rootAddress, context);
-            VehicleDefAsset canonical = context.DB_AddXAsset(
-                XAssetType.Vehicle,
-                vehicle.Name,
-                vehicle,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
     }
 
-    private VehicleDefAsset ReadVehicleDef(
+    protected override VehicleDefAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

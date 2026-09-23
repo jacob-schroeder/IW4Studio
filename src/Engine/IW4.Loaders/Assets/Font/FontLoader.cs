@@ -10,59 +10,17 @@ using XString = IW4.Game.Pointers.XPointer<string>;
 
 namespace IW4.Loaders.Assets.Font;
 
-public sealed class FontLoader
+public sealed class FontLoader : XAssetLoader<FontAsset>
 {
     private readonly MaterialLoader _materialLoader = new();
 
-    public FontAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    protected override bool ValidatePackedPointerRange => false;
+
+    public FontLoader() : base(XAssetType.Font, FontAsset.SerializedSize, "Font")
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level Font pointer is null.");
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            FontAsset canonical = context.ResolveCanonicalAsset<FontAsset>(
-                    pointer,
-                    XAssetType.Font)
-                ?? throw new InvalidDataException(
-                    $"Top-level Font pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical Font asset.");
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed Font pointer has no destination cell.",
-                "Canonical Font has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-            throw new InvalidDataException($"Top-level Font pointer 0x{pointer.Raw:X8} does not reference inline/insert payload data.");
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            FontAsset font = ReadFont(cursor, rootAddress, context);
-            FontAsset canonical = context.DB_AddXAsset(
-                XAssetType.Font,
-                font.Name,
-                font,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
     }
 
-    private FontAsset ReadFont(
+    protected override FontAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

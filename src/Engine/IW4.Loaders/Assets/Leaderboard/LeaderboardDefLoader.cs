@@ -7,59 +7,23 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.Leaderboard;
 
-public sealed class LeaderboardDefLoader
+public sealed class LeaderboardDefLoader : XAssetLoader<LeaderboardDefAsset>
 {
-    public LeaderboardDefAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
+    public LeaderboardDefLoader() : base(XAssetType.LeaderboardDef, LeaderboardDefAsset.SerializedSize, "LeaderboardDef")
+    {
+    }
+
+    protected override LeaderboardDefAsset RegisterAsset(
+        LeaderboardDefAsset asset,
+        ProviderRegistrationOccurrence providerRegistration,
         DbLoadExecutionContext context)
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level LeaderboardDef pointer is null.");
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<LeaderboardDefAsset>(
-                pointer,
-                LeaderboardDefAsset.SerializedSize,
-                "LeaderboardDef");
-            LeaderboardDefAsset canonical = context.ResolveLeaderboardDef(pointer)
-                ?? throw new InvalidDataException(
-                    $"Top-level LeaderboardDef pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical LeaderboardDef asset.");
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed LeaderboardDef pointer has no destination cell.",
-                "Canonical LeaderboardDef has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"Top-level LeaderboardDef pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-        }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            LeaderboardDefAsset leaderboard = ReadLeaderboardDef(cursor, rootAddress, context);
-            LeaderboardDefAsset canonical = context.DB_AddXAsset(leaderboard, providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
+        return context.DB_AddXAsset(asset, providerRegistration);
     }
 
     // The root is staged in TEMP; its name, column table, and both strings in
     // each 0x20-byte column row materialize in LARGE.
-    private static LeaderboardDefAsset ReadLeaderboardDef(
+    protected override LeaderboardDefAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

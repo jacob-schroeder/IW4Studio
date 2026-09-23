@@ -8,154 +8,142 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.Image;
 
-public sealed class GfxImageLoader
+public sealed class GfxImageLoader : XAssetLoader<GfxImageAsset>
 {
-    public GfxImageAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public GfxImageLoader()
+        : base(XAssetType.Image, GfxImageAsset.SerializedSize, "GfxImage")
     {
-        return LoadFromPointer(cursor, pointer, context)
-            ?? throw new InvalidDataException("A top-level GfxImage XAsset cannot have a null body.");
     }
 
-    public GfxImageAsset? LoadFromPointer(
-        FastFileCursor cursor,
+    protected override GfxImageAsset? ResolvePackedPointer(
         XPointerReference pointer,
+        DbLoadExecutionContext context,
+        bool requireAsset)
+    {
+        if (ResolveAndPatchAliasCell(pointer, context).HasValue)
+            return context.ResolveGfxImage(pointer);
+
+        context.PointerReader.ValidateOffsetPointerRange<GfxImageAsset>(pointer, GfxImageAsset.SerializedSize, "GfxImage");
+        return context.ResolveGfxImage(pointer);
+    }
+
+    protected override GfxImageAsset RegisterAsset(
+        GfxImageAsset asset,
+        ProviderRegistrationOccurrence providerRegistration,
         DbLoadExecutionContext context)
     {
-        if (ResolveAliasCellOffset<GfxImageAsset>(pointer, context, GfxImageAsset.SerializedSize, "GfxImage"))
-            return context.ResolveGfxImage(pointer);
+        return context.DB_AddXAsset(asset, providerRegistration);
+    }
 
-        if (pointer.Type == PointerType.Null)
-            return null;
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<GfxImageAsset>(pointer, GfxImageAsset.SerializedSize, "GfxImage");
-            return context.ResolveGfxImage(pointer);
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-            throw new NotSupportedException($"GfxImage pointer 0x{pointer.Raw:X8} uses unsupported source sentinel {pointer.Type}.");
-
+    protected override GfxImageAsset ReadBody(
+        FastFileCursor cursor,
+        XBlockAddress rootAddress,
+        DbLoadExecutionContext context)
+    {
         int sourceOffset = cursor.Offset;
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
+        byte[] rootBytes = context.Blocks.Load(cursor, GfxImageAsset.SerializedSize, out XBlockAddress loadedAddress);
+        if (loadedAddress != rootAddress)
+            throw new InvalidDataException($"GfxImage pointer patched to {rootAddress}, but root loaded at {loadedAddress}.");
 
-        context.Blocks.Push(XFileBlockType.TEMP);
+        var rootCursor = new FastFileCursor(rootBytes, rootAddress);
+        byte format = rootCursor.ReadByte();
+        byte levelCount = rootCursor.ReadByte();
+        GfxImageDimension dimensionCount =
+            (GfxImageDimension)rootCursor.ReadByte();
+        byte multiFaceControl = rootCursor.ReadByte();
+        uint textureControl1 = rootCursor.ReadUInt32();
+        ushort width = rootCursor.ReadUInt16();
+        ushort height = rootCursor.ReadUInt16();
+        ushort depth = rootCursor.ReadUInt16();
+        GfxImageMemoryLocation memoryLocation =
+            (GfxImageMemoryLocation)rootCursor.ReadByte();
+        byte minLodControl = rootCursor.ReadByte();
+        uint renderTargetPitch = rootCursor.ReadUInt32();
+        uint pixelsOffset = rootCursor.ReadUInt32();
+        MapType mapType = (MapType)rootCursor.ReadByte();
+        TextureSemantic textureSemantic =
+            (TextureSemantic)rootCursor.ReadByte();
+        ImageCategory category = (ImageCategory)rootCursor.ReadByte();
+        byte useSrgbReads = rootCursor.ReadByte();
+        uint cardMemory = rootCursor.ReadUInt32();
+        ushort baseWidth = rootCursor.ReadUInt16();
+        ushort baseHeight = rootCursor.ReadUInt16();
+        ushort baseDepth = rootCursor.ReadUInt16();
+        byte baseLevelCount = rootCursor.ReadByte();
+        GfxImageCached cached = (GfxImageCached)rootCursor.ReadByte();
+        XPointerReference payloadPointer = ReadRawCell(rootCursor, context, XPointerResolutionMode.Direct);
+        IReadOnlyList<GfxImageStreamData> streamData = ReadStreamData(rootCursor);
+        int[] streamPartByteCounts =
+            GfxImageStreamData.ValidateProfileAndComputePartByteCounts(streamData);
+        int? streamImageIndex = context.AllocateGfxImageStreamIndex(
+            streamPartByteCounts.Any(byteCount => byteCount != 0));
+        IReadOnlyList<DbHeaderImageStreamEntry> streamEntries = context.GetGfxImageStreamEntries(streamImageIndex);
+        XPointer<string> namePointer = context.PointerReader.ReadPointer<string>(rootCursor, XPointerResolutionMode.Direct);
+
+        if (rootCursor.Offset != GfxImageAsset.SerializedSize)
+            throw new InvalidDataException($"GfxImage consumed 0x{rootCursor.Offset:X} bytes instead of 0x{GfxImageAsset.SerializedSize:X}.");
+
+        string? name;
+        byte[] payloadBytes;
+        context.Blocks.Push(XFileBlockType.LARGE);
         try
         {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            byte[] rootBytes = context.Blocks.Load(cursor, GfxImageAsset.SerializedSize, out XBlockAddress loadedAddress);
-            if (loadedAddress != rootAddress)
-                throw new InvalidDataException($"GfxImage pointer patched to {rootAddress}, but root loaded at {loadedAddress}.");
-
-            var rootCursor = new FastFileCursor(rootBytes, rootAddress);
-            byte format = rootCursor.ReadByte();
-            byte levelCount = rootCursor.ReadByte();
-            GfxImageDimension dimensionCount =
-                (GfxImageDimension)rootCursor.ReadByte();
-            byte multiFaceControl = rootCursor.ReadByte();
-            uint textureControl1 = rootCursor.ReadUInt32();
-            ushort width = rootCursor.ReadUInt16();
-            ushort height = rootCursor.ReadUInt16();
-            ushort depth = rootCursor.ReadUInt16();
-            GfxImageMemoryLocation memoryLocation =
-                (GfxImageMemoryLocation)rootCursor.ReadByte();
-            byte minLodControl = rootCursor.ReadByte();
-            uint renderTargetPitch = rootCursor.ReadUInt32();
-            uint pixelsOffset = rootCursor.ReadUInt32();
-            MapType mapType = (MapType)rootCursor.ReadByte();
-            TextureSemantic textureSemantic =
-                (TextureSemantic)rootCursor.ReadByte();
-            ImageCategory category = (ImageCategory)rootCursor.ReadByte();
-            byte useSrgbReads = rootCursor.ReadByte();
-            uint cardMemory = rootCursor.ReadUInt32();
-            ushort baseWidth = rootCursor.ReadUInt16();
-            ushort baseHeight = rootCursor.ReadUInt16();
-            ushort baseDepth = rootCursor.ReadUInt16();
-            byte baseLevelCount = rootCursor.ReadByte();
-            GfxImageCached cached = (GfxImageCached)rootCursor.ReadByte();
-            XPointerReference payloadPointer = ReadRawCell(rootCursor, context, XPointerResolutionMode.Direct);
-            IReadOnlyList<GfxImageStreamData> streamData = ReadStreamData(rootCursor);
-            int[] streamPartByteCounts =
-                GfxImageStreamData.ValidateProfileAndComputePartByteCounts(streamData);
-            int? streamImageIndex = context.AllocateGfxImageStreamIndex(
-                streamPartByteCounts.Any(byteCount => byteCount != 0));
-            IReadOnlyList<DbHeaderImageStreamEntry> streamEntries = context.GetGfxImageStreamEntries(streamImageIndex);
-            XPointer<string> namePointer = context.PointerReader.ReadPointer<string>(rootCursor, XPointerResolutionMode.Direct);
-
-            if (rootCursor.Offset != GfxImageAsset.SerializedSize)
-                throw new InvalidDataException($"GfxImage consumed 0x{rootCursor.Offset:X} bytes instead of 0x{GfxImageAsset.SerializedSize:X}.");
-
-            string? name;
-            byte[] payloadBytes;
-            context.Blocks.Push(XFileBlockType.LARGE);
-            try
-            {
-                name = context.PointerReader.LoadXString(cursor, namePointer);
-                payloadBytes = ReadPayload(
-                    cursor,
-                    payloadPointer,
-                    format,
-                    levelCount,
-                    multiFaceControl,
-                    textureControl1,
-                    width,
-                    height,
-                    depth,
-                    textureSemantic,
-                    context);
-            }
-            finally
-            {
-                context.Blocks.Pop();
-            }
-
-
-            var image = new GfxImageAsset
-            {
-                Offset = sourceOffset,
-                RuntimeAddress = rootAddress,
-                Format = format,
-                LevelCount = levelCount,
-                DimensionCount = dimensionCount,
-                MultiFaceControl = multiFaceControl,
-                TextureControl1 = textureControl1,
-                Width = width,
-                Height = height,
-                Depth = depth,
-                MemoryLocation = memoryLocation,
-                MinLodControl = minLodControl,
-                RenderTargetPitch = renderTargetPitch,
-                PixelsOffset = pixelsOffset,
-                MapType = mapType,
-                TextureSemantic = textureSemantic,
-                Category = category,
-                UseSrgbReads = useSrgbReads,
-                CardMemory = cardMemory,
-                BaseWidth = baseWidth,
-                BaseHeight = baseHeight,
-                BaseDepth = baseDepth,
-                BaseLevelCount = baseLevelCount,
-                Cached = cached,
-                PayloadPointer = payloadPointer,
-                StreamData = streamData,
-                StreamImageIndex = streamImageIndex,
-                StreamEntries = streamEntries,
-                PayloadByteCount = payloadBytes.Length,
-                PayloadBytes = payloadBytes,
-                NamePointer = namePointer,
-                Name = name
-            };
-            GfxImageAsset canonical = context.DB_AddXAsset(image, providerRegistration);
-
-            return canonical;
+            name = context.PointerReader.LoadXString(cursor, namePointer);
+            payloadBytes = ReadPayload(
+                cursor,
+                payloadPointer,
+                format,
+                levelCount,
+                multiFaceControl,
+                textureControl1,
+                width,
+                height,
+                depth,
+                textureSemantic,
+                context);
         }
         finally
         {
             context.Blocks.Pop();
         }
+
+
+        var image = new GfxImageAsset
+        {
+            Offset = sourceOffset,
+            RuntimeAddress = rootAddress,
+            Format = format,
+            LevelCount = levelCount,
+            DimensionCount = dimensionCount,
+            MultiFaceControl = multiFaceControl,
+            TextureControl1 = textureControl1,
+            Width = width,
+            Height = height,
+            Depth = depth,
+            MemoryLocation = memoryLocation,
+            MinLodControl = minLodControl,
+            RenderTargetPitch = renderTargetPitch,
+            PixelsOffset = pixelsOffset,
+            MapType = mapType,
+            TextureSemantic = textureSemantic,
+            Category = category,
+            UseSrgbReads = useSrgbReads,
+            CardMemory = cardMemory,
+            BaseWidth = baseWidth,
+            BaseHeight = baseHeight,
+            BaseDepth = baseDepth,
+            BaseLevelCount = baseLevelCount,
+            Cached = cached,
+            PayloadPointer = payloadPointer,
+            StreamData = streamData,
+            StreamImageIndex = streamImageIndex,
+            StreamEntries = streamEntries,
+            PayloadByteCount = payloadBytes.Length,
+            PayloadBytes = payloadBytes,
+            NamePointer = namePointer,
+            Name = name
+        };
+        return image;
     }
 
     private static IReadOnlyList<GfxImageStreamData> ReadStreamData(FastFileCursor cursor)
@@ -227,33 +215,4 @@ public sealed class GfxImageLoader
         FastFileCursor cursor,
         DbLoadExecutionContext context,
         XPointerResolutionMode offsetMode) => context.PointerReader.ReadCell(cursor, offsetMode);
-
-    private static bool ResolveAliasCellOffset<T>(
-        XPointerReference pointer,
-        DbLoadExecutionContext context,
-        int targetByteCount,
-        string targetName)
-    {
-        if (pointer.Type != PointerType.Offset || pointer.ResolutionMode != XPointerResolutionMode.AliasCell)
-            return false;
-
-        if (pointer.CellAddress is not { } destinationCell)
-            throw new InvalidDataException($"Alias-cell pointer 0x{pointer.Raw:X8} has no destination cell to patch.");
-
-        int aliasedRaw = context.PointerReader.ReadAliasCellRaw(pointer);
-        if (aliasedRaw != 0)
-        {
-            PointerType aliasedType = XPointerCodec.GetType(aliasedRaw);
-            if (aliasedType != PointerType.Offset)
-                throw new InvalidDataException($"Alias-cell pointer 0x{pointer.Raw:X8} resolved to unresolved sentinel 0x{aliasedRaw:X8} for {targetName}.");
-
-            context.PointerReader.ValidateOffsetPointerRange<T>(
-                XPointerReference.FromRaw(aliasedRaw, XPointerResolutionMode.Direct, pointer.PackedAddress),
-                targetByteCount,
-                targetName);
-        }
-
-        context.Blocks.WriteInt32(destinationCell, aliasedRaw);
-        return true;
-    }
 }

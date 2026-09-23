@@ -7,70 +7,19 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.GameMap;
 
-public sealed class GameWorldSpLoader
+public sealed class GameWorldSpLoader : XAssetLoader<GameWorldSpAsset>
 {
     private readonly PathDataLoader _pathDataLoader = new();
     private readonly VehicleTrackLoader _vehicleTrackLoader = new();
     private readonly GGlassDataLoader _glassDataLoader = new();
 
-    public GameWorldSpAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public GameWorldSpLoader() : base(XAssetType.GameMapSp, GameWorldSpAsset.SerializedSize, "GameWorldSp")
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level GameWorldSp pointer is null.");
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<GameWorldSpAsset>(
-                pointer,
-                GameWorldSpAsset.SerializedSize,
-                "GameWorldSp");
-            GameWorldSpAsset canonical = context.ResolveCanonicalAsset<GameWorldSpAsset>(
-                    pointer,
-                    XAssetType.GameMapSp)
-                ?? throw new InvalidDataException(
-                    $"Top-level GameWorldSp pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical GameMapSp asset.");
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed GameWorldSp pointer has no destination cell.",
-                "Canonical GameWorldSp has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"GameWorldSp pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-        }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            GameWorldSpAsset gameWorld = ReadGameWorldSp(cursor, rootAddress, context);
-            GameWorldSpAsset canonical = context.DB_AddXAsset(
-                XAssetType.GameMapSp,
-                gameWorld.Name,
-                gameWorld,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
     }
 
     // The 0x38-byte root embeds PathData at +0x04, VehicleTrack at +0x2C,
     // and G_GlassData* at +0x34.
-    private GameWorldSpAsset ReadGameWorldSp(
+    protected override GameWorldSpAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

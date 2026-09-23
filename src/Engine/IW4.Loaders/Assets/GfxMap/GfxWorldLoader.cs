@@ -16,67 +16,31 @@ using ModelVec3 = IW4.Game.Math.Vec3;
 
 namespace IW4.Loaders.Assets.GfxMap;
 
-public sealed class GfxWorldLoader
+public sealed class GfxWorldLoader : XAssetLoader<GfxWorldAsset>
 {
     private readonly GfxImageLoader _imageLoader = new();
     private readonly MaterialLoader _materialLoader = new();
     private readonly XModelLoader _xmodelLoader = new();
 
-    public GfxWorldAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public GfxWorldLoader() : base(XAssetType.GfxMap, GfxWorldAsset.SerializedSize, "GfxWorld")
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level GfxWorld pointer is null.");
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<GfxWorldAsset>(
-                pointer,
-                GfxWorldAsset.SerializedSize,
-                "GfxWorld");
-            GfxWorldAsset canonical = context.ResolveCanonicalAsset<GfxWorldAsset>(
-                    pointer,
-                    XAssetType.GfxMap)
-                ?? throw new InvalidDataException(
-                    $"Top-level GfxWorld pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical GfxMap asset.");
-            context.PatchCanonicalAssetPointerCellIfPresent(
-                pointer,
-                canonical,
-                "Canonical GfxWorld has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"GfxWorld pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-        }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            GfxWorldAsset gfxWorld = ReadGfxWorld(cursor, rootAddress, context);
-            GfxWorldAsset canonical = context.DB_AddXAsset(
-                XAssetType.GfxMap,
-                gfxWorld.Name,
-                gfxWorld,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
     }
 
+    protected override GfxWorldAsset? ResolvePackedPointer(
+        XPointerReference pointer, DbLoadExecutionContext context, bool requireAsset)
+    {
+        context.PointerReader.ValidateOffsetPointerRange<GfxWorldAsset>(
+            pointer, SerializedSize, AssetName);
+        GfxWorldAsset? canonical = context.ResolveCanonicalAsset<GfxWorldAsset>(pointer, AssetType);
+        if (canonical is null)
+            return HandleUnresolvedReference(pointer, context, requireAsset);
 
-    private GfxWorldAsset ReadGfxWorld(
+        context.PatchCanonicalAssetPointerCellIfPresent(
+            pointer, canonical, "Canonical GfxWorld has no runtime address.");
+        return canonical;
+    }
+
+    protected override GfxWorldAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)
@@ -86,7 +50,8 @@ public sealed class GfxWorldLoader
         if (rootAddress != expectedRootAddress)
             throw new InvalidDataException($"GfxWorld pointer patched to {expectedRootAddress}, but root loaded at {rootAddress}.");
 
-        GfxWorldHeader root = ReadGfxWorldHeader(rootBytes, rootAddress, context);
+        // The fixed root is a temporary view; only the completed asset below is registered.
+        GfxWorldAsset root = ReadGfxWorldHeader(rootBytes, rootAddress, context);
 
         string? name;
         string? baseName;
@@ -255,13 +220,13 @@ public sealed class GfxWorldLoader
         };
     }
 
-    private static GfxWorldHeader ReadGfxWorldHeader(
+    private static GfxWorldAsset ReadGfxWorldHeader(
         byte[] rootBytes,
         XBlockAddress rootAddress,
         DbLoadExecutionContext context)
     {
         var cursor = new FastFileCursor(rootBytes, rootAddress);
-        var header = new GfxWorldHeader
+        var header = new GfxWorldAsset
         {
             NamePointer = context.PointerReader.ReadPointer<string>(cursor, XPointerResolutionMode.Direct),
             BaseNamePointer = context.PointerReader.ReadPointer<string>(cursor, XPointerResolutionMode.Direct),

@@ -10,59 +10,17 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.LightDef;
 
-public sealed class LightDefLoader
+public sealed class LightDefLoader : XAssetLoader<LightDefAsset>
 {
     private readonly GfxImageLoader _imageLoader = new();
 
-    public LightDefAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    protected override bool ValidatePackedPointerRange => false;
+
+    public LightDefLoader() : base(XAssetType.LightDef, LightDefAsset.SerializedSize, "LightDef")
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level LightDef pointer is null.");
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            LightDefAsset canonical = context.ResolveCanonicalAsset<LightDefAsset>(
-                    pointer,
-                    XAssetType.LightDef)
-                ?? throw new InvalidDataException(
-                    $"Top-level LightDef pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical LightDef asset.");
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed LightDef pointer has no destination cell.",
-                "Canonical LightDef has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-            throw new InvalidDataException($"Top-level LightDef pointer 0x{pointer.Raw:X8} does not reference inline/insert payload data.");
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            LightDefAsset lightDef = ReadLightDef(cursor, rootAddress, context);
-            LightDefAsset canonical = context.DB_AddXAsset(
-                XAssetType.LightDef,
-                lightDef.Name,
-                lightDef,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
     }
 
-    private LightDefAsset ReadLightDef(
+    protected override LightDefAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

@@ -3,100 +3,29 @@ using IW4.Game.Assets.XAnim;
 using IW4.Game.Pointers;
 using IW4.Game.ScriptStrings;
 using IW4.Game.Zone;
-using IW4.Runtime.Database;
 using IW4.Game.IO;
 using XString = IW4.Game.Pointers.XPointer<string>;
 
 namespace IW4.Loaders.Assets.XAnim;
 
-public sealed class XAnimPartsLoader
+public sealed class XAnimPartsLoader : XAssetLoader<XAnimPartsAsset>
 {
-    public XAnimPartsAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public XAnimPartsLoader() : base(XAssetType.XAnim, XAnimPartsAsset.SerializedSize, "XAnimParts")
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: true)
-            ?? throw new InvalidDataException("Top-level XAnim pointer resolved to null.");
     }
 
-    public XAnimPartsAsset? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
-    {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
-    }
-
-    private static XAnimPartsAsset? LoadFromPointerCore(
-        FastFileCursor cursor,
+    protected override XAnimPartsAsset? HandleUnresolvedReference(
         XPointerReference pointer,
         DbLoadExecutionContext context,
         bool requireAsset)
     {
-        if (pointer.Type == PointerType.Null)
-        {
-            if (requireAsset)
-                throw new InvalidDataException("Top-level XAnim pointer is null.");
-
+        if (!requireAsset)
             return null;
-        }
 
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<XAnimPartsAsset>(
-                pointer,
-                XAnimPartsAsset.SerializedSize,
-                "XAnimParts");
-            XAnimPartsAsset? canonical = context.ResolveCanonicalAsset<XAnimPartsAsset>(
-                pointer,
-                XAssetType.XAnim);
-            if (canonical is null)
-            {
-                if (!requireAsset)
-                    return null;
-
-                throw new InvalidDataException(
-                    $"Top-level XAnim pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical XAnim asset.");
-            }
-
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed XAnim pointer has no destination cell.",
-                "Canonical XAnim has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"XAnim pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-        }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            XAnimPartsAsset asset = ReadXAnimParts(cursor, rootAddress, context);
-            XAnimPartsAsset canonical = context.DB_AddXAsset(
-                XAssetType.XAnim,
-                asset.Name,
-                asset,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
+        return base.HandleUnresolvedReference(pointer, context, requireAsset);
     }
 
-    private static XAnimPartsAsset ReadXAnimParts(
+    protected override XAnimPartsAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

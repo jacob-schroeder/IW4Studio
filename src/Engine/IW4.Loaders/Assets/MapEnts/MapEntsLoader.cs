@@ -9,99 +9,26 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.MapEnts;
 
-public sealed class MapEntsLoader
+public sealed class MapEntsLoader : XAssetLoader<MapEntsAsset>
 {
     private readonly MapTriggersLoader _mapTriggersLoader = new();
 
-    public MapEntsAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public MapEntsLoader() : base(XAssetType.MapEnts, MapEntsAsset.SerializedSize, "MapEnts")
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: true)
-            ?? throw new InvalidDataException("Top-level MapEnts pointer resolved to null.");
     }
 
-    // ClipMap and top-level assets share the same pointer-loading path.
-    public MapEntsAsset? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    protected override MapEntsAsset? HandleUnresolvedReference(
+        XPointerReference pointer, DbLoadExecutionContext context, bool requireAsset)
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
-    }
-
-    private MapEntsAsset? LoadFromPointerCore(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context,
-        bool requireAsset)
-    {
-        if (pointer.Type == PointerType.Null)
-        {
-            if (requireAsset)
-                throw new InvalidDataException("Top-level MapEnts pointer is null.");
-
+        if (!requireAsset)
             return null;
-        }
 
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<MapEntsAsset>(
-                pointer,
-                MapEntsAsset.SerializedSize,
-                "MapEnts");
-            MapEntsAsset? canonical = context.ResolveCanonicalAsset<MapEntsAsset>(
-                pointer,
-                XAssetType.MapEnts);
-            if (canonical is null)
-            {
-                if (!requireAsset)
-                    return null;
-
-                throw new InvalidDataException(
-                    $"Top-level MapEnts pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical MapEnts asset.");
-            }
-
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed MapEnts pointer has no destination cell.",
-                "Canonical MapEnts has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"MapEnts pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-        }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            MapEntsAsset mapEnts = ReadMapEnts(cursor, rootAddress, context);
-            MapEntsAsset canonical = context.DB_AddXAsset(
-                XAssetType.MapEnts,
-                mapEnts.Name,
-                mapEnts,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
+        return base.HandleUnresolvedReference(pointer, context, requireAsset);
     }
 
     // The 0x2C-byte root is staged in TEMP. Its name, entity bytes, embedded
     // MapTriggers payloads, Stage rows, and Stage XStrings follow in LARGE.
-    private MapEntsAsset ReadMapEnts(
+    protected override MapEntsAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

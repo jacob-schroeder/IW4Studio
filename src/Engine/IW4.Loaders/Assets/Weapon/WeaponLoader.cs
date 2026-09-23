@@ -21,7 +21,7 @@ using XString = IW4.Game.Pointers.XPointer<string>;
 
 namespace IW4.Loaders.Assets.Weapon;
 
-public sealed class WeaponLoader
+public sealed class WeaponLoader : XAssetLoader<WeaponAsset>
 {
     private static readonly FxEffectDefLoader FxEffectDefLoader = new();
     private static readonly MaterialLoader MaterialLoader = new();
@@ -29,100 +29,78 @@ public sealed class WeaponLoader
     private static readonly TracerDefLoader TracerDefLoader = new();
     private static readonly XModelLoader XModelLoader = new();
 
-    public WeaponAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public WeaponLoader() : base(XAssetType.Weapon, WeaponAsset.SerializedSize, "Weapon")
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level Weapon pointer is null.");
+    }
 
-        if (pointer.Type == PointerType.Offset)
+    protected override WeaponAsset? HandleUnresolvedReference(
+        XPointerReference pointer,
+        DbLoadExecutionContext context,
+        bool requireAsset)
+    {
+        if (!requireAsset)
+            return null;
+
+        return base.HandleUnresolvedReference(pointer, context, requireAsset);
+    }
+
+    protected override WeaponAsset? ResolvePackedPointer(
+        XPointerReference pointer,
+        DbLoadExecutionContext context,
+        bool requireAsset)
+    {
+        context.PointerReader.ValidateOffsetPointerRange<WeaponAsset>(pointer, WeaponAsset.SerializedSize, "Weapon");
+        WeaponAsset? canonical = context.ResolveWeapon(pointer);
+        if (canonical is null)
+            return HandleUnresolvedReference(pointer, context, requireAsset);
+
+        if (requireAsset)
         {
-            context.PointerReader.ValidateOffsetPointerRange<WeaponAsset>(
-                pointer,
-                WeaponAsset.SerializedSize,
-                "Weapon");
-            WeaponAsset canonical = context.ResolveWeapon(pointer)
-                ?? throw new InvalidDataException(
-                    $"Top-level Weapon pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical Weapon asset.");
             context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
+                pointer, canonical,
                 "Packed Weapon pointer has no destination cell.",
                 "Canonical Weapon has no runtime address.");
-            return canonical;
         }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
+        else
         {
-            throw new InvalidDataException(
-                $"Top-level Weapon pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
+            context.PatchCanonicalAssetPointerCellIfPresent(
+                pointer, canonical,
+                "Canonical Weapon has no runtime address.");
         }
 
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
+        return canonical;
+    }
 
-        context.Blocks.Push(XFileBlockType.TEMP);
+    protected override WeaponAsset RegisterAsset(
+        WeaponAsset asset,
+        ProviderRegistrationOccurrence providerRegistration,
+        DbLoadExecutionContext context) =>
+        context.DB_AddXAsset(asset, providerRegistration);
+
+    protected override WeaponAsset ReadBody(
+        FastFileCursor cursor,
+        XBlockAddress rootAddress,
+        DbLoadExecutionContext context)
+    {
+        WeaponVariantRoot root = ReadWeaponVariantRoot(cursor, context);
+
+        WeaponVariantDef variant;
+        context.Blocks.Push(XFileBlockType.LARGE);
         try
         {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            WeaponVariantRoot root = ReadWeaponVariantRoot(cursor, context);
-
-            WeaponVariantDef variant;
-            context.Blocks.Push(XFileBlockType.LARGE);
-            try
-            {
-                variant = ReadWeaponVariantChildren(cursor, root, context);
-            }
-            finally
-            {
-                context.Blocks.Pop();
-            }
-
-            var weapon = new WeaponAsset
-            {
-                Offset = root.Offset,
-                RuntimeAddress = rootAddress,
-                Variant = variant
-            };
-            WeaponAsset canonical = context.DB_AddXAsset(weapon, providerRegistration);
-
-            return canonical;
+            variant = ReadWeaponVariantChildren(cursor, root, context);
         }
         finally
         {
             context.Blocks.Pop();
         }
-    }
 
-    public WeaponAsset? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
-    {
-        if (pointer.Type == PointerType.Null)
-            return null;
-
-        if (pointer.Type == PointerType.Offset)
+        return new WeaponAsset
         {
-            context.PointerReader.ValidateOffsetPointerRange<WeaponAsset>(
-                pointer,
-                WeaponAsset.SerializedSize,
-                "Weapon");
-            WeaponAsset? canonical = context.ResolveWeapon(pointer);
-            if (canonical is null)
-                return null;
-
-            context.PatchCanonicalAssetPointerCellIfPresent(
-                pointer,
-                canonical,
-                "Canonical Weapon has no runtime address.");
-
-            return canonical;
-        }
-
-        return LoadFromAssetPointer(cursor, pointer, context);
+            Offset = root.Offset,
+            RuntimeAddress = rootAddress,
+            Variant = variant
+        };
     }
 
     private static WeaponVariantRoot ReadWeaponVariantRoot(

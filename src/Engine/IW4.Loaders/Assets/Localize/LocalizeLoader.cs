@@ -7,57 +7,23 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.Localize;
 
-public sealed class LocalizeLoader
+public sealed class LocalizeLoader : XAssetLoader<LocalizeAsset>
 {
-    public LocalizeAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
+    public LocalizeLoader() : base(XAssetType.Localize, LocalizeAsset.SerializedSize, "Localize")
+    {
+    }
+
+    protected override LocalizeAsset RegisterAsset(
+        LocalizeAsset asset,
+        ProviderRegistrationOccurrence providerRegistration,
         DbLoadExecutionContext context)
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level Localize pointer is null.");
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<LocalizeAsset>(
-                pointer,
-                LocalizeAsset.SerializedSize,
-                "Localize");
-            LocalizeAsset canonical = context.ResolveLocalize(pointer)
-                ?? throw new InvalidDataException(
-                    $"Top-level Localize pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical Localize asset.");
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed Localize pointer has no destination cell.",
-                "Canonical Localize has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-            throw new InvalidDataException(
-                $"Top-level Localize pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            LocalizeAsset localize = ReadLocalize(cursor, rootAddress, context);
-            LocalizeAsset canonical = context.DB_AddXAsset(localize, providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
+        return context.DB_AddXAsset(asset, providerRegistration);
     }
 
     // The root is staged in TEMP; both XStrings are materialized in LARGE
     // before registration copies the header.
-    private static LocalizeAsset ReadLocalize(
+    protected override LocalizeAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress rootAddress,
         DbLoadExecutionContext context)

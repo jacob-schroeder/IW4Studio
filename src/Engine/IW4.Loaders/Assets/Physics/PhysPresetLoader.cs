@@ -7,90 +7,34 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.Physics;
 
-public sealed class PhysPresetLoader
+public sealed class PhysPresetLoader : XAssetLoader<PhysPresetAsset>
 {
-    public PhysPresetAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public PhysPresetLoader() : base(XAssetType.PhysPreset, PhysPresetAsset.SerializedSize, "PhysPreset")
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: true)
-            ?? throw new InvalidDataException("Top-level PhysPreset pointer resolved to null.");
     }
 
-    public PhysPresetAsset? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
-    {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
-    }
-
-    private static PhysPresetAsset? LoadFromPointerCore(
-        FastFileCursor cursor,
+    protected override PhysPresetAsset? HandleUnresolvedReference(
         XPointerReference pointer,
         DbLoadExecutionContext context,
         bool requireAsset)
     {
-        if (pointer.Type == PointerType.Null)
-        {
-            if (requireAsset)
-                throw new InvalidDataException("Top-level PhysPreset pointer is null.");
-
+        if (!requireAsset)
             return null;
-        }
 
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<PhysPresetAsset>(
-                pointer,
-                PhysPresetAsset.SerializedSize,
-                "PhysPreset");
-            PhysPresetAsset? canonical = context.ResolvePhysPreset(pointer);
-            if (canonical is null)
-            {
-                if (!requireAsset)
-                    return null;
+        return base.HandleUnresolvedReference(pointer, context, requireAsset);
+    }
 
-                throw new InvalidDataException(
-                    $"Top-level PhysPreset pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical PhysPreset asset.");
-            }
-
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed PhysPreset pointer has no destination cell.",
-                "Canonical PhysPreset has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"PhysPreset pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-        }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            PhysPresetAsset physPreset = ReadPhysPreset(cursor, rootAddress, context);
-            PhysPresetAsset canonical = context.DB_AddXAsset(physPreset, providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
+    protected override PhysPresetAsset RegisterAsset(
+        PhysPresetAsset asset,
+        ProviderRegistrationOccurrence providerRegistration,
+        DbLoadExecutionContext context)
+    {
+        return context.DB_AddXAsset(asset, providerRegistration);
     }
 
     // The fixed 0x2C-byte root is staged in TEMP, followed by its two XStrings
     // in LARGE.
-    private static PhysPresetAsset ReadPhysPreset(
+    protected override PhysPresetAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

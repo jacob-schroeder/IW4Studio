@@ -7,98 +7,34 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.Sound;
 
-public sealed class SndCurveLoader
+public sealed class SndCurveLoader : XAssetLoader<SndCurve>
 {
-    public SndCurve LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public SndCurveLoader() : base(XAssetType.SndCurve, SndCurve.SerializedSize, "SndCurve")
     {
-        return LoadFromPointerCore(
-                cursor,
-                pointer,
-                context,
-                requireAsset: true)
-            ?? throw new InvalidDataException("Top-level SndCurve pointer resolved to null.");
     }
 
-    public SndCurve? LoadFromPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
-    {
-        return LoadFromPointerCore(
-            cursor,
-            pointer,
-            context,
-            requireAsset: false);
-    }
-
-    private static SndCurve? LoadFromPointerCore(
-        FastFileCursor cursor,
+    protected override SndCurve? HandleUnresolvedReference(
         XPointerReference pointer,
         DbLoadExecutionContext context,
         bool requireAsset)
     {
-        if (pointer.Type == PointerType.Null)
-        {
-            if (requireAsset)
-                throw new InvalidDataException("Top-level SndCurve pointer is null.");
-
+        if (!requireAsset)
             return null;
-        }
 
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<SndCurve>(
-                pointer,
-                SndCurve.SerializedSize,
-                "SndCurve");
-            SndCurve? canonical = context.ResolveSndCurve(pointer);
-            if (canonical is null)
-            {
-                if (!requireAsset)
-                    return null;
+        return base.HandleUnresolvedReference(pointer, context, requireAsset);
+    }
 
-                throw new InvalidDataException(
-                    $"Top-level SndCurve pointer 0x{unchecked((uint)pointer.Raw):X8} " +
-                    "does not resolve to a canonical SndCurve asset.");
-            }
-
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed SndCurve pointer has no destination cell.",
-                "Canonical SndCurve has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"SndCurve pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-        }
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            SndCurve curve = ReadSndCurve(cursor, rootAddress, context);
-            SndCurve canonical = context.DB_AddXAsset(curve, providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
+    protected override SndCurve RegisterAsset(
+        SndCurve asset,
+        ProviderRegistrationOccurrence providerRegistration,
+        DbLoadExecutionContext context)
+    {
+        return context.DB_AddXAsset(asset, providerRegistration);
     }
 
     // The fixed 0x88-byte root is staged in TEMP, followed by its filename
     // XString in LARGE.
-    private static SndCurve ReadSndCurve(
+    protected override SndCurve ReadBody(
         FastFileCursor cursor,
         XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)

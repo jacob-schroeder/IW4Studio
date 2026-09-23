@@ -6,109 +6,23 @@ using IW4.Game.Assets.Material;
 using XModelAssetModel = IW4.Game.Assets.XModel.XModelAsset;
 using IW4.Game.Pointers;
 using IW4.Game.Zone;
-using IW4.Runtime.Database;
 using IW4.Game.IO;
 using XString = IW4.Game.Pointers.XPointer<string>;
 
 namespace IW4.Loaders.Assets.Fx;
 
-public sealed class FxEffectDefLoader
+public sealed class FxEffectDefLoader : XAssetLoader<FxEffectDefAsset>
 {
     private readonly MaterialLoader _materialLoader = new();
     private readonly XModelLoader _xmodelLoader = new();
 
-    public FxEffectDefAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
+    public FxEffectDefLoader() : base(XAssetType.Fx, FxEffectDefAsset.SerializedSize, "FxEffectDef")
     {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: true)
-            ?? throw new InvalidDataException("Top-level Fx pointer resolved to null.");
     }
 
-    public FxEffectDefAsset? LoadFromPointer(
+    protected override FxEffectDefAsset ReadBody(
         FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
-    {
-        return LoadFromPointerCore(cursor, pointer, context, requireAsset: false);
-    }
-
-    private FxEffectDefAsset? LoadFromPointerCore(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context,
-        bool requireAsset)
-    {
-        if (pointer.Type == PointerType.Null)
-        {
-            if (requireAsset)
-                throw new InvalidDataException("Top-level Fx pointer is null.");
-
-            return null;
-        }
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<FxEffectDefAsset>(pointer, FxEffectDefAsset.SerializedSize, "FxEffectDef");
-            FxEffectDefAsset? canonical = context.ResolveCanonicalAsset<FxEffectDefAsset>(pointer, XAssetType.Fx);
-            if (canonical is null)
-            {
-                throw new InvalidDataException(
-                    $"FxEffectDef pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical Fx asset.");
-            }
-
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed FxEffectDef pointer has no destination cell.",
-                "Canonical FxEffectDef has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-        {
-            throw new InvalidDataException(
-                $"FxEffectDef pointer 0x{unchecked((uint)pointer.Raw):X8} uses unsupported source sentinel {pointer.Type}.");
-        }
-
-        return LoadInlineOrInsert(cursor, pointer, context);
-    }
-
-    private FxEffectDefAsset LoadInlineOrInsert(
-        FastFileCursor cursor,
-        XPointerReference pointer,
-        DbLoadExecutionContext context)
-    {
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            FxEffectDefAsset effect = ReadFxEffectDef(cursor, context);
-            if (effect.StagingAddress != rootAddress)
-            {
-                throw new InvalidDataException(
-                    $"FxEffectDef pointer patched to {rootAddress}, but root loaded at {effect.StagingAddress}.");
-            }
-
-            FxEffectDefAsset canonical = context.DB_AddXAsset(
-                XAssetType.Fx,
-                effect.Name,
-                effect,
-                providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
-    }
-
-    private FxEffectDefAsset ReadFxEffectDef(
-        FastFileCursor cursor,
+        XBlockAddress expectedRootAddress,
         DbLoadExecutionContext context)
     {
         int sourceOffset = cursor.Offset;
@@ -142,7 +56,7 @@ public sealed class FxEffectDefLoader
             context.Blocks.Pop();
         }
 
-        return new FxEffectDefAsset
+        var effect = new FxEffectDefAsset
         {
             Offset = sourceOffset,
             RuntimeAddress = rootAddress,
@@ -157,6 +71,13 @@ public sealed class FxEffectDefLoader
             ElemDefsPointer = elemDefsPointer,
             ElemDefs = elemDefs
         };
+        if (effect.StagingAddress != expectedRootAddress)
+        {
+            throw new InvalidDataException(
+                $"FxEffectDef pointer patched to {expectedRootAddress}, but root loaded at {effect.StagingAddress}.");
+        }
+
+        return effect;
     }
 
 

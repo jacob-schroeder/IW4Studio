@@ -7,57 +7,23 @@ using IW4.Game.IO;
 
 namespace IW4.Loaders.Assets.StringTable;
 
-public sealed class StringTableLoader
+public sealed class StringTableLoader : XAssetLoader<StringTableAsset>
 {
-    public StringTableAsset LoadFromAssetPointer(
-        FastFileCursor cursor,
-        XPointerReference pointer,
+    public StringTableLoader() : base(XAssetType.StringTable, StringTableAsset.SerializedSize, "StringTable")
+    {
+    }
+
+    protected override StringTableAsset RegisterAsset(
+        StringTableAsset asset,
+        ProviderRegistrationOccurrence providerRegistration,
         DbLoadExecutionContext context)
     {
-        if (pointer.Type == PointerType.Null)
-            throw new InvalidDataException("Top-level StringTable pointer is null.");
-
-        if (pointer.Type == PointerType.Offset)
-        {
-            context.PointerReader.ValidateOffsetPointerRange<StringTableAsset>(
-                pointer,
-                StringTableAsset.SerializedSize,
-                "StringTable");
-            StringTableAsset canonical = context.ResolveStringTable(pointer)
-                ?? throw new InvalidDataException(
-                    $"Top-level StringTable pointer 0x{unchecked((uint)pointer.Raw):X8} does not resolve to a canonical StringTable asset.");
-            context.PatchCanonicalAssetPointerCell(
-                pointer,
-                canonical,
-                "Packed StringTable pointer has no destination cell.",
-                "Canonical StringTable has no runtime address.");
-            return canonical;
-        }
-
-        if (pointer.Type is not (PointerType.Inline or PointerType.Insert))
-            throw new InvalidDataException(
-                $"Top-level StringTable pointer 0x{unchecked((uint)pointer.Raw):X8} has unsupported type {pointer.Type}.");
-
-        ProviderRegistrationOccurrence providerRegistration = context.BeginProviderRegistration(pointer);
-
-        context.Blocks.Push(XFileBlockType.TEMP);
-        try
-        {
-            XBlockAddress rootAddress = context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
-            StringTableAsset stringTable = ReadStringTable(cursor, rootAddress, context);
-            StringTableAsset canonical = context.DB_AddXAsset(stringTable, providerRegistration);
-
-            return canonical;
-        }
-        finally
-        {
-            context.Blocks.Pop();
-        }
+        return context.DB_AddXAsset(asset, providerRegistration);
     }
 
     // The root is staged in TEMP; its name, cell array, and cell strings are
     // materialized in LARGE before registration.
-    private static StringTableAsset ReadStringTable(
+    protected override StringTableAsset ReadBody(
         FastFileCursor cursor,
         XBlockAddress rootAddress,
         DbLoadExecutionContext context)

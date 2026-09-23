@@ -53,6 +53,7 @@ public sealed class XAssetDispatcher
     private readonly FxImpactTableLoader _impactFxLoader = new();
     private readonly XAnimPartsLoader _xanimLoader = new();
     private readonly XModelLoader _xmodelLoader = new();
+    private readonly XModelSurfsLoader _xmodelSurfsLoader = new();
     private readonly PhysPresetLoader _physPresetLoader = new();
     private readonly PhysCollmapLoader _physCollmapLoader = new();
     private readonly SndCurveLoader _sndCurveLoader = new();
@@ -170,7 +171,7 @@ public sealed class XAssetDispatcher
                 }
                 else if (asset.Type == XAssetType.Menu)
                 {
-                    loadedAsset = _menuFileLoader.LoadMenuFromAssetPointer(
+                    loadedAsset = new MenuDefLoader().LoadFromAssetPointer(
                         cursor,
                         asset.AssetPointer.Untyped,
                         context);
@@ -220,7 +221,7 @@ public sealed class XAssetDispatcher
                 }
                 else if (asset.Type == XAssetType.XModelSurfs)
                 {
-                    loadedAsset = _xmodelLoader.LoadXModelSurfsFromAssetPointer(
+                    loadedAsset = _xmodelSurfsLoader.LoadFromAssetPointer(
                         cursor,
                         asset.AssetPointer.Untyped,
                         context);
