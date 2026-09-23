@@ -247,8 +247,8 @@ internal static class RsxFragmentGlsl330Lowerer
             "vec4(0.0)");
         builder.AppendLine("  vec4 rsxCc0 = vec4(0.0);");
         builder.AppendLine("  vec4 rsxCc1 = vec4(0.0);");
-        FragmentControlFlowPlan? controlFlow =
-            TryCreateFragmentControlFlowPlan(instructions);
+        RsxFragmentControlFlow? controlFlow =
+            RsxFragmentControlFlowAnalysis.TryAnalyze(instructions);
         foreach (RsxFragmentInstruction instruction in instructions)
         {
             if (controlFlow is { } closingFlow &&
@@ -261,7 +261,12 @@ internal static class RsxFragmentGlsl330Lowerer
                 if (controlFlow is { } supportedFlow &&
                     instruction.Index == supportedFlow.InstructionIndex)
                 {
-                    builder.AppendLine(supportedFlow.OpeningStatement);
+                    string condition = FragmentFlowConditionExpression(
+                        instruction);
+                    builder.AppendLine(
+                        supportedFlow.Opcode == RsxFragmentOpcode.Return
+                            ? $"  if (!({condition})) {{"
+                            : $"  if ({condition}) {{");
                 }
                 else
                 {
@@ -316,7 +321,8 @@ internal static class RsxFragmentGlsl330Lowerer
                 expression);
         }
         if (controlFlow is { } trailingFlow &&
-            trailingFlow.CloseOffset == FragmentProgramEndOffset(instructions))
+            trailingFlow.CloseOffset ==
+                RsxFragmentControlFlowAnalysis.ProgramEndOffset(instructions))
         {
             builder.AppendLine("  }");
         }
@@ -625,62 +631,6 @@ internal static class RsxFragmentGlsl330Lowerer
         string test = FragmentConditionTestName(instruction.ConditionTest);
         return $"rsxCcTest{test}({conditionRegister}.{conditionComponent})";
     }
-
-    private static FragmentControlFlowPlan? TryCreateFragmentControlFlowPlan(
-        IReadOnlyList<RsxFragmentInstruction> instructions)
-    {
-        RsxFragmentInstruction[] flowInstructions = instructions
-            .Where(instruction => instruction.IsControlFlow)
-            .ToArray();
-        if (flowInstructions.Length != 1 || instructions.Count == 0)
-            return null;
-
-        RsxFragmentInstruction flow = flowInstructions[0];
-        if (flow.ConditionWriteRegister1 ||
-            flow.CondWriteEnabled ||
-            !flow.NoDest ||
-            flow.WriteMask != RsxFragmentWriteMask.None ||
-            flow.Saturate ||
-            flow.Scale != RsxFragmentResultScale.None)
-            return null;
-
-        string condition = FragmentFlowConditionExpression(flow);
-        int programEndOffset = FragmentProgramEndOffset(instructions);
-        if (flow.OpcodeType == RsxFragmentOpcode.Return)
-        {
-            return new FragmentControlFlowPlan(
-                flow.Index,
-                programEndOffset,
-                $"  if (!({condition})) {{");
-        }
-        if (flow.OpcodeType != RsxFragmentOpcode.If ||
-            (flow.Src1 & 0x7fff_ffffu) != flow.Src2)
-        {
-            return null;
-        }
-
-        uint targetSlot = flow.Src2 >> 2;
-        if (targetSlot > (uint)(int.MaxValue / 16))
-            return null;
-        int closeOffset = checked(
-            instructions[0].Offset + (int)targetSlot * 16);
-        bool targetExists = closeOffset == programEndOffset ||
-            instructions.Any(instruction => instruction.Offset == closeOffset);
-        if (!targetExists || closeOffset <= flow.Offset)
-            return null;
-
-        return new FragmentControlFlowPlan(
-            flow.Index,
-            closeOffset,
-            $"  if ({condition}) {{");
-    }
-
-    private static int FragmentProgramEndOffset(
-        IReadOnlyList<RsxFragmentInstruction> instructions) =>
-        instructions.Count == 0
-            ? 0
-            : instructions.Max(instruction =>
-                checked(instruction.Offset + instruction.ByteCount));
 
     private static string FragmentFlowConditionExpression(
         RsxFragmentInstruction instruction)
@@ -1219,11 +1169,6 @@ internal static class RsxFragmentGlsl330Lowerer
         RsxFragmentSamplerFeatures features,
         RsxFragmentSamplerFeatures feature) =>
         (features & feature) != 0;
-
-    private readonly record struct FragmentControlFlowPlan(
-        int InstructionIndex,
-        int CloseOffset,
-        string OpeningStatement);
 
     private readonly record struct FragmentRegisterUsage(
         int[] FullRegisters,

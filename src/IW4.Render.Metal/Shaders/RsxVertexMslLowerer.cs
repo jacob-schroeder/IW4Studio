@@ -104,8 +104,14 @@ internal static class RsxVertexMslLowerer
         ArgumentNullException.ThrowIfNull(instructions);
         ArgumentNullException.ThrowIfNull(blockers);
 
-        VertexRegisterUsage registerUsage =
-            ReadVertexRegisterUsage(instructions);
+        RsxVertexRegisterUsage registerUsage =
+            RsxVertexRegisterUseAnalysis.Analyze(
+                instructions,
+                (instruction, scalar) =>
+                    VertexExpression(
+                        instruction,
+                        scalar,
+                        staticComposition: null) is not null);
         if (staticComposition is not null &&
             !registerUsage.InputRegisters.Contains(0))
         {
@@ -608,133 +614,6 @@ internal static class RsxVertexMslLowerer
         return false;
     }
 
-    private static VertexRegisterUsage ReadVertexRegisterUsage(
-        IReadOnlyList<RsxVertexInstruction> instructions)
-    {
-        var inputRegisters = new SortedSet<int>();
-        var tempRegisters = new SortedSet<int>();
-        var outputRegisters = new SortedSet<int>
-        {
-            (byte)RsxVertexResult.Position,
-            (byte)RsxVertexResult.FrontColor0,
-            (byte)RsxVertexResult.FrontColor1,
-            (byte)RsxVertexResult.TextureCoordinate0,
-            (byte)RsxVertexResult.TextureCoordinate1,
-            (byte)RsxVertexResult.TextureCoordinate2,
-            (byte)RsxVertexResult.TextureCoordinate3,
-            (byte)RsxVertexResult.TextureCoordinate4,
-            (byte)RsxVertexResult.TextureCoordinate5,
-            (byte)RsxVertexResult.TextureCoordinate6,
-            (byte)RsxVertexResult.TextureCoordinate7
-        };
-
-        foreach (RsxVertexInstruction instruction in instructions)
-        {
-            if (instruction.VectorOpcode != RsxVertexVectorOpcode.Nop &&
-                instruction.VectorWriteMask != RsxVertexWriteMask.None &&
-                VertexExpression(
-                    instruction,
-                    scalar: false,
-                    staticComposition: null) is not null)
-            {
-                RsxSourceSlotMask sourceMask =
-                    RsxVertexInstruction.VectorSourceMask(
-                        instruction.VectorOpcode);
-                if ((sourceMask & RsxSourceSlotMask.Source0) != 0)
-                {
-                    AddVertexSourceRegister(
-                        instruction,
-                        instruction.Source0,
-                        inputRegisters,
-                        tempRegisters);
-                }
-                if ((sourceMask & RsxSourceSlotMask.Source1) != 0)
-                {
-                    AddVertexSourceRegister(
-                        instruction,
-                        instruction.Source1,
-                        inputRegisters,
-                        tempRegisters);
-                }
-                if ((sourceMask & RsxSourceSlotMask.Source2) != 0)
-                {
-                    AddVertexSourceRegister(
-                        instruction,
-                        instruction.Source2,
-                        inputRegisters,
-                        tempRegisters);
-                }
-                AddVertexDestinationRegister(
-                    instruction,
-                    scalar: false,
-                    tempRegisters,
-                    outputRegisters);
-            }
-
-            if (instruction.ScalarOpcode != RsxVertexScalarOpcode.Nop &&
-                instruction.ScalarWriteMask != RsxVertexWriteMask.None &&
-                RsxVertexInstruction.ScalarReadsSource2(
-                    instruction.ScalarOpcode) &&
-                VertexExpression(
-                    instruction,
-                    scalar: true,
-                    staticComposition: null) is not null)
-            {
-                AddVertexSourceRegister(
-                    instruction,
-                    instruction.Source2,
-                    inputRegisters,
-                    tempRegisters);
-                AddVertexDestinationRegister(
-                    instruction,
-                    scalar: true,
-                    tempRegisters,
-                    outputRegisters);
-            }
-        }
-
-        return new VertexRegisterUsage(
-            inputRegisters.ToArray(),
-            tempRegisters.ToArray(),
-            outputRegisters.ToArray());
-    }
-
-    private static void AddVertexSourceRegister(
-        RsxVertexInstruction instruction,
-        uint source,
-        ISet<int> inputRegisters,
-        ISet<int> tempRegisters)
-    {
-        switch (RsxVertexInstruction.SourceRegisterKind(source))
-        {
-            case RsxVertexRegisterType.Temporary:
-                tempRegisters.Add((int)((source >> 2) & 0x3f));
-                break;
-            case RsxVertexRegisterType.Input:
-                inputRegisters.Add((byte)instruction.InputAttribute);
-                break;
-        }
-    }
-
-    private static void AddVertexDestinationRegister(
-        RsxVertexInstruction instruction,
-        bool scalar,
-        ISet<int> tempRegisters,
-        ISet<int> outputRegisters)
-    {
-        bool writesOutput = scalar
-            ? instruction.ScaResult
-            : instruction.VecResult;
-        if (writesOutput && instruction.Result != RsxVertexResult.None)
-            outputRegisters.Add((byte)instruction.Result);
-
-        int temp = scalar
-            ? instruction.ScaDestTemp
-            : instruction.VecDestTemp;
-        if (temp != 0x3f)
-            tempRegisters.Add(temp);
-    }
-
     private static void AddInvalidConstantBlocker(
         RsxVertexInstruction instruction,
         ISet<string> blockers)
@@ -1167,11 +1046,6 @@ internal static class RsxVertexMslLowerer
         foreach (int register in registers)
             builder.AppendLine($"  {bank}[{register}] = {value};");
     }
-
-    private readonly record struct VertexRegisterUsage(
-        int[] InputRegisters,
-        int[] TempRegisters,
-        int[] OutputRegisters);
 
     private readonly record struct VertexSlotValue(
         string Name,
