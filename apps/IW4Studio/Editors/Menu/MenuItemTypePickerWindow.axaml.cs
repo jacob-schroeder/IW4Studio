@@ -1,6 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using IW4.Assets.Assets.Menu;
+using IW4.Game.Assets.Menu;
 
 namespace IW4.Studio.Desktop.Editors.Menu;
 

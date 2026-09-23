@@ -1,4 +1,4 @@
-using IW4.Assets.Assets.Image;
+using IW4.Game.Assets.Image;
 
 namespace MapConverter.Game.IW3.PC.Images;
 

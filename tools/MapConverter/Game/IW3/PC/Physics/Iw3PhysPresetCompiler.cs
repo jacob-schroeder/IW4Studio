@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Text;
-using IW4.Assets.Assets.Physics;
+using IW4.Game.Assets.Physics;
 using MapConverter.Game.IW3.PC.Extraction;
 
 namespace MapConverter.Game.IW3.PC.Physics;

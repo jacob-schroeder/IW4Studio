@@ -1,6 +1,6 @@
 using System.Text.Json;
-using IW4.Assets.Assets.Material;
-using IW4.Assets.Assets.TechniqueSet;
+using IW4.Game.Assets.Material;
+using IW4.Game.Assets.TechniqueSet;
 
 namespace Iw4Radiant.Materials;
 

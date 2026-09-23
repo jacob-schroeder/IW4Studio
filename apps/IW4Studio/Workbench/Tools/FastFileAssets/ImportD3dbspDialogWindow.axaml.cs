@@ -1,7 +1,7 @@
 using System.Globalization;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using IW4.Assets.D3dbsp;
+using IW4.Formats.D3dbsp;
 using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;

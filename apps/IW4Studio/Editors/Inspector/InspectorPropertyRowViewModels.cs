@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using Avalonia.Media;
-using IW4.FastFiles.Zone;
+using IW4.Game.Zone;
 using IW4.Studio.Desktop.ViewModels;
 
 namespace IW4.Studio.Desktop.Editors.Inspector;

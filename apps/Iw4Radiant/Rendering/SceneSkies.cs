@@ -1,5 +1,5 @@
 using System.Numerics;
-using IW4.Assets.Assets.Material;
+using IW4.Game.Assets.Material;
 using Iw4Radiant.Materials;
 using Silk.NET.OpenGL;
 

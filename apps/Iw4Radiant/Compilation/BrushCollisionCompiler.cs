@@ -1,11 +1,11 @@
 using System.Numerics;
-using IW4.Assets.Assets.ColMap;
-using IW4.Assets.Assets.MapEnts;
-using IW4.Assets.Assets.Physics;
+using IW4.Game.Assets.ColMap;
+using IW4.Game.Assets.MapEnts;
+using IW4.Game.Assets.Physics;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Editing;
-using Bounds = IW4.Assets.Math.Bounds;
-using Vec3 = IW4.Assets.Math.Vec3;
+using Bounds = IW4.Game.Math.Bounds;
+using Vec3 = IW4.Game.Math.Vec3;
 
 namespace Iw4Radiant.Compilation;
 

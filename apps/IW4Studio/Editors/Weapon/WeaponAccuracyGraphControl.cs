@@ -2,7 +2,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
-using Vec2 = IW4.Assets.Math.Vec2;
+using Vec2 = IW4.Game.Math.Vec2;
 
 namespace IW4.Studio.Desktop.Editors.Weapon;
 

@@ -1,4 +1,4 @@
-using IW4.Assets.Zone;
+using IW4.Game.Zone;
 using IW4.Gsc.Analysis;
 using IW4.Gsc.Syntax;
 using IW4.Gsc.Workspace;

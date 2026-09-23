@@ -3,7 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
-using IW4.Assets.Assets.TechniqueSet;
+using IW4.Game.Assets.TechniqueSet;
 using IW4.Studio.Desktop.ViewModels;
 
 namespace IW4.Studio.Desktop.Editors.MaterialTechset;

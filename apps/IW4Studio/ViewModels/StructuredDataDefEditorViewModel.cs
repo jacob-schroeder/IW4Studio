@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Text;
-using IW4.Assets.Assets.StructuredData;
-using IW4.FastFiles.Zone;
+using IW4.Game.Assets.StructuredData;
+using IW4.Game.Zone;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Desktop.Editors.StructuredData;

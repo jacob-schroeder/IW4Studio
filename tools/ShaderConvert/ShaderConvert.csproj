@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../MapConverter/MapConverter.csproj" />
+    <ProjectReference Include="../../src/Authoring/IW4.Linker/IW4.Linker.csproj" />
   </ItemGroup>
 
   <Target Name="BuildHlslFrontend" BeforeTargets="CoreCompile" Condition="$([MSBuild]::IsOSPlatform('OSX'))"

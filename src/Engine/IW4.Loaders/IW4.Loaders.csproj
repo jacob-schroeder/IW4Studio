@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\IW4.Game\IW4.Game.csproj" />
+    <ProjectReference Include="..\IW4.Runtime\IW4.Runtime.csproj" />
+    <ProjectReference Include="..\IW4.Streaming\IW4.Streaming.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

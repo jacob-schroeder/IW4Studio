@@ -79,7 +79,7 @@ public sealed record MenuPreviewBorder(
     MenuColorValue Color,
     float ThicknessX,
     float ThicknessY,
-    IW4.Assets.Assets.Menu.WindowBorder Border) :
+    IW4.Game.Assets.Menu.WindowBorder Border) :
     MenuPreviewPrimitive(NodeId, Placement, ZIndex);
 
 public sealed record MenuPreviewMaterial(

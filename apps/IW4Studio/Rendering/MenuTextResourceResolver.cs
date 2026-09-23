@@ -1,7 +1,7 @@
-using IW4.Assets.Assets;
-using IW4.Assets.Assets.Font;
-using IW4.Assets.Assets.Localize;
-using IW4.FastFiles.Zone;
+using IW4.Game.Assets;
+using IW4.Game.Assets.Font;
+using IW4.Game.Assets.Localize;
+using IW4.Game.Zone;
 using IW4.Runtime.Assets;
 using IW4.Studio.Documents;
 

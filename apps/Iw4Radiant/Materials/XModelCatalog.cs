@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Collections.Concurrent;
-using IW4.Assets.Assets.Material;
+using IW4.Game.Assets.Material;
 
 namespace Iw4Radiant.Materials;
 

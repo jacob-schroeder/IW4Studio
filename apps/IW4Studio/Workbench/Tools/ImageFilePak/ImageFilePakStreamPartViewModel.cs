@@ -1,5 +1,5 @@
-using IW4.Assets.Assets.Image;
-using IW4.FastFiles.Database.Streaming;
+using IW4.Game.Assets.Image;
+using IW4.Game.Database.Streaming;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
 

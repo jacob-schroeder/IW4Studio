@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using Avalonia.Threading;
-using IW4.Assets.Assets.Sound;
+using IW4.Game.Assets.Sound;
 using IW4.Runtime.Assets.Sound;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.Sound;

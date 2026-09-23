@@ -1,4 +1,4 @@
-using IW4.Assets.D3dbsp;
+using IW4.Formats.D3dbsp;
 
 namespace MapConverter.Game.IW3.PC.Models;
 

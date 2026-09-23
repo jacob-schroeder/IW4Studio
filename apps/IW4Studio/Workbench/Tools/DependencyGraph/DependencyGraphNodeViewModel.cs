@@ -1,4 +1,4 @@
-using IW4.FastFiles.Loaders.Database.Planning;
+using IW4.Loaders.Database.Planning;
 using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.DependencyGraph;

@@ -1,5 +1,5 @@
-using IW4.Assets.Assets.Fx;
-using IW4.FastFiles.Zone;
+using IW4.Game.Assets.Fx;
+using IW4.Game.Zone;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents;
 

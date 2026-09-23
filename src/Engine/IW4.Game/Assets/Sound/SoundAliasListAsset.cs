@@ -1,0 +1,17 @@
+using IW4.Game.Pointers;
+using IW4.Game.Zone;
+
+namespace IW4.Game.Assets.Sound;
+
+public sealed class SoundAliasListAsset : BaseAsset
+{
+    public const int SerializedSize = 0x0C;
+    public override XAssetType SerializedAssetType => XAssetType.Sound;
+
+    public XPointer<string> AliasNamePointer { get; init; }
+    public string? AliasName { get; init; }
+    public override string? SerializedAssetName => AliasName;
+    public XPointer<SndAlias[]> AliasesPointer { get; init; }
+    public int Count { get; init; }
+    public IReadOnlyList<SndAlias> Aliases { get; init; } = [];
+}

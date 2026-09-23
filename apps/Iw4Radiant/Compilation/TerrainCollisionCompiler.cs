@@ -1,9 +1,9 @@
 using System.Numerics;
-using IW4.Assets.Assets.ColMap;
-using IW4.Assets.Assets.Physics;
+using IW4.Game.Assets.ColMap;
+using IW4.Game.Assets.Physics;
 using Iw4Radiant.MapSource;
 using static Iw4Radiant.Compilation.BrushCollisionCompiler;
-using Vec3 = IW4.Assets.Math.Vec3;
+using Vec3 = IW4.Game.Math.Vec3;
 
 namespace Iw4Radiant.Compilation;
 

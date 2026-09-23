@@ -8,7 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\IW4.Studio\IW4.Studio.csproj" />
+    <ProjectReference Include="..\..\src\Authoring\IW4.Studio\IW4.Studio.csproj" />
+    <ProjectReference Include="..\..\src\Engine\IW4.Game\IW4.Game.csproj" />
+    <ProjectReference Include="..\..\src\Authoring\IW4.Linker\IW4.Linker.csproj" />
+    <ProjectReference Include="..\..\src\Engine\IW4.Loaders\IW4.Loaders.csproj" />
+    <ProjectReference Include="..\..\src\Engine\IW4.Runtime\IW4.Runtime.csproj" />
   </ItemGroup>
 
   <ItemGroup>

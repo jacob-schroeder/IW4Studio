@@ -35,11 +35,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\IW4.AssetExchange\IW4.AssetExchange.csproj" />
-    <ProjectReference Include="..\..\src\IW4.Gsc\IW4.Gsc.csproj" />
-    <ProjectReference Include="..\..\src\IW4.Studio\IW4.Studio.csproj" />
-    <ProjectReference Include="..\..\src\IW4.Render.Metal\IW4.Render.Metal.csproj" />
-    <ProjectReference Include="..\..\src\IW4.Render.OpenGl\IW4.Render.OpenGl.csproj" />
+    <ProjectReference Include="..\..\src\Authoring\IW4.Formats\IW4.Formats.csproj" />
+    <ProjectReference Include="..\..\src\Authoring\IW4.Gsc\IW4.Gsc.csproj" />
+    <ProjectReference Include="..\..\src\Authoring\IW4.Studio\IW4.Studio.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\IW4.Render.Metal\IW4.Render.Metal.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\IW4.Render.OpenGl\IW4.Render.OpenGl.csproj" />
+    <ProjectReference Include="..\..\src\Engine\IW4.Game\IW4.Game.csproj" />
+    <ProjectReference Include="..\..\src\Authoring\IW4.Linker\IW4.Linker.csproj" />
+    <ProjectReference Include="..\..\src\Engine\IW4.Loaders\IW4.Loaders.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\IW4.Render\IW4.Render.csproj" />
+    <ProjectReference Include="..\..\src\Engine\IW4.Runtime\IW4.Runtime.csproj" />
     <AvaloniaResource Include="..\..\Resources\logo.png" Link="Resources\logo.png" />
     <AvaloniaResource Include="..\..\Resources\logo_simple.png" Link="Resources\logo_simple.png" />
     <AvaloniaResource Include="..\..\Resources\logo.svg" Link="Resources\logo.svg" />

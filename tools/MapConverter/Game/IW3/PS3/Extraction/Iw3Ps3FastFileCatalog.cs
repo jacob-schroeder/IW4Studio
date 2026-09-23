@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
-using IW4.Assets.Assets.Image;
+using IW4.Game.Assets.Image;
 using MapConverter.Game.IW3.PC.Extraction;
 using MapConverter.Game.IW3.PS3.FastFiles;
 using static MapConverter.Game.IW3.PC.Extraction.Iw3PcSourceLibrary;

@@ -6,7 +6,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
-using IW4.AssetExchange.XModel;
+using IW4.Formats.XModel;
 using IW4.Render;
 using IW4.Render.OpenGl.XModel;
 using IW4.Studio.Desktop.Editors.AssetReferences;

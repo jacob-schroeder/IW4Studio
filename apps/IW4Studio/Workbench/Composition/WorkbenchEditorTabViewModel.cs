@@ -1,6 +1,6 @@
 using System.ComponentModel;
 using Avalonia.Controls;
-using IW4.Assets.D3dbsp;
+using IW4.Formats.D3dbsp;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;

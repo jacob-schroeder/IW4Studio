@@ -2,9 +2,9 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Numerics;
 using System.Text.Json;
-using IW4.AssetExchange.SourceFormat.Material;
-using IW4.Assets.Assets.Material;
-using IW4.Assets.Assets.TechniqueSet;
+using IW4.Formats.SourceFormat.Material;
+using IW4.Game.Assets.Material;
+using IW4.Game.Assets.TechniqueSet;
 
 namespace Iw4Radiant.Materials;
 

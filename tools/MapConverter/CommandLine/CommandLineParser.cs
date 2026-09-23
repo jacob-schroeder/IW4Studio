@@ -1,5 +1,5 @@
 using System.Globalization;
-using IW4.FastFiles.Database.Streaming;
+using IW4.Game.Database.Streaming;
 
 namespace MapConverter.CommandLine;
 

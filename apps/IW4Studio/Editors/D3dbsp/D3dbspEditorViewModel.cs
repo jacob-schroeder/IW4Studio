@@ -1,6 +1,6 @@
-using IW4.Assets.Assets.GfxMap;
-using IW4.Assets.D3dbsp;
-using IW4.FastFiles.Zone;
+using IW4.Game.Assets.GfxMap;
+using IW4.Formats.D3dbsp;
+using IW4.Game.Zone;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents;
 

@@ -1,8 +1,8 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
-using IW4.AssetExchange.SourceFormat.Image;
-using IW4.Assets.Assets.Image;
+using IW4.Formats.SourceFormat.Image;
+using IW4.Game.Assets.Image;
 using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Editors.Material;

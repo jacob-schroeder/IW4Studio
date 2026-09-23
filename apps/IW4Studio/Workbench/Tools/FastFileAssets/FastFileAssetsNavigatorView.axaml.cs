@@ -3,7 +3,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
-using IW4.FastFiles.Zone;
+using IW4.Game.Zone;
 using IW4.Studio.Desktop.Editors.D3dbsp;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;

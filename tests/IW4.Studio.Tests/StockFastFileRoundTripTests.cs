@@ -1,15 +1,15 @@
 using System.Security.Cryptography;
-using IW4.Assets.Assets;
-using IW4.Assets.Assets.Image;
-using IW4.Assets.Assets.LightDef;
-using IW4.Assets.Assets.Localize;
-using IW4.Assets.Assets.XAnim;
-using IW4.FastFiles.Database;
-using IW4.FastFiles.Database.Streaming;
-using IW4.FastFiles.Loaders.Database;
-using IW4.FastFiles.Pointers;
-using IW4.FastFiles.Strings;
-using IW4.FastFiles.Zone;
+using IW4.Game.Assets;
+using IW4.Game.Assets.Image;
+using IW4.Game.Assets.LightDef;
+using IW4.Game.Assets.Localize;
+using IW4.Game.Assets.XAnim;
+using IW4.Game.Database;
+using IW4.Game.Database.Streaming;
+using IW4.Loaders.Database;
+using IW4.Game.Pointers;
+using IW4.Game.ScriptStrings;
+using IW4.Game.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.Linking;
 using IW4.Linker.Packaging;
@@ -59,7 +59,7 @@ public sealed class StockFastFileRoundTripTests
                 (_, loaded) =>
                 {
                     ZoneObjectFile objectFile = Assert.IsType<ZoneObjectFile>(
-                        loaded.ZoneObjectFile);
+                        loaded.FreezeZoneObjectFile());
                     SourceLayoutRelinkResult relink =
                         new SourceLayoutRelinker().Relink(objectFile);
                     Assert.True(

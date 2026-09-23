@@ -1,7 +1,7 @@
-using IW4.AssetExchange.SourceFormat.XAnim;
-using IW4.Assets.Assets.XAnim;
-using IW4.Assets.Assets.XModel;
-using IW4.FastFiles.Zone;
+using IW4.Formats.SourceFormat.XAnim;
+using IW4.Game.Assets.XAnim;
+using IW4.Game.Assets.XModel;
+using IW4.Game.Zone;
 using IW4.Render.EditorPreview;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents;

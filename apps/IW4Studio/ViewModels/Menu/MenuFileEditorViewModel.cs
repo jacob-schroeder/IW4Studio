@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using Avalonia.Threading;
-using IW4.Assets.Assets.Menu;
-using IW4.FastFiles.Zone;
+using IW4.Game.Assets.Menu;
+using IW4.Game.Zone;
 using IW4.Runtime.Assets;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.AssetReferences;

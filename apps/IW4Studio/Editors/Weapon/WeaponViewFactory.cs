@@ -1,4 +1,4 @@
-using IW4.FastFiles.Zone;
+using IW4.Game.Zone;
 using IW4.Studio.Desktop.Editors.AssetReferences;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents;

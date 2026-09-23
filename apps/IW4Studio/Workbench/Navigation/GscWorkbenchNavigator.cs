@@ -1,4 +1,4 @@
-using IW4.FastFiles.Zone;
+using IW4.Game.Zone;
 using IW4.Gsc.Syntax;
 using IW4.Gsc.Workspace;
 using IW4.Studio.Desktop.Editors;

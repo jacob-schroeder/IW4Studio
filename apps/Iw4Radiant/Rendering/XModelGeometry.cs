@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Numerics;
-using IW4.AssetExchange.XModel;
+using IW4.Formats.XModel;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Materials;

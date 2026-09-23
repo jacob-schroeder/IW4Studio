@@ -1,7 +1,7 @@
-using IW4.Assets.Assets.Image;
-using IW4.Assets.Assets.Material;
-using IW4.Assets.Assets.TechniqueSet;
-using IW4.FastFiles.Database.Streaming;
+using IW4.Game.Assets.Image;
+using IW4.Game.Assets.Material;
+using IW4.Game.Assets.TechniqueSet;
+using IW4.Game.Database.Streaming;
 
 namespace MapConverter.Bootstrap.Material;
 

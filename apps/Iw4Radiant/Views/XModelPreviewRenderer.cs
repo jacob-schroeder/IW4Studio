@@ -3,8 +3,8 @@ using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
-using IW4.AssetExchange.XModel;
-using IW4.Assets.Assets.Material;
+using IW4.Formats.XModel;
+using IW4.Game.Assets.Material;
 using Iw4Radiant.Materials;
 
 namespace Iw4Radiant.Views;

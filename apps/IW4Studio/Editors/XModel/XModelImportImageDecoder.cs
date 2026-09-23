@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using IW4.AssetExchange.XModel;
+using IW4.Formats.XModel;
 using SkiaSharp;
 
 namespace IW4.Studio.Desktop.Editors.XModel;

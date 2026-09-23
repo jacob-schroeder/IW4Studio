@@ -1,7 +1,7 @@
-using IW4.Assets.Assets.ColMap;
-using IW4.Assets.Assets.Physics;
-using IW4.Assets.Assets.XModel;
-using IW4.Assets.Math;
+using IW4.Game.Assets.ColMap;
+using IW4.Game.Assets.Physics;
+using IW4.Game.Assets.XModel;
+using IW4.Game.Math;
 
 namespace MapConverter.Game.IW3.PC.DynamicEntities;
 

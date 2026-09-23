@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text;
-using IW4.Assets.D3dbsp;
+using IW4.Formats.D3dbsp;
 using static MapConverter.Game.IW3.PC.Conversion.Iw3WorldFxCompiler;
 
 namespace MapConverter.Game.IW3.PC.Conversion;

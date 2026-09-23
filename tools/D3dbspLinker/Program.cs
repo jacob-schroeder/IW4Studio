@@ -1,5 +1,5 @@
 using System.Globalization;
-using IW4.Assets.D3dbsp;
+using IW4.Formats.D3dbsp;
 using D3dbspLinker.Conversion;
 using D3dbspLinker.Inspection;
 

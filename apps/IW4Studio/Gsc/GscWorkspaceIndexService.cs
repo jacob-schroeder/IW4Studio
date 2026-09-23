@@ -1,7 +1,7 @@
-using IW4.AssetExchange.RawFile;
-using IW4.Assets.Assets.RawFile;
-using IW4.FastFiles.Loaders.Database;
-using IW4.FastFiles.Zone;
+using IW4.Formats.RawFile;
+using IW4.Game.Assets.RawFile;
+using IW4.Loaders.Database;
+using IW4.Game.Zone;
 using IW4.Gsc.Syntax;
 using IW4.Gsc.Workspace;
 using IW4.Runtime.Assets;

@@ -1,5 +1,5 @@
 using System.Globalization;
-using IW4.Assets.Assets.TechniqueSet;
+using IW4.Game.Assets.TechniqueSet;
 using IW4.Render;
 using IW4.Render.Materials;
 using IW4.Render.Techniques;

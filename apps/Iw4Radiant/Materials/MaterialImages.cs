@@ -1,7 +1,7 @@
 using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
-using IW4.AssetExchange.SourceFormat.Image;
+using IW4.Formats.SourceFormat.Image;
 using Vector3 = System.Numerics.Vector3;
 
 namespace Iw4Radiant.Materials;

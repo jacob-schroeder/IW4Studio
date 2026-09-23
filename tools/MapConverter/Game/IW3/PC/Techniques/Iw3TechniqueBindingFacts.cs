@@ -1,4 +1,4 @@
-using IW4.Assets.Assets.TechniqueSet;
+using IW4.Game.Assets.TechniqueSet;
 
 namespace MapConverter.Game.IW3.PC.Techniques;
 

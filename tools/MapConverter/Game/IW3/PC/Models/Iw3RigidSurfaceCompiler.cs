@@ -1,8 +1,8 @@
-using IW4.Assets.Codecs.XModel;
+using IW4.Game.Codecs.XModel;
 using System.Numerics;
-using IW4.Assets.Assets.GfxMap;
-using IW4.Assets.Assets.XModel;
-using IW4.AssetExchange.XModel;
+using IW4.Game.Assets.GfxMap;
+using IW4.Game.Assets.XModel;
+using IW4.Formats.XModel;
 
 namespace MapConverter.Game.IW3.PC.Models;
 

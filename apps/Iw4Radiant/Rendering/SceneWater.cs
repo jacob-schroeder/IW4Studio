@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Numerics;
-using IW4.AssetExchange.SourceFormat.Material;
-using IW4.Assets.Assets.Material;
+using IW4.Formats.SourceFormat.Material;
+using IW4.Game.Assets.Material;
 using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;
 using Silk.NET.OpenGL;

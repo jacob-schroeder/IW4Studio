@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Reflection;
-using IW4.Assets.Assets.Menu;
-using IW4.FastFiles.Zone;
+using IW4.Game.Assets.Menu;
+using IW4.Game.Zone;
 using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Documents.MenuEditing;
 

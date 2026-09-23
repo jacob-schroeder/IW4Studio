@@ -1,0 +1,86 @@
+using IW4.Game.Assets.Menu;
+using IW4.Studio.Documents.MenuEditing.Behavior;
+
+namespace IW4.Studio.Documents.MenuEditing;
+
+/// <summary>Closed v1 edit set for one Menu draft.</summary>
+public abstract record MenuEdit;
+
+public sealed record ReplaceMenuSettingsEdit(MenuSettingsValue Value) : MenuEdit;
+
+public sealed record ReplaceRootWindowEdit(MenuWindowValue Value) : MenuEdit;
+
+/// <summary>
+/// Atomically replaces the MenuDef event hooks and ordered key handlers.
+/// Window and scalar MenuDef fields deliberately use separate edits.
+/// </summary>
+public sealed record ReplaceMenuBehaviorEdit(
+    MenuDefinitionBehaviorBindings Value) : MenuEdit;
+
+public sealed record ReplaceItemEdit(
+    MenuNodeId ItemId,
+    MenuItemValue Value) : MenuEdit;
+
+public sealed record ReplaceItemPayloadEdit(
+    MenuNodeId ItemId,
+    MenuItemValue Value) : MenuEdit;
+
+public sealed record ReplaceItemWindowEdit(
+    MenuNodeId ItemId,
+    MenuWindowValue Value) : MenuEdit;
+
+/// <summary>
+/// Atomically replaces only the selected ItemDef's event, key, and expression
+/// behavior. Scalar ItemDef and payload edits deliberately use separate edits.
+/// </summary>
+public sealed record ReplaceItemBehaviorEdit(
+    MenuNodeId ItemId,
+    MenuItemBehaviorBindings Value) : MenuEdit;
+
+public sealed record AddMenuItemEdit(
+    ItemDefType Type,
+    int? InsertIndex = null,
+    string? Name = null) : MenuEdit;
+
+public sealed record RemoveMenuItemEdit(MenuNodeId ItemId) : MenuEdit;
+
+public sealed record MoveMenuItemEdit(
+    MenuNodeId ItemId,
+    int DestinationIndex) : MenuEdit;
+
+public sealed record DuplicateMenuItemEdit(
+    MenuNodeId ItemId,
+    int? InsertIndex,
+    float OffsetX,
+    float OffsetY) : MenuEdit;
+
+public sealed record ChangeMenuItemTypeEdit(
+    MenuNodeId ItemId,
+    ItemDefType Type) : MenuEdit;
+
+/// <summary>Closed v1 edit set for an ordered MenuFile registration list.</summary>
+public abstract record MenuFileEdit;
+
+public sealed record AddExistingMenuRegistrationEdit(
+    string MenuName,
+    int? InsertIndex = null) : MenuFileEdit;
+
+public sealed record RetargetMenuFileRegistrationEdit(
+    MenuRegistrationId RegistrationId,
+    string MenuName) : MenuFileEdit;
+
+public sealed record RemoveMenuFileRegistrationEdit(
+    MenuRegistrationId RegistrationId) : MenuFileEdit;
+
+public sealed record MoveMenuFileRegistrationEdit(
+    MenuRegistrationId RegistrationId,
+    int DestinationIndex) : MenuFileEdit;
+
+public sealed record DuplicateMenuFileRegistrationEdit(
+    MenuRegistrationId RegistrationId,
+    string NewMenuName,
+    int? InsertIndex = null) : MenuFileEdit;
+
+public sealed record EditMenuFileRegistrationMenuEdit(
+    MenuRegistrationId RegistrationId,
+    MenuEdit Edit) : MenuFileEdit;

@@ -1,6 +1,6 @@
 using System.Numerics;
-using IW4.AssetExchange.SourceFormat.Material;
-using IW4.Assets.Assets.GfxMap;
+using IW4.Formats.SourceFormat.Material;
+using IW4.Game.Assets.GfxMap;
 
 namespace Iw4Radiant.MapSource;
 

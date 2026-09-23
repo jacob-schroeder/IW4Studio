@@ -1,5 +1,5 @@
-using IW4.AssetExchange.RawFile;
-using IW4.FastFiles.Zone;
+using IW4.Formats.RawFile;
+using IW4.Game.Zone;
 using IW4.Gsc.Analysis;
 using IW4.Gsc.BuiltIns;
 using IW4.Gsc.Syntax;
@@ -86,7 +86,7 @@ public sealed class RawFileEditorViewModel
             : new GscEditorLanguageSession(gscWorkspace);
         _gscSourceNavigator = gscSourceNavigator;
         _gscUsagesPresenter = gscUsagesPresenter;
-        if (editorSession.Entry.AssetType != IW4.FastFiles.Zone.XAssetType.RawFile)
+        if (editorSession.Entry.AssetType != IW4.Game.Zone.XAssetType.RawFile)
             throw new InvalidDataException("The RawFile view model can host only RawFile editor sessions.");
 
         switch (editorSession.Mode)

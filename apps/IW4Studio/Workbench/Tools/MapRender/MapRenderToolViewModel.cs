@@ -1,6 +1,6 @@
 using Avalonia.Media.Imaging;
-using IW4.Assets.Assets.Image;
-using IW4.Assets.Assets.Material;
+using IW4.Game.Assets.Image;
+using IW4.Game.Assets.Material;
 using IW4.Render.Textures;
 using IW4.Runtime.Assets.Images;
 using IW4.Studio.Desktop.Rendering;

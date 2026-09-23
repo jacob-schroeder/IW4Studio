@@ -1,4 +1,4 @@
-using IW4.Assets.Assets.Menu;
+using IW4.Game.Assets.Menu;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents.MenuEditing.Behavior;
 using IW4.Studio.Documents.MenuEditing.Behavior.Expressions;

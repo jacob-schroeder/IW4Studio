@@ -1,0 +1,27 @@
+using IW4.Game.Math;
+using IW4.Game.Pointers;
+using IW4.Game.Zone;
+
+namespace IW4.Game.Assets.ComWorld;
+
+public sealed class ComWorldAsset : BaseAsset
+{
+    public const int SerializedSize = 0x10;
+
+    public override XAssetType SerializedAssetType => XAssetType.ComMap;
+
+    // 0x00: XString name.
+    public XPointer<string> NamePointer { get; init; }
+    public string? Name { get; init; }
+    public override string? SerializedAssetName => Name;
+
+    // 0x04: ComWorld.isInUse.
+    public int IsInUse { get; init; }
+
+    // 0x08: ComWorld.primaryLightCount.
+    public int PrimaryLightCount { get; init; }
+
+    // 0x0C: optional inline ComPrimaryLight[primaryLightCount] payload.
+    public XPointer<ComPrimaryLight[]> PrimaryLightsPointer { get; init; }
+    public IReadOnlyList<ComPrimaryLight> PrimaryLights { get; init; } = [];
+}

@@ -1,5 +1,5 @@
-using IW4.AssetExchange.Font;
-using IW4.Assets.Assets.Font;
+using IW4.Formats.Font;
+using IW4.Game.Assets.Font;
 using IW4.Render.Textures;
 using IW4.Runtime.Assets.Images;
 using SkiaSharp;

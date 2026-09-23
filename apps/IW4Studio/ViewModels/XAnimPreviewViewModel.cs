@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Avalonia.Threading;
-using IW4.AssetExchange.SourceFormat.XAnim;
+using IW4.Formats.SourceFormat.XAnim;
 using IW4.Render.EditorPreview;
 
 namespace IW4.Studio.Desktop.ViewModels;

@@ -1,5 +1,5 @@
 using System.Globalization;
-using IW4.FastFiles.Zone;
+using IW4.Game.Zone;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Documents;
 

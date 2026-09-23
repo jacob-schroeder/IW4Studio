@@ -1,5 +1,5 @@
-using IW4.Assets.Assets.Material;
-using IW4.Assets.Assets.TechniqueSet;
+using IW4.Game.Assets.Material;
+using IW4.Game.Assets.TechniqueSet;
 using MapConverter.Game.IW3.PC.Materials;
 using MapConverter.Game.IW3.PC.Shaders;
 

@@ -1,6 +1,6 @@
 using System.Numerics;
-using IW4.Assets.Assets.GfxMap;
-using IW4.Assets.Codecs.GfxMap;
+using IW4.Game.Assets.GfxMap;
+using IW4.Game.Codecs.GfxMap;
 
 namespace Iw4Radiant.Compilation.Lighting;
 

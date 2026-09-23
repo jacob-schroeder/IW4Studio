@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using Avalonia.Controls;
-using IW4.AssetExchange.SourceFormat.Material;
+using IW4.Formats.SourceFormat.Material;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;

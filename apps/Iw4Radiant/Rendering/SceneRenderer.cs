@@ -1,9 +1,9 @@
 using System.Numerics;
 using Avalonia;
 using Avalonia.OpenGL;
-using IW4.AssetExchange.SourceFormat.Material;
-using IW4.Assets.Assets.Material;
-using IW4.Assets.Assets.GfxMap;
+using IW4.Formats.SourceFormat.Material;
+using IW4.Game.Assets.Material;
+using IW4.Game.Assets.GfxMap;
 using Iw4Radiant.Compilation;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;

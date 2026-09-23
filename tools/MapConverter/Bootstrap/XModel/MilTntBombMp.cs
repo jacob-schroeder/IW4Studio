@@ -1,6 +1,6 @@
-using IW4.Assets.Assets.XModel;
-using IW4.Assets.Math;
-using IW4.FastFiles.Strings;
+using IW4.Game.Assets.XModel;
+using IW4.Game.Math;
+using IW4.Game.ScriptStrings;
 using MapConverter.Bootstrap.Material;
 
 namespace MapConverter.Bootstrap.XModel;

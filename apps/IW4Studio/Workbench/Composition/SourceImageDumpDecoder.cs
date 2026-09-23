@@ -1,5 +1,5 @@
-using IW4.AssetExchange.SourceFormat.Image;
-using IW4.Assets.Assets.Image;
+using IW4.Formats.SourceFormat.Image;
+using IW4.Game.Assets.Image;
 using IW4.Render.Textures;
 using IW4.Runtime.Assets.Images;
 using IW4.Studio.Desktop.Rendering;

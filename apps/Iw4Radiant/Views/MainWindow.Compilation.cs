@@ -1,6 +1,6 @@
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
-using IW4.AssetExchange.SourceFormat.Material;
+using IW4.Formats.SourceFormat.Material;
 using Iw4Radiant.Compilation;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;

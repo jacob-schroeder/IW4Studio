@@ -1,6 +1,6 @@
-using IW4.FastFiles.Loaders.Database;
-using IW4.Assets.Assets.ColMap;
-using IW4.Assets.Assets.GfxMap;
+using IW4.Loaders.Database;
+using IW4.Game.Assets.ColMap;
+using IW4.Game.Assets.GfxMap;
 using IW4.Render;
 using IW4.Render.Assets;
 using IW4.Render.Resources;

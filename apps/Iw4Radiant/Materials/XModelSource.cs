@@ -1,5 +1,5 @@
 using System.Numerics;
-using IW4.AssetExchange.XModel;
+using IW4.Formats.XModel;
 
 namespace Iw4Radiant.Materials;
 

@@ -2,7 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
-using IW4.Assets.Assets.Menu;
+using IW4.Game.Assets.Menu;
 using IW4.Studio.Desktop.ViewModels.Menu;
 
 namespace IW4.Studio.Desktop.Editors.Menu;

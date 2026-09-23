@@ -1,4 +1,4 @@
-using IW4.AssetExchange.SourceFormat.Material;
+using IW4.Formats.SourceFormat.Material;
 using System.Numerics;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Materials;

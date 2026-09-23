@@ -1,4 +1,4 @@
-using IW4.Assets.Assets.Image;
+using IW4.Game.Assets.Image;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
 using IW4.Studio.Documents;

@@ -1,6 +1,6 @@
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
-using IW4.FastFiles.Zone;
+using IW4.Game.Zone;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents;
 using IW4.Studio.Documents.AssetReferences;

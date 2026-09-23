@@ -2,9 +2,9 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using IW4.Assets.Assets.Image;
-using IW4.Assets.Assets.Material;
-using IW4.Assets.Assets.TechniqueSet;
+using IW4.Game.Assets.Image;
+using IW4.Game.Assets.Material;
+using IW4.Game.Assets.TechniqueSet;
 using MapConverter.Game.IW3.PC.Images;
 using MapConverter.Game.IW3.PC.Techniques;
 

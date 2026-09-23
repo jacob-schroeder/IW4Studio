@@ -1,7 +1,7 @@
-using IW4.Assets.Assets;
-using IW4.Assets.Assets.Image;
-using IW4.Assets.Assets.Material;
-using IW4.Assets.Assets.XModel;
+using IW4.Game.Assets;
+using IW4.Game.Assets.Image;
+using IW4.Game.Assets.Material;
+using IW4.Game.Assets.XModel;
 using IW4.Linker.Contracts;
 using MapConverter.Bootstrap.XModel;
 

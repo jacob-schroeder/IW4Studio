@@ -1,5 +1,5 @@
 using Avalonia.Controls;
-using IW4.FastFiles.Zone;
+using IW4.Game.Zone;
 using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Documents.AssetReferences;
 using IW4.Studio.Desktop.Rendering;

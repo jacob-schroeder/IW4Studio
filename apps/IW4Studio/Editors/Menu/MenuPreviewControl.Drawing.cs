@@ -410,15 +410,15 @@ public sealed partial class MenuPreviewControl
         IBrush brush = Brush(border.Color);
         switch (border.Border)
         {
-            case IW4.Assets.Assets.Menu.WindowBorder.WINDOW_BORDER_HORZ:
-            case IW4.Assets.Assets.Menu.WindowBorder.WINDOW_BORDER_KCGRADIENT:
+            case IW4.Game.Assets.Menu.WindowBorder.WINDOW_BORDER_HORZ:
+            case IW4.Game.Assets.Menu.WindowBorder.WINDOW_BORDER_KCGRADIENT:
                 DrawHorizontalBorder(
                     context,
                     brush,
                     bounds,
                     verticalThickness);
                 break;
-            case IW4.Assets.Assets.Menu.WindowBorder.WINDOW_BORDER_VERT:
+            case IW4.Game.Assets.Menu.WindowBorder.WINDOW_BORDER_VERT:
                 DrawVerticalBorder(
                     context,
                     brush,

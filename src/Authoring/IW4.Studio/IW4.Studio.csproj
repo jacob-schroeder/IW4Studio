@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\IW4.Formats\IW4.Formats.csproj" />
+    <ProjectReference Include="..\..\Engine\IW4.Game\IW4.Game.csproj" />
+    <ProjectReference Include="..\..\Engine\IW4.Loaders\IW4.Loaders.csproj" />
+    <ProjectReference Include="..\IW4.Linker\IW4.Linker.csproj" />
+    <ProjectReference Include="..\IW4.Unlinker\IW4.Unlinker.csproj" />
+    <ProjectReference Include="..\..\Engine\IW4.Runtime\IW4.Runtime.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

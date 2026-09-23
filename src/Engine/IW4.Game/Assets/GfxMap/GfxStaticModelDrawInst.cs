@@ -1,0 +1,25 @@
+using IW4.Game.Assets.Image;
+using IW4.Game.Assets.Material;
+using IW4.Game.Assets.XModel;
+using IW4.Game.Pointers;
+using IW4.Game.Zone;
+
+namespace IW4.Game.Assets.GfxMap;
+
+public sealed class GfxStaticModelDrawInst
+{
+    public const int SerializedSize = 0x2C;
+    // PS3 static draw tokens reserve four bits for the surface within a LOD.
+    public const int MaxLodSurfaceCount = 16;
+
+    public GfxPackedPlacement Placement { get; init; } = new();
+    public XPointer<XModelAsset> ModelPointer { get; init; }
+    public XModelAsset? Model { get; init; }
+    public ushort CullDist { get; init; }
+    public ushort LightingHandle { get; init; }
+    public byte ReflectionProbeIndex { get; init; }
+    public byte PrimaryLightIndex { get; init; }
+    public GfxStaticModelDrawInstFlags Flags { get; init; }
+    public byte FirstMaterialSkinIndex { get; init; }
+    public GfxColor GroundLighting { get; init; } // 0x28
+}

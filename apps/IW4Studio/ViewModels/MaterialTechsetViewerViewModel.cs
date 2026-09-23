@@ -1,5 +1,5 @@
 using System.Text;
-using IW4.Assets.Assets.TechniqueSet;
+using IW4.Game.Assets.TechniqueSet;
 
 namespace IW4.Studio.Desktop.ViewModels;
 

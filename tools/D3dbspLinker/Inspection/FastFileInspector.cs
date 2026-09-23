@@ -1,9 +1,9 @@
-using IW4.Assets.Assets.ColMap;
-using IW4.Assets.Assets.ComWorld;
-using IW4.Assets.Assets.FxMap;
-using IW4.Assets.Assets.GameMap;
-using IW4.Assets.Assets.GfxMap;
-using IW4.Assets.Assets.MapEnts;
+using IW4.Game.Assets.ColMap;
+using IW4.Game.Assets.ComWorld;
+using IW4.Game.Assets.FxMap;
+using IW4.Game.Assets.GameMap;
+using IW4.Game.Assets.GfxMap;
+using IW4.Game.Assets.MapEnts;
 using IW4.Studio.Documents;
 
 namespace D3dbspLinker.Inspection;
@@ -232,8 +232,8 @@ internal static class FastFileInspector
     }
 
     private static bool HasValidBounds(
-        IW4.Assets.Math.Vec3 midpoint,
-        IW4.Assets.Math.Vec3 halfSize) =>
+        IW4.Game.Math.Vec3 midpoint,
+        IW4.Game.Math.Vec3 halfSize) =>
         float.IsFinite(midpoint.X) &&
         float.IsFinite(midpoint.Y) &&
         float.IsFinite(midpoint.Z) &&

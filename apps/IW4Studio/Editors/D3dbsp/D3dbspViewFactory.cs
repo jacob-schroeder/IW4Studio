@@ -1,5 +1,5 @@
-using IW4.Assets.D3dbsp;
-using IW4.FastFiles.Zone;
+using IW4.Formats.D3dbsp;
+using IW4.Game.Zone;
 using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Editors.D3dbsp;

@@ -4,7 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Media;
-using IW4.Assets.Assets.Weapon;
+using IW4.Game.Assets.Weapon;
 
 namespace IW4.Studio.Desktop.Editors.Weapon;
 

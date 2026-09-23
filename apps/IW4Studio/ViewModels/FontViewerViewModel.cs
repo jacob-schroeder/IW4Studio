@@ -1,8 +1,8 @@
 using System.Text;
-using IW4.AssetExchange.Font;
-using IW4.Assets.Assets.Font;
-using IW4.Assets.Assets.Menu;
-using IW4.FastFiles.Zone;
+using IW4.Formats.Font;
+using IW4.Game.Assets.Font;
+using IW4.Game.Assets.Menu;
+using IW4.Game.Zone;
 using IW4.Studio.Desktop.Documents.MenuEditing.Preview;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.Font;

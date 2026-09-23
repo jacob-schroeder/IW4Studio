@@ -1,11 +1,11 @@
-using IW4.Assets.Codecs.D3dbsp;
-using IW4.Assets.Assets.ColMap;
-using IW4.Assets.Assets.ComWorld;
-using IW4.Assets.Assets.GfxMap;
-using IW4.Assets.Assets.MapEnts;
-using IW4.Assets.Assets.Physics;
-using IW4.Assets.D3dbsp;
-using IW4.Assets.Math;
+using IW4.Formats.Codecs.D3dbsp;
+using IW4.Game.Assets.ColMap;
+using IW4.Game.Assets.ComWorld;
+using IW4.Game.Assets.GfxMap;
+using IW4.Game.Assets.MapEnts;
+using IW4.Game.Assets.Physics;
+using IW4.Formats.D3dbsp;
+using IW4.Game.Math;
 using IW4.Studio.Documents;
 
 namespace D3dbspLinker.Inspection;

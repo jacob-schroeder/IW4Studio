@@ -1,5 +1,4 @@
-using IW4.Assets.Zone;
-using IW4.FastFiles.Zone;
+using IW4.Game.Zone;
 using IW4.Runtime.Assets;
 using IW4.Runtime.Database;
 using IW4.Studio.Desktop.Workbench.Selection;

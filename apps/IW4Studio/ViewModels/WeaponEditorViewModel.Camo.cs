@@ -1,9 +1,9 @@
 using Avalonia.Media.Imaging;
-using IW4.AssetExchange.XModel;
-using IW4.Assets.Assets;
-using IW4.Assets.Assets.Material;
-using IW4.Assets.Assets.TechniqueSet;
-using IW4.Assets.Assets.XModel;
+using IW4.Formats.XModel;
+using IW4.Game.Assets;
+using IW4.Game.Assets.Material;
+using IW4.Game.Assets.TechniqueSet;
+using IW4.Game.Assets.XModel;
 using IW4.Studio.Desktop.Editors.Weapon;
 using IW4.Studio.Documents;
 

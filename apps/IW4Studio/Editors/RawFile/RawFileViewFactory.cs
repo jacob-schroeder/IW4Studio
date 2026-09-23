@@ -1,5 +1,5 @@
 using Avalonia.Controls;
-using IW4.FastFiles.Zone;
+using IW4.Game.Zone;
 using IW4.Gsc.Analysis;
 using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;

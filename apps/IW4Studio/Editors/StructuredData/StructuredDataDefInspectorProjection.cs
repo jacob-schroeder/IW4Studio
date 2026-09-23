@@ -1,5 +1,5 @@
 using System.Globalization;
-using IW4.Assets.Assets.StructuredData;
+using IW4.Game.Assets.StructuredData;
 using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents;

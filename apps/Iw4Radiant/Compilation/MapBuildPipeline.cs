@@ -98,7 +98,7 @@ internal static class MapBuildPipeline
         if (managed) start.ArgumentList.Add(linkerPath);
         foreach (string value in new[] { "to-fastfile", bspPath, templatePath, assetName, fastFilePath,
                      "--source-materials", "--compiled-lighting", "--stock-bootstrap" }) start.ArgumentList.Add(value);
-        foreach (string model in IW4.Assets.D3dbsp.D3dbspFile.Read(bspPath).GetEntities()
+        foreach (string model in IW4.Formats.D3dbsp.D3dbspFile.Read(bspPath).GetEntities()
                      .Where(entity => entity.GetValueOrDefault("classname") is "script_model" or "misc_turret")
                      .Select(entity => entity["model"]).Distinct(StringComparer.Ordinal))
         {

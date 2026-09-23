@@ -3,7 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
-using IW4.Assets.Assets.Fx;
+using IW4.Game.Assets.Fx;
 using IW4.Render.EditorPreview;
 
 namespace IW4.Studio.Desktop.Editors.Fx;

@@ -1,8 +1,8 @@
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Documents;
-using IW4.Assets.Assets;
-using IW4.Assets.D3dbsp;
-using IW4.FastFiles.Zone;
+using IW4.Game.Assets;
+using IW4.Formats.D3dbsp;
+using IW4.Game.Zone;
 
 namespace IW4.Studio.Desktop.ViewModels;
 

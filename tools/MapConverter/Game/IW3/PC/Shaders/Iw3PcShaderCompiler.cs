@@ -3,8 +3,8 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
-using IW4.Assets.Assets.TechniqueSet;
-using IW4.FastFiles.Pointers;
+using IW4.Game.Assets.TechniqueSet;
+using IW4.Game.Pointers;
 using MapConverter.Game.IW3.PC.Techniques;
 
 namespace MapConverter.Game.IW3.PC.Shaders;

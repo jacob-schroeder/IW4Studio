@@ -1,5 +1,5 @@
-using IW4.Assets.Assets.Font;
-using IW4.Assets.Assets.Material;
+using IW4.Game.Assets.Font;
+using IW4.Game.Assets.Material;
 using IW4.Render.Textures;
 using IW4.Render.UI;
 using IW4.Runtime.Assets.Images;

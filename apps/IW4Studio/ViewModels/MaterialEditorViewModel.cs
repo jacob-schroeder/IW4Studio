@@ -1,10 +1,10 @@
 using Avalonia.Media.Imaging;
-using IW4.AssetExchange.Image;
-using IW4.AssetExchange.SourceFormat.Image;
-using IW4.Assets.Assets;
-using IW4.Assets.Assets.Image;
-using IW4.Assets.Assets.Material;
-using IW4.FastFiles.Zone;
+using IW4.Formats.Image;
+using IW4.Formats.SourceFormat.Image;
+using IW4.Game.Assets;
+using IW4.Game.Assets.Image;
+using IW4.Game.Assets.Material;
+using IW4.Game.Zone;
 using IW4.Render;
 using IW4.Render.Assets;
 using IW4.Render.Resources;

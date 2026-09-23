@@ -1,5 +1,5 @@
 using System.Globalization;
-using IW4.FastFiles.Zone;
+using IW4.Game.Zone;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.ZoneDetails;
 

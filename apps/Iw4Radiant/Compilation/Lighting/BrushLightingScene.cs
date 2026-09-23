@@ -1,8 +1,8 @@
 using System.Buffers;
 using System.Numerics;
-using IW4.AssetExchange.SourceFormat.Image;
-using IW4.Assets.Assets.Material;
-using IW4.Assets.Codecs.GfxMap;
+using IW4.Formats.SourceFormat.Image;
+using IW4.Game.Assets.Material;
+using IW4.Game.Codecs.GfxMap;
 using IW4.Render.WebGpu;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;

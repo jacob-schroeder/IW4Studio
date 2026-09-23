@@ -1,7 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.Reflection;
-using IW4.FastFiles.Database;
+using IW4.Game.Database;
+using IW4.Linker.Packaging;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents;
 

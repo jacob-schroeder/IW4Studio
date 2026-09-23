@@ -1,5 +1,5 @@
-using IW4.Assets.Assets.Sound;
-using IW4.FastFiles.Zone;
+using IW4.Game.Assets.Sound;
+using IW4.Game.Zone;
 using IW4.Runtime.Assets;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;

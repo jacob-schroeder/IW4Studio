@@ -1,4 +1,4 @@
-using IW4.Assets.Assets.Font;
+using IW4.Game.Assets.Font;
 using IW4.Render.UI;
 using IW4.Render.UI.Text;
 

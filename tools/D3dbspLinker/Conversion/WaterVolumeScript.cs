@@ -1,9 +1,9 @@
 using System.Globalization;
 using System.Text;
-using IW4.AssetExchange.SourceFormat.Material;
-using IW4.Assets.Assets.ColMap;
-using IW4.Assets.Assets.Physics;
-using IW4.Assets.Assets.RawFile;
+using IW4.Formats.SourceFormat.Material;
+using IW4.Game.Assets.ColMap;
+using IW4.Game.Assets.Physics;
+using IW4.Game.Assets.RawFile;
 
 namespace D3dbspLinker.Conversion;
 

@@ -1,12 +1,12 @@
 using System.Globalization;
 using System.Numerics;
-using IW4.Assets.Assets;
-using IW4.Assets.Assets.XModel;
-using IW4.Assets.Assets.Image;
-using IW4.Assets.Assets.Material;
-using IW4.AssetExchange.XModel;
-using IW4.FastFiles.Loaders.Database;
-using IW4.FastFiles.Zone;
+using IW4.Game.Assets;
+using IW4.Game.Assets.XModel;
+using IW4.Game.Assets.Image;
+using IW4.Game.Assets.Material;
+using IW4.Formats.XModel;
+using IW4.Loaders.Database;
+using IW4.Game.Zone;
 using IW4.Render;
 using IW4.Render.Assets;
 using IW4.Render.Geometry.XModel;
@@ -1276,25 +1276,25 @@ public sealed class XModelEditorViewModel
             {
                 int rowIndex = collisionIndex;
                 XModelCollSurf row = _workingDraft.CollisionSurfaces[rowIndex];
-                void Update(Func<IW4.Assets.Math.Bounds, IW4.Assets.Math.Bounds> bounds, int? bone = null, int? contents = null, int? flags = null)
+                void Update(Func<IW4.Game.Math.Bounds, IW4.Game.Math.Bounds> bounds, int? bone = null, int? contents = null, int? flags = null)
                 {
                     XModelCollSurf current = _workingDraft.CollisionSurfaces[rowIndex];
                     _workingDraft.SetCollisionSurface(rowIndex, bounds(current.Bounds), bone ?? current.BoneIndex, contents ?? current.Contents, flags ?? current.SurfaceFlags);
                     RefreshCandidateState();
                 }
                 string prefix = $"xmodel.collSurfs[{rowIndex}]";
-                collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} midpoint X", prefix + ".midpoint.x", row.Bounds.MidPoint.X, IsEditable ? value => Update(bounds => new IW4.Assets.Math.Bounds { MidPoint = new IW4.Assets.Math.Vec3 { X = value, Y = bounds.MidPoint.Y, Z = bounds.MidPoint.Z }, HalfSize = bounds.HalfSize }) : null));
-                collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} midpoint Y", prefix + ".midpoint.y", row.Bounds.MidPoint.Y, IsEditable ? value => Update(bounds => new IW4.Assets.Math.Bounds { MidPoint = new IW4.Assets.Math.Vec3 { X = bounds.MidPoint.X, Y = value, Z = bounds.MidPoint.Z }, HalfSize = bounds.HalfSize }) : null));
-                collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} midpoint Z", prefix + ".midpoint.z", row.Bounds.MidPoint.Z, IsEditable ? value => Update(bounds => new IW4.Assets.Math.Bounds { MidPoint = new IW4.Assets.Math.Vec3 { X = bounds.MidPoint.X, Y = bounds.MidPoint.Y, Z = value }, HalfSize = bounds.HalfSize }) : null));
-                collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} halfsize X", prefix + ".halfsize.x", row.Bounds.HalfSize.X, IsEditable ? value => Update(bounds => new IW4.Assets.Math.Bounds { MidPoint = bounds.MidPoint, HalfSize = new IW4.Assets.Math.Vec3 { X = value, Y = bounds.HalfSize.Y, Z = bounds.HalfSize.Z } }) : null));
-                collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} halfsize Y", prefix + ".halfsize.y", row.Bounds.HalfSize.Y, IsEditable ? value => Update(bounds => new IW4.Assets.Math.Bounds { MidPoint = bounds.MidPoint, HalfSize = new IW4.Assets.Math.Vec3 { X = bounds.HalfSize.X, Y = value, Z = bounds.HalfSize.Z } }) : null));
-                collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} halfsize Z", prefix + ".halfsize.z", row.Bounds.HalfSize.Z, IsEditable ? value => Update(bounds => new IW4.Assets.Math.Bounds { MidPoint = bounds.MidPoint, HalfSize = new IW4.Assets.Math.Vec3 { X = bounds.HalfSize.X, Y = bounds.HalfSize.Y, Z = value } }) : null));
+                collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} midpoint X", prefix + ".midpoint.x", row.Bounds.MidPoint.X, IsEditable ? value => Update(bounds => new IW4.Game.Math.Bounds { MidPoint = new IW4.Game.Math.Vec3 { X = value, Y = bounds.MidPoint.Y, Z = bounds.MidPoint.Z }, HalfSize = bounds.HalfSize }) : null));
+                collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} midpoint Y", prefix + ".midpoint.y", row.Bounds.MidPoint.Y, IsEditable ? value => Update(bounds => new IW4.Game.Math.Bounds { MidPoint = new IW4.Game.Math.Vec3 { X = bounds.MidPoint.X, Y = value, Z = bounds.MidPoint.Z }, HalfSize = bounds.HalfSize }) : null));
+                collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} midpoint Z", prefix + ".midpoint.z", row.Bounds.MidPoint.Z, IsEditable ? value => Update(bounds => new IW4.Game.Math.Bounds { MidPoint = new IW4.Game.Math.Vec3 { X = bounds.MidPoint.X, Y = bounds.MidPoint.Y, Z = value }, HalfSize = bounds.HalfSize }) : null));
+                collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} halfsize X", prefix + ".halfsize.x", row.Bounds.HalfSize.X, IsEditable ? value => Update(bounds => new IW4.Game.Math.Bounds { MidPoint = bounds.MidPoint, HalfSize = new IW4.Game.Math.Vec3 { X = value, Y = bounds.HalfSize.Y, Z = bounds.HalfSize.Z } }) : null));
+                collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} halfsize Y", prefix + ".halfsize.y", row.Bounds.HalfSize.Y, IsEditable ? value => Update(bounds => new IW4.Game.Math.Bounds { MidPoint = bounds.MidPoint, HalfSize = new IW4.Game.Math.Vec3 { X = bounds.HalfSize.X, Y = value, Z = bounds.HalfSize.Z } }) : null));
+                collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} halfsize Z", prefix + ".halfsize.z", row.Bounds.HalfSize.Z, IsEditable ? value => Update(bounds => new IW4.Game.Math.Bounds { MidPoint = bounds.MidPoint, HalfSize = new IW4.Game.Math.Vec3 { X = bounds.HalfSize.X, Y = bounds.HalfSize.Y, Z = value } }) : null));
                 collisionRows.Add(new InspectorIntegerPropertyRowViewModel($"CollSurf {rowIndex} bone", prefix + ".bone", row.BoneIndex, IsEditable ? value => Update(bounds => bounds, bone: value) : null));
                 collisionRows.Add(new InspectorIntegerPropertyRowViewModel($"CollSurf {rowIndex} contents", prefix + ".contents", row.Contents, IsEditable ? value => Update(bounds => bounds, contents: value) : null));
                 collisionRows.Add(new InspectorIntegerPropertyRowViewModel($"CollSurf {rowIndex} surface flags", prefix + ".surfaceFlags", row.SurfaceFlags, IsEditable ? value => Update(bounds => bounds, flags: value) : null));
             }
-            collisionRows.Add(new InspectorAssetReferencePropertyRowViewModel("PhysPreset", "xmodel.physPreset", XAssetType.PhysPreset, _workingDraft.PhysPreset?.Name, IsEditable ? name => { if (name is null) _workingDraft.SetPhysPreset(null); else if (_session.TryResolveWorkspaceDefinition<IW4.Assets.Assets.Physics.PhysPresetAsset>(name, out var asset)) _workingDraft.SetPhysPreset(asset); else throw new InvalidOperationException("Selected PhysPreset is not a live typed workspace definition."); RefreshCandidateState(); } : null, RequestAssetReferenceSelection));
-            collisionRows.Add(new InspectorAssetReferencePropertyRowViewModel("PhysCollmap", "xmodel.physCollmap", XAssetType.PhysCollmap, _workingDraft.PhysCollmap?.Name, IsEditable ? name => { if (name is null) _workingDraft.SetPhysCollmap(null); else if (_session.TryResolveWorkspaceDefinition<IW4.Assets.Assets.Physics.PhysCollmapAsset>(name, out var asset)) _workingDraft.SetPhysCollmap(asset); else throw new InvalidOperationException("Selected PhysCollmap is not a live typed workspace definition."); RefreshCandidateState(); } : null, RequestAssetReferenceSelection));
+            collisionRows.Add(new InspectorAssetReferencePropertyRowViewModel("PhysPreset", "xmodel.physPreset", XAssetType.PhysPreset, _workingDraft.PhysPreset?.Name, IsEditable ? name => { if (name is null) _workingDraft.SetPhysPreset(null); else if (_session.TryResolveWorkspaceDefinition<IW4.Game.Assets.Physics.PhysPresetAsset>(name, out var asset)) _workingDraft.SetPhysPreset(asset); else throw new InvalidOperationException("Selected PhysPreset is not a live typed workspace definition."); RefreshCandidateState(); } : null, RequestAssetReferenceSelection));
+            collisionRows.Add(new InspectorAssetReferencePropertyRowViewModel("PhysCollmap", "xmodel.physCollmap", XAssetType.PhysCollmap, _workingDraft.PhysCollmap?.Name, IsEditable ? name => { if (name is null) _workingDraft.SetPhysCollmap(null); else if (_session.TryResolveWorkspaceDefinition<IW4.Game.Assets.Physics.PhysCollmapAsset>(name, out var asset)) _workingDraft.SetPhysCollmap(asset); else throw new InvalidOperationException("Selected PhysCollmap is not a live typed workspace definition."); RefreshCandidateState(); } : null, RequestAssetReferenceSelection));
             sections.Add(new InspectorSectionViewModel("Collision", collisionRows));
         }
 

@@ -1,5 +1,5 @@
-using IW4.Assets.Assets.Material;
-using IW4.Assets.Codecs.Material;
+using IW4.Game.Assets.Material;
+using IW4.Game.Codecs.Material;
 using Iw4Radiant.Materials;
 using Silk.NET.OpenGL;
 
