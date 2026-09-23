@@ -10,6 +10,7 @@ internal sealed class PrefabLibrary
     private const int MaximumDepth = 32, MaximumInstances = 4096;
     private readonly Dictionary<MapEntity, (string Signature, MapDocument? Preview, Dictionary<MapEntity, TargetScope>? Scopes, string? Error)> _previews = [];
     private readonly Dictionary<string, MapDocument> _sources = new(StringComparer.Ordinal);
+    internal int Revision { get; private set; }
 
     internal static bool IsPrefab(MapEntity entity) => entity.ClassName == "misc_prefab";
 
@@ -75,6 +76,7 @@ internal sealed class PrefabLibrary
 
     internal void Reload(MapDocument document, string? mapPath)
     {
+        Revision++;
         _previews.Clear();
         _sources.Clear();
         foreach (MapEntity entity in document.Entities.Where(IsPrefab)) GetPreview(entity, mapPath);
@@ -168,15 +170,74 @@ internal sealed class PrefabLibrary
         return Path.GetRelativePath(root, path).Replace('\\', '/');
     }
 
+    internal string ValidatePaintSource(string mapPath, string sourcePath)
+    {
+        string reference = Reference(mapPath, sourcePath);
+        var instance = new MapEntity();
+        instance.Properties["classname"] = "misc_prefab";
+        instance.Properties["model"] = reference;
+        try
+        {
+            if (GetPreview(instance, mapPath) is null)
+                throw new ArgumentException(Error(instance, mapPath) ?? "This prefab cannot be opened.");
+            return reference;
+        }
+        finally { _previews.Remove(instance); }
+    }
+
     internal MapEntity Place(EditorSession session, string path, Vector3 origin)
     {
         if (session.FilePath is not { } mapPath) throw new ArgumentException("Save the current map before placing a prefab.");
+        MapEntity instance = CreateInstance(mapPath, path, origin);
+        if (GetPreview(instance, mapPath) is null) throw new ArgumentException(Error(instance, mapPath));
+        session.Edit(() => { session.Document.Entities.Add(instance); session.Selection.Set(instance); });
+        return instance;
+    }
+
+    internal MapEntity AddPainted(EditorSession session, string path, Vector3 position, Vector3? normal,
+        float yaw, float scale)
+    {
+        if (session.FilePath is not { } mapPath) throw new ArgumentException("Save the current map before painting prefabs.");
+        if (!float.IsFinite(yaw) || !float.IsFinite(scale) || scale <= 0 ||
+            !float.IsFinite(position.X) || !float.IsFinite(position.Y) || !float.IsFinite(position.Z))
+            throw new ArgumentException("Prefab position, rotation and scale must be finite, and scale must be positive.");
+        MapEntity instance = CreateInstance(mapPath, path, Vector3.Zero);
+        if (scale != 1) instance.Properties["modelscale"] = scale.ToString("G9", System.Globalization.CultureInfo.InvariantCulture);
+        Vector3 supportNormal = normal is { } surfaceNormal && surfaceNormal.LengthSquared() > 0.000001f
+            ? Vector3.Normalize(surfaceNormal) : Vector3.UnitZ;
+        if (normal is not null)
+        {
+            Vector3 axis = Vector3.Cross(Vector3.UnitZ, supportNormal);
+            float dot = Math.Clamp(Vector3.Dot(Vector3.UnitZ, supportNormal), -1, 1);
+            if (axis.LengthSquared() > 0.000001f)
+                EntityOrientation.Transform(instance, Matrix4x4.CreateFromAxisAngle(Vector3.Normalize(axis), MathF.Acos(dot)));
+            else if (dot < 0)
+                EntityOrientation.Transform(instance, Matrix4x4.CreateRotationX(MathF.PI));
+        }
+        if (yaw != 0)
+            EntityOrientation.Transform(instance, Matrix4x4.CreateFromAxisAngle(supportNormal, yaw * (MathF.PI / 180)));
+        MapDocument preview = GetPreview(instance, mapPath) ?? throw new ArgumentException(Error(instance, mapPath));
+        var content = preview.Brushes.Cast<object>().Concat(preview.Terrains)
+            .Concat(preview.Entities.Where(PointEntityGeometry.IsPointEntity));
+        if (session.Scene.Bounds(content) is { } bounds)
+        {
+            Vector3 support = new(supportNormal.X >= 0 ? bounds.Min.X : bounds.Max.X,
+                supportNormal.Y >= 0 ? bounds.Min.Y : bounds.Max.Y,
+                supportNormal.Z >= 0 ? bounds.Min.Z : bounds.Max.Z);
+            position -= supportNormal * Vector3.Dot(support, supportNormal);
+        }
+        instance.Properties["origin"] = FormattableString.Invariant($"{position.X:G9} {position.Y:G9} {position.Z:G9}");
+        session.Document.Entities.Add(instance);
+        session.Selection.Set(instance);
+        return instance;
+    }
+
+    private static MapEntity CreateInstance(string mapPath, string path, Vector3 origin)
+    {
         var instance = new MapEntity();
         instance.Properties["classname"] = "misc_prefab";
         instance.Properties["model"] = Reference(mapPath, path);
         instance.Properties["origin"] = FormattableString.Invariant($"{origin.X:G9} {origin.Y:G9} {origin.Z:G9}");
-        if (GetPreview(instance, mapPath) is null) throw new ArgumentException(Error(instance, mapPath));
-        session.Edit(() => { session.Document.Entities.Add(instance); session.Selection.Set(instance); });
         return instance;
     }
 

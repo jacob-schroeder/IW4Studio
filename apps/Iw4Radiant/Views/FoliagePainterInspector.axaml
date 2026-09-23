@@ -4,10 +4,9 @@
              x:Class="Iw4Radiant.Views.FoliagePainterInspector">
     <StackPanel Spacing="12">
         <TextBlock Text="Painter" Classes="panelTitle" />
-        <TextBlock Text="Choose one or more models, then paint them across camera surfaces." Classes="caption" TextWrapping="Wrap" />
-        <Border Background="#292D32" BorderBrush="#464B53" BorderThickness="1" CornerRadius="6" Padding="10">
-            <StackPanel Spacing="7">
-                <TextBlock Text="Saved palettes" Classes="panelTitle" />
+        <TextBlock Text="Build a brush from models and prefabs, then paint across camera surfaces." Classes="caption" TextWrapping="Wrap" />
+        <Expander Header="Saved palettes" IsExpanded="False">
+            <StackPanel Spacing="7" Margin="0,8,0,0">
                 <TextBlock Text="Keep a brush to use in a later session." Classes="caption" />
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
                     <ComboBox x:Name="PresetChoice" AutomationProperties.Name="Saved painter palette"
@@ -30,43 +29,54 @@
                 <TextBlock x:Name="PresetStatus" Classes="caption" Text="No saved palettes yet."
                            TextWrapping="Wrap" />
             </StackPanel>
-        </Border>
+        </Expander>
         <StackPanel x:Name="EmptyPalette" Spacing="8">
-            <TextBlock Text="Your brush has no models yet." TextWrapping="Wrap" />
-            <Button x:Name="ChooseModelsButton" Classes="panelAction" Content="Choose models…" HorizontalAlignment="Left"
-                    ToolTip.Tip="Open the Models browser, select a model, then add it to this brush." />
+            <TextBlock Text="Your brush is empty. Choose what you want to paint." TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button x:Name="ChooseModelsButton" Classes="panelAction" Content="Models…"
+                        ToolTip.Tip="Open Models, select an asset, then choose Add to brush." />
+                <Button x:Name="ChoosePrefabsButton" Classes="panelAction" Content="Prefabs…"
+                        ToolTip.Tip="Open Prefabs, select a .map asset, then choose Add to brush." />
+            </StackPanel>
         </StackPanel>
         <StackPanel x:Name="PaletteSettings" Spacing="10" IsVisible="False">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                <TextBlock Text="Brush models" Classes="panelTitle" VerticalAlignment="Center" />
-                <Button x:Name="AddModelsButton" Grid.Column="1" Classes="panelAction" Content="Choose models…" />
-            </Grid>
+            <TextBlock Text="Brush assets" Classes="panelTitle" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button x:Name="AddModelsButton" Classes="panelAction" Content="Add models…" />
+                <Button x:Name="AddPrefabsButton" Classes="panelAction" Content="Add prefabs…" />
+            </StackPanel>
             <ListBox x:Name="Palette" MinHeight="116" MaxHeight="220" SelectionMode="Single"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="editing:FoliagePaletteModel">
-                        <Grid ColumnDefinitions="*,Auto,82" ColumnSpacing="6" Margin="4,2">
-                            <TextBlock Text="{CompiledBinding DisplayName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        <Grid ColumnDefinitions="*,Auto,82" ColumnSpacing="6" Margin="4,2" ToolTip.Tip="{CompiledBinding Name}">
+                            <StackPanel Spacing="1">
+                                <TextBlock Text="{CompiledBinding DisplayName}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{CompiledBinding AssetType}" Classes="caption" FontSize="10" />
+                            </StackPanel>
                             <TextBlock Grid.Column="1" Text="Weight" Classes="caption" VerticalAlignment="Center" />
                             <NumericUpDown Grid.Column="2" Value="{CompiledBinding Weight, Mode=TwoWay}"
                                            Minimum="0" Maximum="100" Increment="0.25" FormatString="0.##"
-                                           AutomationProperties.Name="Foliage model weight"
-                                           ToolTip.Tip="Relative chance to paint this model; 0 or blank skips it." />
+                                           AutomationProperties.Name="Painter asset weight"
+                                           ToolTip.Tip="Relative chance to paint this asset; 0 or blank skips it." />
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
-            <TextBlock x:Name="UnavailableModels" Classes="caption" IsVisible="False" TextWrapping="Wrap" />
-            <TextBlock Text="Weights are relative. Zero or blank skips a model; if all are zero, nothing is painted."
+            <TextBlock x:Name="UnavailableAssets" Classes="caption" Foreground="#E5B567" IsVisible="False" TextWrapping="Wrap" />
+            <ToggleButton x:Name="PaintButton" Classes="panelAction" Content="Paint brush" HorizontalAlignment="Left" IsEnabled="False" />
+            <TextBlock x:Name="BrushStatus" Classes="caption" Text="Choose an asset to begin." TextWrapping="Wrap" />
+            <TextBlock Text="Weights are relative. Zero or blank skips an asset; if all are zero, nothing is painted."
                        Classes="caption" TextWrapping="Wrap" />
-            <Button x:Name="RemoveModelButton" Classes="panelAction" Content="Remove selected model" HorizontalAlignment="Left" IsEnabled="False" />
+            <Button x:Name="RemoveModelButton" Classes="panelAction" Content="Remove selected asset" HorizontalAlignment="Left" IsEnabled="False" />
             <Border x:Name="SelectedModelSettings" IsVisible="False" Background="#292D32"
                     BorderBrush="#464B53" BorderThickness="1" CornerRadius="6" Padding="10">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="Selected model" Classes="caption" />
+                    <TextBlock x:Name="SelectedModelType" Text="Selected model" Classes="caption" />
                     <TextBlock x:Name="SelectedModelName" FontWeight="SemiBold" TextWrapping="Wrap" />
-                    <CheckBox x:Name="CustomPlacement" Content="Customize this model" />
-                    <TextBlock Text="Off uses the brush defaults below. On gives this model its own placement settings."
+                    <TextBlock x:Name="SelectedAssetPath" Classes="caption" TextTrimming="CharacterEllipsis" IsVisible="False" />
+                    <CheckBox x:Name="CustomPlacement" Content="Use custom placement" />
+                    <TextBlock Text="Off uses the brush defaults below. On gives this asset its own placement settings."
                                Classes="caption" TextWrapping="Wrap" />
                     <StackPanel x:Name="CustomPlacementFields" Spacing="8" IsVisible="False">
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
@@ -100,7 +110,7 @@
             </Border>
             <Separator />
             <TextBlock Text="Brush defaults" Classes="panelTitle" />
-            <TextBlock Text="Used by models without custom placement." Classes="caption" TextWrapping="Wrap" />
+            <TextBlock Text="Used by assets without custom placement." Classes="caption" TextWrapping="Wrap" />
             <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                 <StackPanel Spacing="3">
                     <TextBlock Text="Radius" Classes="caption" />
@@ -129,9 +139,6 @@
                 <CheckBox x:Name="RandomYaw" Content="Random yaw" IsChecked="True" />
                 <CheckBox x:Name="AlignSurface" Content="Align to surface" IsChecked="True" />
             </StackPanel>
-            <Separator />
-            <ToggleButton x:Name="PaintButton" Classes="panelAction" Content="Paint models" HorizontalAlignment="Left" />
-            <TextBlock x:Name="PaintHelp" Classes="caption" Text="Drag over camera surfaces to paint · Esc stops painting or cancels a stroke" TextWrapping="Wrap" />
         </StackPanel>
     </StackPanel>
 </UserControl>

@@ -75,6 +75,7 @@ internal sealed class FoliagePainterPreset
 internal sealed class FoliagePresetModel
 {
     public string Name { get; set; } = "";
+    public bool IsPrefab { get; set; }
     public decimal? Weight { get; set; } = 1;
     public bool PlacementInitialized { get; set; }
     public bool UsesCustomPlacement { get; set; }

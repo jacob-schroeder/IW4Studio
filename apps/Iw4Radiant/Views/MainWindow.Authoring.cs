@@ -27,6 +27,7 @@ public partial class MainWindow
         var settings = RadiantSettings.Load();
         Workspace.Materials.InitializeFavorites(settings);
         Inspector.Painter.InitializePresets(settings, Workspace.Models.ResolveModel);
+        Inspector.Painter.UpdateMapContext(_session.FilePath, _session.Prefabs);
         Workspace.Models.CatalogChanged += Inspector.Painter.ResolveModels;
         bool suppressRelatedModelRestore = false;
         Workspace.Materials.FolderLoaded += async (root, nonBlocking) =>
@@ -48,8 +49,18 @@ public partial class MainWindow
             Inspector.Painter.StartPainting();
             ShowInspectorSection(Inspector.ShowPainter);
         };
+        Workspace.Prefabs.PainterPrefabRequested += path =>
+        {
+            FoliagePaletteModel item = Inspector.Painter.AddPrefab(path);
+            if (item.IsAvailable) Inspector.Painter.StartPainting();
+            ShowInspectorSection(Inspector.ShowPainter);
+            SetStatus(item.IsAvailable
+                ? $"Added {Path.GetFileNameWithoutExtension(path)} to the brush · drag over camera surfaces to paint"
+                : item.AvailabilityError ?? "This prefab is unavailable for the current map.");
+        };
         Inspector.Painter.Changed += RefreshFoliagePainting;
         Inspector.Painter.ModelsRequested += Workspace.ShowModels;
+        Inspector.Painter.PrefabsRequested += Workspace.ShowPrefabs;
         Workspace.Models.FolderLoaded += root =>
         {
             settings.XModelFolder = root;
@@ -176,9 +187,10 @@ public partial class MainWindow
                 try { SetTool(EditorTool.Select); }
                 finally { _activatingFoliage = false; }
             }
-            SetStatus("Paint foliage in the camera · drag over map surfaces · Esc cancels a stroke");
+            SetStatus("Paint the brush in the camera · drag over map surfaces · Esc cancels a stroke");
         }
         camera.FoliagePaintingEnabled = painter.IsPainting;
+        if (_ready) RefreshToolOptions();
     }
 
     private async void DropModels()

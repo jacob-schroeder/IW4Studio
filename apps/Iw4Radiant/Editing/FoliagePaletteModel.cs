@@ -7,17 +7,25 @@ internal sealed class FoliagePaletteModel
     private decimal? _weight = 1;
     private bool _placementInitialized;
 
-    internal FoliagePaletteModel(XModelSource model) : this(model.Name, model) { }
+    internal FoliagePaletteModel(XModelSource model) : this(model.Name, model, false) { }
+    internal FoliagePaletteModel(string prefabPath) : this(Path.GetFullPath(prefabPath), null, true) { }
 
-    private FoliagePaletteModel(string name, XModelSource? model)
+    private FoliagePaletteModel(string name, XModelSource? model, bool isPrefab)
     {
         Name = name;
         Model = model;
+        IsPrefab = isPrefab;
     }
 
     internal XModelSource? Model { get; private set; }
+    internal string? PrefabReference { get; private set; }
+    internal string? AvailabilityError { get; private set; }
+    internal bool IsAvailable => IsPrefab ? PrefabReference is not null : Model is not null;
+    public bool IsPrefab { get; }
     public string Name { get; }
-    public string DisplayName => Model is null ? $"Unavailable · {Name}" : Name;
+    public string DisplayName => (IsAvailable ? "" : "Unavailable · ") +
+        (IsPrefab ? Path.GetFileNameWithoutExtension(Name) : Name);
+    public string AssetType => IsPrefab ? "PREFAB" : "MODEL";
     internal bool UsesCustomPlacement { get; private set; }
     internal float MinimumScale { get; private set; } = 0.8f;
     internal float MaximumScale { get; private set; } = 1.2f;
@@ -68,14 +76,37 @@ internal sealed class FoliagePaletteModel
 
     internal void ResolveModel(XModelSource? model)
     {
+        if (IsPrefab) return;
         if (ReferenceEquals(Model, model)) return;
         Model = model;
+        Changed?.Invoke();
+    }
+
+    internal void ResolvePrefab(string? mapPath, PrefabLibrary library)
+    {
+        if (!IsPrefab) return;
+        string? reference = null, error = null;
+        try
+        {
+            if (mapPath is null) throw new ArgumentException("Save this map before painting prefabs.");
+            reference = library.ValidatePaintSource(mapPath, Name);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or FormatException or
+                                           ArgumentException or InvalidOperationException or NotSupportedException or OverflowException)
+        {
+            error = exception.Message;
+            reference = null;
+        }
+        if (PrefabReference == reference && AvailabilityError == error) return;
+        PrefabReference = reference;
+        AvailabilityError = error;
         Changed?.Invoke();
     }
 
     internal FoliagePresetModel ToPreset() => new()
     {
         Name = Name,
+        IsPrefab = IsPrefab,
         Weight = Weight,
         PlacementInitialized = _placementInitialized,
         UsesCustomPlacement = UsesCustomPlacement,
@@ -89,7 +120,7 @@ internal sealed class FoliagePaletteModel
 
     internal static FoliagePaletteModel FromPreset(FoliagePresetModel preset, XModelSource? model)
     {
-        var item = new FoliagePaletteModel(preset.Name, model)
+        var item = new FoliagePaletteModel(preset.Name, preset.IsPrefab ? null : model, preset.IsPrefab)
         {
             _placementInitialized = preset.PlacementInitialized || preset.UsesCustomPlacement,
             UsesCustomPlacement = preset.UsesCustomPlacement,

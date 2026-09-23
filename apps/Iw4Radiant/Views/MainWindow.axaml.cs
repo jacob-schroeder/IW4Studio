@@ -92,6 +92,7 @@ public partial class MainWindow : Window
             if (_shownTool is EditorTool.Terrain or EditorTool.Sculpt) Workspace.ShowGrid(OrthoPlane.Top);
         }
         Title = $"{(_session.IsDirty ? "*" : "")}{Path.GetFileName(_session.FilePath ?? "Untitled.map")} — Iw4Radiant";
+        Inspector.Painter.UpdateMapContext(_session.FilePath, _session.Prefabs);
         Workspace.Camera.RefreshScene();
         UndoMenu.IsEnabled = UndoToolbar.IsEnabled = _session.CanUndo;
         RedoMenu.IsEnabled = RedoToolbar.IsEnabled = _session.CanRedo;
@@ -101,19 +102,7 @@ public partial class MainWindow : Window
              (FaceTool, EditorTool.Face), (VertexTool, EditorTool.Vertex), (ClipTool, EditorTool.Clip)];
         foreach (var tool in tools)
             tool.Button.IsChecked = tool.Tool == _session.Tool;
-        CreationOptions.IsVisible = _session.Tool is EditorTool.Terrain or EditorTool.Select;
-        CreationOptions.IsEnabled = _session.Tool == EditorTool.Terrain ||
-            _session.SelectionVolumeMode != SelectionVolumeMode.None || _session.Selection.Count == 0;
-        CreationHint.Text = _session.SelectionVolumeMode switch
-        {
-            SelectionVolumeMode.CompleteTall => "Drag to select objects fully inside the projected rectangle · Esc cancels",
-            SelectionVolumeMode.PartialTall => "Drag to select objects touching the projected rectangle · Esc cancels",
-            SelectionVolumeMode.Touching => "Base and Depth define the finite volume · drag to select touching objects",
-            SelectionVolumeMode.Inside => "Base and Depth define the finite volume · drag to select contained objects",
-            _ => "Drag to preview · release to create · Esc cancels"
-        };
-        ClipOptions.IsVisible = _session.Tool == EditorTool.Clip;
-        ToolOptions.IsVisible = CreationOptions.IsVisible || ClipOptions.IsVisible;
+        RefreshToolOptions();
         RefreshClipControls();
         RefreshPhaseBControls();
         Inspector.RefreshSelection(_session);
@@ -127,6 +116,25 @@ public partial class MainWindow : Window
             $"{_session.Document.Terrains.Count(t => t.IsCurve)} curves · " +
             $"{_session.Document.Entities.Count} entities · {_session.Selection.Count} selected" +
             (preserved > 0 ? $" · {preserved} preserved primitives" : "");
+    }
+
+    private void RefreshToolOptions()
+    {
+        bool painting = Inspector.Painter.IsPainting;
+        PainterOptions.IsVisible = painting;
+        CreationOptions.IsVisible = !painting && (_session.Tool is EditorTool.Terrain or EditorTool.Select);
+        CreationOptions.IsEnabled = _session.Tool == EditorTool.Terrain ||
+            _session.SelectionVolumeMode != SelectionVolumeMode.None || _session.Selection.Count == 0;
+        CreationHint.Text = _session.SelectionVolumeMode switch
+        {
+            SelectionVolumeMode.CompleteTall => "Drag to select objects fully inside the projected rectangle · Esc cancels",
+            SelectionVolumeMode.PartialTall => "Drag to select objects touching the projected rectangle · Esc cancels",
+            SelectionVolumeMode.Touching => "Base and Depth define the finite volume · drag to select touching objects",
+            SelectionVolumeMode.Inside => "Base and Depth define the finite volume · drag to select contained objects",
+            _ => "Drag to preview · release to create · Esc cancels"
+        };
+        ClipOptions.IsVisible = _session.Tool == EditorTool.Clip;
+        ToolOptions.IsVisible = PainterOptions.IsVisible || CreationOptions.IsVisible || ClipOptions.IsVisible;
     }
 
     private void SetStatus(string message) => StatusText.Text = message;

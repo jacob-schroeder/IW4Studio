@@ -14,6 +14,7 @@ public partial class PrefabBrowser : UserControl
 
     public PrefabBrowser() => InitializeComponent();
     internal event Action<string>? PlacementRequested;
+    internal event Action<string>? PainterPrefabRequested;
 
     internal void InitializeActions(Window owner, EditorSession session, EditorDialogs dialogs, Action finishGestures,
         Func<string, Task> openMap)
@@ -30,6 +31,11 @@ public partial class PrefabBrowser : UserControl
         PlaceButton.Click += async (_, _) => await RunAsync(() =>
         {
             if (CurrentFile() is { } path) PlacementRequested?.Invoke(path);
+            return Task.CompletedTask;
+        });
+        AddToBrushButton.Click += async (_, _) => await RunAsync(() =>
+        {
+            if (CurrentFile() is { } path) PainterPrefabRequested?.Invoke(path);
             return Task.CompletedTask;
         });
         OpenSourceButton.Click += async (_, _) => await RunAsync(async () =>
@@ -153,7 +159,8 @@ public partial class PrefabBrowser : UserControl
             if (_updating) return;
             int request = ++_previewRequest;
             string? path = CurrentFile();
-            PlaceButton.IsEnabled = OpenSourceButton.IsEnabled = path is not null;
+            PlaceButton.IsEnabled = AddToBrushButton.IsEnabled = false;
+            OpenSourceButton.IsEnabled = path is not null;
             if (path is null) { Preview.Show(null); PreviewText.Text = "Choose a folder containing reusable .map prefabs."; return; }
             PreviewText.Text = "Loading preview…";
             try
@@ -170,11 +177,12 @@ public partial class PrefabBrowser : UserControl
                 if (request != _previewRequest) return;
                 Preview.Show(document);
                 PreviewText.Text = $"{document.Brushes.Count()} brushes · {document.Terrains.Count()} patches · {document.Entities.Count - 1} entities";
+                PlaceButton.IsEnabled = AddToBrushButton.IsEnabled = true;
             }
             catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
             {
                 if (request != _previewRequest) return;
-                Preview.Show(null); PreviewText.Text = exception.Message; PlaceButton.IsEnabled = false;
+                Preview.Show(null); PreviewText.Text = exception.Message;
             }
         }
     }

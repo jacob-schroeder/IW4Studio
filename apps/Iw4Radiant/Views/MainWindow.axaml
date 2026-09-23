@@ -168,7 +168,7 @@
                 <ToggleButton x:Name="SculptTool" Classes="toolbarButton" Click="SculptTool_Click" ToolTip.Tip="Sculpt terrain (V)" AutomationProperties.Name="Sculpt terrain">
                     <materialIcons:MaterialIcon Kind="Brush" Width="16" Height="16" />
                 </ToggleButton>
-                <ToggleButton x:Name="PainterButton" Classes="toolbarButton" Click="Painter_Click" ToolTip.Tip="Painter brush · paint selected models across camera surfaces" AutomationProperties.Name="Painter brush">
+                <ToggleButton x:Name="PainterButton" Classes="toolbarButton" Click="Painter_Click" ToolTip.Tip="Painter brush · paint models and prefabs across camera surfaces" AutomationProperties.Name="Painter brush">
                     <materialIcons:MaterialIcon Kind="Spray" Width="16" Height="16" />
                 </ToggleButton>
                 <Border Classes="toolbarSeparator" />
@@ -281,6 +281,8 @@
               </WrapPanel>
               <Border x:Name="ToolOptions" Classes="toolOptionsBar">
               <StackPanel Orientation="Horizontal" Spacing="8">
+               <TextBlock x:Name="PainterOptions" Text="Painter · Drag over camera surfaces to paint · Esc cancels a stroke"
+                          Classes="caption" VerticalAlignment="Center" Margin="14,0,0,0" IsVisible="False" />
                <StackPanel x:Name="CreationOptions" Orientation="Horizontal">
                 <TextBlock Text="Base" VerticalAlignment="Center" Margin="8,0,0,0" />
                 <NumericUpDown x:Name="BaseValue" Width="90" Minimum="-65536" Maximum="65536" Value="0" Increment="16" FormatString="0.##" ValueChanged="ToolSettings_Changed" />

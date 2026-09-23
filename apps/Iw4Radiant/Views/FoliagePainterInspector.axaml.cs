@@ -11,6 +11,9 @@ public partial class FoliagePainterInspector : UserControl
     private bool _loadingPreset;
     private RadiantSettings? _settings;
     private Func<string, XModelSource?>? _resolveModel;
+    private PrefabLibrary? _prefabs;
+    private string? _mapPath;
+    private int _prefabRevision = -1;
     private FoliagePainterPreset[] _shownPresets = [];
     private FoliagePainterPreset? _pendingDelete;
     private FoliagePainterPreset? _pendingReplace;
@@ -52,6 +55,8 @@ public partial class FoliagePainterInspector : UserControl
         DeletePresetButton.Click += (_, _) => DeleteSelectedPreset();
         ChooseModelsButton.Click += (_, _) => ModelsRequested?.Invoke();
         AddModelsButton.Click += (_, _) => ModelsRequested?.Invoke();
+        ChoosePrefabsButton.Click += (_, _) => PrefabsRequested?.Invoke();
+        AddPrefabsButton.Click += (_, _) => PrefabsRequested?.Invoke();
         RemoveModelButton.Click += (_, _) =>
         {
             if (Palette.SelectedItem is not FoliagePaletteModel selected) return;
@@ -86,6 +91,7 @@ public partial class FoliagePainterInspector : UserControl
 
     internal event Action? Changed;
     internal event Action? ModelsRequested;
+    internal event Action? PrefabsRequested;
     internal IReadOnlyList<FoliagePaletteModel> Models => _models;
     internal bool IsPainting => PaintButton.IsChecked == true;
     internal float BrushRadius => (float)(Radius.Value ?? 64);
@@ -101,6 +107,29 @@ public partial class FoliagePainterInspector : UserControl
         _settings = settings;
         _resolveModel = resolveModel;
         RefreshPresetChoices(null);
+    }
+
+    internal void UpdateMapContext(string? mapPath, PrefabLibrary prefabs)
+    {
+        if (_mapPath == mapPath && ReferenceEquals(_prefabs, prefabs) && _prefabRevision == prefabs.Revision) return;
+        _mapPath = mapPath;
+        _prefabs = prefabs;
+        _prefabRevision = prefabs.Revision;
+        ResolvePrefabs();
+    }
+
+    internal void ResolvePrefabs()
+    {
+        if (_prefabs is null) return;
+        int selectedIndex = Palette.SelectedIndex;
+        _loadingPreset = true;
+        try
+        {
+            foreach (FoliagePaletteModel item in _models) item.ResolvePrefab(_mapPath, _prefabs);
+            RefreshPalette(selectedIndex);
+        }
+        finally { _loadingPreset = false; }
+        NotifyChanged();
     }
 
     internal void MarkModelsUnavailable()
@@ -133,14 +162,15 @@ public partial class FoliagePainterInspector : UserControl
     internal void StartPainting(XModelSource? selectedModel = null)
     {
         if (_models.Count == 0 && selectedModel is not null) AddModel(selectedModel);
-        if (_models.Count > 0) PaintButton.IsChecked = true;
+        ResolvePrefabs();
+        if (PaintButton.IsEnabled) PaintButton.IsChecked = true;
     }
 
     internal void StopPainting() => PaintButton.IsChecked = false;
 
     internal void AddModel(XModelSource model)
     {
-        FoliagePaletteModel? existing = _models.FirstOrDefault(item => item.Name == model.Name);
+        FoliagePaletteModel? existing = _models.FirstOrDefault(item => !item.IsPrefab && item.Name == model.Name);
         if (existing is not null)
         {
             existing.ResolveModel(model);
@@ -153,23 +183,51 @@ public partial class FoliagePainterInspector : UserControl
         RefreshPalette(_models.Count - 1);
     }
 
+    internal FoliagePaletteModel AddPrefab(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        FoliagePaletteModel? existing = _models.FirstOrDefault(item => item.IsPrefab && item.Name == fullPath);
+        if (existing is null)
+        {
+            existing = new FoliagePaletteModel(fullPath);
+            existing.Changed += OnModelChanged;
+            _models.Add(existing);
+        }
+        if (_prefabs is not null) existing.ResolvePrefab(_mapPath, _prefabs);
+        RefreshPalette(_models.IndexOf(existing));
+        return existing;
+    }
+
     private void RefreshPalette(int selectedIndex)
     {
         Palette.ItemsSource = null;
         Palette.ItemsSource = _models.ToArray();
         Palette.SelectedIndex = selectedIndex >= 0 && selectedIndex < _models.Count ? selectedIndex : _models.Count - 1;
         RefreshSelectedModel();
-        bool hasModels = _models.Count > 0;
-        EmptyPalette.IsVisible = !hasModels;
-        PaletteSettings.IsVisible = hasModels;
-        SavePresetButton.IsEnabled = hasModels;
-        if (!hasModels) PresetNameEditor.IsVisible = false;
-        int unavailable = _models.Count(item => item.Model is null);
-        UnavailableModels.IsVisible = unavailable > 0;
-        UnavailableModels.Text = unavailable == 0 ? "" :
-            $"{unavailable} unavailable model{(unavailable == 1 ? "" : "s")} kept by name and skipped while painting. Load the model assets to use them.";
-        if (!hasModels) PaintButton.IsChecked = false;
+        bool hasAssets = _models.Count > 0;
+        EmptyPalette.IsVisible = !hasAssets;
+        PaletteSettings.IsVisible = hasAssets;
+        SavePresetButton.IsEnabled = hasAssets;
+        if (!hasAssets) PresetNameEditor.IsVisible = false;
+        UpdateBrushReadiness();
         NotifyChanged();
+    }
+
+    private void UpdateBrushReadiness()
+    {
+        FoliagePaletteModel[] unavailable = _models.Where(item => !item.IsAvailable).ToArray();
+        UnavailableAssets.IsVisible = unavailable.Length > 0;
+        UnavailableAssets.Text = unavailable.Length == 0 ? "" :
+            $"{unavailable.Length} unavailable asset{(unavailable.Length == 1 ? " is" : "s are")} kept in this brush and skipped. " +
+            (unavailable[0].AvailabilityError ?? "Load the model assets to use them.");
+        bool canPaint = _models.Any(item => item.IsAvailable && item.Weight is > 0);
+        PaintButton.IsEnabled = canPaint;
+        if (!canPaint) PaintButton.IsChecked = false;
+        BrushStatus.Text = _models.Count == 0 ? "Choose an asset to begin." : canPaint
+            ? "Drag over camera surfaces to paint · Esc stops painting or cancels a stroke"
+            : _models.Any(item => item.IsAvailable)
+                ? "Set a positive weight on an available asset to paint."
+                : "Choose an available model or prefab to paint.";
     }
 
     private FoliagePainterPreset? SelectedPreset()
@@ -191,7 +249,7 @@ public partial class FoliagePainterInspector : UserControl
         FoliagePainterPreset? preset = SelectedPreset();
         LoadPresetButton.IsEnabled = DeletePresetButton.IsEnabled = preset is not null;
         PresetStatus.Text = preset is not null
-            ? $"{preset.Models.Count} model{(preset.Models.Count == 1 ? "" : "s")} saved. Load changes this brush, not the map."
+            ? $"{preset.Models.Count} asset{(preset.Models.Count == 1 ? "" : "s")} saved. Load changes this brush, not the map."
             : _shownPresets.Length == 0 ? "No saved palettes yet." : "Choose a saved palette to load.";
     }
 
@@ -253,11 +311,13 @@ public partial class FoliagePainterInspector : UserControl
             MaximumScale.Value = (decimal)FiniteClamp(preset.MaximumScale, 0.01f, 100, 1.2f);
             RandomYaw.IsChecked = preset.RandomYaw;
             AlignSurface.IsChecked = preset.AlignToSurface;
-            var names = new HashSet<string>(StringComparer.Ordinal);
+            var names = new HashSet<(bool IsPrefab, string Name)>();
             foreach (FoliagePresetModel saved in preset.Models)
             {
-                if (string.IsNullOrWhiteSpace(saved.Name) || !names.Add(saved.Name)) continue;
-                FoliagePaletteModel model = FoliagePaletteModel.FromPreset(saved, _resolveModel(saved.Name));
+                if (string.IsNullOrWhiteSpace(saved.Name) || !names.Add((saved.IsPrefab, saved.Name))) continue;
+                FoliagePaletteModel model = FoliagePaletteModel.FromPreset(saved,
+                    saved.IsPrefab ? null : _resolveModel(saved.Name));
+                if (_prefabs is not null) model.ResolvePrefab(_mapPath, _prefabs);
                 model.Changed += OnModelChanged;
                 _models.Add(model);
             }
@@ -266,10 +326,10 @@ public partial class FoliagePainterInspector : UserControl
         finally { _loadingPreset = false; }
         NotifyChanged();
         PresetNameEditor.IsVisible = false;
-        int unavailable = _models.Count(model => model.Model is null);
+        int unavailable = _models.Count(model => !model.IsAvailable);
         PresetStatus.Text = unavailable == 0
-            ? $"Loaded ‘{preset.Name}’. Choose Paint models when ready."
-            : $"Loaded ‘{preset.Name}’. {unavailable} unavailable model{(unavailable == 1 ? " is" : "s are")} listed and skipped.";
+            ? $"Loaded ‘{preset.Name}’. Choose Paint brush when ready."
+            : $"Loaded ‘{preset.Name}’. {unavailable} unavailable asset{(unavailable == 1 ? " is" : "s are")} listed and skipped.";
     }
 
     private void DeleteSelectedPreset()
@@ -303,7 +363,11 @@ public partial class FoliagePainterInspector : UserControl
         _updatingPlacement = true;
         try
         {
-            SelectedModelName.Text = selected.Name;
+            SelectedModelType.Text = selected.IsPrefab ? "Selected prefab" : "Selected model";
+            SelectedModelName.Text = selected.IsPrefab ? Path.GetFileNameWithoutExtension(selected.Name) : selected.Name;
+            SelectedAssetPath.Text = selected.IsPrefab ? "Source · " + (selected.PrefabReference ?? selected.Name) : "";
+            ToolTip.SetTip(SelectedAssetPath, selected.IsPrefab ? selected.Name : null);
+            SelectedAssetPath.IsVisible = selected.IsPrefab;
             CustomPlacement.IsChecked = selected.UsesCustomPlacement;
             CustomPlacementFields.IsVisible = selected.UsesCustomPlacement;
             ModelMinimumScale.Value = (decimal)selected.MinimumScale;
@@ -336,5 +400,9 @@ public partial class FoliagePainterInspector : UserControl
         if (!_loadingPreset) Changed?.Invoke();
     }
 
-    private void OnModelChanged() => NotifyChanged();
+    private void OnModelChanged()
+    {
+        UpdateBrushReadiness();
+        NotifyChanged();
+    }
 }

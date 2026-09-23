@@ -31,6 +31,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     private bool _previewLighting = true;
     private bool _flyMode;
     private bool _foliagePaintingEnabled, _paintingFoliage, _foliageChanged;
+    private bool _foliagePrefabsNeedRefresh;
     private MapDocument? _foliageSurfaceDocument;
     private Vector3? _lastFoliageStamp;
     private readonly List<(MapEntity Entity, XModelSource Model)> _foliagePreview = [];
@@ -180,6 +181,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         _transform = null;
         _dragPointer = null;
         _paintingFoliage = _foliageChanged = false;
+        _foliagePrefabsNeedRefresh = false;
         _foliageSurfaceDocument = null;
         _lastFoliageStamp = null;
         _foliagePreview.Clear();
@@ -194,8 +196,8 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         {
             if (cancel) session.CancelEdit();
             else session.CompleteEdit(foliageChanged);
-            InteractionStatusChanged?.Invoke(cancel ? "Foliage stroke cancelled." :
-                foliageChanged ? "Foliage stroke completed." : "No foliage was placed.");
+            InteractionStatusChanged?.Invoke(cancel ? "Painter stroke cancelled." :
+                foliageChanged ? "Painter stroke completed." : "No assets were placed.");
         }
     }
 
@@ -422,32 +424,33 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     {
         if (FoliageModels.Count == 0)
         {
-            InteractionStatusChanged?.Invoke("Add one or more models to the foliage palette first.");
+            InteractionStatusChanged?.Invoke("Add a model or prefab to the brush first.");
             return;
         }
-        if (!FoliageModels.Any(item => item.Model is not null && item.Weight is > 0))
+        if (!FoliageModels.Any(item => item.IsAvailable && item.Weight is > 0))
         {
             InteractionStatusChanged?.Invoke(FoliageModels.Any(item => item.Weight is > 0)
-                ? "Load an available model before painting foliage. Unavailable preset entries are skipped."
-                : "Set a positive model weight before painting foliage.");
+                ? "Choose an available brush asset. Unavailable entries are skipped."
+                : "Set a positive brush weight before painting.");
             return;
         }
         _foliageSurfaceDocument = session.Scene.Document;
         if (!TryMapHit(point, includeModels: false, out Vector3 hit, out Vector3 normal))
         {
             _foliageSurfaceDocument = null;
-            InteractionStatusChanged?.Invoke("Point at an existing map surface to paint foliage.");
+            InteractionStatusChanged?.Invoke("Point at an existing map surface to paint.");
             return;
         }
         session.BeginEdit();
         _paintingFoliage = true;
         _foliageChanged = false;
+        _foliagePrefabsNeedRefresh = false;
         _lastFoliageStamp = null;
         _dragPointer = pointer;
         _dragButton = MouseButton.Left;
         _pressPoint = _lastPointer = point;
         pointer.Capture(this);
-        if (StampFoliage(session, hit, normal)) RequestNextFrameRendering();
+        if (StampFoliage(session, hit, normal)) RefreshFoliageStroke(session);
     }
 
     private void ContinueFoliageStroke(Point point)
@@ -460,7 +463,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         }
         if (_lastFoliageStamp is not { } previous)
         {
-            if (StampFoliage(session, hit, normal)) RequestNextFrameRendering();
+            if (StampFoliage(session, hit, normal)) RefreshFoliageStroke(session);
             return;
         }
         float spacing = Math.Max(1, FoliageSpacing);
@@ -473,13 +476,23 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         for (int index = 0; index < stamps; index++)
             changed |= StampFoliage(session, previous + direction * spacing * (index + 1), normal);
         if (stamps == 32 && distance >= spacing * 33) _lastFoliageStamp = hit;
-        if (changed) RequestNextFrameRendering();
+        if (changed) RefreshFoliageStroke(session);
+    }
+
+    private void RefreshFoliageStroke(EditorSession session)
+    {
+        if (_foliagePrefabsNeedRefresh)
+        {
+            _foliagePrefabsNeedRefresh = false;
+            session.Refresh();
+        }
+        else RequestNextFrameRendering();
     }
 
     private bool StampFoliage(EditorSession session, Vector3 center, Vector3 normal)
     {
         if (_foliageSurfaceDocument is not { } surfaces || FoliageModels.Count == 0) return false;
-        double totalWeight = FoliageModels.Sum(item => item.Model is not null && item.Weight is > 0
+        double totalWeight = FoliageModels.Sum(item => item.IsAvailable && item.Weight is > 0
             ? (double)item.Weight.Value : 0);
         if (totalWeight <= 0) return false;
         float radius = Math.Clamp(FoliageRadius, 1, 100000);
@@ -495,7 +508,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
             if (!SurfaceRaycast.TryHitSurfaces(surfaces, rayOrigin, -normal, ResolveMaterial,
                     out Vector3 hit, out Vector3 hitNormal) || Vector3.Distance(hit, sample) > 120) continue;
             FoliagePaletteModel? item = PickFoliageModel(totalWeight);
-            if (item?.Model is not { } model) continue;
+            if (item is null) continue;
             float itemMinimum = item.UsesCustomPlacement ? item.MinimumScale : FoliageMinimumScale;
             float itemMaximum = item.UsesCustomPlacement ? item.MaximumScale : FoliageMaximumScale;
             float minimum = Math.Max(0.01f, Math.Min(itemMinimum, itemMaximum));
@@ -511,9 +524,28 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
                     ? Vector3.Normalize(hitNormal) : Vector3.UnitZ;
                 position += offsetNormal * item.SurfaceOffset;
             }
-            MapEntity entity = XModelEditing.Add(session, model, position,
-                alignToSurface ? hitNormal : null, yaw, scale);
-            _foliagePreview.Add((entity, model));
+            if (item.IsPrefab)
+            {
+                try
+                {
+                    session.Prefabs.AddPainted(session, item.Name, position,
+                        alignToSurface ? hitNormal : null, yaw, scale);
+                    _foliagePrefabsNeedRefresh = true;
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or FormatException or
+                                                   ArgumentException or InvalidOperationException or NotSupportedException or OverflowException)
+                {
+                    InteractionStatusChanged?.Invoke($"Could not paint prefab {Path.GetFileNameWithoutExtension(item.Name)}: {exception.Message}");
+                    continue;
+                }
+            }
+            else if (item.Model is { } model)
+            {
+                MapEntity entity = XModelEditing.Add(session, model, position,
+                    alignToSurface ? hitNormal : null, yaw, scale);
+                _foliagePreview.Add((entity, model));
+            }
+            else continue;
             added = true;
         }
         _lastFoliageStamp = center;
@@ -529,7 +561,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         FoliagePaletteModel? last = null;
         foreach (FoliagePaletteModel item in FoliageModels)
         {
-            if (item.Model is null || item.Weight is not > 0) continue;
+            if (!item.IsAvailable || item.Weight is not > 0) continue;
             last = item;
             choice -= (double)item.Weight.Value;
             if (choice < 0) return item;

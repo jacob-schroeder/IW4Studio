@@ -16,9 +16,11 @@
         </Grid>
         <ScrollViewer Grid.Row="1" Grid.Column="2" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="5">
-                <Button x:Name="PlaceButton" Content="Place in view" HorizontalAlignment="Stretch"
+                <Button x:Name="PlaceButton" Content="Place in view" HorizontalAlignment="Stretch" IsEnabled="False"
                         ToolTip.Tip="Click a grid or camera surface to place the prefab. Hold Shift to place copies. Escape cancels." />
-                <Button x:Name="OpenSourceButton" Content="Open browser source" HorizontalAlignment="Stretch" />
+                <Button x:Name="AddToBrushButton" Content="Add to brush" HorizontalAlignment="Stretch" IsEnabled="False"
+                        ToolTip.Tip="Add this prefab to the Painter palette for repeated placement." />
+                <Button x:Name="OpenSourceButton" Content="Open browser source" HorizontalAlignment="Stretch" IsEnabled="False" />
                 <TextBlock x:Name="InstanceText" Classes="caption" TextWrapping="Wrap" />
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="5">
                     <Button x:Name="EditInstanceButton" Content="Edit source" HorizontalAlignment="Stretch" />

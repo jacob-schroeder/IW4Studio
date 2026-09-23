@@ -127,7 +127,7 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem x:Name="PainterTab" ToolTip.Tip="Painter · model brush palette and settings" AutomationProperties.Name="Painter">
+            <TabItem x:Name="PainterTab" ToolTip.Tip="Painter · model and prefab brush palette" AutomationProperties.Name="Painter">
                 <TabItem.Header><materialIcons:MaterialIcon Kind="Spray" Width="16" Height="16" /></TabItem.Header>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                     <views:FoliagePainterInspector x:Name="Painter" Margin="12" />
