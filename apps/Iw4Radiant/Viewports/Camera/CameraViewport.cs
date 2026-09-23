@@ -425,9 +425,11 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
             InteractionStatusChanged?.Invoke("Add one or more models to the foliage palette first.");
             return;
         }
-        if (!FoliageModels.Any(item => item.Weight is > 0))
+        if (!FoliageModels.Any(item => item.Model is not null && item.Weight is > 0))
         {
-            InteractionStatusChanged?.Invoke("Set a positive model weight before painting foliage.");
+            InteractionStatusChanged?.Invoke(FoliageModels.Any(item => item.Weight is > 0)
+                ? "Load an available model before painting foliage. Unavailable preset entries are skipped."
+                : "Set a positive model weight before painting foliage.");
             return;
         }
         _foliageSurfaceDocument = session.Scene.Document;
@@ -477,7 +479,8 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     private bool StampFoliage(EditorSession session, Vector3 center, Vector3 normal)
     {
         if (_foliageSurfaceDocument is not { } surfaces || FoliageModels.Count == 0) return false;
-        double totalWeight = FoliageModels.Sum(item => item.Weight is > 0 ? (double)item.Weight.Value : 0);
+        double totalWeight = FoliageModels.Sum(item => item.Model is not null && item.Weight is > 0
+            ? (double)item.Weight.Value : 0);
         if (totalWeight <= 0) return false;
         float radius = Math.Clamp(FoliageRadius, 1, 100000);
         int count = Math.Clamp(FoliageDensity, 1, 128);
@@ -491,12 +494,25 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
             Vector3 rayOrigin = sample + normal * 60;
             if (!SurfaceRaycast.TryHitSurfaces(surfaces, rayOrigin, -normal, ResolveMaterial,
                     out Vector3 hit, out Vector3 hitNormal) || Vector3.Distance(hit, sample) > 120) continue;
-            if (PickFoliageModel(totalWeight) is not { } model) continue;
-            float minimum = Math.Max(0.01f, Math.Min(FoliageMinimumScale, FoliageMaximumScale));
-            float maximum = Math.Max(minimum, Math.Max(FoliageMinimumScale, FoliageMaximumScale));
+            FoliagePaletteModel? item = PickFoliageModel(totalWeight);
+            if (item?.Model is not { } model) continue;
+            float itemMinimum = item.UsesCustomPlacement ? item.MinimumScale : FoliageMinimumScale;
+            float itemMaximum = item.UsesCustomPlacement ? item.MaximumScale : FoliageMaximumScale;
+            float minimum = Math.Max(0.01f, Math.Min(itemMinimum, itemMaximum));
+            float maximum = Math.Max(minimum, Math.Max(itemMinimum, itemMaximum));
             float scale = minimum + Random.Shared.NextSingle() * (maximum - minimum);
-            float yaw = FoliageRandomYaw ? Random.Shared.NextSingle() * 360 : 0;
-            MapEntity entity = XModelEditing.Add(session, model, hit, FoliageAlignSurface ? hitNormal : null, yaw, scale);
+            bool randomYaw = item.UsesCustomPlacement ? item.RandomYaw : FoliageRandomYaw;
+            float yaw = randomYaw ? Random.Shared.NextSingle() * 360 : item.UsesCustomPlacement ? item.FixedYaw : 0;
+            bool alignToSurface = item.UsesCustomPlacement ? item.AlignToSurface : FoliageAlignSurface;
+            Vector3 position = hit;
+            if (item.UsesCustomPlacement && item.SurfaceOffset != 0)
+            {
+                Vector3 offsetNormal = hitNormal.LengthSquared() > 0.000001f
+                    ? Vector3.Normalize(hitNormal) : Vector3.UnitZ;
+                position += offsetNormal * item.SurfaceOffset;
+            }
+            MapEntity entity = XModelEditing.Add(session, model, position,
+                alignToSurface ? hitNormal : null, yaw, scale);
             _foliagePreview.Add((entity, model));
             added = true;
         }
@@ -507,16 +523,16 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         return true;
     }
 
-    private XModelSource? PickFoliageModel(double totalWeight)
+    private FoliagePaletteModel? PickFoliageModel(double totalWeight)
     {
         double choice = Random.Shared.NextDouble() * totalWeight;
-        XModelSource? last = null;
+        FoliagePaletteModel? last = null;
         foreach (FoliagePaletteModel item in FoliageModels)
         {
-            if (item.Weight is not > 0) continue;
-            last = item.Model;
+            if (item.Model is null || item.Weight is not > 0) continue;
+            last = item;
             choice -= (double)item.Weight.Value;
-            if (choice < 0) return item.Model;
+            if (choice < 0) return item;
         }
         return last;
     }

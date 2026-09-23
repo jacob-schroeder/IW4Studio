@@ -26,6 +26,8 @@ public partial class MainWindow
         Workspace.Models.CatalogChanged += RefreshAssets;
         var settings = RadiantSettings.Load();
         Workspace.Materials.InitializeFavorites(settings);
+        Inspector.Painter.InitializePresets(settings, Workspace.Models.ResolveModel);
+        Workspace.Models.CatalogChanged += Inspector.Painter.ResolveModels;
         bool suppressRelatedModelRestore = false;
         Workspace.Materials.FolderLoaded += async (root, nonBlocking) =>
         {
@@ -39,7 +41,7 @@ public partial class MainWindow
         Workspace.Models.PlacementRequested += (model, align) => BeginPlacement(model.Name,
             (position, normal) => XModelEditing.Place(_session, model, position, align ? normal : null));
         Workspace.Models.DropRequested += DropModels;
-        Workspace.Models.CatalogReset += Inspector.Painter.ClearModels;
+        Workspace.Models.CatalogReset += Inspector.Painter.MarkModelsUnavailable;
         Workspace.Models.FoliageModelRequested += model =>
         {
             Inspector.Painter.AddModel(model);

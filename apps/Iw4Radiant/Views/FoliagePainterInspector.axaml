@@ -5,6 +5,32 @@
     <StackPanel Spacing="12">
         <TextBlock Text="Painter" Classes="panelTitle" />
         <TextBlock Text="Choose one or more models, then paint them across camera surfaces." Classes="caption" TextWrapping="Wrap" />
+        <Border Background="#292D32" BorderBrush="#464B53" BorderThickness="1" CornerRadius="6" Padding="10">
+            <StackPanel Spacing="7">
+                <TextBlock Text="Saved palettes" Classes="panelTitle" />
+                <TextBlock Text="Keep a brush to use in a later session." Classes="caption" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                    <ComboBox x:Name="PresetChoice" AutomationProperties.Name="Saved painter palette"
+                              HorizontalAlignment="Stretch" />
+                    <Button x:Name="LoadPresetButton" Grid.Column="1" Classes="panelAction" Content="Load" IsEnabled="False" />
+                </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button x:Name="SavePresetButton" Classes="panelAction" Content="Save current…" IsEnabled="False" />
+                    <Button x:Name="DeletePresetButton" Classes="panelAction" Content="Delete" IsEnabled="False" />
+                </StackPanel>
+                <StackPanel x:Name="PresetNameEditor" Spacing="6" IsVisible="False">
+                    <TextBlock Text="Palette name" Classes="caption" />
+                    <TextBox x:Name="PresetName" PlaceholderText="e.g. Riverbank" MaxLength="64"
+                             AutomationProperties.Name="Painter palette name" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="ConfirmSavePresetButton" Classes="panelAction" Content="Save palette" />
+                        <Button x:Name="CancelSavePresetButton" Classes="panelAction" Content="Cancel" />
+                    </StackPanel>
+                </StackPanel>
+                <TextBlock x:Name="PresetStatus" Classes="caption" Text="No saved palettes yet."
+                           TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
         <StackPanel x:Name="EmptyPalette" Spacing="8">
             <TextBlock Text="Your brush has no models yet." TextWrapping="Wrap" />
             <Button x:Name="ChooseModelsButton" Classes="panelAction" Content="Choose models…" HorizontalAlignment="Left"
@@ -20,7 +46,7 @@
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="editing:FoliagePaletteModel">
                         <Grid ColumnDefinitions="*,Auto,82" ColumnSpacing="6" Margin="4,2">
-                            <TextBlock Text="{CompiledBinding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                            <TextBlock Text="{CompiledBinding DisplayName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                             <TextBlock Grid.Column="1" Text="Weight" Classes="caption" VerticalAlignment="Center" />
                             <NumericUpDown Grid.Column="2" Value="{CompiledBinding Weight, Mode=TwoWay}"
                                            Minimum="0" Maximum="100" Increment="0.25" FormatString="0.##"
@@ -30,10 +56,51 @@
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
+            <TextBlock x:Name="UnavailableModels" Classes="caption" IsVisible="False" TextWrapping="Wrap" />
             <TextBlock Text="Weights are relative. Zero or blank skips a model; if all are zero, nothing is painted."
                        Classes="caption" TextWrapping="Wrap" />
             <Button x:Name="RemoveModelButton" Classes="panelAction" Content="Remove selected model" HorizontalAlignment="Left" IsEnabled="False" />
+            <Border x:Name="SelectedModelSettings" IsVisible="False" Background="#292D32"
+                    BorderBrush="#464B53" BorderThickness="1" CornerRadius="6" Padding="10">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Selected model" Classes="caption" />
+                    <TextBlock x:Name="SelectedModelName" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <CheckBox x:Name="CustomPlacement" Content="Customize this model" />
+                    <TextBlock Text="Off uses the brush defaults below. On gives this model its own placement settings."
+                               Classes="caption" TextWrapping="Wrap" />
+                    <StackPanel x:Name="CustomPlacementFields" Spacing="8" IsVisible="False">
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="Minimum scale" Classes="caption" />
+                                <NumericUpDown x:Name="ModelMinimumScale" Minimum="0.01" Maximum="100" Increment="0.1"
+                                               FormatString="0.##" AutomationProperties.Name="Selected model minimum scale" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="3">
+                                <TextBlock Text="Maximum scale" Classes="caption" />
+                                <NumericUpDown x:Name="ModelMaximumScale" Minimum="0.01" Maximum="100" Increment="0.1"
+                                               FormatString="0.##" AutomationProperties.Name="Selected model maximum scale" />
+                            </StackPanel>
+                        </Grid>
+                        <CheckBox x:Name="ModelRandomYaw" Content="Random yaw" />
+                        <StackPanel x:Name="FixedYawSetting" Spacing="3" IsVisible="False">
+                            <TextBlock Text="Fixed yaw (degrees)" Classes="caption" />
+                            <NumericUpDown x:Name="ModelFixedYaw" Minimum="0" Maximum="360" Increment="15"
+                                           FormatString="0.##" AutomationProperties.Name="Selected model fixed yaw" />
+                        </StackPanel>
+                        <CheckBox x:Name="ModelAlignSurface" Content="Align to surface" />
+                        <StackPanel Spacing="3">
+                            <TextBlock Text="Surface offset" Classes="caption" />
+                            <NumericUpDown x:Name="ModelSurfaceOffset" Minimum="-100" Maximum="100" Increment="1"
+                                           FormatString="0.##" AutomationProperties.Name="Selected model surface offset"
+                                           ToolTip.Tip="World units along the painted surface normal; positive moves away from the surface." />
+                            <TextBlock Text="Positive moves away from the surface." Classes="caption" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
             <Separator />
+            <TextBlock Text="Brush defaults" Classes="panelTitle" />
+            <TextBlock Text="Used by models without custom placement." Classes="caption" TextWrapping="Wrap" />
             <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                 <StackPanel Spacing="3">
                     <TextBlock Text="Radius" Classes="caption" />
