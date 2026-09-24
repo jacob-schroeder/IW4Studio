@@ -52,7 +52,7 @@ internal sealed class SceneRenderer
     private readonly SceneReflections _reflections = new();
     private FxSpritePreview? _fxPreview;
     private string? _fxPreviewNotice;
-    private readonly List<(FxSpritePreview Preview, Vector3 Origin)> _mapFxPreviews = [];
+    private readonly List<(FxSpritePreview Preview, Vector3 Origin, Matrix4x4 Orientation)> _mapFxPreviews = [];
     private readonly Dictionary<string, (FxSpritePreview? Preview, string? Notice)> _mapFxAssets =
         new(StringComparer.OrdinalIgnoreCase);
     private string? _mapFxAssetRoot;
@@ -97,14 +97,14 @@ internal sealed class SceneRenderer
     internal void RefreshScene() => _sceneDirty = true;
     internal void PreviewPointEntityMove() => _movePreviewDirty = true;
     internal void ReloadTextures() => _texturesDirty = _sceneDirty = true;
-    internal string? SetFxPreview(string? sourceDirectory, string? assetName, Vector3 origin)
+    internal string? SetFxPreview(string? sourceDirectory, string? assetName, Vector3 origin, Matrix4x4 orientation)
     {
         StopFxPreview();
         if (string.IsNullOrWhiteSpace(sourceDirectory) || string.IsNullOrWhiteSpace(assetName))
             return null;
         try
         {
-            FxSpritePreview preview = FxSpritePreview.Load(sourceDirectory, assetName, origin);
+            FxSpritePreview preview = FxSpritePreview.Load(sourceDirectory, assetName, origin, orientation);
             if (preview.HasDrawableElements)
             {
                 _fxPreview = preview;
@@ -112,7 +112,7 @@ internal sealed class SceneRenderer
                 _fxPreviewNotice = preview.Notice;
             }
             else
-                _fxPreviewNotice = $"FX '{assetName}' has no supported material billboards. {preview.Notice}";
+                _fxPreviewNotice = $"FX '{assetName}' has no supported material sprites. {preview.Notice}";
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
                                            ArgumentException or NotSupportedException or JsonException or OverflowException)
@@ -129,7 +129,8 @@ internal sealed class SceneRenderer
         _fxPreviewNotice = null;
     }
 
-    internal string? SetMapFxPreview(string? sourceDirectory, IReadOnlyList<(string Name, Vector3 Origin)> emitters)
+    internal string? SetMapFxPreview(string? sourceDirectory,
+        IReadOnlyList<(string Name, Vector3 Origin, Matrix4x4 Orientation)> emitters)
     {
         _sceneDirty = true;
         _mapFxPreviews.Clear();
@@ -146,7 +147,7 @@ internal sealed class SceneRenderer
 
         var described = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var notices = new List<string>();
-        foreach (var (name, origin) in emitters)
+        foreach (var (name, origin, orientation) in emitters)
         {
             if (string.IsNullOrWhiteSpace(name))
             {
@@ -160,9 +161,9 @@ internal sealed class SceneRenderer
                 string? notice = null;
                 try
                 {
-                    loaded = FxSpritePreview.Load(sourceDirectory, name, Vector3.Zero);
+                    loaded = FxSpritePreview.Load(sourceDirectory, name, Vector3.Zero, Matrix4x4.Identity);
                     if (!loaded.HasDrawableElements)
-                        notice = $"FX '{name}' has no supported material billboards. {loaded.Notice}";
+                        notice = $"FX '{name}' has no supported material sprites. {loaded.Notice}";
                     else if (!string.IsNullOrEmpty(loaded.Notice))
                         notice = $"FX '{name}': {loaded.Notice}";
                 }
@@ -177,7 +178,7 @@ internal sealed class SceneRenderer
             }
             if (described.Add(name) && asset.Notice is { } message) notices.Add(message);
             if (asset.Preview is { HasDrawableElements: true } preview)
-                _mapFxPreviews.Add((preview, origin));
+                _mapFxPreviews.Add((preview, origin, orientation));
         }
         _mapFxSourceNotice = string.Join("; ", notices.Take(4));
         if (notices.Count > 4) _mapFxSourceNotice += $"; {notices.Count - 4} more FX notices";
@@ -544,14 +545,14 @@ internal sealed class SceneRenderer
         gl.Uniform1(_waterPreviewLocation, 0);
         gl.Uniform1(_litLocation, 0);
         gl.Uniform1(_texturedLocation, 1);
-        foreach (var (preview, origin) in ordered)
+        foreach (var (preview, origin, orientation) in ordered)
         {
             if (remaining == 0)
             {
                 capped = true;
                 break;
             }
-            foreach (var (material, vertices) in preview.Sample(eye, origin, remaining))
+            foreach (var (material, vertices) in preview.Sample(eye, origin, orientation, remaining))
             {
                 remaining -= vertices.Length / 6;
                 if (!materials.TryGetValue(material, out MaterialSource? source))

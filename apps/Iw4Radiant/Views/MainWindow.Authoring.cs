@@ -24,9 +24,10 @@ public partial class MainWindow
     private MapEntity? _previewMarker;
     private MapDocument? _previewDocument;
     private Vector3 _previewOrigin;
+    private Matrix4x4 _previewOrientation;
     private MapDocument? _mapPreviewDocument;
     private string? _mapFxSource;
-    private (string Name, Vector3 Origin)[] _mapFxEmitters = [];
+    private (string Name, Vector3 Origin, Matrix4x4 Orientation)[] _mapFxEmitters = [];
 
     private void InitializeAuthoring()
     {
@@ -221,7 +222,8 @@ public partial class MainWindow
             return;
         }
 
-        string? notice = Workspace.Camera.StartFxPreview(root, asset.Name, origin);
+        Matrix4x4 orientation = marker is null ? Matrix4x4.Identity : EntityOrientation.Rotation(marker);
+        string? notice = Workspace.Camera.StartFxPreview(root, asset.Name, origin, orientation);
         bool playing = Workspace.Camera.HasActiveFxPreview;
         if (playing)
         {
@@ -229,16 +231,14 @@ public partial class MainWindow
             _previewMarker = marker;
             _previewDocument = _session.Document;
             _previewOrigin = origin;
+            _previewOrientation = orientation;
         }
         browser.SetPreviewState(playing,
             playing ? $"Playing FX {(marker is null ? "in front of the camera" : "at the selected marker")}." +
                       (notice?.Contains("element ", StringComparison.Ordinal) == true ? " Some elements are not shown." : "")
-                    : notice?.Contains("has no supported material billboards", StringComparison.Ordinal) == true &&
-                      notice.Contains(": Runner", StringComparison.Ordinal)
-                        ? "This FX starts another effect that the editor cannot animate yet."
-                        : notice?.Contains("has no supported material billboards", StringComparison.Ordinal) == true
-                            ? "This FX uses elements the editor cannot animate yet."
-                            : notice ?? "This FX cannot be previewed.",
+                    : notice?.Contains("has no supported material sprites", StringComparison.Ordinal) == true
+                        ? "This FX uses elements the editor cannot animate yet."
+                        : notice ?? "This FX cannot be previewed.",
             notice);
     }
 
@@ -281,11 +281,13 @@ public partial class MainWindow
             StopEmitterPreview("The selected marker has no valid position.");
             return;
         }
-        if (origin == _previewOrigin) return;
+        Matrix4x4 orientation = EntityOrientation.Rotation(marker);
+        if (origin == _previewOrigin && orientation == _previewOrientation) return;
         _previewOrigin = origin;
+        _previewOrientation = orientation;
         string? root = Workspace.FxBrowser.SourceDirectory;
         if (root is null) return;
-        string? notice = Workspace.Camera.StartFxPreview(root, _previewAssetName, origin);
+        string? notice = Workspace.Camera.StartFxPreview(root, _previewAssetName, origin, orientation);
         bool playing = Workspace.Camera.HasActiveFxPreview;
         Workspace.FxBrowser.SetPreviewState(playing,
             playing ? "Playing FX at the selected marker." : notice ?? "This FX cannot be previewed.",
@@ -327,8 +329,10 @@ public partial class MainWindow
     private void RefreshMapFxPreview()
     {
         string? root = Workspace.FxBrowser.SourceDirectory;
-        (string Name, Vector3 Origin)[] emitters = Workspace.MapFxEnabled
-            ? PlacedEmitters(isSound: false) : [];
+        (string Name, Vector3 Origin, Matrix4x4 Orientation)[] emitters = Workspace.MapFxEnabled
+            ? PlacedEmitterEntities(isSound: false)
+                .Select(entity => (entity.Properties.GetValueOrDefault("fx") ?? "",
+                    EditorSession.EntityOrigin(entity), EntityOrientation.Rotation(entity))).ToArray() : [];
         if (_mapFxSource == root && _mapFxEmitters.SequenceEqual(emitters)) return;
         _mapFxSource = root;
         _mapFxEmitters = emitters;
@@ -338,18 +342,17 @@ public partial class MainWindow
     private void RefreshMapSoundPreview()
     {
         _mapSoundPreview.Configure(Workspace.SoundBrowser.SourceDirectory,
-            Workspace.MapSoundsEnabled ? PlacedEmitters(isSound: true) : []);
+            Workspace.MapSoundsEnabled ? PlacedEmitterEntities(isSound: true)
+                .Select(entity => (entity.Properties.GetValueOrDefault("soundalias") ?? "",
+                    EditorSession.EntityOrigin(entity))).ToArray() : []);
         _mapSoundPreview.UpdateListener(Workspace.Camera.Eye);
     }
 
-    private (string Name, Vector3 Origin)[] PlacedEmitters(bool isSound) =>
+    private IEnumerable<MapEntity> PlacedEmitterEntities(bool isSound) =>
         _session.Scene.Document.Entities
             .Where(entity => entity.ClassName == "fx_origin" &&
                 (entity.Properties.GetValueOrDefault("is_sound") == "1") == isSound &&
-                entity.TryGetOrigin(out _))
-            .Select(entity => (entity.Properties.GetValueOrDefault(isSound ? "soundalias" : "fx") ?? "",
-                entity.TryGetOrigin(out Vector3 origin) ? origin : default))
-            .ToArray();
+                entity.TryGetOrigin(out _));
 
     private MaterialSource? ResolveEmitterMaterial(string name)
     {

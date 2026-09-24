@@ -461,7 +461,7 @@ public sealed class MaterialEditorViewModel
     {
         ArgumentNullException.ThrowIfNull(target);
         IReadOnlyList<ImageSourceMipLevel> mipLevels =
-            SourceImageDumpDecoder.Decode(target.Image, _payloadResolver);
+            SourceImageDumpDecoder.DecodeForExport(target.Image, _payloadResolver);
         using var stream = new MemoryStream();
         new ImageExchange().Write(stream, format, target.Image, mipLevels);
         return new MaterialImageExportPayload(

@@ -350,7 +350,7 @@ internal static class SourceAssetDumpOperation
         try
         {
             IReadOnlyList<ImageSourceMipLevel> mipLevels =
-                SourceImageDumpDecoder.Decode(image, imagePayloads);
+                SourceImageDumpDecoder.DecodeForExport(image, imagePayloads);
             return new ImageExchange().Unlink(
                 sourceDirectory,
                 image,

@@ -162,15 +162,16 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     internal string? FxPreviewNotice => _renderer.FxPreviewNotice;
     internal string? MapFxPreviewNotice => _renderer.MapFxPreviewNotice;
     internal Vector3 Eye => _navigation.Eye;
-    internal string? SetMapFxPreview(string? sourceDirectory, IReadOnlyList<(string Name, Vector3 Origin)> emitters)
+    internal string? SetMapFxPreview(string? sourceDirectory,
+        IReadOnlyList<(string Name, Vector3 Origin, Matrix4x4 Orientation)> emitters)
     {
         string? notice = _renderer.SetMapFxPreview(sourceDirectory, emitters);
         RequestNextFrameRendering();
         return notice;
     }
-    internal string? StartFxPreview(string sourceDirectory, string assetName, Vector3 origin)
+    internal string? StartFxPreview(string sourceDirectory, string assetName, Vector3 origin, Matrix4x4 orientation)
     {
-        string? notice = _renderer.SetFxPreview(sourceDirectory, assetName, origin);
+        string? notice = _renderer.SetFxPreview(sourceDirectory, assetName, origin, orientation);
         RequestNextFrameRendering();
         return notice;
     }
