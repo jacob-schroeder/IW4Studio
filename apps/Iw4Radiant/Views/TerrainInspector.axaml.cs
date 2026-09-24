@@ -10,6 +10,7 @@ public partial class TerrainInspector : UserControl
 {
     private bool _updating;
     private bool _collisionEdited;
+    private MapTerrain? _splitTerrain;
     private MapTerrain[] _shownCollisionTerrains = [];
     private bool[] _shownCollisionValues = [];
 
@@ -28,6 +29,9 @@ public partial class TerrainInspector : UserControl
         FlattenVerticesButton.Click += async (_, _) => await EditVerticesAsync(session, dialogs, finishGestures, flatten: true);
         NoiseModeBox.SelectionChanged += (_, _) => UpdateNoiseMode();
         ApplyNoiseButton.Click += async (_, _) => await EditNoiseAsync(session, dialogs, finishGestures, setStatus);
+        SplitColumnButton.Click += async (_, _) => await SplitAsync(session, dialogs, finishGestures, true);
+        SplitRowButton.Click += async (_, _) => await SplitAsync(session, dialogs, finishGestures, false);
+        ThickenTerrainButton.Click += async (_, _) => await ThickenAsync(session, dialogs, finishGestures, setStatus);
         StitchButton.Click += async (_, _) => await StitchAsync(session, dialogs, finishGestures);
         SolidCollisionValue.IsCheckedChanged += (_, _) =>
         {
@@ -68,10 +72,28 @@ public partial class TerrainInspector : UserControl
             HeightFields.IsVisible = !painting && (count > 0 || session.Tool == EditorTool.Sculpt && session.SculptMode == TerrainSculptMode.Flatten);
             VertexFields.IsVisible = !painting && count > 0;
             NoiseFields.IsVisible = !painting && (session.Tool == EditorTool.Vertex || count > 0);
+            MapTerrain? split = session.Selection.Count == 1 && session.Selection.Active is MapTerrain { IsCurve: false } surface
+                ? surface : null;
+            SplitFields.IsVisible = split is not null;
+            SplitColumnButton.IsEnabled = split is { Width: >= 3 };
+            SplitRowButton.IsEnabled = split is { Height: >= 3 };
+            if (split is not null)
+            {
+                SplitColumn.Maximum = Math.Max(2, split.Width - 1);
+                SplitRow.Maximum = Math.Max(2, split.Height - 1);
+                if (!ReferenceEquals(split, _splitTerrain))
+                {
+                    SplitColumn.Value = Math.Clamp((split.Width + 1) / 2, 2, (int)SplitColumn.Maximum);
+                    SplitRow.Value = Math.Clamp((split.Height + 1) / 2, 2, (int)SplitRow.Maximum);
+                }
+            }
+            _splitTerrain = split;
+            ThickenTerrainFields.IsVisible = split is not null && session.Document.World.Terrains.Contains(split);
             StitchFields.IsVisible = !painting && session.Selection.Items.Any(item => item is MapTerrain { IsCurve: false });
             RefreshCollision(session);
             TerrainContextText.IsVisible = !CreationFields.IsVisible && !SculptFields.IsVisible &&
-                !VertexFields.IsVisible && !NoiseFields.IsVisible && !StitchFields.IsVisible && !CollisionFields.IsVisible;
+                !VertexFields.IsVisible && !NoiseFields.IsVisible && !SplitFields.IsVisible &&
+                !ThickenTerrainFields.IsVisible && !StitchFields.IsVisible && !CollisionFields.IsVisible;
             VertexSelectionText.Text = $"{count} terrain {(count == 1 ? "vertex" : "vertices")} selected.";
             int editable = session.Selection.Items.OfType<TerrainVertexSelection>()
                 .Count(vertex => !session.IsPatchVertexLocked(vertex));
@@ -327,6 +349,39 @@ public partial class TerrainInspector : UserControl
             _updating = false;
             RefreshSelection(session);
         }
+    }
+
+    private async Task SplitAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures, bool columns)
+    {
+        if (dialogs.BlocksInput) return;
+        try
+        {
+            if (session.Selection.Count != 1 || session.Selection.Active is not MapTerrain { IsCurve: false } surface)
+                throw new ArgumentException("Select one whole terrain patch to split.");
+            finishGestures();
+            int seam = (int)((columns ? SplitColumn.Value : SplitRow.Value) ?? 2) - 1;
+            GeometryEditing.SplitSurface(session, surface, columns, seam);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        { await dialogs.MessageAsync("Split terrain", exception.Message); }
+    }
+
+    private async Task ThickenAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures, Action<string> setStatus)
+    {
+        if (dialogs.BlocksInput) return;
+        try
+        {
+            if (session.Selection.Count != 1 || session.Selection.Active is not MapTerrain { IsCurve: false } surface)
+                throw new ArgumentException("Select one whole terrain patch to thicken.");
+            if (TerrainThickenValue.Value is not { } thickness)
+                throw new ArgumentException("Enter a thickness in map units.");
+            finishGestures();
+            int pieces = GeometryEditing.ThickenSurface(session, surface, (float)thickness);
+            setStatus($"Terrain thickened behind its front side by {thickness:0} units; {pieces - 1} shell pieces added. Undo removes them.");
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException or
+            InvalidDataException or NotSupportedException or FormatException)
+        { await dialogs.MessageAsync("Thicken terrain", exception.Message); }
     }
 
     private static float ReadNumber(TextBox input, string name)

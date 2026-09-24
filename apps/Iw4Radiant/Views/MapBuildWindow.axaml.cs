@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Iw4Radiant.Compilation;
+using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;
 
@@ -15,8 +16,10 @@ public partial class MapBuildWindow : Window
     private readonly string? _bspPath;
     private readonly IReadOnlyDictionary<string, MaterialSource>? _materials;
     private readonly IReadOnlyDictionary<string, XModelSource>? _models;
+    private readonly Func<SelectionPath, bool>? _navigate;
     private readonly ObservableCollection<string> _providers = [];
     private CancellationTokenSource? _buildCancellation;
+    private SelectionPath? _errorLocation;
 
     public MapBuildWindow()
     {
@@ -43,9 +46,11 @@ public partial class MapBuildWindow : Window
     }
 
     internal MapBuildWindow(MapDocument document, string bspPath,
-        IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models, string? sourcePath)
+        IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
+        string? sourcePath, Func<SelectionPath, bool> navigate)
         : this(document, materials, models)
     {
+        _navigate = navigate;
         _bspPath = bspPath;
         _sourcePath = sourcePath;
         Title = "Build .d3dbsp";
@@ -61,8 +66,10 @@ public partial class MapBuildWindow : Window
     internal MapBuildWindow(MapDocument document, string sourcePath,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
         string linkerPath, string templatePath,
-        IReadOnlyList<string> providerPaths, string outputFolder) : this(document, materials, models)
+        IReadOnlyList<string> providerPaths, string outputFolder,
+        Func<SelectionPath, bool> navigate) : this(document, materials, models)
     {
+        _navigate = navigate;
         _sourcePath = sourcePath;
         SourceName.Text = Path.GetFileName(sourcePath);
         LinkerPathBox.Text = linkerPath;
@@ -74,6 +81,7 @@ public partial class MapBuildWindow : Window
 
     internal string? CompletedDirectory { get; private set; }
     internal string? CompletedBspPath { get; private set; }
+    internal bool PreviewRequested { get; private set; }
     internal string LinkerPath => LinkerPathBox.Text?.Trim() ?? "";
     internal string TemplatePath => TemplatePathBox.Text?.Trim() ?? "";
     internal string OutputFolder => OutputFolderBox.Text?.Trim() ?? "";
@@ -141,6 +149,9 @@ public partial class MapBuildWindow : Window
         CloseButton.Content = "Cancel build";
         BuildStatus.Text = "Building…";
         ProgressOutput.Text = "";
+        ErrorLocation.IsVisible = false;
+        ShowErrorButton.IsEnabled = true;
+        _errorLocation = null;
         try
         {
             var progress = new Progress<string>(AppendProgress);
@@ -156,6 +167,7 @@ public partial class MapBuildWindow : Window
             BuildStatus.Text = "Build complete";
             AppendProgress($"Build complete: {CompletedBspPath ?? CompletedDirectory}");
             BuildButton.IsVisible = false;
+            PreviewButton.IsVisible = true;
         }
         catch (OperationCanceledException)
         {
@@ -166,6 +178,24 @@ public partial class MapBuildWindow : Window
         {
             BuildStatus.Text = "Build failed";
             AppendProgress(exception.Message);
+            if (exception is MapBuildLocationException located &&
+                ReferenceEquals(located.Document, _document) && _navigate is not null)
+            {
+                _errorLocation = located.Location;
+                MapEntity entity = located.Document.Entities[located.Location.Entity];
+                string owner = entity.ClassName == "worldspawn" ? "the world" : entity.ClassName;
+                int terrainIndex = located.Location.Terrain;
+                bool isCurve = terrainIndex >= 0 && entity.Terrains[terrainIndex].IsCurve;
+                int surfaceNumber = terrainIndex >= 0
+                    ? entity.Terrains.Take(terrainIndex + 1).Count(surface => surface.IsCurve == isCurve)
+                    : 0;
+                ErrorLocationText.Text = located.Location.Brush >= 0
+                    ? $"Brush {located.Location.Brush + 1} in {owner}"
+                    : terrainIndex >= 0
+                        ? $"{(isCurve ? "Curve" : "Terrain")} {surfaceNumber} in {owner}"
+                        : $"{entity.ClassName} entity";
+                ErrorLocation.IsVisible = true;
+            }
         }
         finally
         {
@@ -174,13 +204,30 @@ public partial class MapBuildWindow : Window
             CloseButton.IsEnabled = true;
             CloseButton.Content = "Close";
         }
-        if (CompletedBspPath is not null) Close();
+    }
+
+    private void Preview_Click(object? sender, RoutedEventArgs e)
+    {
+        if (CompletedBspPath is null && CompletedDirectory is null) return;
+        PreviewRequested = true;
+        Close();
     }
 
     private void AppendProgress(string message)
     {
         ProgressOutput.Text += message + Environment.NewLine;
         ProgressOutput.CaretIndex = ProgressOutput.Text.Length;
+    }
+
+    private void ShowError_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_errorLocation is not { } location || _navigate is null) return;
+        if (_navigate(location)) Close();
+        else
+        {
+            ShowErrorButton.IsEnabled = false;
+            ErrorLocationText.Text = "This object is no longer selectable. Check its visibility and rebuild.";
+        }
     }
 
     private void Close_Click(object? sender, RoutedEventArgs e)

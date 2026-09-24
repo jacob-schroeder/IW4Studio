@@ -2,8 +2,10 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using System.Numerics;
 using Iw4Radiant.Viewports.Camera;
 using Iw4Radiant.Viewports.Orthographic;
+using Iw4Radiant.Rendering;
 
 namespace Iw4Radiant.Views;
 
@@ -15,6 +17,10 @@ public partial class ViewportWorkspace : UserControl
     private EditorDialogs? _dialogs;
     private Action? _finishGestures;
     private bool _fourViews, _maximized, _materialsVisible = true;
+    private bool _updatingFilm;
+    private bool _updatingFog;
+    private bool _compiledPreviewVisible;
+    private Control? _activeBeforeCompiledPreview;
     private GridLength[] _twoColumns = [new(1, GridUnitType.Star), new(5), new(1.2, GridUnitType.Star)];
     private GridLength[] _fourColumns = [new(1, GridUnitType.Star), new(5), new(1, GridUnitType.Star)];
     private GridLength[] _twoRows = [new(1, GridUnitType.Star), new(5), new(270)];
@@ -43,6 +49,25 @@ public partial class ViewportWorkspace : UserControl
         });
         CameraView.NavigationModeChanged += RefreshCameraControls;
         CameraView.FoliageBrushChanged += CameraFoliageBrush.SetBrush;
+        FilmLightTint.PreserveColorScale = FilmDarkTint.PreserveColorScale = true;
+        foreach (var slider in new[] { FilmBrightness, FilmContrast, FilmDesaturation })
+            slider.PropertyChanged += (_, change) =>
+            {
+                if (change.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty)
+                    UpdateFilmPreview();
+            };
+        FilmLightTint.SelectedColorChanged += UpdateFilmPreview;
+        FilmDarkTint.SelectedColorChanged += UpdateFilmPreview;
+        UpdateFilmPreview();
+        FogColor.SelectedColor = FogPreview.Disabled.Color;
+        foreach (var slider in new[] { FogStart, FogHalfDistance })
+            slider.PropertyChanged += (_, change) =>
+            {
+                if (change.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty)
+                    UpdateFogPreview();
+            };
+        FogColor.SelectedColorChanged += UpdateFogPreview;
+        UpdateFogPreview();
         RefreshCameraControls();
         ApplyLayout();
     }
@@ -57,6 +82,26 @@ public partial class ViewportWorkspace : UserControl
     internal bool MaterialsVisible => _materialsVisible;
     internal OrthoPlane ActivePlane => _activeGrid.Plane;
     internal event Action? LayoutChanged;
+
+    internal void SetCompiledPreview(CompiledBspPreview? preview)
+    {
+        if (!_compiledPreviewVisible && preview is not null)
+        {
+            SaveLayout();
+            _activeBeforeCompiledPreview = _activeView;
+        }
+        _compiledPreviewVisible = preview is not null;
+        CameraView.CompiledPreview = preview;
+        PreviewLights.IsEnabled = preview is null;
+        if (preview is null && _activeBeforeCompiledPreview is { } active)
+        {
+            _activeView = active;
+            _activeBeforeCompiledPreview = null;
+        }
+        ApplyLayout();
+        RefreshCameraControls();
+        if (_compiledPreviewVisible) CameraView.Focus();
+    }
 
     internal void InitializeActions(EditorDialogs dialogs, Action finishGestures)
     {
@@ -170,6 +215,20 @@ public partial class ViewportWorkspace : UserControl
             entry.Panel.IsVisible = false;
             Place(entry.Panel, 0, 0);
         }
+        if (_compiledPreviewVisible)
+        {
+            ColumnSplitter.IsVisible = ViewRowSplitter.IsVisible = MaterialSplitter.IsVisible =
+                AssetBrowserTabs.IsVisible = false;
+            LayoutGrid.ColumnDefinitions.Clear();
+            LayoutGrid.RowDefinitions.Clear();
+            LayoutGrid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(1, GridUnitType.Star)));
+            LayoutGrid.RowDefinitions.Add(new RowDefinition(new GridLength(1, GridUnitType.Star)));
+            Place(CameraPanel, 0, 0);
+            CameraPanel.IsVisible = true;
+            Activate(CameraView);
+            LayoutChanged?.Invoke();
+            return;
+        }
         ColumnSplitter.IsVisible = !_maximized;
         ViewRowSplitter.IsVisible = !_maximized && _fourViews;
         MaterialSplitter.IsVisible = AssetBrowserTabs.IsVisible = !_maximized && _materialsVisible;
@@ -222,6 +281,82 @@ public partial class ViewportWorkspace : UserControl
         if (CameraView is not null) CameraView.PreviewLighting = PreviewLights.IsChecked == true;
     }
 
+    private void FilmPanel_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (FilmPreviewPanel is not null)
+            FilmPreviewPanel.IsVisible = FilmToggle.IsChecked == true;
+        if (FilmToggle.IsChecked == true && FogToggle is not null)
+            FogToggle.IsChecked = false;
+    }
+
+    private void FogPanel_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (FogPreviewPanel is not null)
+            FogPreviewPanel.IsVisible = FogToggle.IsChecked == true;
+        if (FogToggle.IsChecked == true && FilmToggle is not null)
+            FilmToggle.IsChecked = false;
+    }
+
+    private void FogEnabled_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (FogControls is not null)
+            FogControls.IsEnabled = FogEnabled.IsChecked == true;
+        UpdateFogPreview();
+    }
+
+    private void FogReset_Click(object? sender, RoutedEventArgs e)
+    {
+        _updatingFog = true;
+        try
+        {
+            FogEnabled.IsChecked = false;
+            FogStart.Value = FogPreview.Disabled.StartDistance;
+            FogHalfDistance.Value = FogPreview.Disabled.HalfDistance;
+            FogColor.SelectedColor = FogPreview.Disabled.Color;
+        }
+        finally { _updatingFog = false; }
+        UpdateFogPreview();
+    }
+
+    private void UpdateFogPreview()
+    {
+        if (_updatingFog || CameraView is null) return;
+        FogStartValue.Text = $"{FogStart.Value:0}";
+        FogHalfDistanceValue.Text = $"{FogHalfDistance.Value:0}";
+        CameraView.FogAdjustment = new FogPreview(FogEnabled.IsChecked == true, FogColor.SelectedColor,
+            (float)FogStart.Value, (float)FogHalfDistance.Value);
+    }
+
+    private void FilmReset_Click(object? sender, RoutedEventArgs e)
+    {
+        _updatingFilm = true;
+        try
+        {
+            FilmBrightness.Value = 0;
+            FilmContrast.Value = 1;
+            FilmDesaturation.Value = 0;
+            FilmLightTint.SelectedColor = FilmDarkTint.SelectedColor = Vector3.One;
+        }
+        finally { _updatingFilm = false; }
+        UpdateFilmPreview();
+    }
+
+    private void UpdateFilmPreview()
+    {
+        if (_updatingFilm || CameraView is null) return;
+        FilmBrightnessValue.Text = $"{FilmBrightness.Value:+0.00;-0.00;0.00}";
+        FilmContrastValue.Text = $"{FilmContrast.Value:0.00}×";
+        FilmDesaturationValue.Text = $"{FilmDesaturation.Value:P0}";
+        CameraView.FilmAdjustment = new FilmPreview((float)FilmBrightness.Value, (float)FilmContrast.Value,
+            (float)FilmDesaturation.Value, DisplayTint(FilmLightTint.SelectedColor),
+            DisplayTint(FilmDarkTint.SelectedColor));
+    }
+
+    private static Vector3 DisplayTint(Vector3 linear) => new(
+        MathF.Sqrt(Math.Clamp(linear.X, 0, 1)),
+        MathF.Sqrt(Math.Clamp(linear.Y, 0, 1)),
+        MathF.Sqrt(Math.Clamp(linear.Z, 0, 1)));
+
     private void FlyCamera_Changed(object? sender, RoutedEventArgs e)
     {
         if (CameraView is null || _dialogs?.BlocksInput == true) return;
@@ -232,7 +367,9 @@ public partial class ViewportWorkspace : UserControl
     private void RefreshCameraControls()
     {
         FlyCamera.IsChecked = CameraView.FlyMode;
-        CameraControlsHint.Text = CameraView.FlyMode
+        CameraControlsHint.Text = _compiledPreviewVisible
+            ? "Read-only BSP · Right-drag orbit · Middle-drag pan · Scroll zoom · Fly for WASD"
+            : CameraView.FlyMode
             ? "Fly · WASD move · Q/E down/up · Right-drag look\nShift faster · Scroll move · End frame · Esc orbit"
             : "Right-drag orbit · Shift+right-drag or middle-drag pan\nHold right + WASD move · Scroll zoom · End frame · Right-click objects";
     }

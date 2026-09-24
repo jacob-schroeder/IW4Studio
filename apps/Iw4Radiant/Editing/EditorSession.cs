@@ -47,6 +47,7 @@ internal sealed class EditorSession
     internal float PaintOpacity { get; set; } = 0.25f;
     internal float PaintAlpha { get; set; } = 1;
     public bool IsDirty => _revision != _savedRevision || _beforeEdit is not null;
+    internal long ContentRevision => _revision;
     public bool CanTransformSelection => Selection.Count > 0 && Selection.Items.All(item =>
         Visibility.CanSelect(Document, item) && SelectionGeometry.CanTransform(item)) &&
         Selection.Items.Any(item => item is not TerrainVertexSelection vertex || !IsPatchVertexLocked(vertex));

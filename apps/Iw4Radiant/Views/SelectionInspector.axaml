@@ -56,7 +56,7 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem x:Name="GeometryTab" ToolTip.Tip="Geometry · curves, arches and stairs" AutomationProperties.Name="Geometry">
+            <TabItem x:Name="GeometryTab" ToolTip.Tip="Geometry · curves, bridges, ropes, arches and stairs" AutomationProperties.Name="Geometry">
                 <TabItem.Header><materialIcons:MaterialIcon Kind="VectorPolygon" Width="16" Height="16" /></TabItem.Header>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled">
                     <views:GeometryInspector x:Name="Geometry" Margin="12" />

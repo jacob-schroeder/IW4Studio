@@ -4,11 +4,14 @@ namespace Iw4Radiant.MapSource;
 
 internal static class PatchGeometry
 {
-    internal static MapTerrain Evaluate(MapTerrain patch)
+    internal static MapTerrain Evaluate(MapTerrain patch) => Evaluate(patch, 8);
+
+    internal static MapTerrain Evaluate(MapTerrain patch, int samplesPerSpan)
     {
         Validate(patch);
-        // Display sampling only: saving always writes the original native control grid.
-        const int samplesPerSpan = 8;
+        if (samplesPerSpan is < 1 or > 16)
+            throw new ArgumentOutOfRangeException(nameof(samplesPerSpan), "Choose between 1 and 16 samples per curve span.");
+        // The default is display sampling; conversion can choose another density before saving ordinary terrain.
         int columns = (patch.Width - 1) / 2, rows = (patch.Height - 1) / 2;
         MapTerrain surface = Allocate(patch, columns * samplesPerSpan + 1, rows * samplesPerSpan + 1);
         surface.IsCurve = false;

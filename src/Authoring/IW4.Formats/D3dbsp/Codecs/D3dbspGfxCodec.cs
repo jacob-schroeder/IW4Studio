@@ -8,6 +8,7 @@ using IW4.Game.Assets.Material;
 using IW4.Game.Assets.TechniqueSet;
 using IW4.Game.Math;
 using IW4.Game.Pointers;
+using System.Numerics;
 
 namespace IW4.Formats.Codecs.D3dbsp;
 
@@ -44,6 +45,57 @@ internal static class D3dbspGfxCodec
                 throw new InvalidDataException($"Collision material row {materialIndex} has no name."));
         }
         return Array.AsReadOnly(names.OrderBy(name => name, StringComparer.Ordinal).ToArray());
+    }
+
+    public static IReadOnlyList<(string Material, IReadOnlyList<(Vector3 Position, Vector3 Normal, Vector2 Uv, Vector4 Color)> Vertices)>
+        DecodeRenderTriangles(D3dbspFile file)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        IReadOnlyList<ClipMaterial> materials = D3dbspCollisionCodec.DecodeMaterials(
+            file.GetRequiredData(D3dbspLumpType.Materials));
+        bool unlayered = SelectUnlayeredGeometryFamily(file);
+        ReadOnlySpan<byte> surfaces = GetTriangleData(file, unlayered);
+        ReadOnlySpan<byte> vertices = file.GetRequiredData(unlayered
+            ? D3dbspLumpType.UnlayeredDrawVerts : D3dbspLumpType.DrawVerts);
+        ReadOnlySpan<byte> indices = file.GetRequiredData(unlayered
+            ? D3dbspLumpType.UnlayeredDrawIndices : D3dbspLumpType.DrawIndices);
+        int surfaceCount = GetRenderSurfaceCount(surfaces);
+        int vertexCount = GetElementCount(vertices, DiskVertexSize, "render vertex");
+        int indexCount = GetElementCount(indices, sizeof(ushort), "render index");
+        var result = new (string Material, IReadOnlyList<(Vector3 Position, Vector3 Normal, Vector2 Uv, Vector4 Color)> Vertices)[surfaceCount];
+        for (int surfaceIndex = 0; surfaceIndex < surfaceCount; surfaceIndex++)
+        {
+            ReadOnlySpan<byte> row = surfaces.Slice(surfaceIndex * DiskTriangleSoupSize, DiskTriangleSoupSize);
+            int materialIndex = ReadTriangleMaterialIndex(row, surfaceIndex, materials.Count);
+            uint firstVertexRaw = BinaryPrimitives.ReadUInt32LittleEndian(row[12..]);
+            if (firstVertexRaw > int.MaxValue)
+                throw new InvalidDataException($"Render surface {surfaceIndex} has an invalid first vertex.");
+            int firstVertex = (int)firstVertexRaw;
+            int localVertexCount = BinaryPrimitives.ReadUInt16LittleEndian(row[16..]);
+            int localIndexCount = BinaryPrimitives.ReadUInt16LittleEndian(row[18..]);
+            int firstIndex = BinaryPrimitives.ReadInt32LittleEndian(row[20..]);
+            if (localIndexCount == 0 || localIndexCount % 3 != 0)
+                throw new InvalidDataException($"Render surface {surfaceIndex} has invalid index count {localIndexCount}.");
+            ValidateSlice(firstVertex, localVertexCount, vertexCount, $"Render surface {surfaceIndex} vertex");
+            ValidateSlice(firstIndex, localIndexCount, indexCount, $"Render surface {surfaceIndex} index");
+            var triangles = new (Vector3 Position, Vector3 Normal, Vector2 Uv, Vector4 Color)[localIndexCount];
+            for (int index = 0; index < localIndexCount; index++)
+            {
+                int localVertex = BinaryPrimitives.ReadUInt16LittleEndian(indices.Slice((firstIndex + index) * 2, 2));
+                if (localVertex >= localVertexCount)
+                    throw new InvalidDataException($"Render surface {surfaceIndex} index {index} references local vertex {localVertex}; the surface has {localVertexCount} vertices.");
+                ReadOnlySpan<byte> source = vertices.Slice((firstVertex + localVertex) * DiskVertexSize, DiskVertexSize);
+                Vec3 position = ReadVec3(source, 0);
+                Vec3 normal = ReadVec3(source, 12);
+                triangles[index] = (new Vector3(position.X, position.Y, position.Z),
+                    new Vector3(normal.X, normal.Y, normal.Z),
+                    new Vector2(ReadSingle(source, 28), ReadSingle(source, 32)),
+                    new Vector4(source[26] / 255f, source[25] / 255f, source[24] / 255f, source[27] / 255f));
+            }
+            result[surfaceIndex] = (materials[materialIndex].Name ??
+                throw new InvalidDataException($"Collision material row {materialIndex} has no name."), Array.AsReadOnly(triangles));
+        }
+        return Array.AsReadOnly(result);
     }
 
     public static GfxWorldAsset DecodeWorld(

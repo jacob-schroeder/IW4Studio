@@ -48,15 +48,25 @@
                            Classes="caption" TextWrapping="Wrap" />
             </StackPanel>
         </StackPanel>
-        <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="6">
+        <Grid Grid.Row="2" RowDefinitions="Auto,*,Auto" RowSpacing="6">
             <TextBlock x:Name="BuildStatus" Text="Ready to build the saved map." Classes="panelTitle" TextWrapping="Wrap" />
             <TextBox x:Name="ProgressOutput" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True"
                      TextWrapping="Wrap" FontFamily="Menlo,Consolas,monospace" FontSize="11"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                      AutomationProperties.Name="Build progress" />
+            <Grid x:Name="ErrorLocation" Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="10"
+                  IsVisible="False">
+                <TextBlock x:Name="ErrorLocationText" VerticalAlignment="Center" TextWrapping="Wrap"
+                           Classes="caption" />
+                <Button x:Name="ShowErrorButton" Grid.Column="1" Content="Show in map"
+                        Classes="panelAction" Click="ShowError_Click"
+                        AutomationProperties.Name="Show build error in map" />
+            </Grid>
         </Grid>
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
             <Button x:Name="BuildButton" Content="Build PS3 fastfile" Classes="panelAction" Click="Build_Click" />
+            <Button x:Name="PreviewButton" Content="Preview compiled map" Classes="panelAction"
+                    IsVisible="False" Click="Preview_Click" AutomationProperties.Name="Preview compiled map" />
             <Button x:Name="CloseButton" Content="Close" MinWidth="88" Click="Close_Click" />
         </StackPanel>
     </Grid>

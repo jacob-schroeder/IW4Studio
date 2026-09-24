@@ -31,6 +31,10 @@ uniform float uOceanTime;
 uniform bool uCubicClip;
 uniform vec3 uCubicClipCenter;
 uniform float uCubicClipDistance;
+uniform bool uFogEnabled;
+uniform vec3 uFogColor;
+uniform float uFogStart;
+uniform float uFogDensity;
 uniform int uLightCount;
 uniform sampler2D uLightData;
 uniform sampler2D uShadowAtlas;
@@ -43,6 +47,14 @@ uniform mat4 uSunViewProjection;
 uniform sampler2D uSunShadow;
 
 out vec4 fragmentColor;
+
+vec3 previewFog(vec3 color)
+{
+    if (!uFogEnabled) return color;
+    float distancePastStart = max(length(vPosition - uEye) - uFogStart, 0.0);
+    float fog = 1.0 - exp(-distancePastStart * uFogDensity);
+    return mix(color, uFogColor, fog);
+}
 
 float sunVisibility(vec3 coordinate, vec2 depthGradient)
 {
@@ -174,6 +186,7 @@ void main()
             if (opacity < 0.0039215686) discard;
             color = sqrt(clamp(color, 0.0, 1.0));
             applyMaterialAlpha(opacity);
+            color = previewFog(color);
             fragmentColor = vec4(uPremultiplyAlpha ? color * opacity : color, opacity);
             return;
         }
@@ -190,6 +203,7 @@ void main()
         // editor's squared-radiance capture domain; exact RSX display transfer is unverified.
         vec3 waterColor = sqrt(clamp(linearColor, 0.0, 1.0));
         applyMaterialAlpha(opacity);
+        waterColor = previewFog(waterColor);
         fragmentColor = vec4(uPremultiplyAlpha ? waterColor * opacity : waterColor, opacity);
         return;
     }
@@ -238,5 +252,6 @@ void main()
         }
         color *= illumination;
     }
+    color = previewFog(color);
     fragmentColor = vec4(uPremultiplyAlpha ? color * surface.a : color, surface.a);
 }

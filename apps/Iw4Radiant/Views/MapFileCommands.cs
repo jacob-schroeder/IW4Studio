@@ -12,10 +12,11 @@ internal sealed class MapFileCommands
     private readonly EditorDialogs _dialogs;
     private readonly Action _finishGestures, _frameAll;
     private readonly Action<string> _setStatus;
+    private readonly Action _clearLeakPath;
     private bool _allowClose, _closePromptOpen;
 
     internal MapFileCommands(Window owner, EditorSession session, EditorDialogs dialogs,
-        Action finishGestures, Action frameAll, Action<string> setStatus)
+        Action finishGestures, Action frameAll, Action<string> setStatus, Action clearLeakPath)
     {
         _owner = owner;
         _session = session;
@@ -23,6 +24,7 @@ internal sealed class MapFileCommands
         _finishGestures = finishGestures;
         _frameAll = frameAll;
         _setStatus = setStatus;
+        _clearLeakPath = clearLeakPath;
         owner.Closing += OnClosing;
     }
 
@@ -30,6 +32,7 @@ internal sealed class MapFileCommands
     {
         if (_dialogs.BlocksInput || !await ConfirmDiscardAsync()) return;
         _session.Replace(MapDocument.Create(), null);
+        _clearLeakPath();
         _frameAll();
     }
     internal async Task OpenAsync()
@@ -57,6 +60,7 @@ internal sealed class MapFileCommands
             _dialogs.SetBusy(true);
             var document = await Task.Run(() => MapFile.Read(path));
             _session.Replace(document, path);
+            _clearLeakPath();
             _frameAll();
             int preserved = document.Entities.Sum(entity => entity.PreservedPrimitives.Count);
             _setStatus($"Opened {Path.GetFileName(path)}." + (preserved > 0

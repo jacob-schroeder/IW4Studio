@@ -2,6 +2,122 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Iw4Radiant.Views.GeometryInspector">
     <StackPanel Spacing="10">
+        <Border x:Name="BrushExtendGuide" Background="#292D32" BorderBrush="#464B53"
+                BorderThickness="1" CornerRadius="6" Padding="10" IsVisible="False">
+            <StackPanel Spacing="5">
+                <TextBlock Text="Extend brush to face" Classes="panelTitle" />
+                <TextBlock Text="Right-click the target face in Camera, then choose Extend selected brush to this face. The brush's materials and texture projections stay in place."
+                           Classes="caption" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+        <StackPanel x:Name="PatchFields" Spacing="8" IsVisible="False">
+            <TextBlock Text="Edit curve" Classes="panelTitle" />
+            <TextBlock x:Name="PatchSummary" Classes="caption" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                <Button x:Name="RefineColumnsButton" Content="Refine columns" HorizontalAlignment="Stretch" />
+                <Button x:Name="RefineRowsButton" Grid.Column="1" Content="Refine rows" HorizontalAlignment="Stretch" />
+                <Button x:Name="InvertButton" Grid.Row="1" Content="Flip facing" HorizontalAlignment="Stretch" />
+                <Button x:Name="CapButton" Grid.Row="1" Grid.Column="1" Content="Cap ends" HorizontalAlignment="Stretch" />
+            </Grid>
+            <TextBlock Text="Refine adds controls without changing the curve. Cap ends fills both ends of bevels, end caps, and cylinders." Classes="caption" TextWrapping="Wrap" />
+            <Separator />
+            <TextBlock Text="Split curve" Classes="panelTitle" />
+            <TextBlock Text="Choose a span. The split follows its midpoint and keeps the curve and texture continuous." Classes="caption" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                <TextBlock Text="Column span" Classes="fieldLabel" />
+                <TextBlock Text="Row span" Grid.Column="1" Classes="fieldLabel" />
+                <NumericUpDown x:Name="SplitColumnSpan" Grid.Row="1" Minimum="1" Maximum="1" Value="1" FormatString="0" />
+                <NumericUpDown x:Name="SplitRowSpan" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="1" Value="1" FormatString="0" />
+                <Button x:Name="SplitColumnsButton" Grid.Row="2" Content="Split column span" HorizontalAlignment="Stretch" />
+                <Button x:Name="SplitRowsButton" Grid.Row="2" Grid.Column="1" Content="Split row span" HorizontalAlignment="Stretch" />
+            </Grid>
+            <StackPanel x:Name="ConvertCurveFields" Spacing="6" IsVisible="False">
+                <Separator />
+                <TextBlock Text="Convert to terrain" Classes="panelTitle" />
+                <TextBlock Text="Replace this curve with editable terrain. Balanced detail matches its viewport shape; material, UVs, and vertex color carry over. Large results become seamless tiles."
+                           Classes="caption" TextWrapping="Wrap" />
+                <ComboBox x:Name="CurveDetailBox" SelectedIndex="1" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="Light · 4 steps per span" />
+                    <ComboBoxItem Content="Balanced · matches viewport" />
+                    <ComboBoxItem Content="Fine · 16 steps per span" />
+                </ComboBox>
+                <Button x:Name="ConvertCurveButton" Content="Convert curve to terrain" Classes="panelAction" HorizontalAlignment="Stretch" />
+            </StackPanel>
+            <StackPanel x:Name="ThickenCurveFields" Spacing="6" IsVisible="False">
+                <Separator />
+                <TextBlock Text="Thicken curve" Classes="panelTitle" />
+                <TextBlock Text="Build a closed terrain shell behind the curve's front side. The top matches viewport detail; Undo restores editable curve controls. The underside keeps its texture and color; walls use the same material."
+                           Classes="caption" TextWrapping="Wrap" />
+                <Grid ColumnDefinitions="*,100" ColumnSpacing="5">
+                    <TextBlock Text="Thickness (units)" Classes="fieldLabel" />
+                    <NumericUpDown x:Name="CurveThickenValue" Grid.Column="1" Minimum="1" Maximum="4096" Value="16" Increment="8" FormatString="0" />
+                </Grid>
+                <Button x:Name="ThickenCurveButton" Content="Thicken curve" Classes="panelAction" HorizontalAlignment="Stretch" />
+            </StackPanel>
+            <StackPanel x:Name="ControlFields" Spacing="8">
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                    <TextBlock Text="Column" Classes="fieldLabel" />
+                    <TextBlock Text="Row" Grid.Column="1" Classes="fieldLabel" />
+                    <NumericUpDown x:Name="ColumnValue" Grid.Row="1" Minimum="1" Maximum="3" Value="1" FormatString="0" />
+                    <NumericUpDown x:Name="RowValue" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="3" Value="1" FormatString="0" />
+                </Grid>
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                    <Button x:Name="SelectPointButton" Content="Select control" HorizontalAlignment="Stretch" />
+                    <Button x:Name="SelectAllButton" Grid.Column="1" Content="All controls" HorizontalAlignment="Stretch" />
+                    <Button x:Name="SelectColumnButton" Grid.Row="1" Content="Select column" HorizontalAlignment="Stretch" />
+                    <Button x:Name="SelectRowButton" Grid.Row="1" Grid.Column="1" Content="Select row" HorizontalAlignment="Stretch" />
+                </Grid>
+                <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                    <TextBlock Text="Control X" Classes="fieldLabel" />
+                    <TextBlock Text="Control Y" Grid.Column="1" Classes="fieldLabel" />
+                    <TextBlock Text="Control Z" Grid.Column="2" Classes="fieldLabel" />
+                    <TextBox x:Name="PointX" Grid.Row="1" />
+                    <TextBox x:Name="PointY" Grid.Row="1" Grid.Column="1" />
+                    <TextBox x:Name="PointZ" Grid.Row="1" Grid.Column="2" />
+                </Grid>
+                <Button x:Name="ApplyPointButton" Content="Apply control position" HorizontalAlignment="Stretch" />
+            </StackPanel>
+            <TextBlock Text="Use Vertex mode and the transform tools to move selected controls, rows, or columns in any view." Classes="caption" TextWrapping="Wrap" />
+        </StackPanel>
+        <Expander x:Name="BridgePanel" Header="Bridge two surfaces" IsExpanded="False">
+            <StackPanel Spacing="7" Margin="0,8,0,0">
+                <TextBlock Text="Select two world surfaces in order: curved patches (including cylinders), terrains, or brushes. A whole brush uses its top face; Face mode picks another face. The nearest compatible boundaries are suggested, and you can change either one."
+                           Classes="caption" TextWrapping="Wrap" />
+                <TextBlock x:Name="BridgeReadyText" Classes="caption" TextWrapping="Wrap" />
+                <TextBlock x:Name="BridgeFirstCaption" Text="1 · Start surface" Classes="fieldLabel" />
+                <ComboBox x:Name="BridgeFirstEdge" HorizontalAlignment="Stretch" />
+                <TextBlock x:Name="BridgeSecondCaption" Text="2 · End surface" Classes="fieldLabel" />
+                <ComboBox x:Name="BridgeSecondEdge" HorizontalAlignment="Stretch" />
+                <Grid ColumnDefinitions="*,110" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="6">
+                    <TextBlock x:Name="BridgeRowsCaption" Text="Rows across the gap" Classes="fieldLabel" />
+                    <NumericUpDown x:Name="BridgeRows" Grid.Column="1" Minimum="3" Maximum="16" Value="5" Increment="1" FormatString="0" />
+                    <TextBlock x:Name="BridgeRiseCaption" Text="Center rise · units" Grid.Row="1" Classes="fieldLabel" />
+                    <NumericUpDown x:Name="BridgeRise" Grid.Row="1" Grid.Column="1" Minimum="-1024" Maximum="1024" Value="0" Increment="16" FormatString="0" />
+                </Grid>
+                <TextBlock x:Name="BridgeMaterialText" Classes="caption" TextWrapping="Wrap" />
+                <Button x:Name="CreateBridgeButton" Content="Create bridge" Classes="panelAction" HorizontalAlignment="Stretch" />
+                <TextBlock x:Name="BridgeShapeHelp" Text="The source surfaces stay intact. The new terrain is solid and editable; one Undo removes it. Positive rise makes a hump, negative rise makes a dip."
+                           Classes="caption" TextWrapping="Wrap" />
+            </StackPanel>
+        </Expander>
+        <Expander x:Name="RopePanel" Header="Rope between two points" IsExpanded="False">
+            <StackPanel Spacing="7" Margin="0,8,0,0">
+                <TextBlock Text="Place two temporary info_null markers and select both. Choose a material in the browser. Creating the rope replaces the markers; Undo brings them back."
+                           Classes="caption" TextWrapping="Wrap" />
+                <TextBlock x:Name="RopeReadyText" Classes="caption" TextWrapping="Wrap" />
+                <Grid ColumnDefinitions="*,100" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="5" RowSpacing="6">
+                    <TextBlock Text="Thickness · units" Classes="fieldLabel" />
+                    <NumericUpDown x:Name="RopeThickness" Grid.Column="1" Minimum="2" Maximum="256" Value="8" Increment="2" FormatString="0" />
+                    <TextBlock Text="Slack · %" Grid.Row="1" Classes="fieldLabel" />
+                    <NumericUpDown x:Name="RopeSlack" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" Value="15" Increment="5" FormatString="0" />
+                    <TextBlock Text="Detail · segments" Grid.Row="2" Classes="fieldLabel" />
+                    <NumericUpDown x:Name="RopeSegments" Grid.Row="2" Grid.Column="1" Minimum="2" Maximum="64" Value="16" Increment="2" FormatString="0" />
+                </Grid>
+                <Button x:Name="CreateRopeButton" Content="Create rope" Classes="panelAction" HorizontalAlignment="Stretch" />
+                <TextBlock Text="Editable visual terrain · noncolliding · one Undo step. Named or linked markers are never consumed."
+                           Classes="caption" TextWrapping="Wrap" />
+            </StackPanel>
+        </Expander>
         <TextBlock Text="Create geometry" Classes="panelTitle" />
         <ComboBox x:Name="ShapeBox" SelectedIndex="0" HorizontalAlignment="Stretch">
             <ComboBoxItem Content="Curved patch" />
@@ -40,41 +156,6 @@
         <Button x:Name="CreateButton" Content="Create patch" Classes="panelAction" HorizontalAlignment="Stretch" />
         <TextBlock x:Name="ShapeHint" Classes="caption" TextWrapping="Wrap" />
         <Separator />
-        <StackPanel x:Name="PatchFields" Spacing="8" IsVisible="False">
-            <TextBlock Text="Edit curve" Classes="panelTitle" />
-            <TextBlock x:Name="PatchSummary" Classes="caption" TextWrapping="Wrap" />
-            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
-                <Button x:Name="RefineColumnsButton" Content="Refine columns" HorizontalAlignment="Stretch" />
-                <Button x:Name="RefineRowsButton" Grid.Column="1" Content="Refine rows" HorizontalAlignment="Stretch" />
-                <Button x:Name="InvertButton" Grid.Row="1" Content="Flip facing" HorizontalAlignment="Stretch" />
-                <Button x:Name="CapButton" Grid.Row="1" Grid.Column="1" Content="Cap ends" HorizontalAlignment="Stretch" />
-            </Grid>
-            <TextBlock Text="Refine adds controls without changing the curve. Cap ends fills both ends of bevels, end caps, and cylinders." Classes="caption" TextWrapping="Wrap" />
-            <StackPanel x:Name="ControlFields" Spacing="8">
-                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
-                    <TextBlock Text="Column" Classes="fieldLabel" />
-                    <TextBlock Text="Row" Grid.Column="1" Classes="fieldLabel" />
-                    <NumericUpDown x:Name="ColumnValue" Grid.Row="1" Minimum="1" Maximum="3" Value="1" FormatString="0" />
-                    <NumericUpDown x:Name="RowValue" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="3" Value="1" FormatString="0" />
-                </Grid>
-                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
-                    <Button x:Name="SelectPointButton" Content="Select control" HorizontalAlignment="Stretch" />
-                    <Button x:Name="SelectAllButton" Grid.Column="1" Content="All controls" HorizontalAlignment="Stretch" />
-                    <Button x:Name="SelectColumnButton" Grid.Row="1" Content="Select column" HorizontalAlignment="Stretch" />
-                    <Button x:Name="SelectRowButton" Grid.Row="1" Grid.Column="1" Content="Select row" HorizontalAlignment="Stretch" />
-                </Grid>
-                <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
-                    <TextBlock Text="Control X" Classes="fieldLabel" />
-                    <TextBlock Text="Control Y" Grid.Column="1" Classes="fieldLabel" />
-                    <TextBlock Text="Control Z" Grid.Column="2" Classes="fieldLabel" />
-                    <TextBox x:Name="PointX" Grid.Row="1" />
-                    <TextBox x:Name="PointY" Grid.Row="1" Grid.Column="1" />
-                    <TextBox x:Name="PointZ" Grid.Row="1" Grid.Column="2" />
-                </Grid>
-                <Button x:Name="ApplyPointButton" Content="Apply control position" HorizontalAlignment="Stretch" />
-            </StackPanel>
-            <TextBlock Text="Use Vertex mode and the transform tools to move selected controls, rows, or columns in any view." Classes="caption" TextWrapping="Wrap" />
-        </StackPanel>
-        <TextBlock x:Name="SelectionHint" Text="Select a curved patch to edit its controls, refine it, or cap it." Classes="caption" TextWrapping="Wrap" />
+        <TextBlock x:Name="SelectionHint" Text="Select a curved patch to edit its controls, split it, or refine it." Classes="caption" TextWrapping="Wrap" />
     </StackPanel>
 </UserControl>

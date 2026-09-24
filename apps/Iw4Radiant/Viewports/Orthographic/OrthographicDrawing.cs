@@ -17,6 +17,9 @@ internal sealed class OrthographicDrawing
     private static readonly IBrush SelectionBrush = Brush("#F2B65B");
     private static readonly IBrush SelectionFill = Brush("#19F2B65B");
     private static readonly IBrush MissingModelFill = Brush("#FF0000");
+    private static readonly IBrush VehiclePathBrush = Brush("#72C5B1");
+    private static readonly IBrush VehicleIssueBrush = Brush("#EA7774");
+    private static readonly IBrush VehicleLookaheadBrush = Brush("#B6A0EA");
     private static readonly Pen MinorGrid = new(Brush("#26292E"));
     private static readonly Pen MajorGrid = new(Brush("#33373E"));
     private static readonly Pen BrushPen = new(Brush("#9AA0AA"));
@@ -25,7 +28,14 @@ internal sealed class OrthographicDrawing
     private static readonly Pen EntityPen = new(Brush("#A29AAE"), 1.5);
     private static readonly Pen MissingModelPen = new(Brush("#7A0000"), 1.5);
     private static readonly Pen TargetPen = new(Brush("#6DB8C4"), 1.2);
+    private static readonly Pen VehiclePathPen = new(VehiclePathBrush, 2);
+    private static readonly Pen VehicleCyclePen = new(Brush("#E7A85D"), 2);
+    private static readonly Pen VehicleIssuePen = new(VehicleIssueBrush, 2);
+    private static readonly Pen VehicleHeadingPen = new(VehicleLookaheadBrush, 1.8);
+    private static readonly Pen VehicleLookaheadPen = new(VehicleLookaheadBrush, 1.5, DashStyle.Dash);
     private static readonly Pen SelectedPen = new(SelectionBrush, 1.8);
+    private static readonly Pen LeakPathPen = new(Brush("#FF6666"), 2.5);
+    private static readonly IBrush LeakPointBrush = Brush("#FFB5B5");
     private static readonly Pen XAxisPen = new(Brush("#BD6165"), 1.5);
     private static readonly Pen YAxisPen = new(Brush("#74AD82"), 1.5);
     private static readonly Pen ZAxisPen = new(Brush("#6B9AC8"), 1.5);
@@ -33,6 +43,8 @@ internal sealed class OrthographicDrawing
     private readonly OrthographicProjection _projection;
 
     internal OrthographicDrawing(OrthographicProjection projection) => _projection = projection;
+    internal LeakPath? LeakPath { get; set; }
+    internal int LeakPointIndex { get; set; }
 
     internal void Draw(DrawingContext context, EditorSession? session, OrthographicGestures gestures, bool focused)
     {
@@ -89,7 +101,8 @@ internal sealed class OrthographicDrawing
                 context.DrawLine(EntityPen, center - new Vector(4, 0), center + new Vector(4, 0));
                 context.DrawLine(EntityPen, center - new Vector(0, 4), center + new Vector(0, 4));
                 DrawText(context, entity.ClassName, new Point(rect.Right + 5, rect.Top - 2), MutedBrush);
-                if (entity.Properties.ContainsKey("angles") || entity.Properties.ContainsKey("angle"))
+                if (!VehiclePathPreview.IsNode(entity) &&
+                    (entity.Properties.ContainsKey("angles") || entity.Properties.ContainsKey("angle")))
                     try
                     {
                         Point forward = _projection.ToScreen(origin + EntityOrientation.Forward(EntityOrientation.Read(entity)) * 32);
@@ -97,7 +110,9 @@ internal sealed class OrthographicDrawing
                     }
                     catch (ArgumentException) { }
             }
-            DrawTargets(context, scene);
+            MapEntity? selectedVehicle = scene.Selection.Items.OfType<MapEntity>().FirstOrDefault(VehiclePathPreview.IsNode);
+            DrawTargets(context, scene, selectedVehicle is not null);
+            if (selectedVehicle is not null) DrawVehiclePath(context, scene.Document, selectedVehicle);
             if (session.SelectionBounds is { } bounds)
                 DrawSelection(context, session, bounds.Min, bounds.Max);
             if (session.Tool == EditorTool.Vertex) DrawVertices(context, session);
@@ -113,6 +128,14 @@ internal sealed class OrthographicDrawing
                 context.DrawLine(SelectedPen, gestures.CursorScreen - new Vector(4, 0), gestures.CursorScreen + new Vector(4, 0));
                 context.DrawLine(SelectedPen, gestures.CursorScreen - new Vector(0, 4), gestures.CursorScreen + new Vector(0, 4));
             }
+        }
+        if (LeakPath is { } path)
+        {
+            for (int index = 1; index < path.Points.Count; index++)
+                context.DrawLine(LeakPathPen, _projection.ToScreen(path.Points[index - 1]),
+                    _projection.ToScreen(path.Points[index]));
+            Point current = _projection.ToScreen(path.Points[LeakPointIndex]);
+            context.DrawEllipse(LeakPointBrush, LeakPathPen, current, 5, 5);
         }
         if (focused)
             context.DrawRectangle(null, new Pen(Brush("#6F7787")), new Rect(_projection.Size).Deflate(0.5));
@@ -229,12 +252,53 @@ internal sealed class OrthographicDrawing
         session.Scene.Selection.Items.OfType<MapEntity>().Any(entity => item is MapBrush brush && entity.Brushes.Contains(brush) ||
             item is MapTerrain terrain && entity.Terrains.Contains(terrain));
 
-    private void DrawTargets(DrawingContext context, EditorScene scene)
+    private void DrawTargets(DrawingContext context, EditorScene scene, bool vehiclePreview)
     {
         foreach (MapEntity source in scene.Document.Entities)
+        {
+            if (vehiclePreview && VehiclePathPreview.IsNode(source)) continue;
             foreach (MapEntity target in scene.ResolveTargets(source))
                 DrawArrow(context, _projection.ToScreen(EditorSession.EntityOrigin(source)),
                     _projection.ToScreen(EditorSession.EntityOrigin(target)), TargetPen);
+        }
+    }
+
+    private void DrawVehiclePath(DrawingContext context, MapDocument document, MapEntity selectedEntity)
+    {
+        var preview = new VehiclePathPreview(document);
+        if (preview.Find(selectedEntity) is not { } selected) return;
+        HashSet<VehiclePathPreview.Node> connected = preview.ConnectedTo(selected);
+        foreach (VehiclePathPreview.Node node in connected)
+        {
+            if (!node.HasPosition) continue;
+            Point position = _projection.ToScreen(node.Position);
+            if (node.Next is { HasPosition: true } next && connected.Contains(next))
+                DrawArrow(context, position, _projection.ToScreen(next.Position),
+                    node.Cycle && next.Cycle ? VehicleCyclePen : VehiclePathPen);
+            if (node.Cycle)
+                context.DrawEllipse(null, VehicleCyclePen, position, 8, 8);
+            if (node.Warnings.Count > 0)
+            {
+                context.DrawEllipse(null, VehicleIssuePen, position, 11, 11);
+                DrawText(context, "!", position + new Vector(9, -18), VehicleIssueBrush);
+            }
+        }
+
+        if (!selected.HasPosition) return;
+        Point origin = _projection.ToScreen(selected.Position);
+        if (selected.Heading is { } heading)
+            DrawArrow(context, origin, _projection.ToScreen(selected.Position + heading * 40), VehicleHeadingPen);
+        IReadOnlyList<(Vector3 Start, Vector3 End)> lookahead = preview.LookaheadSegments(selected);
+        foreach (var segment in lookahead)
+            context.DrawLine(VehicleLookaheadPen, _projection.ToScreen(segment.Start), _projection.ToScreen(segment.End));
+        if (lookahead.Count > 0)
+        {
+            Point end = _projection.ToScreen(lookahead[^1].End);
+            context.DrawEllipse(null, VehicleLookaheadPen, end, 5, 5);
+            DrawText(context, "lookahead", end + new Vector(7, 4), VehicleLookaheadBrush);
+        }
+        if (selected.SpeedMph is { } speed)
+            DrawText(context, FormattableString.Invariant($"{speed:G4} mph"), origin + new Vector(13, -5), VehiclePathBrush);
     }
 
     private static void DrawArrow(DrawingContext context, Point start, Point end, Pen pen)

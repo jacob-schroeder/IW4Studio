@@ -136,6 +136,31 @@ internal static class BrushGeometry
             throw new ArgumentException("The edit would create an open or zero-volume brush.");
     }
 
+    internal static MapBrush ExtendToFace(MapBrush source, MapFace target)
+    {
+        Validate(source);
+        Vector3 targetNormal = target.Normal;
+        if (!IsFinite(target.A) || !IsFinite(target.B) || !IsFinite(target.C) || !IsFinite(targetNormal))
+            throw new ArgumentException("Choose a valid brush face to extend toward.");
+        MapFace opposed = source.Faces.MaxBy(face => Dot(face.Normal, -targetNormal))
+            ?? throw new ArgumentException("Select a brush to extend.");
+        double oldDistance = Dot(opposed.Normal, opposed.A);
+        if (Dot(opposed.Normal, target.A) <= oldDistance + PlaneTolerance)
+            throw new ArgumentException("The target face must be beyond the selected brush, not inside it.");
+
+        MapBrush result = source.Clone();
+        MapFace moved = result.Faces[source.Faces.IndexOf(opposed)];
+        moved.A = target.C;
+        moved.B = target.B;
+        moved.C = target.A;
+        Vector3 normal = moved.Normal;
+        double distance = Dot(normal, moved.A);
+        if (source.GetVertices().Any(point => Dot(normal, point) > distance + PlaneTolerance))
+            throw new ArgumentException("The target face would cut through the selected brush.");
+        Validate(result);
+        return result;
+    }
+
     private static void AddDistinct(List<Vector3> vertices, Vector3 point)
     {
         if (FindVertex(vertices, point) < 0) vertices.Add(point);

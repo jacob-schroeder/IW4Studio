@@ -178,6 +178,11 @@ internal sealed class OrthographicGestures
         object? hit = OrthographicSelection.HitTest(session, _projection, _startScreen);
         if (!_toggle)
         {
+            if (session.Tool == EditorTool.Face && hit is BrushFaceSelection)
+            {
+                Select(hit);
+                return;
+            }
             if (hit is not null && session.Selection.Contains(hit) && session.CanTransformSelection &&
                 session.TransformMode == TransformMode.Move && session.Tool is EditorTool.Select or EditorTool.Vertex)
             {

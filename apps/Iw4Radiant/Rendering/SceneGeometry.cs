@@ -21,9 +21,11 @@ internal sealed class SceneGeometry
     internal int OutlineCount { get; }
     internal int AxesStart { get; }
     internal int AxesCount { get; }
+    internal int LeakPathStart { get; }
+    internal int LeakPathCount { get; }
 
     internal SceneGeometry(EditorScene editor, TransformMode transformMode, EditorTool tool,
-        Func<string, MaterialSource?>? resolveMaterial)
+        Func<string, MaterialSource?>? resolveMaterial, LeakPath? leakPath, int leakPointIndex)
     {
         MapDocument document = editor.Document;
         var shore = new WaterShoreGeometry(document, name => resolveMaterial?.Invoke(name));
@@ -159,7 +161,9 @@ internal sealed class SceneGeometry
         all.AddRange(outlines);
         OutlineCount = all.Count - OutlineStart;
         AxesStart = all.Count;
-        AddEntityConnections(all, document, selection, editor);
+        MapEntity? selectedVehicle = selection.Items.OfType<MapEntity>().FirstOrDefault(VehiclePathPreview.IsNode);
+        AddEntityConnections(all, document, selection, editor, selectedVehicle is not null);
+        if (selectedVehicle is not null) AddVehiclePathPreview(all, document, selectedVehicle);
         foreach (MapEntity light in selection.Items.OfType<MapEntity>().Where(entity => entity.ClassName == "light"))
             foreach (var line in LightInfluenceGeometry.GetLines(editor, light))
                 AddLine(all, line.A, line.B, new Vector3(1, 0.85f, 0.35f));
@@ -181,6 +185,19 @@ internal sealed class SceneGeometry
             foreach (var line in TransformGizmoGeometry.GetLines(selectionBounds, transformMode))
                 AddLine(all, line.A, line.B, line.Color);
         AxesCount = all.Count - AxesStart;
+        LeakPathStart = all.Count;
+        if (leakPath is { } path)
+        {
+            Vector3 red = new(1, 0.12f, 0.12f);
+            for (int index = 1; index < path.Points.Count; index++)
+                AddLine(all, path.Points[index - 1], path.Points[index], red);
+            Vector3 point = path.Points[leakPointIndex];
+            const float radius = 8;
+            AddLine(all, point - Vector3.UnitX * radius, point + Vector3.UnitX * radius, red);
+            AddLine(all, point - Vector3.UnitY * radius, point + Vector3.UnitY * radius, red);
+            AddLine(all, point - Vector3.UnitZ * radius, point + Vector3.UnitZ * radius, red);
+        }
+        LeakPathCount = all.Count - LeakPathStart;
         Vertices = all.ToArray();
 
         void AddPolygon(MapPolygon polygon, List<SceneVertex> vertices, Vector3 color, Vector3? outlineColor,
@@ -243,10 +260,12 @@ internal sealed class SceneGeometry
         vertices.Add(new SceneVertex(b, Vector3.UnitZ, Vector2.Zero, color));
     }
 
-    private static void AddEntityConnections(List<SceneVertex> vertices, MapDocument document, EditorSelection selection, EditorScene editor)
+    private static void AddEntityConnections(List<SceneVertex> vertices, MapDocument document, EditorSelection selection,
+        EditorScene editor, bool vehiclePreview)
     {
         foreach (MapEntity source in document.Entities)
         {
+            if (vehiclePreview && VehiclePathPreview.IsNode(source)) continue;
             foreach (MapEntity destination in editor.ResolveTargets(source))
             {
                 if (!selection.Contains(source) && !selection.Contains(destination)) continue;
@@ -263,6 +282,52 @@ internal sealed class SceneGeometry
                 AddLine(vertices, end, end - direction * arrow + side * arrow * 0.4f, color);
                 AddLine(vertices, end, end - direction * arrow - side * arrow * 0.4f, color);
             }
+        }
+    }
+
+    private static void AddVehiclePathPreview(List<SceneVertex> vertices, MapDocument document, MapEntity selectedEntity)
+    {
+        var preview = new VehiclePathPreview(document);
+        if (preview.Find(selectedEntity) is not { } selected) return;
+        HashSet<VehiclePathPreview.Node> connected = preview.ConnectedTo(selected);
+        Vector3 pathColor = new(0.45f, 0.78f, 0.69f), cycleColor = new(0.91f, 0.66f, 0.36f),
+            issueColor = new(0.92f, 0.47f, 0.45f), headingColor = new(0.71f, 0.63f, 0.92f);
+        foreach (VehiclePathPreview.Node node in connected)
+        {
+            if (!node.HasPosition) continue;
+            if (node.Next is { HasPosition: true } next && connected.Contains(next))
+                AddArrow(node.Position, next.Position, node.Cycle && next.Cycle ? cycleColor : pathColor);
+            if (node.Cycle) AddMarker(node.Position, 9, cycleColor);
+            if (node.Warnings.Count > 0) AddMarker(node.Position, 13, issueColor);
+        }
+        if (!selected.HasPosition) return;
+        if (selected.Heading is { } heading)
+            AddArrow(selected.Position, selected.Position + heading * 40, headingColor);
+        IReadOnlyList<(Vector3 Start, Vector3 End)> lookahead = preview.LookaheadSegments(selected);
+        foreach (var segment in lookahead)
+            for (int step = 0; step < 8; step += 2)
+                AddLine(vertices, Vector3.Lerp(segment.Start, segment.End, step / 8f),
+                    Vector3.Lerp(segment.Start, segment.End, (step + 1) / 8f), headingColor);
+        if (lookahead.Count > 0) AddMarker(lookahead[^1].End, 5, headingColor);
+
+        void AddMarker(Vector3 position, float radius, Vector3 color)
+        {
+            AddLine(vertices, position + new Vector3(-radius, -radius, 0), position + new Vector3(radius, radius, 0), color);
+            AddLine(vertices, position + new Vector3(-radius, radius, 0), position + new Vector3(radius, -radius, 0), color);
+        }
+
+        void AddArrow(Vector3 start, Vector3 end, Vector3 color)
+        {
+            Vector3 difference = end - start;
+            float length = difference.Length();
+            if (!float.IsFinite(length) || length < 0.001f) return;
+            Vector3 direction = difference / length;
+            Vector3 side = Vector3.Normalize(Vector3.Cross(direction,
+                MathF.Abs(direction.Z) < 0.9f ? Vector3.UnitZ : Vector3.UnitY));
+            float arrow = Math.Min(12, length * 0.2f);
+            AddLine(vertices, start, end, color);
+            AddLine(vertices, end, end - direction * arrow + side * arrow * 0.4f, color);
+            AddLine(vertices, end, end - direction * arrow - side * arrow * 0.4f, color);
         }
     }
 

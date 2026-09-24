@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using System.Globalization;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
 
@@ -102,6 +103,7 @@ public partial class GameplayEntityInspector : UserControl
             catch (ArgumentException) { Angles.Text = entity?.Properties.GetValueOrDefault("angles", "") ?? ""; }
         }
         _shownEntity = entity;
+        RefreshVehiclePath(session, entity);
         FieldInfo.Text = entity is null ? "Select an entity to edit its gameplay fields." :
             GameplayEntityEditing.Types.FirstOrDefault(type => type.Name == entity.ClassName)?.Description ?? $"{entity.ClassName} · Native target and orientation fields.";
         if (entity?.ClassName == "trigger_radius" && !GameplayEntityEditing.TryRadiusDimensions(entity, out _, out _))
@@ -119,6 +121,37 @@ public partial class GameplayEntityInspector : UserControl
             $"{incoming} incoming links" + (target.Length == 0 ? " · no outgoing target" : $" · target {target}: {destinations} matches") +
             (target.Length > 0 && destinations == 0 ? " (unresolved in this map)" : "");
     }
+
+    private void RefreshVehiclePath(EditorSession session, MapEntity? entity)
+    {
+        VehiclePathPanel.IsVisible = entity is not null && VehiclePathPreview.IsNode(entity);
+        if (!VehiclePathPanel.IsVisible || entity is null) return;
+        var preview = new VehiclePathPreview(session.Document);
+        if (preview.Find(entity) is not { } selected) return;
+        HashSet<VehiclePathPreview.Node> connected = preview.ConnectedTo(selected);
+        int cycles = connected.Count(node => node.Cycle);
+        int issues = connected.Count(node => node.Warnings.Count > 0);
+        string destination = selected.Target.Length == 0 ? "route end" :
+            selected.Next is null ? $"unresolved target {selected.Target}" : $"next: {selected.Next.Name}";
+        VehiclePathSummary.Text = $"{DisplayName(selected.Name)} → {destination}\n" +
+            $"{connected.Count} connected nodes · {issues} with issues · {cycles} in cycles";
+
+        string heading = selected.AuthoredHeading is not null ? "authored" :
+            selected.Heading is not null ? "follows path" : "not available";
+        string speed = selected.SpeedMph is { } mph ? mph.ToString("G4", CultureInfo.InvariantCulture) + " mph" : "inherited / unset";
+        string lookahead = selected.LookaheadSeconds is { } seconds ? seconds.ToString("G4", CultureInfo.InvariantCulture) + " s" : "inherited / unset";
+        VehiclePathMetrics.Text = $"Heading: {heading} · Speed: {speed} · Lookahead: {lookahead}" +
+            (preview.LookaheadSegments(selected).Count > 0 ? "\nDashed route shows authored speed × lookahead." : "");
+
+        string[] warnings = preview.Nodes.Where(connected.Contains)
+            .SelectMany(node => node.Warnings.Select(warning => $"{DisplayName(node.Name)}: {warning}")
+                .Concat(node.Cycle ? new[] { $"{DisplayName(node.Name)}: path cycle" } : Array.Empty<string>()))
+            .Take(4).ToArray();
+        VehiclePathIssues.IsVisible = warnings.Length > 0;
+        VehiclePathIssues.Text = string.Join('\n', warnings);
+    }
+
+    private static string DisplayName(string name) => name.Length == 0 ? "Unnamed node" : name;
 
     private void FilterTypes()
     {

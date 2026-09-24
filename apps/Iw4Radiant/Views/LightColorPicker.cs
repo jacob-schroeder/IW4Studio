@@ -24,6 +24,7 @@ public sealed class LightColorPicker : UserControl
     private Vector3 _selectedColor;
     private bool _preserveColorScale;
     private bool _updating;
+    internal event Action? SelectedColorChanged;
 
     public LightColorPicker()
     {
@@ -76,6 +77,7 @@ public sealed class LightColorPicker : UserControl
             }
             finally { _updating = false; }
             RefreshColor();
+            SelectedColorChanged?.Invoke();
         }
     }
 
@@ -103,6 +105,7 @@ public sealed class LightColorPicker : UserControl
             Vector3 display = new((float)_red.Value, (float)_green.Value, (float)_blue.Value);
             _selectedColor = _preserveColorScale ? display * display : display;
             RefreshColor();
+            SelectedColorChanged?.Invoke();
         };
     }
 

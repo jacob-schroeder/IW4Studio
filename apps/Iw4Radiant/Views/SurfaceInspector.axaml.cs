@@ -39,6 +39,7 @@ public partial class SurfaceInspector : UserControl
         FitButton.Click += async (_, _) => await FitAsync(session, dialogs, finishGestures);
         AxialButton.Click += async (_, _) => await AxialAsync(session, dialogs, finishGestures);
         AutoCaulkButton.Click += async (_, _) => await AutoCaulkAsync(session, dialogs, finishGestures, setStatus);
+        ConvertFaceButton.Click += async (_, _) => await ConvertFaceAsync(session, dialogs, finishGestures, setStatus);
         RevertProjectionButton.Click += (_, _) =>
         {
             if (dialogs.BlocksInput) return;
@@ -80,6 +81,27 @@ public partial class SurfaceInspector : UserControl
         }
     }
 
+    private async Task ConvertFaceAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures,
+        Action<string> setStatus)
+    {
+        if (dialogs.BlocksInput) return;
+        try
+        {
+            if (session.Selection.Count != 1 || session.Selection.Active is not BrushFaceSelection face)
+                throw new ArgumentException("Select one brush face to convert.");
+            MaterialSource? material = _resolveMaterial?.Invoke(face.Face.Material);
+            if (material is { IsWater: true } or { IsSky: true })
+                throw new ArgumentException("Water and sky need brush volumes. Choose a regular textured face.");
+            int vertices = (int)(FaceTerrainVertices.Value ?? 2);
+            finishGestures();
+            GeometryEditing.ConvertFaceToTerrain(session, face, vertices);
+            setStatus("Terrain created from face. The brush stays solid; Undo restores its original face.");
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or
+            InvalidDataException or NotSupportedException or FormatException or OverflowException)
+        { await dialogs.MessageAsync("Convert face to terrain", exception.Message); }
+    }
+
     internal void RefreshSelection(EditorSession session)
     {
         _updating = true;
@@ -88,6 +110,7 @@ public partial class SurfaceInspector : UserControl
             var faces = SurfaceEditing.GetFaces(session).Select(selection => selection.Face).ToArray();
             MapFace? reference = session.Selection.Active is BrushFaceSelection active && faces.Contains(active.Face)
                 ? active.Face : faces.FirstOrDefault();
+            ConvertFaceFields.IsVisible = session.Selection.Count == 1 && session.Selection.Active is BrushFaceSelection;
             string[] projections = faces.Select(face => face.Projection).ToArray();
             bool changed = !_shownFaces.SequenceEqual(faces) || !ReferenceEquals(_shownReference, reference) ||
                 !_shownProjections.SequenceEqual(projections);

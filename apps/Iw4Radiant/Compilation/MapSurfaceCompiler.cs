@@ -10,7 +10,30 @@ internal static class MapSurfaceCompiler
     internal static void ValidateTerrain(MapTerrain terrain)
     {
         if (terrain.IsCurve)
-            throw new NotSupportedException("Curve control points are not compiled yet. Use a terrain mesh for this build.");
+        {
+            ValidateCurveDimensions(terrain);
+            ValidateGrid(terrain, requireArea: false);
+            terrain = CompiledTerrain(terrain);
+        }
+        ValidateGrid(terrain, requireArea: true);
+    }
+
+    internal static MapTerrain CompiledTerrain(MapTerrain terrain)
+    {
+        if (!terrain.IsCurve) return terrain;
+        ValidateCurveDimensions(terrain);
+        return PatchGeometry.Evaluate(terrain);
+    }
+
+    private static void ValidateCurveDimensions(MapTerrain terrain)
+    {
+        if (terrain.Width is < 3 or > 15 || terrain.Height is < 3 or > 15 ||
+            terrain.Width % 2 == 0 || terrain.Height % 2 == 0)
+            throw new NotSupportedException($"Curve '{terrain.Material}' needs an odd 3–15 control grid in each direction.");
+    }
+
+    private static void ValidateGrid(MapTerrain terrain, bool requireArea)
+    {
         long count = (long)terrain.Width * terrain.Height;
         if (terrain.Width < 2 || terrain.Height < 2 || count != terrain.Vertices.Length ||
             count != terrain.TextureCoordinates.Length || count != terrain.LightmapCoordinates.Length ||
@@ -32,9 +55,9 @@ internal static class MapSurfaceCompiler
             if (terrain.EdgeFlags[index] is not (0 or 1))
                 throw new NotSupportedException($"Terrain '{terrain.Material}' contains unsupported triangle flags.");
         }
-        if (!terrain.GetTriangles().Any(triangle => Vector3.Cross(terrain.Vertices[triangle.B] - terrain.Vertices[triangle.A],
+        if (requireArea && !terrain.GetTriangles().Any(triangle => Vector3.Cross(terrain.Vertices[triangle.B] - terrain.Vertices[triangle.A],
                 terrain.Vertices[triangle.C] - terrain.Vertices[triangle.A]).LengthSquared() > 0.00000001f))
-            throw new InvalidDataException($"Terrain '{terrain.Material}' has no visible triangles.");
+            throw new InvalidDataException($"Mesh '{terrain.Material}' has no visible triangles.");
     }
 
     internal static MapRenderSurface[] Compile(MapDocument document, IReadOnlyDictionary<string, MaterialSource> materials)
@@ -97,11 +120,14 @@ internal static class MapSurfaceCompiler
             }
         }
 
-        var meshIndices = entity.Terrains.Select((terrain, index) => (terrain, index: index + surfaces.Count))
+        // PatchGeometry uses the editor's eight samples per quadratic span. Keep
+        // the control grid untouched; render and collision consume the same policy.
+        MapTerrain[] meshes = entity.Terrains.Select(CompiledTerrain).ToArray();
+        var meshIndices = meshes.Select((terrain, index) => (terrain, index: index + surfaces.Count))
             .ToDictionary(pair => pair.terrain, pair => pair.index);
         // Equal positions on adjoining patches share a normal. Materials/smoothing groups stay independent.
         var smoothNormals = new Dictionary<(Vector3 Position, string Material, string Smoothing), Vector3>();
-        foreach (MapTerrain terrain in entity.Terrains)
+        foreach (MapTerrain terrain in meshes)
         foreach (var (a, b, c) in terrain.GetTriangles())
         {
             Vector3 normal = Vector3.Cross(terrain.Vertices[b] - terrain.Vertices[a], terrain.Vertices[c] - terrain.Vertices[a]);
@@ -112,7 +138,7 @@ internal static class MapSurfaceCompiler
                 smoothNormals[key] = smoothNormals.GetValueOrDefault(key) + normal;
             }
         }
-        foreach (MapTerrain terrain in entity.Terrains)
+        foreach (MapTerrain terrain in meshes)
         foreach (var (a, b, c) in terrain.GetTriangles())
         {
             Vector3 edgeU = terrain.Vertices[b] - terrain.Vertices[a], edgeV = terrain.Vertices[c] - terrain.Vertices[a];

@@ -29,6 +29,8 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     private bool? _paintSelecting;
     private ContextMenu? _objectMenu;
     private bool _previewLighting = true;
+    private FilmPreview _filmPreview = FilmPreview.Neutral;
+    private FogPreview _fogPreview = FogPreview.Disabled;
     private bool _flyMode;
     private bool _foliagePaintingEnabled, _paintingFoliage, _foliageChanged;
     private bool _foliagePrefabsNeedRefresh;
@@ -76,6 +78,28 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         get => _previewLighting;
         set { _previewLighting = value; RequestNextFrameRendering(); }
     }
+    internal CompiledBspPreview? CompiledPreview
+    {
+        get => _renderer.CompiledPreview;
+        set
+        {
+            FinishGesture(cancel: true);
+            _objectMenu?.Close();
+            _renderer.CompiledPreview = value;
+            RefreshScene();
+            if (value is not null) FrameAll();
+        }
+    }
+    internal FilmPreview FilmAdjustment
+    {
+        get => _filmPreview;
+        set { _filmPreview = value; RequestNextFrameRendering(); }
+    }
+    internal FogPreview FogAdjustment
+    {
+        get => _fogPreview;
+        set { _fogPreview = value; RequestNextFrameRendering(); }
+    }
     internal bool FlyMode
     {
         get => _flyMode;
@@ -115,6 +139,21 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     internal event Action<BrushKind>? BrushKindRequested;
     internal event Action<IReadOnlyList<Point>?>? FoliageBrushChanged;
     internal bool HasPointerGesture => _dragPointer is not null;
+    internal LeakPath? LeakPath
+    {
+        get => _renderer.LeakPath;
+        set { _renderer.LeakPath = value; RefreshScene(); }
+    }
+    internal int LeakPointIndex
+    {
+        set { _renderer.LeakPointIndex = value; RefreshScene(); }
+    }
+    internal void FramePoint(Vector3 point)
+    {
+        FinishGesture();
+        _navigation.FrameBounds((point, point), Aspect);
+        RequestNextFrameRendering();
+    }
     internal bool CanFlyMove => FlyMode || _dragPointer is not null && _dragButton == MouseButton.Right;
 
     internal bool HandleNavigationKeyDown(KeyEventArgs e)
@@ -154,7 +193,8 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     internal void FrameAll()
     {
         FinishGesture();
-        if (_session is { } session) _navigation.FrameBounds(session.Scene.VisibleBounds, Aspect);
+        if (CompiledPreview is { } preview) _navigation.FrameBounds(preview.Bounds, Aspect);
+        else if (_session is { } session) _navigation.FrameBounds(session.Scene.VisibleBounds, Aspect);
         RequestNextFrameRendering();
     }
 
@@ -224,7 +264,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         double scaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
         var size = new PixelSize(Math.Max(1, (int)(Bounds.Width * scaling)), Math.Max(1, (int)(Bounds.Height * scaling)));
         _renderer.Render(size, framebuffer, _navigation.ViewProjection((float)size.Width / size.Height), _navigation.Eye,
-            session, ResolveMaterial, PreviewLighting);
+            session, ResolveMaterial, CompiledPreview is null && PreviewLighting, FilmAdjustment, FogAdjustment);
         if (_renderer.HasAnimatedWater)
             RequestNextFrameRendering();
     }
@@ -249,7 +289,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
             e.Handled = true;
             return;
         }
-        if (!properties.IsLeftButtonPressed || _dragPointer is not null) return;
+        if (CompiledPreview is not null || !properties.IsLeftButtonPressed || _dragPointer is not null) return;
         _flyMovement.Stop();
         try
         {
@@ -285,7 +325,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
                 e.Pointer.Capture(this);
                 InteractionStatusChanged?.Invoke("Drag the handle to transform. Escape cancels.");
             }
-            else if (additive)
+            else if (additive || session.Tool == EditorTool.Face)
             {
                 object? picked = vertex ?? CameraPicking.Pick(session, _navigation, point, Bounds.Size, session.Tool);
                 if (session.Tool == EditorTool.Select)
@@ -295,7 +335,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
                     e.Pointer.Capture(this);
                     PaintSelection(session, picked);
                 }
-                else if (picked is not null) session.Select(picked, additive: true, toggle: true);
+                else if (picked is not null) session.Select(picked, additive: additive, toggle: additive);
                 if (session.Tool == EditorTool.Vertex && picked is not null)
                     InteractionStatusChanged?.Invoke(picked is BrushVertexSelection or TerrainVertexSelection
                         ? "Drag a transform handle; Shift-click toggles vertices."
@@ -358,11 +398,14 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
             else if (_transform is { } transform) UpdateTransform(transform, point);
             else if (_dragButton == MouseButton.Left) UpdateSelectionPaint(point);
             FinishPointerGesture();
-            if (showMenu && _session is { } session)
+            if (showMenu && CompiledPreview is null && _session is { } session)
             {
                 _objectMenu = CameraObjectMenu.Open(this, session,
                     CameraPicking.PickAll(session, _navigation, point, Bounds.Size, EditorTool.Select),
-                    kind => BrushKindRequested?.Invoke(kind));
+                    CameraPicking.PickAll(session, _navigation, point, Bounds.Size, EditorTool.Face)
+                        .FirstOrDefault().Item as BrushFaceSelection,
+                    kind => BrushKindRequested?.Invoke(kind),
+                    message => InteractionStatusChanged?.Invoke(message));
             }
         }
         catch (Exception exception) when (IsEditError(exception))
@@ -615,6 +658,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
 
     private void OnModelDragOver(object? sender, DragEventArgs e)
     {
+        if (CompiledPreview is not null) { e.DragEffects = DragDropEffects.None; return; }
         try
         {
             e.DragEffects = CanAcceptModelDrop?.Invoke() != false && XModelDrag.TryRead(e.DataTransfer, out _, out _) &&
@@ -633,6 +677,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     {
         e.Handled = true;
         e.DragEffects = DragDropEffects.None;
+        if (CompiledPreview is not null) return;
         try
         {
             if (CanAcceptModelDrop?.Invoke() == false || _session is not { } session ||

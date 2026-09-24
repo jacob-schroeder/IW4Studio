@@ -16,6 +16,7 @@ internal static class MapBuildPipeline
         if (!Directory.Exists(directory)) throw new DirectoryNotFoundException("The selected output folder no longer exists.");
         string assetName = $"maps/mp/{Path.GetFileNameWithoutExtension(destination)}.d3dbsp";
         cancellationToken.ThrowIfCancellationRequested();
+        MapCompiler.ValidateNavigableSource(document);
         var bsp = MapCompiler.Compile(document, assetName, materials, models, cancellationToken, sourcePath);
         string temporary = Path.Combine(directory,
             $".{Path.GetFileName(destination)}.{Guid.NewGuid():N}.tmp");
@@ -61,6 +62,7 @@ internal static class MapBuildPipeline
             await Task.Run(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                MapCompiler.ValidateNavigableSource(document);
                 string savedSource = Path.Combine(staging, mapName + ".map");
                 MapFile.Write(document, savedSource);
                 var bsp = MapCompiler.Compile(MapFile.Read(savedSource), assetName, materials, models, cancellationToken, sourcePath);

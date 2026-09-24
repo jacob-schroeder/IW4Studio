@@ -7,7 +7,8 @@ namespace Iw4Radiant.Viewports.Camera;
 internal static class CameraObjectMenu
 {
     internal static ContextMenu Open(Control viewport, EditorSession session,
-        IReadOnlyList<(object Item, string Label)> hits, Action<BrushKind> classify)
+        IReadOnlyList<(object Item, string Label)> hits, BrushFaceSelection? target,
+        Action<BrushKind> classify, Action<string> status)
     {
         MapDocument document = session.Document;
         var menu = new ContextMenu();
@@ -15,6 +16,27 @@ internal static class CameraObjectMenu
         var kinds = new MenuItem { Header = "Brush type" };
         var selectAll = new MenuItem { Header = "Select all hit objects", StaysOpenOnClick = true };
         var deselectAll = new MenuItem { Header = "Deselect all hit objects", StaysOpenOnClick = true };
+        if (session.Selection.Count == 1 && session.Selection.Active is MapBrush selected &&
+            target is { } face && !ReferenceEquals(selected, face.Brush))
+        {
+            var extend = new MenuItem { Header = "Extend selected brush to this face" };
+            ToolTip.SetTip(extend, "Moves the opposing plane. Keeps the selected brush's materials and texture projections.");
+            extend.Click += (_, _) =>
+            {
+                if (!IsCurrent() || !ReferenceEquals(session.Selection.Active, selected) || session.Selection.Count != 1 ||
+                    !face.Brush.Faces.Contains(face.Face)) return;
+                try
+                {
+                    MapBrush result = BrushGeometry.ExtendToFace(selected, face.Face);
+                    session.Edit(() => selected.ReplaceFaces(result));
+                    status("Extended brush to face. Materials and texture projections kept.");
+                }
+                catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or FormatException)
+                { status(exception.Message); }
+            };
+            menu.Items.Add(extend);
+            menu.Items.Add(new Separator());
+        }
         foreach (var (item, label) in hits)
         {
             var entry = new MenuItem

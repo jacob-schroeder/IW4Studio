@@ -10,14 +10,17 @@ namespace Iw4Radiant.Views;
 public partial class GeometryInspector : UserControl
 {
     private bool _updating;
+    private bool _ropeReady;
     private MapTerrain? _patch;
     private Func<OrthoPlane> _editPlane = () => OrthoPlane.Top;
 
     public GeometryInspector() => InitializeComponent();
 
-    internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures, Func<OrthoPlane> editPlane)
+    internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures,
+        Func<OrthoPlane> editPlane, Action<string> setStatus)
     {
         _editPlane = editPlane;
+        InitializeBridge(session, dialogs, finishGestures, setStatus);
         ShapeBox.SelectionChanged += (_, _) => RefreshSelection(session);
         UseBoundsButton.Click += (_, _) =>
         {
@@ -40,6 +43,37 @@ public partial class GeometryInspector : UserControl
         InvertButton.Click += async (_, _) => await RunAsync(dialogs, finishGestures,
             () => GeometryEditing.EditPatches(session, PatchGeometry.Invert));
         CapButton.Click += async (_, _) => await RunAsync(dialogs, finishGestures, () => GeometryEditing.CapEnds(session));
+        SplitColumnsButton.Click += async (_, _) => await RunAsync(dialogs, finishGestures, () =>
+            GeometryEditing.SplitSurface(session, _patch ?? throw new ArgumentException("Select one curved patch to split."),
+                columns: true, (int)(SplitColumnSpan.Value ?? 1)));
+        SplitRowsButton.Click += async (_, _) => await RunAsync(dialogs, finishGestures, () =>
+            GeometryEditing.SplitSurface(session, _patch ?? throw new ArgumentException("Select one curved patch to split."),
+                columns: false, (int)(SplitRowSpan.Value ?? 1)));
+        ConvertCurveButton.Click += async (_, _) => await RunAsync(dialogs, finishGestures, () =>
+        {
+            MapTerrain curve = session.Selection.Count == 1 && session.Selection.Active is MapTerrain { IsCurve: true } selected
+                ? selected : throw new ArgumentException("Select one whole curve to convert.");
+            int steps = CurveDetailBox.SelectedIndex switch { 0 => 4, 1 => 8, 2 => 16, _ => throw new ArgumentException("Choose curve detail.") };
+            int count = GeometryEditing.ConvertCurveToTerrain(session, curve, steps);
+            setStatus($"Curve converted to {count} terrain {(count == 1 ? "patch" : "tiles")}. Undo restores the curve.");
+        });
+        ThickenCurveButton.Click += async (_, _) => await RunAsync(dialogs, finishGestures, () =>
+        {
+            MapTerrain curve = session.Selection.Count == 1 && session.Selection.Active is MapTerrain { IsCurve: true } selected
+                ? selected : throw new ArgumentException("Select one whole curve to thicken.");
+            if (CurveThickenValue.Value is not { } thickness)
+                throw new ArgumentException("Enter a thickness in map units.");
+            int pieces = GeometryEditing.ThickenSurface(session, curve, (float)thickness);
+            setStatus($"Curve thickened into {pieces} terrain pieces. Undo restores its editable controls.");
+        });
+        CreateRopeButton.Click += async (_, _) => await RunAsync(dialogs, finishGestures, () =>
+        {
+            if (RopeThickness.Value is not { } thickness || RopeSlack.Value is not { } slack ||
+                RopeSegments.Value is not { } segments)
+                throw new ArgumentException("Enter rope thickness, slack, and detail.");
+            int pieces = GeometryEditing.CreateRope(session, (float)thickness, (float)slack, (int)segments);
+            setStatus($"Created rope as {pieces} editable terrain {(pieces == 1 ? "piece" : "pieces")}. Undo restores the endpoint markers.");
+        });
         ColumnValue.ValueChanged += (_, _) => { if (!_updating) ShowControl(); };
         RowValue.ValueChanged += (_, _) => { if (!_updating) ShowControl(); };
         SelectPointButton.Click += (_, _) => SelectControls(session, dialogs, finishGestures, row: false, column: false);
@@ -75,6 +109,7 @@ public partial class GeometryInspector : UserControl
         _updating = true;
         try
         {
+            RefreshBridge(session);
             PlaneText.Text = _editPlane() switch
             {
                 OrthoPlane.Top => "Top view: width X · depth Y · height Z.",
@@ -97,14 +132,31 @@ public partial class GeometryInspector : UserControl
                 GeometryShape.Cylinder => "Create cylinder", GeometryShape.Arch => "Create arch", _ => "Create stairs"
             };
             UseBoundsButton.IsEnabled = session.SelectionBounds is not null;
+            BrushExtendGuide.IsVisible = session.Selection.Count == 1 && session.Selection.Active is MapBrush;
             ReplaceBrushBox.IsEnabled = session.Selection.Count == 1 && session.Selection.Active is MapBrush;
             if (!ReplaceBrushBox.IsEnabled) ReplaceBrushBox.IsChecked = false;
+            bool markersSelected = session.Selection.Count == 2 && session.Selection.Items.All(item =>
+                item is MapEntity { ClassName: "info_null" } entity && entity.TryGetOrigin(out _));
+            bool ropeReady = markersSelected && session.Selection.Items.Cast<MapEntity>().All(entity =>
+                entity.Brushes.Count == 0 && entity.Terrains.Count == 0 &&
+                entity.Properties.Keys.All(key => key is "classname" or "origin" or "angles" or "angle"));
+            if (ropeReady && !_ropeReady) RopePanel.IsExpanded = true;
+            _ropeReady = ropeReady;
+            RopeReadyText.Text = !markersSelected ? "Select exactly two info_null markers to set endpoints." :
+                !ropeReady ? "These markers are named, linked, or own geometry. Place two temporary markers instead." :
+                string.IsNullOrWhiteSpace(session.Material) ? "Choose a material in the browser." :
+                $"Ready · {session.Material}";
+            CreateRopeButton.IsEnabled = ropeReady && !string.IsNullOrWhiteSpace(session.Material);
             MapTerrain[] patches = GeometryEditing.SelectedPatches(session);
             RefineColumnsButton.IsEnabled = patches.All(item => item.Width <= 7);
             RefineRowsButton.IsEnabled = patches.All(item => item.Height <= 7);
             PatchFields.IsVisible = patches.Length > 0;
+            ConvertCurveFields.IsVisible = session.Selection.Count == 1 && session.Selection.Active is MapTerrain { IsCurve: true };
+            ThickenCurveFields.IsVisible = session.Selection.Count == 1 &&
+                session.Selection.Active is MapTerrain { IsCurve: true } curve && session.Document.World.Terrains.Contains(curve);
             SelectionHint.IsVisible = patches.Length == 0;
             ControlFields.IsVisible = patches.Length == 1;
+            SplitColumnsButton.IsEnabled = SplitRowsButton.IsEnabled = patches.Length == 1;
             MapTerrain? patch = patches.Length == 1 ? patches[0] : null;
             bool changed = !ReferenceEquals(_patch, patch);
             _patch = patch;
@@ -112,6 +164,13 @@ public partial class GeometryInspector : UserControl
                 $"{patches.Length} curved patches selected.";
             if (patch is not null)
             {
+                SplitColumnSpan.Maximum = (patch.Width - 1) / 2;
+                SplitRowSpan.Maximum = (patch.Height - 1) / 2;
+                if (changed)
+                {
+                    SplitColumnSpan.Value = (SplitColumnSpan.Maximum + 1) / 2;
+                    SplitRowSpan.Value = (SplitRowSpan.Maximum + 1) / 2;
+                }
                 ColumnValue.Maximum = patch.Width;
                 RowValue.Maximum = patch.Height;
                 if (session.Selection.Count == 1 && session.Selection.Active is TerrainVertexSelection point)
@@ -126,6 +185,8 @@ public partial class GeometryInspector : UserControl
         }
         finally { _updating = false; }
     }
+
+    internal void ShowBridge() => BridgePanel.IsExpanded = true;
 
     private GeometryShape Shape => (GeometryShape)Math.Max(0, ShapeBox.SelectedIndex);
     private int ControlIndex => ((int)(ColumnValue.Value ?? 1) - 1) * (_patch?.Height ?? 3) + (int)(RowValue.Value ?? 1) - 1;
@@ -157,7 +218,8 @@ public partial class GeometryInspector : UserControl
             finishGestures();
             action();
         }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException or
+            InvalidDataException or NotSupportedException or FormatException)
         { await dialogs.MessageAsync("Geometry", exception.Message); }
     }
 

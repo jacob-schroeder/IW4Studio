@@ -41,6 +41,11 @@ public partial class SelectionInspector : UserControl
     internal void ShowEnvironment() => InspectorTabs.SelectedItem = EnvironmentTab;
     internal void ShowPainter() => InspectorTabs.SelectedItem = PainterTab;
     internal void ShowGeometry() => InspectorTabs.SelectedItem = GeometryTab;
+    internal void ShowBridge()
+    {
+        ShowGeometry();
+        Geometry.ShowBridge();
+    }
     internal void ShowOrganization() => InspectorTabs.SelectedItem = OrganizationTab;
     internal void ReleaseImages() => Skies.ReleaseImages();
 
@@ -54,7 +59,7 @@ public partial class SelectionInspector : UserControl
         Terrain.InitializeActions(session, dialogs, finishGestures, setStatus);
         Sunlight.InitializeActions(session, dialogs, finishGestures);
         Skies.InitializeActions(session, dialogs, finishGestures, materials);
-        Geometry.InitializeActions(session, dialogs, finishGestures, editPlane);
+        Geometry.InitializeActions(session, dialogs, finishGestures, editPlane, setStatus);
         Organization.InitializeActions(session, dialogs, finishGestures);
         Gameplay.InitializeActions(session, dialogs, finishGestures);
         Gameplay.PlacementRequested += name => PlacementRequested?.Invoke(name);

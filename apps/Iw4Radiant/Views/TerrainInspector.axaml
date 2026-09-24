@@ -85,6 +85,30 @@
             </Grid>
             <Button x:Name="ApplyNoiseButton" Content="Apply noise" Classes="panelAction" HorizontalAlignment="Stretch" />
         </StackPanel>
+        <StackPanel x:Name="SplitFields" Spacing="8" IsVisible="False">
+            <Separator />
+            <TextBlock Text="Split terrain" Classes="panelTitle" />
+            <TextBlock Text="Choose an interior grid line. Both new patches share that line and keep their texture and color." Classes="caption" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                <TextBlock Text="Column" Classes="fieldLabel" />
+                <TextBlock Text="Row" Grid.Column="1" Classes="fieldLabel" />
+                <NumericUpDown x:Name="SplitColumn" Grid.Row="1" Minimum="2" Maximum="2" Value="2" FormatString="0" />
+                <NumericUpDown x:Name="SplitRow" Grid.Row="1" Grid.Column="1" Minimum="2" Maximum="2" Value="2" FormatString="0" />
+                <Button x:Name="SplitColumnButton" Grid.Row="2" Content="Split at column" HorizontalAlignment="Stretch" />
+                <Button x:Name="SplitRowButton" Grid.Row="2" Grid.Column="1" Content="Split at row" HorizontalAlignment="Stretch" />
+            </Grid>
+        </StackPanel>
+        <StackPanel x:Name="ThickenTerrainFields" Spacing="6" IsVisible="False">
+            <Separator />
+            <TextBlock Text="Thicken terrain" Classes="panelTitle" />
+            <TextBlock Text="Keep this surface as the top, then add an underside and four walls behind its front side. They use the same material and vertex color. Undo removes the shell."
+                       Classes="caption" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,100" ColumnSpacing="5">
+                <TextBlock Text="Thickness (units)" Classes="fieldLabel" />
+                <NumericUpDown x:Name="TerrainThickenValue" Grid.Column="1" Minimum="1" Maximum="4096" Value="16" Increment="8" FormatString="0" />
+            </Grid>
+            <Button x:Name="ThickenTerrainButton" Content="Thicken terrain" Classes="panelAction" HorizontalAlignment="Stretch" />
+        </StackPanel>
         <StackPanel x:Name="StitchFields" Spacing="8" IsVisible="False">
             <TextBlock Text="Stitch patches" Classes="panelTitle" />
             <Grid ColumnDefinitions="*,100" ColumnSpacing="5">

@@ -21,6 +21,47 @@ internal static class MapCompiler
 {
     private static readonly string[] TeamSpawns = ["mp_tdm_spawn", "mp_tdm_spawn_allies_start", "mp_tdm_spawn_axis_start"];
 
+    internal static void ValidateNavigableSource(MapDocument document)
+    {
+        for (int entityIndex = 0; entityIndex < document.Entities.Count; entityIndex++)
+        {
+            MapEntity entity = document.Entities[entityIndex];
+            for (int brushIndex = 0; brushIndex < entity.Brushes.Count; brushIndex++)
+            {
+                try { BrushGeometry.Validate(entity.Brushes[brushIndex]); }
+                catch (ArgumentException exception)
+                {
+                    throw new MapBuildLocationException(document,
+                        new SelectionPath(entityIndex, Brush: brushIndex), exception);
+                }
+            }
+            for (int terrainIndex = 0; terrainIndex < entity.Terrains.Count; terrainIndex++)
+            {
+                SelectionPath location = new(entityIndex, Terrain: terrainIndex);
+                if (entity.ClassName != "worldspawn")
+                    throw new MapBuildLocationException(document, location,
+                        new NotSupportedException("Terrain must belong to worldspawn before compilation."));
+                try
+                {
+                    MapSurfaceCompiler.ValidateTerrain(entity.Terrains[terrainIndex]);
+                    _ = TerrainContents.ReadNonColliding(entity.Terrains[terrainIndex]);
+                }
+                catch (Exception exception) when (exception is ArgumentException or InvalidDataException or NotSupportedException)
+                {
+                    throw new MapBuildLocationException(document, location, exception);
+                }
+            }
+            if (entityIndex == 0 || entity.ClassName is "func_group" or "misc_prefab") continue;
+            SelectionPath entityLocation = new(entityIndex);
+            if (!GameplayEntityEditing.Types.Any(type => type.Name == entity.ClassName))
+                throw new MapBuildLocationException(document, entityLocation,
+                    new NotSupportedException($"Entity '{entity.ClassName}' is not supported by compilation."));
+            if (!entity.TryGetOrigin(out _))
+                throw new MapBuildLocationException(document, entityLocation,
+                    new InvalidDataException($"Entity '{entity.ClassName}' needs a finite three-component origin."));
+        }
+    }
+
     internal static string GetGameModeSummary(MapDocument document)
     {
         bool freeForAll = document.Entities.Any(entity => entity.ClassName == "mp_dm_spawn");
@@ -32,7 +73,7 @@ internal static class MapCompiler
 
     internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; native all-face water volumes and GPU ocean tops; solid terrain, painted overlays, decals, cutouts and static glass with native materials, skies and static models. " +
         "Bakes point and targeted spot lights, sky ambient and reflections; requires authored sunlight and a reflection probe. " +
-        "Native multiplayer points, script entities, brush/trigger models, groups and unambiguous prefabs. One render cell; stage volumes, primary local lights, curves, breakable glass and bounced lighting are not compiled yet.";
+        "Native multiplayer points, script entities, brush/trigger models, groups and unambiguous prefabs. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; stage volumes, primary local lights, breakable glass and bounced lighting are not compiled yet.";
 
     internal static IEnumerable<MapEntity> BrushEntities(MapDocument document) =>
         document.Entities.Where(entity => entity != document.World && entity.Brushes.Count > 0);
@@ -345,4 +386,11 @@ internal static class MapCompiler
             Stages = [new Stage { StageName = "stage 0", TriggerIndex = 1024, SunPrimaryLightIndex = 1 }]
         };
     }
+}
+
+internal sealed class MapBuildLocationException(MapDocument document, SelectionPath location, Exception cause)
+    : Exception(cause.Message, cause)
+{
+    internal MapDocument Document { get; } = document;
+    internal SelectionPath Location { get; } = location;
 }

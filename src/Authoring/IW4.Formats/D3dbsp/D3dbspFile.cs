@@ -1,5 +1,6 @@
 using IW4.Formats.Codecs.D3dbsp;
 using System.Buffers.Binary;
+using System.Numerics;
 
 namespace IW4.Formats.D3dbsp;
 
@@ -41,6 +42,9 @@ public sealed class D3dbspFile
 
     public IReadOnlyList<string> GetRenderMaterialNames() =>
         D3dbspGfxCodec.DecodeRenderMaterialNames(this);
+
+    public IReadOnlyList<(string Material, IReadOnlyList<(Vector3 Position, Vector3 Normal, Vector2 Uv, Vector4 Color)> Vertices)>
+        GetRenderTriangles() => D3dbspGfxCodec.DecodeRenderTriangles(this);
 
     public static D3dbspFile Create(
         IReadOnlyList<(D3dbspLumpType Type, byte[] Data)> lumps)

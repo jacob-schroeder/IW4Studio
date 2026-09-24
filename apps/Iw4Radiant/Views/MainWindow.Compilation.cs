@@ -37,12 +37,18 @@ public partial class MainWindow
             string path = file.TryGetLocalPath() ?? throw new NotSupportedException("Choose a local folder for the compiled map.");
             if (!Path.GetExtension(path).Equals(".d3dbsp", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Choose a filename ending in .d3dbsp.");
-            MapDocument document = _session.Document.Clone();
+            MapDocument sourceDocument = _session.Document;
+            MapDocument document = sourceDocument.Clone();
             var (materials, models) = ResolveBuildAssets(document);
-            var dialog = new MapBuildWindow(document, path, materials, models, _session.FilePath);
+            var dialog = new MapBuildWindow(document, path, materials, models, _session.FilePath,
+                CreateBuildNavigator(sourceDocument));
             await _dialogs.ShowModalAsync(() => dialog.ShowDialog<object?>(this));
             if (dialog.CompletedBspPath is { } completedPath)
+            {
+                RememberBuiltBsp(completedPath, sourceDocument);
                 SetStatus($"Built .d3dbsp: {completedPath}");
+                if (dialog.PreviewRequested) await ShowBspPreviewAsync(completedPath);
+            }
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
         {
@@ -57,26 +63,58 @@ public partial class MainWindow
         if (!await _files.SaveAsync(false) || _session.FilePath is not { } sourcePath) return;
         try
         {
-            MapDocument document = _session.Document.Clone();
+            MapDocument sourceDocument = _session.Document;
+            MapDocument document = sourceDocument.Clone();
             var (materials, models) = ResolveBuildAssets(document);
             string sourceFolder = Path.GetDirectoryName(sourcePath) ??
                 throw new InvalidDataException("The saved map has no containing directory.");
             string buildFolder = Path.Combine(sourceFolder, "map_build");
             var dialog = new MapBuildWindow(document, sourcePath, materials, models,
                 _buildLinkerPath ?? FindBuildLinker() ?? "", _buildTemplatePath, _buildProviderPaths,
-                _buildOutputFolder ?? (Directory.Exists(buildFolder) ? buildFolder : sourceFolder));
+                _buildOutputFolder ?? (Directory.Exists(buildFolder) ? buildFolder : sourceFolder),
+                CreateBuildNavigator(sourceDocument));
             await _dialogs.ShowModalAsync(() => dialog.ShowDialog<object?>(this));
             if (dialog.CompletedDirectory is not { } completedDirectory) return;
             _buildLinkerPath = dialog.LinkerPath;
             _buildTemplatePath = dialog.TemplatePath;
             _buildProviderPaths = dialog.ProviderPaths.ToArray();
             _buildOutputFolder = dialog.OutputFolder;
+            string bspPath = Path.Combine(completedDirectory,
+                Path.GetFileNameWithoutExtension(sourcePath) + ".d3dbsp");
+            RememberBuiltBsp(bspPath, sourceDocument);
             SetStatus($"Built PS3 map: {completedDirectory}");
+            if (dialog.PreviewRequested) await ShowBspPreviewAsync(bspPath);
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
         {
             await _dialogs.MessageAsync("Cannot build map", exception.Message);
         }
+    }
+
+    private Func<SelectionPath, bool> CreateBuildNavigator(MapDocument sourceDocument)
+    {
+        var targets = new Dictionary<SelectionPath, object>();
+        for (int entityIndex = 0; entityIndex < sourceDocument.Entities.Count; entityIndex++)
+        {
+            MapEntity entity = sourceDocument.Entities[entityIndex];
+            targets.Add(new SelectionPath(entityIndex), entity);
+            for (int brushIndex = 0; brushIndex < entity.Brushes.Count; brushIndex++)
+                targets.Add(new SelectionPath(entityIndex, Brush: brushIndex), entity.Brushes[brushIndex]);
+            for (int terrainIndex = 0; terrainIndex < entity.Terrains.Count; terrainIndex++)
+                targets.Add(new SelectionPath(entityIndex, Terrain: terrainIndex), entity.Terrains[terrainIndex]);
+        }
+        return location =>
+        {
+            if (!ReferenceEquals(_session.Document, sourceDocument) ||
+                !targets.TryGetValue(location, out object? target) ||
+                !ReferenceEquals(location.Resolve(sourceDocument), target) ||
+                !_session.Visibility.CanSelect(sourceDocument, target)) return false;
+            _session.Select(target);
+            if (!ReferenceEquals(_session.Selection.Active, target)) return false;
+            FrameSelection_Click(this, new RoutedEventArgs());
+            SetStatus("Selected the object reported by the build error.");
+            return true;
+        };
     }
 
     private (Dictionary<string, MaterialSource> Materials, Dictionary<string, XModelSource> Models)

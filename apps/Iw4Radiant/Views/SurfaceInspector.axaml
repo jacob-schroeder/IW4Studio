@@ -9,6 +9,18 @@
             <TextBox x:Name="TextureName" IsReadOnly="True" PlaceholderText="No selected surface"
                      ToolTip.Tip="The selected surfaces' material. Click a material thumbnail to replace it immediately." />
         </StackPanel>
+        <StackPanel x:Name="ConvertFaceFields" Spacing="7" IsVisible="False">
+            <Separator />
+            <TextBlock Text="Convert face to terrain" Classes="panelTitle" />
+            <TextBlock Text="Creates editable terrain with this face's texture alignment. The solid brush stays; its face becomes caulk and the new surface starts without duplicate collision. Undo restores both."
+                       Classes="caption" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,90" ColumnSpacing="5">
+                <TextBlock Text="Vertices per side" Classes="fieldLabel" />
+                <NumericUpDown x:Name="FaceTerrainVertices" Grid.Column="1" Minimum="2" Maximum="16" Value="2" FormatString="0"
+                               ToolTip.Tip="2 exactly follows a four-sided face. Add more vertices for later sculpting." />
+            </Grid>
+            <Button x:Name="ConvertFaceButton" Content="Create terrain from face" Classes="panelAction" HorizontalAlignment="Stretch" />
+        </StackPanel>
         <TextBlock x:Name="ProjectionInfo" Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
         <StackPanel x:Name="ProjectionFields" Spacing="8" IsEnabled="False">
             <TextBlock Text="Texture alignment" Classes="panelTitle" />

@@ -7,7 +7,7 @@
         Width="1500" Height="980" MinWidth="640" MinHeight="720"
         Background="#202226" FontSize="12">
     <Grid RowDefinitions="Auto,Auto,*,Auto">
-        <Menu Grid.Row="0" Background="#202225">
+        <Menu x:Name="EditorMenu" Grid.Row="0" Background="#202225">
             <MenuItem Header="_File">
                 <MenuItem Header="_New map" Click="New_Click" InputGesture="Ctrl+N" />
                 <MenuItem Header="_Open .map…" Click="Open_Click" InputGesture="Ctrl+O" />
@@ -93,11 +93,14 @@
                 <Separator />
                 <MenuItem Header="Frame _all views" Click="FrameAll_Click" />
                 <MenuItem Header="Frame _selection in all views" Click="FrameSelection_Click" InputGesture="End" />
+                <Separator />
+                <MenuItem Header="Import leak path (.lin)…" Click="ImportLeakPath_Click" />
             </MenuItem>
             <MenuItem Header="_Create">
                 <MenuItem Header="_Models…" Click="Models_Click" />
                 <MenuItem Header="_Prefabs…" Click="Prefabs_Click" />
-                <MenuItem Header="_Curves, arches and stairs…" Click="Geometry_Click" />
+                <MenuItem Header="_Curves, ropes, arches and stairs…" Click="Geometry_Click" />
+                <MenuItem Header="_Bridge between surfaces…" Click="Bridge_Click" />
                 <MenuItem Header="_Gameplay entities…" Click="Gameplay_Click" />
                 <MenuItem Header="Player clip">
                     <MenuItem Header="Draw player-clip brush" Click="DrawPlayerClip_Click"
@@ -117,12 +120,15 @@
             <MenuItem Header="_Build">
                 <MenuItem Header="Build .d3dbsp…" Click="BuildD3dbsp_Click" />
                 <MenuItem Header="Build PS3 map…" Click="Build_Click" />
+                <Separator />
+                <MenuItem Header="Preview last built .d3dbsp" Click="PreviewLastBsp_Click" />
+                <MenuItem Header="Open .d3dbsp preview…" Click="OpenBspPreview_Click" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_Controls and prototype scope" Click="Help_Click" />
             </MenuItem>
         </Menu>
-        <Border Grid.Row="1" BorderBrush="#404247" BorderThickness="0,0,0,1" Padding="6,4">
+        <Border x:Name="EditorToolbar" Grid.Row="1" BorderBrush="#404247" BorderThickness="0,0,0,1" Padding="6,4">
             <StackPanel>
               <WrapPanel Orientation="Horizontal">
                <StackPanel Classes="toolbarGroup">
@@ -301,15 +307,38 @@
               </Border>
             </StackPanel>
         </Border>
-        <Grid x:Name="EditorArea" Grid.Row="2" ColumnDefinitions="*,5,300">
-            <views:ViewportWorkspace x:Name="Workspace" />
-            <GridSplitter x:Name="InspectorSplitter" Grid.Column="1" ResizeDirection="Columns" />
-            <views:SelectionInspector x:Name="Inspector" Grid.Column="2" />
+        <Grid Grid.Row="2" RowDefinitions="Auto,*">
+            <Border x:Name="CompiledPreviewBanner" Background="#283545" BorderBrush="#6588AB"
+                    BorderThickness="0,0,0,1" Padding="12,8" IsVisible="False">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <StackPanel Spacing="3">
+                        <TextBlock Text="COMPILED .d3dbsp PREVIEW · READ ONLY" FontWeight="Bold" Foreground="#DBECFF" />
+                        <TextBlock x:Name="CompiledPreviewState" TextWrapping="Wrap" Foreground="#FFDBA8" />
+                        <TextBlock x:Name="CompiledPreviewAssets" TextWrapping="Wrap" Foreground="#FFC2A5" />
+                        <TextBlock Text="BSP render triangles, vertex colors and available local material images. Static models, sky cubemaps, baked lightmaps, reflection probes and PS3 runtime shaders are not shown."
+                                   TextWrapping="Wrap" Foreground="#BACBDC" FontSize="11" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Return to source map" Click="ReturnToSource_Click"
+                            VerticalAlignment="Center" AutomationProperties.Name="Return to editable source map" />
+                </Grid>
+            </Border>
+            <Grid x:Name="EditorArea" Grid.Row="1" ColumnDefinitions="*,5,300">
+                <views:ViewportWorkspace x:Name="Workspace" />
+                <GridSplitter x:Name="InspectorSplitter" Grid.Column="1" ResizeDirection="Columns" />
+                <views:SelectionInspector x:Name="Inspector" Grid.Column="2" />
+            </Grid>
         </Grid>
         <Border Grid.Row="3" BorderBrush="#34383E" BorderThickness="0,1,0,0" Padding="8,3">
-            <Grid ColumnDefinitions="*,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto">
                 <TextBlock x:Name="StatusText" Text="Drag to draw · Shift-click/drag to select · Esc deselects · End frames" TextTrimming="CharacterEllipsis" />
-                <TextBlock x:Name="CountText" Grid.Column="1" Foreground="#A8ABB1" Margin="16,0,0,0" />
+                <StackPanel x:Name="LeakPathControls" Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="12,0,0,0" IsVisible="False" VerticalAlignment="Center">
+                    <TextBlock x:Name="LeakPathLabel" VerticalAlignment="Center" Foreground="#FFB5B5" MaxWidth="180" TextTrimming="CharacterEllipsis" />
+                    <Button x:Name="LeakPreviousButton" Content="◀" Click="LeakPrevious_Click" Padding="6,1" ToolTip.Tip="Previous leak path point" AutomationProperties.Name="Previous leak path point" />
+                    <Button Content="Current" Click="LeakCurrent_Click" Padding="6,1" ToolTip.Tip="Frame current leak path point" AutomationProperties.Name="Frame current leak path point" />
+                    <Button x:Name="LeakNextButton" Content="▶" Click="LeakNext_Click" Padding="6,1" ToolTip.Tip="Next leak path point" AutomationProperties.Name="Next leak path point" />
+                    <Button Content="Clear" Click="LeakClear_Click" Padding="6,1" ToolTip.Tip="Clear imported leak path" AutomationProperties.Name="Clear imported leak path" />
+                </StackPanel>
+                <TextBlock x:Name="CountText" Grid.Column="2" Foreground="#A8ABB1" Margin="16,0,0,0" />
             </Grid>
         </Border>
     </Grid>

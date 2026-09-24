@@ -25,7 +25,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _dialogs = new EditorDialogs(this, SetStatus);
-        _files = new MapFileCommands(this, _session, _dialogs, FinishGestures, FrameAll, SetStatus);
+        _files = new MapFileCommands(this, _session, _dialogs, FinishGestures, FrameAll, SetStatus, ClearLeakPath);
         Inspector.InitializeActions(_session, _dialogs, FinishGestures, Workspace.Materials,
             ResolveMaterial, () => Workspace.ActivePlane, name => ResolveMaterial(name)?.Surface.SupportsAlpha == true,
             name => ResolveMaterial(name)?.UsesVertexColor == true, SetStatus);
@@ -61,12 +61,14 @@ public partial class MainWindow : Window
         Workspace.Camera.Session = _session;
         Workspace.Camera.CanAcceptModelDrop = () => !_dialogs.BlocksInput;
         Workspace.Camera.InteractionStatusChanged += SetStatus;
+        Workspace.Camera.RendererStatusChanged += OnCompiledPreviewRendererStatus;
         Workspace.Camera.BrushKindRequested += ApplyBrushKind;
         Workspace.Camera.ResolveMaterial = ResolveMaterial;
         _session.Changed += (_, _) =>
         {
             _waterDefinitionsDirty = true;
             RefreshEditor();
+            UpdateCompiledPreviewState();
         };
         GridCombo.ItemsSource = GridSizes;
         GridCombo.SelectedItem = "16";
@@ -166,7 +168,7 @@ public partial class MainWindow : Window
         {
             EditorTool.Terrain => "Drag a rectangle in XY to create terrain. Vertices per side controls the grid.",
             EditorTool.Sculpt => "Select terrain, choose Raise/lower, Smooth or Flatten in the inspector, then drag in XY. Escape cancels.",
-            EditorTool.Face => "Shift-click a face in the camera to select or deselect it. Apply materials in the browser and adjust UVs in Surface.",
+            EditorTool.Face => "Click a face to select it; Shift-click toggles more faces. Apply materials in the browser and adjust UVs in Surfaces.",
             EditorTool.Vertex => "Drag projected corner or edge handles to reshape brushes; Shift-click toggles handle vertices.",
             EditorTool.Clip => "Select brushes, drag a clip line in a grid view, then choose Apply clip or press Enter. Left/right follows the line direction; Escape cancels.",
             _ => "Drag in a grid to create a brush when nothing is selected. Shift-click or Shift-drag to select/deselect; Esc clears selection."
@@ -260,7 +262,7 @@ public partial class MainWindow : Window
     private void RefreshLayoutControls()
     {
         if (!_ready) return;
-        bool showInspector = _inspectorVisible && !Workspace.IsMaximized;
+        bool showInspector = _previewBspPath is null && _inspectorVisible && !Workspace.IsMaximized;
         if (Inspector.IsVisible) _inspectorWidth = EditorArea.ColumnDefinitions[2].Width;
         Inspector.IsVisible = InspectorSplitter.IsVisible = showInspector;
         EditorArea.ColumnDefinitions[1].Width = new GridLength(showInspector ? 5 : 0);
@@ -289,6 +291,7 @@ public partial class MainWindow : Window
     }
     private void Prefabs_Click(object? sender, RoutedEventArgs e) => Workspace.ShowPrefabs();
     private void Geometry_Click(object? sender, RoutedEventArgs e) => ShowInspectorSection(Inspector.ShowGeometry);
+    private void Bridge_Click(object? sender, RoutedEventArgs e) => ShowInspectorSection(Inspector.ShowBridge);
     private void Gameplay_Click(object? sender, RoutedEventArgs e) => ShowInspectorSection(Inspector.ShowEntity);
     private void Organization_Click(object? sender, RoutedEventArgs e) => ShowInspectorSection(Inspector.ShowOrganization);
 
@@ -392,6 +395,18 @@ public partial class MainWindow : Window
     private void OnEditorKeyDown(object? sender, KeyEventArgs e)
     {
         if (_dialogs.BlocksInput || e.Handled) return;
+        if (_previewBspPath is not null)
+        {
+            if (e.Key == Key.Escape)
+            {
+                ReturnToSource_Click(this, e);
+                e.Handled = true;
+            }
+            else if (Workspace.Camera.HandleNavigationKeyDown(e)) return;
+            else if (e.KeyModifiers != KeyModifiers.None || e.Key is Key.Delete or Key.Back or Key.Space)
+                e.Handled = true;
+            return;
+        }
         if (e.Key == Key.Escape && _session.HasPlacement)
         {
             _session.CancelPlacement();

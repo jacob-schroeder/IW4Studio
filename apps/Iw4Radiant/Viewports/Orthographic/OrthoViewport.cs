@@ -79,6 +79,16 @@ public sealed class OrthoViewport : Control
     internal Func<bool>? CanAcceptModelDrop { get; set; }
 
     internal bool HasClipPreview => _gestures.CanCommitClip;
+    internal LeakPath? LeakPath
+    {
+        get => _drawing.LeakPath;
+        set { _drawing.LeakPath = value; InvalidateVisual(); }
+    }
+    internal int LeakPointIndex
+    {
+        set { _drawing.LeakPointIndex = value; InvalidateVisual(); }
+    }
+    internal void FramePoint(Vector3 point) => Frame(point, point);
     internal bool HasActiveGesture => _gestures.IsActive || _gestures.HasClipPreview;
     internal void CompleteGesture() => _gestures.EndGesture(cancel: false);
     internal void CancelGesture() => _gestures.CancelGesture();

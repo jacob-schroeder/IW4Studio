@@ -3,6 +3,14 @@
              xmlns:editing="using:Iw4Radiant.Editing"
              x:Class="Iw4Radiant.Views.GameplayEntityInspector">
     <StackPanel Spacing="8">
+        <Expander x:Name="VehiclePathPanel" Header="Vehicle path preview" IsExpanded="True" IsVisible="False">
+            <StackPanel Spacing="6" Margin="0,8,0,0">
+                <TextBlock x:Name="VehiclePathSummary" TextWrapping="Wrap" />
+                <TextBlock x:Name="VehiclePathMetrics" Classes="caption" TextWrapping="Wrap" />
+                <TextBlock x:Name="VehiclePathIssues" Foreground="#EA7774" TextWrapping="Wrap" IsVisible="False" />
+                <TextBlock Classes="caption" TextWrapping="Wrap" Text="Select a vehicle node to inspect its route in the views. Edit Name, Target and Angles below; speed and lookahead remain native Entity properties." />
+            </StackPanel>
+        </Expander>
         <Expander Header="Create gameplay entity" IsExpanded="False">
             <StackPanel Spacing="6" Margin="0,8,0,0">
                 <TextBox x:Name="EntityFilter" PlaceholderText="Search native IW4 entity types" />

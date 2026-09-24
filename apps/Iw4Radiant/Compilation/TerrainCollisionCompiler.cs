@@ -36,10 +36,9 @@ internal static class TerrainCollisionCompiler
         }
 
         int terrainContents = 0;
-        foreach (MapTerrain terrain in terrains)
+        foreach (MapTerrain sourceTerrain in terrains)
         {
-            if (terrain.IsCurve)
-                throw new NotSupportedException("Curve collision is not supported by compilation.");
+            MapTerrain terrain = MapSurfaceCompiler.CompiledTerrain(sourceTerrain);
             if (terrain.Width < 2 || terrain.Height < 2 ||
                 terrain.Vertices.Length != checked(terrain.Width * terrain.Height) ||
                 terrain.EdgeFlags.Length != terrain.Vertices.Length)
@@ -70,17 +69,22 @@ internal static class TerrainCollisionCompiler
 
             foreach ((int a, int b, int c) in terrain.GetTriangles())
             {
+                Vector3 normal = Vector3.Cross(terrain.Vertices[b] - terrain.Vertices[a],
+                    terrain.Vertices[c] - terrain.Vertices[a]);
+                float lengthSquared = normal.LengthSquared();
+                // Closed curve caps can collapse to a pole. The render mesh omits
+                // these zero-area cells, so collision must omit them as well.
+                if (sourceTerrain.IsCurve && lengthSquared <= 0.00000001f)
+                    continue;
+                if (!float.IsFinite(lengthSquared) || lengthSquared == 0)
+                    throw new InvalidDataException($"Terrain '{terrain.Material}' has a degenerate collision triangle.");
                 int triangle = normals.Count;
                 // CM_TraceCapsuleThroughTriangle computes cross(v2-v0,v1-v0).
                 // Reverse only the winding, retaining the authored grid diagonal.
                 indices.Add(localIndices[a]);
                 indices.Add(localIndices[c]);
                 indices.Add(localIndices[b]);
-                Vector3 normal = Vector3.Cross(terrain.Vertices[b] - terrain.Vertices[a],
-                    terrain.Vertices[c] - terrain.Vertices[a]);
-                float length = normal.Length();
-                if (!float.IsFinite(length) || length == 0)
-                    throw new InvalidDataException($"Terrain '{terrain.Material}' has a degenerate collision triangle.");
+                float length = MathF.Sqrt(lengthSquared);
                 normals.Add(normal / length);
                 triangleMaterials.Add(materialIndex);
                 for (int edge = 0; edge < 3; edge++)

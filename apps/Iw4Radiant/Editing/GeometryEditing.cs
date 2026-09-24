@@ -1,5 +1,7 @@
 using System.Numerics;
+using Iw4Radiant.Compilation;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Materials;
 
 namespace Iw4Radiant.Editing;
 
@@ -7,6 +9,79 @@ internal enum GeometryShape { Patch, Bevel, EndCap, Cylinder, Arch, Stairs }
 
 internal static class GeometryEditing
 {
+    internal static TerrainBridgeEdge[] BridgeEdges(MapDocument document, object selected)
+    {
+        if (selected is MapTerrain terrain && document.World.Terrains.Contains(terrain))
+        {
+            MapSurfaceCompiler.ValidateTerrain(terrain);
+            return TerrainBridge.Edges(terrain);
+        }
+        MapPolygon? face = selected switch
+        {
+            BrushFaceSelection chosen when document.World.Brushes.Contains(chosen.Brush) =>
+                chosen.Brush.GetPolygons().FirstOrDefault(polygon => ReferenceEquals(polygon.Face, chosen.Face)),
+            MapBrush brush when document.World.Brushes.Contains(brush) =>
+                brush.GetPolygons().Where(polygon => polygon.Face.Normal.Z >= 0.5f)
+                    .OrderByDescending(polygon => polygon.Face.Normal.Z)
+                    .ThenByDescending(polygon => polygon.Vertices.Average(vertex => vertex.Z)).FirstOrDefault(),
+            _ => null
+        };
+        return face is not null ? TerrainBridge.Edges(face) :
+            throw new ArgumentException("Select two whole world curved patches, terrains, or brush faces. A whole brush uses its top face; use Face mode for another face.");
+    }
+
+    internal static void CreateBridge(EditorSession session, int firstEdge, int secondEdge, int rows, float rise)
+    {
+        if (session.Selection.Count != 2)
+            throw new ArgumentException("Select exactly two source surfaces for a bridge.");
+        object[] selected = session.Selection.Items.ToArray();
+        if (ReferenceEquals(EditorSelection.Owner(selected[0]), EditorSelection.Owner(selected[1])))
+            throw new ArgumentException("Choose boundaries on two different source surfaces.");
+        TerrainBridgeEdge[] first = BridgeEdges(session.Document, selected[0]);
+        TerrainBridgeEdge[] second = BridgeEdges(session.Document, selected[1]);
+        if ((uint)firstEdge >= (uint)first.Length || (uint)secondEdge >= (uint)second.Length)
+            throw new ArgumentException("Choose one boundary edge on each selected surface.");
+        string material = first[firstEdge].Material;
+        if (CaulkMaterial.IsCaulk(material) || ClipBrushMaterial.IsPlayerClip(material))
+            throw new ArgumentException("The first surface must have a visible material. Choose a textured terrain or brush face first.");
+        MapTerrain bridge = TerrainBridge.Create(first[firstEdge], second[secondEdge], rows, rise);
+        MapSurfaceCompiler.ValidateTerrain(bridge);
+        _ = TerrainContents.ReadNonColliding(bridge);
+        session.Edit(() =>
+        {
+            session.Document.World.Terrains.Add(bridge);
+            session.Tool = EditorTool.Select;
+            session.Selection.Set(bridge);
+        });
+    }
+
+    internal static int CreateRope(EditorSession session, float thickness, float slackPercent, int segments)
+    {
+        MapEntity[] endpoints = session.Selection.Items.OfType<MapEntity>().ToArray();
+        if (session.Selection.Count != 2 || endpoints.Length != 2 ||
+            endpoints.Any(entity => entity.ClassName != "info_null" || !session.Document.Entities.Contains(entity)))
+            throw new ArgumentException("Select exactly two info_null point entities to set the rope endpoints.");
+        if (endpoints.Any(entity => entity.Brushes.Count > 0 || entity.Terrains.Count > 0 ||
+                entity.Properties.Keys.Any(key => key is not ("classname" or "origin" or "angles" or "angle"))))
+            throw new ArgumentException("Use two temporary, unlinked info_null markers. Named or linked entities are preserved for their existing purpose.");
+        if (!endpoints[0].TryGetOrigin(out Vector3 start) || !endpoints[1].TryGetOrigin(out Vector3 end))
+            throw new ArgumentException("Both info_null endpoints need finite origin coordinates.");
+        MapTerrain[] pieces = RopeGeometry.Create(start, end, thickness, slackPercent, segments, session.Material);
+        foreach (MapTerrain piece in pieces)
+        {
+            MapSurfaceCompiler.ValidateTerrain(piece);
+            _ = TerrainContents.ReadNonColliding(piece);
+        }
+        session.Edit(() =>
+        {
+            foreach (MapEntity endpoint in endpoints) session.Document.Entities.Remove(endpoint);
+            session.Document.World.Terrains.AddRange(pieces);
+            session.Tool = EditorTool.Select;
+            session.Selection.SetRange(pieces);
+        });
+        return pieces.Length;
+    }
+
     internal static void Create(EditorSession session, GeometryShape shape, Vector3 center, Vector3 size,
         int segments, float thickness, Matrix4x4 orientation, bool replaceBrush)
     {
@@ -98,6 +173,93 @@ internal static class GeometryEditing
         {
             foreach (var addition in additions) addition.Owner.Terrains.AddRange(addition.Caps);
             session.Selection.SetRange(additions.SelectMany(addition => addition.Caps));
+        });
+    }
+
+    internal static void SplitSurface(EditorSession session, MapTerrain surface, bool columns, int position)
+    {
+        MapEntity owner = session.Document.Entities.FirstOrDefault(entity => entity.Terrains.Contains(surface))
+            ?? throw new ArgumentException("Select a surface in the current map to split.");
+        (MapTerrain first, MapTerrain second) = surface.IsCurve
+            ? TerrainSplit.ThroughCurveSpan(surface, columns, position)
+            : TerrainSplit.AtGridLine(surface, columns, position);
+        session.Edit(() =>
+        {
+            int index = owner.Terrains.IndexOf(surface);
+            owner.Terrains.RemoveAt(index);
+            owner.Terrains.InsertRange(index, [first, second]);
+            session.Tool = EditorTool.Select;
+            session.Selection.SetRange([first, second]);
+        });
+    }
+
+    internal static int ConvertCurveToTerrain(EditorSession session, MapTerrain curve, int samplesPerSpan)
+    {
+        if (session.Selection.Count != 1 || !ReferenceEquals(session.Selection.Active, curve) ||
+            !session.Document.World.Terrains.Contains(curve))
+            throw new ArgumentException("Select one whole world curve to convert to terrain.");
+        MapTerrain[] pieces = TerrainConversion.FromCurve(curve, samplesPerSpan);
+        foreach (MapTerrain piece in pieces)
+        {
+            MapSurfaceCompiler.ValidateTerrain(piece);
+            _ = TerrainContents.ReadNonColliding(piece);
+        }
+        session.Edit(() =>
+        {
+            int index = session.Document.World.Terrains.IndexOf(curve);
+            session.Document.World.Terrains.RemoveAt(index);
+            session.Document.World.Terrains.InsertRange(index, pieces);
+            session.Tool = EditorTool.Select;
+            session.Selection.SetRange(pieces);
+        });
+        return pieces.Length;
+    }
+
+    internal static int ThickenSurface(EditorSession session, MapTerrain source, float thickness)
+    {
+        if (session.Selection.Count != 1 || !ReferenceEquals(session.Selection.Active, source) ||
+            !session.Document.World.Terrains.Contains(source))
+            throw new ArgumentException("Select one whole world terrain or curved patch to thicken.");
+        (MapTerrain[] top, MapTerrain[] shell) = PatchThickening.Create(source, thickness);
+        foreach (MapTerrain piece in top.Concat(shell))
+        {
+            MapSurfaceCompiler.ValidateTerrain(piece);
+            _ = TerrainContents.ReadNonColliding(piece);
+        }
+        session.Edit(() =>
+        {
+            int index = session.Document.World.Terrains.IndexOf(source);
+            if (source.IsCurve)
+            {
+                session.Document.World.Terrains.RemoveAt(index);
+                session.Document.World.Terrains.InsertRange(index, top.Concat(shell));
+            }
+            else
+                session.Document.World.Terrains.InsertRange(index + 1, shell);
+            session.Tool = EditorTool.Select;
+            session.Selection.SetRange(top.Concat(shell));
+        });
+        return top.Length + shell.Length;
+    }
+
+    internal static void ConvertFaceToTerrain(EditorSession session, BrushFaceSelection selected, int verticesPerSide)
+    {
+        if (session.Selection.Count != 1 || !Equals(session.Selection.Active, selected) ||
+            !session.Document.World.Brushes.Contains(selected.Brush) || !selected.Brush.Faces.Contains(selected.Face))
+            throw new ArgumentException("Select one face of a world brush to convert to terrain.");
+        if (CaulkMaterial.IsCaulk(selected.Face.Material) || ClipBrushMaterial.IsPlayerClip(selected.Face.Material))
+            throw new ArgumentException("Choose a visible, textured brush face to convert.");
+        MapPolygon polygon = selected.Brush.GetPolygons().FirstOrDefault(item => ReferenceEquals(item.Face, selected.Face))
+            ?? throw new ArgumentException("The selected brush face has no usable boundary.");
+        MapTerrain terrain = TerrainConversion.FromFace(polygon, verticesPerSide);
+        TerrainContents.SetNonColliding(terrain, true);
+        MapSurfaceCompiler.ValidateTerrain(terrain);
+        session.Edit(() =>
+        {
+            selected.Face.Material = CaulkMaterial.Name;
+            session.Document.World.Terrains.Add(terrain);
+            session.Tool = EditorTool.Select;
+            session.Selection.Set(terrain);
         });
     }
 
