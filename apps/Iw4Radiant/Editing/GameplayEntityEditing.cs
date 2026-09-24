@@ -110,6 +110,34 @@ internal static class GameplayEntityEditing
         return entity;
     }
 
+    internal static MapEntity PlaceFxSound(EditorSession session, string assetName, bool isSound, Vector3 position)
+    {
+        if (string.IsNullOrWhiteSpace(assetName)) throw new ArgumentException("Choose an FX or sound asset.");
+        var entity = new MapEntity();
+        entity.Properties["classname"] = "fx_origin";
+        entity.Properties["angles"] = "0 0 0";
+        SetOrigin(entity, position);
+        if (isSound)
+        {
+            entity.Properties["is_sound"] = "1";
+            entity.Properties["soundalias"] = assetName;
+        }
+        else entity.Properties["fx"] = assetName;
+        session.Edit(() => { session.Document.Entities.Add(entity); session.Selection.Set(entity); });
+        return entity;
+    }
+
+    internal static void SetFxSoundReference(EditorSession session, MapEntity entity, string assetName)
+    {
+        if (entity.ClassName != "fx_origin") throw new ArgumentException("Select an FX or sound marker.");
+        assetName = assetName.Trim();
+        if (assetName.Length == 0 || assetName.Any(character => character is '"' or '\\' || char.IsControl(character)))
+            throw new ArgumentException("Enter an exact asset name without quotes, backslashes, or control characters.");
+        string key = entity.Properties.GetValueOrDefault("is_sound") == "1" ? "soundalias" : "fx";
+        if (entity.Properties.GetValueOrDefault(key) == assetName) return;
+        session.Edit(() => entity.Properties[key] = assetName);
+    }
+
     internal static MapEntity CreateBrushEntity(EditorSession session, string className)
     {
         if (!RequireType(className).UsesBrushes) throw new ArgumentException("Choose a brush entity type.");

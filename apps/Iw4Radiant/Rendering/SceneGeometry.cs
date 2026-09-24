@@ -23,9 +23,11 @@ internal sealed class SceneGeometry
     internal int AxesCount { get; }
     internal int LeakPathStart { get; }
     internal int LeakPathCount { get; }
+    internal List<(int Start, int Count)> MovePreviewRanges { get; } = [];
 
     internal SceneGeometry(EditorScene editor, TransformMode transformMode, EditorTool tool,
-        Func<string, MaterialSource?>? resolveMaterial, LeakPath? leakPath, int leakPointIndex)
+        Func<string, MaterialSource?>? resolveMaterial, LeakPath? leakPath, int leakPointIndex,
+        bool outlineFxMarkers)
     {
         MapDocument document = editor.Document;
         var shore = new WaterShoreGeometry(document, name => resolveMaterial?.Invoke(name));
@@ -39,6 +41,10 @@ internal sealed class SceneGeometry
             foreach (MapTerrain terrain in entity.Terrains) selectedObjects.Add(terrain);
         }
         var selectedFaces = selection.Items.OfType<BrushFaceSelection>().Select(face => face.Face).ToHashSet();
+        bool movePreview = selection.Count > 0 && selection.Items.All(item =>
+            item is MapEntity entity && (entity.ClassName == "fx_origin" || XModelGeometry.IsModel(entity)));
+        var modelPreviewRanges = new List<(string Material, int TriangleStart, int TriangleCount, int WireStart, int WireCount)>();
+        var outlinePreviewRanges = new List<(int Start, int Count)>();
         var materials = new Dictionary<string, (List<SceneVertex> Triangles, List<SceneVertex> Lines, List<(int Start, int Count, Vector3 Center)> Surfaces)>(StringComparer.Ordinal);
         var highlights = new List<SceneVertex>();
         var outlines = new List<SceneVertex>();
@@ -104,9 +110,14 @@ internal sealed class SceneGeometry
         }
         foreach (MapEntity entity in document.Entities.Where(XModelGeometry.IsModel))
             if (editor.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
+            {
+                bool moving = movePreview && selectedObjects.Contains(entity);
+                var starts = new Dictionary<string, (int Triangles, int Lines)>(StringComparer.Ordinal);
+                int outlineStart = outlines.Count;
                 foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
                 {
                     var geometry = GetMaterialGeometry(triangle.Material);
+                    if (moving) starts.TryAdd(triangle.Material, (geometry.Triangles.Count, geometry.Lines.Count));
                     geometry.Triangles.AddRange([triangle.A, triangle.B, triangle.C]);
                     foreach (var edge in new[] { (triangle.A.Position, triangle.B.Position),
                                  (triangle.B.Position, triangle.C.Position), (triangle.C.Position, triangle.A.Position) })
@@ -115,6 +126,17 @@ internal sealed class SceneGeometry
                         if (selectedObjects.Contains(entity)) AddLine(outlines, edge.Item1, edge.Item2, highlight);
                     }
                 }
+                if (moving)
+                {
+                    foreach (var (material, start) in starts)
+                    {
+                        var geometry = materials[material];
+                        modelPreviewRanges.Add((material, start.Triangles, geometry.Triangles.Count - start.Triangles,
+                            start.Lines, geometry.Lines.Count - start.Lines));
+                    }
+                    AddOutlinePreviewRange(outlineStart, outlines.Count - outlineStart);
+                }
+            }
         var all = new List<SceneVertex>();
         foreach (var material in materials)
         {
@@ -126,14 +148,24 @@ internal sealed class SceneGeometry
             int wireStart = all.Count;
             all.AddRange(material.Value.Lines);
             Batches.Add((material.Key, start, material.Value.Triangles.Count, wireStart, material.Value.Lines.Count));
+            foreach (var range in modelPreviewRanges.Where(range => range.Material == material.Key))
+            {
+                AddMovePreviewRange(start + range.TriangleStart, range.TriangleCount);
+                AddMovePreviewRange(wireStart + range.WireStart, range.WireCount);
+            }
         }
         GlyphStart = all.Count;
         foreach (var entity in document.Entities.Where(entity => PointEntityGeometry.IsPointEntity(entity) &&
                      (!XModelGeometry.IsModel(entity) || editor.ResolveModel?.Invoke(entity.Properties["model"]) is null)))
         {
             bool missingModel = XModelGeometry.IsModel(entity);
+            bool moving = movePreview && selectedObjects.Contains(entity);
+            int glyphStart = all.Count, outlineStart = outlines.Count;
             Vector3 color = missingModel ? Vector3.UnitX :
-                entity.ClassName == "light" ? new(1, 0.85f, 0.35f) : new(0.35f, 0.8f, 0.95f);
+                entity.ClassName == "light" ? new(1, 0.85f, 0.35f) :
+                entity.ClassName == "fx_origin" && entity.Properties.GetValueOrDefault("is_sound") == "1"
+                    ? new(0.48f, 0.74f, 0.88f) :
+                entity.ClassName == "fx_origin" ? new(0.91f, 0.71f, 0.42f) : new(0.35f, 0.8f, 0.95f);
             if (!missingModel && entity.ClassName == "trigger_radius")
             {
                 foreach (var line in PointEntityGeometry.GetRadiusLines(entity))
@@ -141,7 +173,22 @@ internal sealed class SceneGeometry
                 continue;
             }
             foreach (var polygon in PointEntityGeometry.CreateBrush(entity).GetPolygons())
-                AddPolygon(polygon, all, color, selectedObjects.Contains(entity) ? highlight : color * 0.6f);
+            {
+                if (outlineFxMarkers && entity.ClassName == "fx_origin" &&
+                    entity.Properties.GetValueOrDefault("is_sound") != "1")
+                {
+                    for (int index = 0; index < polygon.Vertices.Length; index++)
+                        AddLine(outlines, polygon.Vertices[index],
+                            polygon.Vertices[(index + 1) % polygon.Vertices.Length],
+                            selectedObjects.Contains(entity) ? highlight : color);
+                }
+                else AddPolygon(polygon, all, color, selectedObjects.Contains(entity) ? highlight : color * 0.6f);
+            }
+            if (moving)
+            {
+                AddMovePreviewRange(glyphStart, all.Count - glyphStart);
+                AddOutlinePreviewRange(outlineStart, outlines.Count - outlineStart);
+            }
         }
         GlyphCount = all.Count - GlyphStart;
         GridStart = all.Count;
@@ -160,6 +207,8 @@ internal sealed class SceneGeometry
         OutlineStart = all.Count;
         all.AddRange(outlines);
         OutlineCount = all.Count - OutlineStart;
+        foreach (var range in outlinePreviewRanges)
+            AddMovePreviewRange(OutlineStart + range.Start, range.Count);
         AxesStart = all.Count;
         MapEntity? selectedVehicle = selection.Items.OfType<MapEntity>().FirstOrDefault(VehiclePathPreview.IsNode);
         AddEntityConnections(all, document, selection, editor, selectedVehicle is not null);
@@ -180,10 +229,12 @@ internal sealed class SceneGeometry
                 AddLine(all, point - Vector3.UnitY * radius, point + Vector3.UnitY * radius, color);
                 AddLine(all, point - Vector3.UnitZ * radius, point + Vector3.UnitZ * radius, color);
             }
+        int gizmoStart = all.Count;
         if (tool is EditorTool.Select or EditorTool.Vertex && selection.Count > 0 &&
             selection.Items.All(SelectionGeometry.CanTransform) && editor.Bounds(selection.Items) is { } selectionBounds)
             foreach (var line in TransformGizmoGeometry.GetLines(selectionBounds, transformMode))
                 AddLine(all, line.A, line.B, line.Color);
+        if (movePreview) AddMovePreviewRange(gizmoStart, all.Count - gizmoStart);
         AxesCount = all.Count - AxesStart;
         LeakPathStart = all.Count;
         if (leakPath is { } path)
@@ -199,6 +250,16 @@ internal sealed class SceneGeometry
         }
         LeakPathCount = all.Count - LeakPathStart;
         Vertices = all.ToArray();
+
+        void AddMovePreviewRange(int start, int count)
+        {
+            if (count > 0) MovePreviewRanges.Add((start, count));
+        }
+
+        void AddOutlinePreviewRange(int start, int count)
+        {
+            if (count > 0) outlinePreviewRanges.Add((start, count));
+        }
 
         void AddPolygon(MapPolygon polygon, List<SceneVertex> vertices, Vector3 color, Vector3? outlineColor,
             List<SceneVertex>? wireframe = null, OceanWaveSettings? ocean = null,

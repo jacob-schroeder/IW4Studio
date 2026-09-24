@@ -15,6 +15,7 @@ static int Run(string[] args)
             ["inspect-fastfile", string input] => InspectFastFile(input),
             ["find-fastfile-assets", string input, string contains] =>
                 FindFastFileAssets(input, contains),
+            ["list-emitter-assets", string input] => ListEmitterAssets(input),
             ["inspect-pair", string d3dbsp, string fastFile] => InspectPair(d3dbsp, fastFile),
             ["to-d3dbsp", string fastFile, string output] => ToD3dbsp(fastFile, output),
             ["to-fastfile", string d3dbsp, string template, string assetName, string output,
@@ -69,6 +70,7 @@ static int ToFastFile(
     var distinctFxNames = new HashSet<string>(StringComparer.Ordinal);
     var additionalSoundNames = new List<string>();
     var distinctSoundNames = new HashSet<string>(StringComparer.Ordinal);
+    string? emitterAssetDirectory = null;
     var rawFilePaths = new Dictionary<string, string>(StringComparer.Ordinal);
     for (int index = 0; index < optionsAndDependencies.Count; index++)
     {
@@ -225,6 +227,14 @@ static int ToFastFile(
             additionalSoundNames.Add(name);
             continue;
         }
+        if (string.Equals(value, "--emitter-assets", StringComparison.Ordinal))
+        {
+            if (emitterAssetDirectory is not null)
+                throw new ArgumentException("The --emitter-assets option may be supplied only once.");
+            emitterAssetDirectory = ReadRequiredOptionValue(
+                optionsAndDependencies, ref index, "--emitter-assets", "a raw FX and sound directory");
+            continue;
+        }
         if (string.Equals(value, "--rawfile", StringComparison.Ordinal))
         {
             string mapping = ReadRequiredOptionValue(
@@ -271,6 +281,7 @@ static int ToFastFile(
         additionalMaterialNames,
         additionalFxNames,
         additionalSoundNames,
+        emitterAssetDirectory,
         rawFilePaths,
         lightmapImageNames,
         outdoorImageName,
@@ -310,6 +321,12 @@ static int InspectFastFile(string input)
 static int FindFastFileAssets(string input, string contains)
 {
     FastFileInspector.FindAssets(input, contains);
+    return 0;
+}
+
+static int ListEmitterAssets(string input)
+{
+    FastFileInspector.ListEmitterAssets(input);
     return 0;
 }
 
@@ -361,10 +378,11 @@ static int Usage()
     Console.Error.WriteLine("  D3dbspLinker inspect <input.d3dbsp>");
     Console.Error.WriteLine("  D3dbspLinker inspect-fastfile <input.ff>");
     Console.Error.WriteLine("  D3dbspLinker find-fastfile-assets <input.ff> <name-contains>");
+    Console.Error.WriteLine("  D3dbspLinker list-emitter-assets <input.ff>  (JSON array of target-owned Fx and Sound names)");
     Console.Error.WriteLine("  D3dbspLinker inspect-pair <input.d3dbsp> <input.ff>");
     Console.Error.WriteLine("  D3dbspLinker to-d3dbsp <input.ff> <output.d3dbsp>");
     Console.Error.WriteLine(
-        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright | --compiled-lighting] [--world-only] [--source-materials] [--stock-bootstrap] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--sound <exact-name>]... [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
+        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright | --compiled-lighting] [--world-only] [--source-materials] [--stock-bootstrap] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--sound <exact-name>]... [--emitter-assets <raw-root>] [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
     Console.Error.WriteLine("  Lighting images must be owned by --provider-fastfile inputs; --lightmap order defines atlas indices. Supplied lighting cannot use --fullbright.");
     Console.Error.WriteLine("  --compiled-lighting preserves the BSP's baked lightmaps and requires at least one lightmap array.");
     Console.Error.WriteLine("  --stock-bootstrap loads the template's native startup dependencies and requires resident images or installed PS3 imagefile1.pak through imagefile4.pak before writing output.");

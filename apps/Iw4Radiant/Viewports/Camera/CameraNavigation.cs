@@ -5,6 +5,7 @@ namespace Iw4Radiant.Viewports.Camera;
 internal sealed class CameraNavigation
 {
     private const float FieldOfView = MathF.PI / 3;
+    private const float MinimumOrbitDistance = 0.05f;
     private Vector3 _target;
     private float _yaw = -MathF.PI * 0.3f, _pitch = MathF.PI * 0.22f, _distance = 1024;
 
@@ -24,13 +25,18 @@ internal sealed class CameraNavigation
     }
 
     internal Vector3 Eye => _target + EyeOffset;
+    internal Vector3 Target => _target;
+    internal float NearPlane => Math.Clamp(_distance * 0.01f, 0.001f, 0.5f);
 
     private Vector3 EyeOffset => _distance * new Vector3(MathF.Cos(_pitch) * MathF.Cos(_yaw),
         MathF.Cos(_pitch) * MathF.Sin(_yaw), MathF.Sin(_pitch));
 
     internal Matrix4x4 ViewProjection(float aspect)
     {
-        const float near = 0.5f;
+        // Keep the near plane in front of the camera even at close inspection distances.
+        // Scaling it with orbit distance also avoids throwing away geometry when the eye
+        // is moved closer than the old fixed half-unit near plane.
+        float near = NearPlane;
         float far = Math.Max(131072, _distance * 4);
         float y = 1 / MathF.Tan(FieldOfView / 2);
         // System.Numerics' stock perspective uses a 0..1 depth range; OpenGL uses -1..1.
@@ -66,7 +72,7 @@ internal sealed class CameraNavigation
     }
 
     internal void Zoom(float delta) =>
-        _distance = Math.Clamp(_distance * MathF.Exp(-delta * 0.14f), 4, 1000000);
+        _distance = Math.Clamp(_distance * MathF.Exp(-delta * 0.14f), MinimumOrbitDistance, 1000000);
 
     internal (Vector3 Origin, Vector3 Direction) PickRay(float x, float y, float aspect)
     {

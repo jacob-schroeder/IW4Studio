@@ -53,7 +53,8 @@ internal static class MapCompiler
             }
             if (entityIndex == 0 || entity.ClassName is "func_group" or "misc_prefab") continue;
             SelectionPath entityLocation = new(entityIndex);
-            if (!GameplayEntityEditing.Types.Any(type => type.Name == entity.ClassName))
+            if (entity.ClassName != "fx_origin" &&
+                !GameplayEntityEditing.Types.Any(type => type.Name == entity.ClassName))
                 throw new MapBuildLocationException(document, entityLocation,
                     new NotSupportedException($"Entity '{entity.ClassName}' is not supported by compilation."));
             if (!entity.TryGetOrigin(out _))
@@ -73,7 +74,7 @@ internal static class MapCompiler
 
     internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; native all-face water volumes and GPU ocean tops; solid terrain, painted overlays, decals, cutouts and static glass with native materials, skies and static models. " +
         "Bakes point and targeted spot lights, sky ambient and reflections; requires authored sunlight and a reflection probe. " +
-        "Native multiplayer points, script entities, brush/trigger models, groups and unambiguous prefabs. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; stage volumes, primary local lights, breakable glass and bounced lighting are not compiled yet.";
+        "Native multiplayer points, script entities, brush/trigger models, groups and unambiguous prefabs. Full map builds write FX and sound source markers to scripts; standalone BSP output omits them. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; stage volumes, primary local lights, breakable glass and bounced lighting are not compiled yet.";
 
     internal static IEnumerable<MapEntity> BrushEntities(MapDocument document) =>
         document.Entities.Where(entity => entity != document.World && entity.Brushes.Count > 0);
@@ -255,6 +256,15 @@ internal static class MapCompiler
             }
             if (entity.Terrains.Count != 0)
                 throw new NotSupportedException("Terrain must belong to worldspawn before compilation.");
+            if (entity.ClassName == "fx_origin")
+            {
+                if (entity.Brushes.Count != 0 || entity.PreservedPrimitives.Count != 0)
+                    throw new InvalidDataException("An FX or sound marker must be a point entity.");
+                if (!entity.TryGetOrigin(out _))
+                    throw new InvalidDataException("An FX or sound marker needs a finite three-component origin.");
+                _ = EntityOrientation.Read(entity);
+                continue;
+            }
             GameplayEntityType? type = GameplayEntityEditing.Types.FirstOrDefault(type => type.Name == entity.ClassName);
             if (type is null)
                 throw new NotSupportedException($"Entity '{entity.ClassName}' is not supported by compilation.");
@@ -369,7 +379,7 @@ internal static class MapCompiler
         {
             // Static light entities and their aim markers are consumed by the bake;
             // retaining them in MapEnts would imply runtime light/script behavior.
-            if (entity.ClassName is "light" or "info_null") continue;
+            if (entity.ClassName is "light" or "info_null" or "fx_origin") continue;
             var point = new MapEntity();
             foreach (var property in entity.Properties) point.Properties.Add(property.Key, property.Value);
             if (entity.Brushes.Count > 0 && entity != document.World)

@@ -18,6 +18,7 @@ Put quotes around paths that contain spaces.
 | `inspect <input.d3dbsp>` | Reads a compiled map. | Prints the BSP version and a table of its lumps. Does not write a file. |
 | `inspect-fastfile <input.ff>` | Reads a linked fastfile. | Prints asset counts and details about its graphics, collision, lighting, and map entities. Does not write a file. |
 | `find-fastfile-assets <input.ff> <name-contains>` | Searches asset names without case sensitivity. | Prints each matching asset's type, source, access, and name. Does not write a file. |
+| `list-emitter-assets <input.ff>` | Lists FX definitions and sound aliases owned by a PS3 fastfile. | Prints a JSON array of exact `type` and `name` pairs for the Radiant browser. Does not write a file. |
 | `inspect-pair <input.d3dbsp> <input.ff>` | Compares a compiled map with its linked fastfile. | Prints matching counts, graph checks, and reversible-lump checks. Does not write a file. |
 | `to-d3dbsp <input.ff> <output.d3dbsp>` | Converts a supported fastfile back to a compiled map. | Writes a new `.d3dbsp` and prints its map name, encoding profile, lump count, and byte size. |
 | `to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright] [dependency.ff ...]` | Links a supported compiled map into a PS3 fastfile. | Writes a new `.ff` and prints its root counts, dependencies, lighting mode, and byte size. |
@@ -31,6 +32,11 @@ Put quotes around paths that contain spaces.
 - `output.ff`: the new fastfile path.
 - `--fullbright`: replaces compiled lighting with white lightmaps. Use it when the BSP has lighting that the current converter cannot preserve.
 - `dependency.ff ...`: optional extra fastfiles that can supply missing referenced assets.
+- `--provider-fastfile <path>`: add a full asset provider for map materials, models, FX, or sound aliases.
+- `--fx <name>` and `--sound <alias>`: request exact FX and sound assets.
+- `--emitter-assets <raw-root>`: import requested FX from `fx/<name>.json` and sound aliases from `soundaliases/<name>.json`, including their referenced disk FX, aliases, loaded audio, and curves. With this option, missing FX or sound source files fail the build instead of falling back to a fastfile. The template and providers are still required for bootstrap, materials, models, and other asset types.
+- Streamed sound rows keep their package offsets and metadata; this command does not build `packfileN.pak` from streamed audio sidecars. Use a loaded alias for a self-contained proof fastfile until streamed packaging is implemented.
+- `--rawfile <wire-name=source-path>`: package an authored script at its in-game name. When `maps/mp/<map>_fx.gsc` is supplied, the generated default map `main()` calls it; a custom map `main()` is preserved and must call it explicitly.
 
 Example:
 

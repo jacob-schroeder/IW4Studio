@@ -25,6 +25,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="../IW4Studio/Editors/Sound/SoundPreviewPlayer.cs" Link="Views/SoundPreviewPlayer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="Shaders/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="../../src/Authoring/IW4.Formats/SourceFormat/Material/Shaders/ocean-waves.hlsl" Link="Shaders/ocean-waves.hlsl" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="../../src/Authoring/IW4.Formats/SourceFormat/Material/Shaders/ocean-surface.hlsl" Link="Shaders/ocean-surface.hlsl" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

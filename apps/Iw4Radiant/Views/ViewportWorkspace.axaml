@@ -9,7 +9,7 @@
         <Border x:Name="CameraPanel" Classes="viewportPanel" Grid.Column="2">
             <Grid RowDefinitions="30,*">
                 <Border Classes="panelHeader">
-                    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" Margin="7,0,2,0">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="7,0,2,0">
                         <TextBlock Text="Camera" VerticalAlignment="Center" />
                         <ToggleButton x:Name="FilmToggle" Grid.Column="1" Classes="viewportAction" Content="Film" Width="44" Margin="0,0,5,0"
                                       IsCheckedChanged="FilmPanel_Changed" ToolTip.Tip="Adjust the camera image only; preview changes are not saved or baked."
@@ -17,14 +17,20 @@
                         <ToggleButton x:Name="FogToggle" Grid.Column="2" Classes="viewportAction" Content="Fog" Width="42" Margin="0,0,5,0"
                                       IsCheckedChanged="FogPanel_Changed" ToolTip.Tip="Preview camera fog; not saved in the map or compiled."
                                       AutomationProperties.Name="Fog preview controls" />
-                        <ToggleButton x:Name="FlyCamera" Grid.Column="3" Classes="viewportAction" Content="Fly" Width="42" Margin="0,0,5,0"
+                        <ToggleButton x:Name="MapFxToggle" Grid.Column="3" Classes="viewportAction" Content="FX" Width="36" Margin="0,0,5,0"
+                                      IsCheckedChanged="MapFx_Changed" ToolTip.Tip="Show placed supported effects in the camera. This preview does not edit the map."
+                                      AutomationProperties.Name="Preview placed FX" />
+                        <ToggleButton x:Name="MapSoundsToggle" Grid.Column="4" Classes="viewportAction" Content="Sounds" Width="65" Margin="0,0,5,0"
+                                      IsCheckedChanged="MapSounds_Changed" ToolTip.Tip="Hear the nearest placed loaded sound while viewing the map. Volume follows its alias distance and falloff curve; one sound plays at a time on macOS."
+                                      AutomationProperties.Name="Preview placed sounds" />
+                        <ToggleButton x:Name="FlyCamera" Grid.Column="5" Classes="viewportAction" Content="Fly" Width="42" Margin="0,0,5,0"
                                       IsCheckedChanged="FlyCamera_Changed" ToolTip.Tip="Fly through the map: WASD to move, Q/E down/up, right-drag to look, Shift for speed. Escape returns to orbit."
                                       AutomationProperties.Name="Fly camera" />
-                        <ToggleButton x:Name="PreviewLights" Grid.Column="4" Classes="viewportAction" IsChecked="True"
+                        <ToggleButton x:Name="PreviewLights" Grid.Column="6" Classes="viewportAction" IsChecked="True"
                                       IsCheckedChanged="PreviewLights_Changed" ToolTip.Tip="Preview sunlight, point and spot lights with shadows" AutomationProperties.Name="Preview lights">
                             <icons:MaterialIcon Kind="LightbulbOutline" Width="16" Height="16" />
                         </ToggleButton>
-                        <Button Grid.Column="5" Classes="viewportAction" Tag="0" Click="Maximize_Click" ToolTip.Tip="Maximize / restore camera (Ctrl/Cmd+Space)" AutomationProperties.Name="Maximize or restore camera">
+                        <Button Grid.Column="7" Classes="viewportAction" Tag="0" Click="Maximize_Click" ToolTip.Tip="Maximize / restore camera (Ctrl/Cmd+Space)" AutomationProperties.Name="Maximize or restore camera">
                             <icons:MaterialIcon Kind="Fullscreen" Width="16" Height="16" />
                         </Button>
                     </Grid>
@@ -153,6 +159,8 @@
             <TabItem Header="Materials"><views:MaterialBrowser x:Name="MaterialBrowserView" /></TabItem>
             <TabItem Header="Models"><views:XModelBrowser x:Name="XModelBrowserView" /></TabItem>
             <TabItem Header="Prefabs"><views:PrefabBrowser x:Name="PrefabBrowserView" /></TabItem>
+            <TabItem Header="FX"><views:FxSoundBrowser x:Name="FxBrowserView" /></TabItem>
+            <TabItem Header="Sounds"><views:FxSoundBrowser x:Name="SoundBrowserView" IsSoundBrowser="True" /></TabItem>
             <TabItem Header="Console Output">
                 <Border x:Name="RendererErrorPanel" Padding="9" IsVisible="False">
                     <TextBox x:Name="RendererErrorText" IsReadOnly="True" AcceptsReturn="True"

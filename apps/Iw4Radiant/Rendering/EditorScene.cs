@@ -17,9 +17,29 @@ internal sealed class EditorScene(EditorSession session)
     internal Func<string, XModelSource?>? ResolveModel { get; set; }
     internal Func<string, MaterialSource?>? ResolveMaterial { get; set; }
     internal string? Notice { get; private set; }
+    internal long ModelPreviewRevision { get; private set; }
     internal MapDocument Document { get { EnsureCurrent(); return _document ?? throw new InvalidOperationException("Scene is unavailable."); } }
     internal EditorSelection Selection { get { EnsureCurrent(); return _selection; } }
     internal void Invalidate() => _document = null;
+
+    internal bool UpdatePointEntities(IEnumerable<MapEntity> sources, out bool modelsChanged)
+    {
+        modelsChanged = false;
+        if (_document is null) return false;
+        var remaining = new HashSet<MapEntity>(sources, ReferenceEqualityComparer.Instance);
+        modelsChanged = remaining.Any(XModelGeometry.IsModel);
+        foreach (MapEntity visible in _document.Entities)
+        {
+            if (!_owners.TryGetValue(visible, out object? owner) || owner is not MapEntity source ||
+                !remaining.Remove(source)) continue;
+            visible.Properties.Clear();
+            foreach (var property in source.Properties)
+                visible.Properties.Add(property.Key, property.Value);
+        }
+        if (remaining.Count != 0) return false;
+        if (modelsChanged) ModelPreviewRevision++;
+        return true;
+    }
 
     internal object Owner(object item)
     {

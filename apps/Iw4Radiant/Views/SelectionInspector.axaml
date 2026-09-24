@@ -82,6 +82,18 @@
                         <TextBlock x:Name="EntitySelectionInfo" Text="Edits apply to the active entity only."
                                    Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
                         <views:GameplayEntityInspector x:Name="Gameplay" />
+                        <Expander x:Name="FxSoundExpander" Header="FX / sound reference" IsVisible="False">
+                            <StackPanel Spacing="7" Margin="0,8,0,0">
+                                <TextBlock x:Name="FxSoundKind" Classes="caption" />
+                                <TextBox x:Name="FxSoundName" FontFamily="Menlo,Consolas,monospace" FontSize="11"
+                                         PlaceholderText="Exact asset name" />
+                                <Button x:Name="ApplyFxSoundButton" Content="Apply reference" Classes="panelAction" />
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                                    <Button x:Name="PreviewFxSoundButton" Content="Preview selected marker" Classes="panelAction" />
+                                    <Button x:Name="BrowseFxSoundButton" Grid.Column="1" Content="Browse…" />
+                                </Grid>
+                            </StackPanel>
+                        </Expander>
                         <views:LightInspector x:Name="Lights" />
                         <Expander x:Name="PropertiesExpander" Header="Entity properties" IsExpanded="False">
                             <StackPanel Spacing="7" Margin="0,8,0,0">

@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text.Json;
 using Avalonia;
 using Avalonia.OpenGL;
 using IW4.Formats.SourceFormat.Material;
@@ -28,6 +29,7 @@ internal sealed class SceneRenderer
 {
     private GL? _gl;
     private uint _program, _vertexArray, _vertexBuffer;
+    private uint _fxVertexArray, _fxVertexBuffer;
     private uint _framebuffer, _colorTexture, _depthBuffer, _filmProgram, _filmVertexArray;
     private int _filmSizeLocation, _filmBrightnessLocation, _filmContrastLocation, _filmDesaturationLocation,
         _filmLightTintLocation, _filmDarkTintLocation;
@@ -48,7 +50,15 @@ internal sealed class SceneRenderer
     private readonly SceneSkies _skies = new();
     private readonly SceneWater _water = new();
     private readonly SceneReflections _reflections = new();
+    private FxSpritePreview? _fxPreview;
+    private string? _fxPreviewNotice;
+    private readonly List<(FxSpritePreview Preview, Vector3 Origin)> _mapFxPreviews = [];
+    private readonly Dictionary<string, (FxSpritePreview? Preview, string? Notice)> _mapFxAssets =
+        new(StringComparer.OrdinalIgnoreCase);
+    private string? _mapFxAssetRoot;
+    private string? _mapFxSourceNotice, _mapFxPreviewNotice;
     private readonly List<string> _waterMaterials = [];
+    private readonly Dictionary<string, (Vector3 Min, Vector3 Max)> _waterMaterialBounds = new(StringComparer.Ordinal);
     private readonly List<GfxReflectionProbe> _probeOrigins = [];
     private readonly Dictionary<int, byte> _waterProbes = [];
     private readonly Dictionary<string, List<(int Start, int Count)>> _waterDrawRanges = new(StringComparer.Ordinal);
@@ -57,6 +67,11 @@ internal sealed class SceneRenderer
     private int _glyphStart, _glyphCount, _gridStart, _gridCount, _highlightStart, _highlightCount,
         _outlineStart, _outlineCount, _axesStart, _axesCount, _leakPathStart, _leakPathCount;
     private bool _sceneDirty = true, _texturesDirty = true, _shadowsDirty = true;
+    private SceneVertex[] _movePreviewVertices = [];
+    private readonly List<(int Start, int Count)> _movePreviewRanges = [];
+    private MapEntity? _movePreviewSource;
+    private Vector3 _movePreviewOrigin, _movePreviewApplied;
+    private bool _movePreviewDirty;
     private readonly Dictionary<XModelSource, PreviewModelMesh> _previewMeshes = new(ReferenceEqualityComparer.Instance);
     private IReadOnlyList<(MapEntity Entity, XModelSource Model)> _foliagePreview = [];
     private bool _previewMeshesDirty;
@@ -72,10 +87,103 @@ internal sealed class SceneRenderer
     internal string? Error { get; private set; } =
         "Camera is waiting for OpenGL. If it remains blank, a compatible OpenGL driver is required.";
     internal bool HasAnimatedWater { get; private set; }
+    internal bool HasVisibleAnimatedWater { get; private set; }
+    internal bool HasActiveFxPreview => _fxPreview is not null;
+    internal string? FxPreviewNotice => _fxPreviewNotice;
+    internal bool HasActiveMapFxPreview => _mapFxPreviews.Count != 0;
+    internal string? MapFxPreviewNotice => _mapFxPreviewNotice;
     internal event EventHandler? StatusChanged;
 
     internal void RefreshScene() => _sceneDirty = true;
+    internal void PreviewPointEntityMove() => _movePreviewDirty = true;
     internal void ReloadTextures() => _texturesDirty = _sceneDirty = true;
+    internal string? SetFxPreview(string? sourceDirectory, string? assetName, Vector3 origin)
+    {
+        StopFxPreview();
+        if (string.IsNullOrWhiteSpace(sourceDirectory) || string.IsNullOrWhiteSpace(assetName))
+            return null;
+        try
+        {
+            FxSpritePreview preview = FxSpritePreview.Load(sourceDirectory, assetName, origin);
+            if (preview.HasDrawableElements)
+            {
+                _fxPreview = preview;
+                _sceneDirty = true;
+                _fxPreviewNotice = preview.Notice;
+            }
+            else
+                _fxPreviewNotice = $"FX '{assetName}' has no supported material billboards. {preview.Notice}";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+                                           ArgumentException or NotSupportedException or JsonException or OverflowException)
+        {
+            _fxPreviewNotice = $"FX '{assetName}': {exception.Message}";
+        }
+        return _fxPreviewNotice;
+    }
+
+    internal void StopFxPreview()
+    {
+        if (_fxPreview is not null) _sceneDirty = true;
+        _fxPreview = null;
+        _fxPreviewNotice = null;
+    }
+
+    internal string? SetMapFxPreview(string? sourceDirectory, IReadOnlyList<(string Name, Vector3 Origin)> emitters)
+    {
+        _sceneDirty = true;
+        _mapFxPreviews.Clear();
+        _mapFxSourceNotice = _mapFxPreviewNotice = null;
+        if (_mapFxAssetRoot != sourceDirectory || emitters.Count == 0)
+        {
+            _mapFxAssets.Clear();
+            _mapFxAssetRoot = sourceDirectory;
+        }
+        if (emitters.Count == 0)
+            return null;
+        if (string.IsNullOrWhiteSpace(sourceDirectory))
+            return _mapFxPreviewNotice = "Choose a raw library in the FX tab to preview placed effects.";
+
+        var described = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var notices = new List<string>();
+        foreach (var (name, origin) in emitters)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                if (!notices.Contains("A placed FX has no asset name."))
+                    notices.Add("A placed FX has no asset name.");
+                continue;
+            }
+            if (!_mapFxAssets.TryGetValue(name, out var asset))
+            {
+                FxSpritePreview? loaded;
+                string? notice = null;
+                try
+                {
+                    loaded = FxSpritePreview.Load(sourceDirectory, name, Vector3.Zero);
+                    if (!loaded.HasDrawableElements)
+                        notice = $"FX '{name}' has no supported material billboards. {loaded.Notice}";
+                    else if (!string.IsNullOrEmpty(loaded.Notice))
+                        notice = $"FX '{name}': {loaded.Notice}";
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+                                                   ArgumentException or NotSupportedException or JsonException or OverflowException)
+                {
+                    loaded = null;
+                    notice = $"FX '{name}': {exception.Message}";
+                }
+                asset = (loaded, notice);
+                _mapFxAssets.Add(name, asset);
+            }
+            if (described.Add(name) && asset.Notice is { } message) notices.Add(message);
+            if (asset.Preview is { HasDrawableElements: true } preview)
+                _mapFxPreviews.Add((preview, origin));
+        }
+        _mapFxSourceNotice = string.Join("; ", notices.Take(4));
+        if (notices.Count > 4) _mapFxSourceNotice += $"; {notices.Count - 4} more FX notices";
+        _mapFxPreviewNotice = _mapFxSourceNotice;
+        return _mapFxPreviewNotice;
+    }
     internal void SetFoliagePreview(IReadOnlyList<(MapEntity Entity, XModelSource Model)> preview)
     {
         _foliagePreview = preview;
@@ -143,6 +251,16 @@ internal sealed class SceneRenderer
             _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
             _vertexArray = _gl.GenVertexArray();
             _vertexBuffer = _gl.GenBuffer();
+            _fxVertexArray = _gl.GenVertexArray();
+            _fxVertexBuffer = _gl.GenBuffer();
+            _gl.BindVertexArray(_fxVertexArray);
+            _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _fxVertexBuffer);
+            for (uint attribute = 0; attribute < 4; attribute++) _gl.EnableVertexAttribArray(attribute);
+            _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)0);
+            _gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)12);
+            _gl.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)24);
+            _gl.VertexAttribPointer(3, 4, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)32);
+            _gl.BindVertexArray(0);
             _framebuffer = _gl.GenFramebuffer();
             _colorTexture = _gl.GenTexture();
             _depthBuffer = _gl.GenRenderbuffer();
@@ -188,15 +306,24 @@ internal sealed class SceneRenderer
                 if (_compiledPreview is { } compiled) UploadCompiledScene(gl, compiled, resolveMaterial);
                 else UploadScene(gl, session, resolveMaterial);
             }
-            if (previewLighting && _shadowsDirty)
+            if (_movePreviewDirty) UpdatePointEntityMove(gl);
+            if (previewLighting && _shadowsDirty && !session.DeferPreviewLighting)
             {
                 _shadows.Update(gl, _lighting.Lights, _vertexArray, _surfaceBatches, resolveMaterial, _materialTextures);
                 _sunlight.Update(gl, document.World, _surfaceBounds, _vertexArray, _surfaceBatches,
                     resolveMaterial, _materialTextures);
                 _shadowsDirty = false;
             }
-            _water.Update(gl, _waterMaterials, resolveMaterial);
-            if (HasAnimatedWater && (_reflectionsDirty || _reflectionLighting != previewLighting))
+            var visibleWater = new List<string>();
+            foreach (string material in _waterMaterials)
+                if (!_waterMaterialBounds.TryGetValue(material, out var bounds) ||
+                    Contains(bounds, eye) || IntersectsClip(bounds, viewProjection))
+                    visibleWater.Add(material);
+            HasVisibleAnimatedWater = visibleWater.Count != 0;
+            _water.Update(gl, _reflectionsDirty && !session.DeferPreviewLighting ? _waterMaterials : visibleWater,
+                resolveMaterial);
+            if (HasAnimatedWater && !session.DeferPreviewLighting &&
+                (_reflectionsDirty || _reflectionLighting != previewLighting))
             {
                 _reflections.Capture(gl, _probeOrigins, (matrix, origin) =>
                     RenderReflectionFace(gl, matrix, origin, resolveMaterial, previewLighting));
@@ -261,6 +388,8 @@ internal sealed class SceneRenderer
             if (_compiledPreview is null)
                 RenderFoliagePreview(gl, resolveMaterial, previewLighting, session.AlphaPreviewEnabled, eye, transparent: true);
             gl.Uniform1(_fogEnabledLocation, 0);
+            RenderFxPreview(gl, resolveMaterial, eye);
+            RenderMapFxPreview(gl, resolveMaterial, eye, viewProjection);
             RenderFaceHighlights(gl);
             gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
             gl.Disable(EnableCap.PolygonOffsetFill);
@@ -285,8 +414,9 @@ internal sealed class SceneRenderer
             else
                 DrawFilmPreview(gl, size, framebuffer, filmPreview);
             string?[] notices = _compiledPreview is not null
-                ? [_materialTextures.Error]
-                : [session.Scene.Notice, _materialTextures.Error, _skies.Notice, _water.Notice,
+                ? [_fxPreviewNotice, _mapFxPreviewNotice, _materialTextures.Error]
+                : [session.Scene.Notice, _fxPreviewNotice, _mapFxPreviewNotice, _materialTextures.Error,
+                    _skies.Notice, _water.Notice,
                     HasAnimatedWater ? _reflections.Notice : null,
                     previewLighting ? _lighting.GetNotice(_sunlight.IsAvailable) : null,
                     previewLighting ? _shadows.Notice : null, previewLighting ? _sunlight.Notice : null];
@@ -325,6 +455,149 @@ internal sealed class SceneRenderer
             gl.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
             gl.BindFramebuffer(FramebufferTarget.Framebuffer, (uint)framebuffer);
         }
+    }
+
+    private static bool Contains((Vector3 Min, Vector3 Max) bounds, Vector3 point) =>
+        point.X >= bounds.Min.X && point.X <= bounds.Max.X &&
+        point.Y >= bounds.Min.Y && point.Y <= bounds.Max.Y &&
+        point.Z >= bounds.Min.Z && point.Z <= bounds.Max.Z;
+
+    private static bool IntersectsClip((Vector3 Min, Vector3 Max) bounds, Matrix4x4 viewProjection)
+    {
+        // Reject only when all eight corners lie outside the same clip plane.
+        int outsideEveryCorner = 0b11_1111;
+        for (int corner = 0; corner < 8; corner++)
+        {
+            Vector3 point = new(corner % 2 == 0 ? bounds.Min.X : bounds.Max.X,
+                (corner & 2) == 0 ? bounds.Min.Y : bounds.Max.Y,
+                (corner & 4) == 0 ? bounds.Min.Z : bounds.Max.Z);
+            Vector4 clip = Vector4.Transform(new Vector4(point, 1), viewProjection);
+            int outside = 0;
+            if (clip.X < -clip.W) outside |= 1;
+            if (clip.X > clip.W) outside |= 2;
+            if (clip.Y < -clip.W) outside |= 4;
+            if (clip.Y > clip.W) outside |= 8;
+            if (clip.Z < -clip.W) outside |= 16;
+            if (clip.Z > clip.W) outside |= 32;
+            outsideEveryCorner &= outside;
+            if (outsideEveryCorner == 0) return true;
+        }
+        return false;
+    }
+
+    private unsafe void RenderFxPreview(GL gl, Func<string, MaterialSource?>? resolveMaterial, Vector3 eye)
+    {
+        if (_fxPreview is not { HasDrawableElements: true } preview) return;
+        string? materialNotice = null;
+        var available = new Dictionary<string, MaterialSource>(StringComparer.Ordinal);
+        foreach (string material in preview.Materials)
+        {
+            MaterialSource? source = resolveMaterial?.Invoke(material);
+            if (source is null || string.IsNullOrEmpty(source.TechniqueSet) ||
+                string.IsNullOrEmpty(source.ImagePath) || !File.Exists(source.ImagePath))
+                materialNotice ??= $"FX material '{material}' is unavailable; load its materials/images catalog.";
+            else available.Add(material, source);
+        }
+        gl.BindVertexArray(_fxVertexArray);
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, _fxVertexBuffer);
+        gl.ActiveTexture(TextureUnit.Texture0);
+        gl.Uniform1(_waterPreviewLocation, 0);
+        gl.Uniform1(_litLocation, 0);
+        gl.Uniform1(_texturedLocation, 1);
+        foreach (var (material, vertices) in preview.Sample(eye))
+        {
+            if (!available.TryGetValue(material, out MaterialSource? source)) continue;
+            uint texture = _materialTextures.GetTexture(gl, material, resolveMaterial);
+            if (texture == 0) continue;
+            SceneMaterialDrawing.Apply(gl, source.Surface, _alphaTestLocation, _premultiplyAlphaLocation,
+                _ignoreVertexColorLocation);
+            gl.Disable(EnableCap.CullFace);
+            gl.Uniform1(_ignoreVertexColorLocation, 0);
+            gl.BindTexture(TextureTarget.Texture2D, texture);
+            fixed (SceneVertex* pointer = vertices)
+                gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(SceneVertex)), pointer,
+                    BufferUsageARB.DynamicDraw);
+            gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)vertices.Length);
+        }
+        _fxPreviewNotice = string.Join("; ", new[] { preview.Notice, materialNotice }
+            .Where(notice => !string.IsNullOrEmpty(notice)));
+        if (_fxPreviewNotice.Length == 0) _fxPreviewNotice = null;
+        gl.BindVertexArray(_vertexArray);
+        ResetSurfaceState(gl);
+    }
+
+    private unsafe void RenderMapFxPreview(GL gl, Func<string, MaterialSource?>? resolveMaterial,
+        Vector3 eye, Matrix4x4 viewProjection)
+    {
+        if (_mapFxPreviews.Count == 0) return;
+        const int maximumSprites = 512;
+        int remaining = maximumSprites;
+        bool capped = false;
+        string? materialNotice = null;
+        var materials = new Dictionary<string, MaterialSource?>(StringComparer.Ordinal);
+        var ordered = _mapFxPreviews
+            .OrderByDescending(item => IsNearView(item.Origin, viewProjection))
+            .ThenBy(item => Vector3.DistanceSquared(item.Origin, eye));
+        gl.BindVertexArray(_fxVertexArray);
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, _fxVertexBuffer);
+        gl.ActiveTexture(TextureUnit.Texture0);
+        gl.Uniform1(_waterPreviewLocation, 0);
+        gl.Uniform1(_litLocation, 0);
+        gl.Uniform1(_texturedLocation, 1);
+        foreach (var (preview, origin) in ordered)
+        {
+            if (remaining == 0)
+            {
+                capped = true;
+                break;
+            }
+            foreach (var (material, vertices) in preview.Sample(eye, origin, remaining))
+            {
+                remaining -= vertices.Length / 6;
+                if (!materials.TryGetValue(material, out MaterialSource? source))
+                {
+                    source = resolveMaterial?.Invoke(material);
+                    if (source is null || string.IsNullOrEmpty(source.TechniqueSet) ||
+                        string.IsNullOrEmpty(source.ImagePath) || !File.Exists(source.ImagePath))
+                    {
+                        source = null;
+                        materialNotice ??= $"FX material '{material}' is unavailable; load its materials/images catalog.";
+                    }
+                    materials.Add(material, source);
+                }
+                if (source is null) continue;
+                uint texture = _materialTextures.GetTexture(gl, material, resolveMaterial);
+                if (texture == 0)
+                {
+                    materialNotice ??= $"FX material '{material}' could not be loaded.";
+                    continue;
+                }
+                SceneMaterialDrawing.Apply(gl, source.Surface, _alphaTestLocation, _premultiplyAlphaLocation,
+                    _ignoreVertexColorLocation);
+                gl.Disable(EnableCap.CullFace);
+                gl.Uniform1(_ignoreVertexColorLocation, 0);
+                gl.BindTexture(TextureTarget.Texture2D, texture);
+                fixed (SceneVertex* pointer = vertices)
+                    gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(SceneVertex)), pointer,
+                        BufferUsageARB.DynamicDraw);
+                gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)vertices.Length);
+            }
+        }
+        _mapFxPreviewNotice = string.Join("; ", new[]
+        {
+            _mapFxSourceNotice, materialNotice,
+            capped ? $"Map FX preview is limited to {maximumSprites} sprites per frame." : null
+        }.Where(notice => !string.IsNullOrEmpty(notice)));
+        if (_mapFxPreviewNotice.Length == 0) _mapFxPreviewNotice = null;
+        gl.BindVertexArray(_vertexArray);
+        ResetSurfaceState(gl);
+    }
+
+    private static bool IsNearView(Vector3 origin, Matrix4x4 viewProjection)
+    {
+        Vector4 clip = Vector4.Transform(new Vector4(origin, 1), viewProjection);
+        return clip.W > 0 && MathF.Abs(clip.X) <= clip.W * 2 &&
+               MathF.Abs(clip.Y) <= clip.W * 2 && MathF.Abs(clip.Z) <= clip.W * 2;
     }
 
     private unsafe void RenderFoliagePreview(GL gl, Func<string, MaterialSource?>? resolveMaterial,
@@ -611,8 +884,16 @@ internal sealed class SceneRenderer
 
     private unsafe void UploadScene(GL gl, EditorSession session, Func<string, MaterialSource?>? resolveMaterial)
     {
-        var scene = new SceneGeometry(session.Scene, session.TransformMode, session.Tool, resolveMaterial, LeakPath, LeakPointIndex);
-        _lighting.Update(gl, session.Scene);
+        var scene = new SceneGeometry(session.Scene, session.TransformMode, session.Tool, resolveMaterial,
+            LeakPath, LeakPointIndex, _fxPreview is not null || _mapFxPreviews.Count != 0);
+        _movePreviewVertices = scene.Vertices;
+        _movePreviewRanges.Clear();
+        _movePreviewRanges.AddRange(scene.MovePreviewRanges);
+        _movePreviewSource = session.Selection.Items.OfType<MapEntity>().FirstOrDefault();
+        _movePreviewOrigin = _movePreviewSource is null ? Vector3.Zero : EditorSession.EntityOrigin(_movePreviewSource);
+        _movePreviewApplied = Vector3.Zero;
+        _movePreviewDirty = false;
+        if (!session.DeferPreviewLighting) _lighting.Update(gl, session.Scene);
         _batches.Clear();
         _batches.AddRange(scene.Batches);
         _surfaceBatches.Clear();
@@ -696,9 +977,11 @@ internal sealed class SceneRenderer
             _waterDrawRanges.Add(batch.Material, ranges);
         }
         _surfaceBounds = null;
+        _waterMaterialBounds.Clear();
         foreach (var batch in _surfaceBatches)
         {
             float height = resolveMaterial?.Invoke(batch.Material)?.Ocean?.Height ?? 0;
+            bool water = _waterMaterials.Contains(batch.Material);
             for (int index = batch.Start; index < batch.Start + batch.Count; index++)
             {
                 Vector3 position = data[index].Position;
@@ -706,6 +989,10 @@ internal sealed class SceneRenderer
                 _surfaceBounds = _surfaceBounds is { } bounds
                     ? (Vector3.Min(bounds.Min, position - extent), Vector3.Max(bounds.Max, position + extent))
                     : (position - extent, position + extent);
+                if (water)
+                    _waterMaterialBounds[batch.Material] = _waterMaterialBounds.TryGetValue(batch.Material, out var current)
+                        ? (Vector3.Min(current.Min, position - extent), Vector3.Max(current.Max, position + extent))
+                        : (position - extent, position + extent);
             }
         }
         fixed (SceneVertex* pointer = data)
@@ -721,9 +1008,36 @@ internal sealed class SceneRenderer
         _shadowsDirty = _reflectionsDirty = true;
     }
 
+    private unsafe void UpdatePointEntityMove(GL gl)
+    {
+        _movePreviewDirty = false;
+        if (_movePreviewSource is null || _movePreviewRanges.Count == 0) return;
+        Vector3 desired = EditorSession.EntityOrigin(_movePreviewSource) - _movePreviewOrigin;
+        Vector3 delta = desired - _movePreviewApplied;
+        if (delta == Vector3.Zero) return;
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vertexBuffer);
+        foreach (var (start, count) in _movePreviewRanges)
+        {
+            for (int index = start; index < start + count; index++)
+            {
+                SceneVertex vertex = _movePreviewVertices[index];
+                _movePreviewVertices[index] = new SceneVertex(vertex.Position + delta, vertex.Normal, vertex.Uv,
+                    vertex.Color);
+            }
+            fixed (SceneVertex* vertices = &_movePreviewVertices[start])
+                gl.BufferSubData(BufferTargetARB.ArrayBuffer, (nint)(start * sizeof(SceneVertex)),
+                    (nuint)(count * sizeof(SceneVertex)), vertices);
+        }
+        _movePreviewApplied = desired;
+    }
+
     private unsafe void UploadCompiledScene(GL gl, CompiledBspPreview preview,
         Func<string, MaterialSource?>? resolveMaterial)
     {
+        _movePreviewVertices = [];
+        _movePreviewRanges.Clear();
+        _movePreviewSource = null;
+        _movePreviewDirty = false;
         _batches.Clear();
         _surfaceBatches.Clear();
         _surfaceBatches.AddRange(preview.Batches);
@@ -734,6 +1048,7 @@ internal sealed class SceneRenderer
         _materialTextures.RemoveUnused(gl, _surfaceBatches.Select(batch => batch.Material));
         _skies.RemoveUnused(gl, []);
         _waterMaterials.Clear();
+        _waterMaterialBounds.Clear();
         _water.RemoveUnused(gl, _waterMaterials);
         _water.SetVolumes([]);
         _probeOrigins.Clear();
@@ -749,7 +1064,7 @@ internal sealed class SceneRenderer
         _glyphStart = _glyphCount = _gridStart = _gridCount = _highlightStart = _highlightCount =
             _outlineStart = _outlineCount = _axesStart = _axesCount = _leakPathStart = _leakPathCount = 0;
         _surfaceBounds = preview.Bounds;
-        HasAnimatedWater = false;
+        HasAnimatedWater = HasVisibleAnimatedWater = false;
         gl.BindVertexArray(_vertexArray);
         gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vertexBuffer);
         SceneVertex[] data = preview.Vertices;
@@ -778,6 +1093,8 @@ internal sealed class SceneRenderer
             _water.Clear(gl);
             _reflections.Clear(gl);
             foreach (PreviewModelMesh mesh in _previewMeshes.Values) mesh.Delete(gl);
+            if (_fxVertexBuffer != 0) gl.DeleteBuffer(_fxVertexBuffer);
+            if (_fxVertexArray != 0) gl.DeleteVertexArray(_fxVertexArray);
             if (_vertexBuffer != 0) gl.DeleteBuffer(_vertexBuffer);
             if (_vertexArray != 0) gl.DeleteVertexArray(_vertexArray);
             if (_program != 0) gl.DeleteProgram(_program);
@@ -797,6 +1114,7 @@ internal sealed class SceneRenderer
     {
         _program = _vertexArray = _vertexBuffer = _framebuffer = _colorTexture = _depthBuffer = _lineTexture =
             _filmProgram = _filmVertexArray = 0;
+        _fxVertexArray = _fxVertexBuffer = 0;
         _materialTextures.ForgetHandles();
         _lighting.ForgetHandle();
         _shadows.ForgetHandles();
@@ -805,6 +1123,7 @@ internal sealed class SceneRenderer
         _water.ForgetHandles();
         _reflections.ForgetHandles();
         _waterMaterials.Clear();
+        _waterMaterialBounds.Clear();
         _waterProbes.Clear();
         _waterDrawRanges.Clear();
         _probeOrigins.Clear();
@@ -813,10 +1132,14 @@ internal sealed class SceneRenderer
         _surfaceBatches.Clear();
         _surfaceStates.Clear();
         _transparentTriangles.Clear();
+        _movePreviewVertices = [];
+        _movePreviewRanges.Clear();
+        _movePreviewSource = null;
+        _movePreviewDirty = false;
         _previewMeshes.Clear();
         _foliagePreview = [];
         _previewMeshesDirty = false;
-        HasAnimatedWater = false;
+        HasAnimatedWater = HasVisibleAnimatedWater = false;
         _surfaceBounds = null;
         _renderSize = default;
         _sceneDirty = _texturesDirty = _shadowsDirty = true;

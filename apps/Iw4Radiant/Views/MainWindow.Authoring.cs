@@ -1,4 +1,5 @@
 using System.Numerics;
+using Avalonia.Threading;
 using IW4.Formats.SourceFormat.Material;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
@@ -13,6 +14,19 @@ public partial class MainWindow
     private IReadOnlyDictionary<string, WaterMaterialDefinition> _waterDefinitions =
         new Dictionary<string, WaterMaterialDefinition>(StringComparer.Ordinal);
     private bool _waterDefinitionsDirty = true;
+    private readonly SoundAliasAudition _soundAudition = new();
+    private readonly MapSoundPreview _mapSoundPreview = new();
+    private readonly Dictionary<string, MaterialSource?> _emitterMaterials = new(StringComparer.Ordinal);
+    private string? _emitterMaterialRoot;
+    private string? _suggestedEmitterRoot;
+    private string? _previewAssetName;
+    private bool _previewIsSound;
+    private MapEntity? _previewMarker;
+    private MapDocument? _previewDocument;
+    private Vector3 _previewOrigin;
+    private MapDocument? _mapPreviewDocument;
+    private string? _mapFxSource;
+    private (string Name, Vector3 Origin)[] _mapFxEmitters = [];
 
     private void InitializeAuthoring()
     {
@@ -20,8 +34,82 @@ public partial class MainWindow
             (position, _) => GameplayEntityEditing.Place(_session, className, position));
         Inspector.ModelBrowserRequested += Workspace.ShowModels;
         Inspector.PrefabBrowserRequested += Workspace.ShowPrefabs;
+        Inspector.FxSoundBrowserRequested += (name, isSound) =>
+        {
+            Workspace.ShowFxSounds(isSound);
+            BrowserFor(isSound).ShowReference(name);
+        };
+        Inspector.FxSoundPreviewRequested += (name, isSound) =>
+        {
+            Workspace.ShowFxSounds(isSound);
+            BrowserFor(isSound).ShowReference(name);
+            StartEmitterPreview(new FxSoundAsset(name, isSound));
+        };
         Workspace.Models.InitializeActions(this, _session, _dialogs, FinishGestures, SetStatus);
         Workspace.Prefabs.InitializeActions(this, _session, _dialogs, FinishGestures, _files.OpenPathAsync);
+        foreach (FxSoundBrowser browser in new[] { Workspace.FxBrowser, Workspace.SoundBrowser })
+        {
+            browser.InitializeActions(this, _dialogs, FinishGestures, SetStatus);
+            browser.PlacementRequested += (name, isSound) => BeginPlacement(name,
+                (position, _) => GameplayEntityEditing.PlaceFxSound(_session, name, isSound, position));
+            browser.PreviewRequested += StartEmitterPreview;
+            browser.PreviewStopRequested += () => StopEmitterPreview("Preview stopped.");
+            browser.SourceLoaded += root =>
+            {
+                StopEmitterPreview("Select an asset to preview.");
+                _buildEmitterAssetsPath = root;
+                lock (_emitterMaterials)
+                {
+                    _emitterMaterialRoot = root;
+                    _emitterMaterials.Clear();
+                }
+                Workspace.Camera.ReloadTextures();
+                FxSoundBrowser other = ReferenceEquals(browser, Workspace.FxBrowser)
+                    ? Workspace.SoundBrowser : Workspace.FxBrowser;
+                if (other.SourceDirectory != root)
+                    _ = other.LoadDirectoryAsync(root, nonBlocking: true);
+                RefreshMapPreviews();
+            };
+        }
+        Workspace.BrowserTabChanged += () =>
+        {
+            if (_previewAssetName is not null) StopEmitterPreview("Preview stopped.");
+        };
+        _soundAudition.PlaybackEnded += error => Dispatcher.UIThread.Post(() =>
+        {
+            if (!_previewIsSound) return;
+            _previewAssetName = null;
+            _previewMarker = null;
+            _previewDocument = null;
+            _previewIsSound = false;
+            Workspace.SoundBrowser.SetPreviewState(false, error ?? "Sound preview finished.");
+            _mapSoundPreview.SetSuspended(false);
+        });
+        Workspace.MapFxPreviewChanged += enabled =>
+        {
+            RefreshMapFxPreview();
+            SetStatus(enabled
+                ? Workspace.Camera.MapFxPreviewNotice ?? (_mapFxEmitters.Length == 0
+                    ? "FX preview on. Place an FX marker to see it in the camera."
+                    : "Placed FX are visible in the camera.")
+                : "Placed FX preview off.");
+        };
+        Workspace.MapSoundsPreviewChanged += enabled =>
+        {
+            RefreshMapSoundPreview();
+            SetStatus(enabled ? "Placed sounds preview on. Move the camera near a sound marker to hear it."
+                : "Placed sounds preview off.");
+            _mapSoundPreview.SetEnabled(enabled);
+        };
+        Workspace.Camera.NavigationChanged += () => _mapSoundPreview.UpdateListener(Workspace.Camera.Eye);
+        _mapSoundPreview.StatusChanged += SetStatus;
+        _mapPreviewDocument = _session.Document;
+        Closed += (_, _) =>
+        {
+            StopEmitterPreview("Preview stopped.");
+            _soundAudition.Dispose();
+            _mapSoundPreview.Dispose();
+        };
         Workspace.Materials.CatalogChanged += RefreshAssets;
         Workspace.Models.CatalogChanged += RefreshAssets;
         var settings = RadiantSettings.Load();
@@ -34,6 +122,7 @@ public partial class MainWindow
         {
             settings.MaterialFolder = root;
             settings.Save();
+            SuggestEmitterSource(root);
             if (suppressRelatedModelRestore) return;
             if (Path.GetFileName(Path.TrimEndingDirectorySeparator(root)) is "images" or "materials")
                 root = Path.GetDirectoryName(root) ?? root;
@@ -65,6 +154,7 @@ public partial class MainWindow
         {
             settings.XModelFolder = root;
             settings.Save();
+            SuggestEmitterSource(root);
         };
         Workspace.Prefabs.PlacementRequested += path =>
         {
@@ -94,10 +184,195 @@ public partial class MainWindow
         finally { clearExplicitModelsRestored(); }
     }
 
+    private void StartEmitterPreview(FxSoundAsset asset)
+    {
+        if (!StopEmitterPreview("Preview stopped.")) return;
+        FxSoundBrowser browser = BrowserFor(asset.IsSound);
+        string? root = browser.SourceDirectory;
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            browser.SetPreviewState(false, "Choose the raw FX and sound library first.");
+            return;
+        }
+
+        MapEntity? marker = _session.Selection.Active as MapEntity;
+        bool matchesMarker = marker?.ClassName == "fx_origin" &&
+            (marker.Properties.GetValueOrDefault("is_sound") == "1") == asset.IsSound &&
+            marker.Properties.GetValueOrDefault(asset.IsSound ? "soundalias" : "fx") == asset.Name;
+        if (!matchesMarker) marker = null;
+        Vector3 origin = marker is not null && marker.TryGetOrigin(out Vector3 placed)
+            ? placed : Workspace.Camera.PreviewFocus;
+
+        if (asset.IsSound)
+        {
+            _mapSoundPreview.SetSuspended(true);
+            string? error = _soundAudition.Play(root, asset.Name);
+            if (error is not null)
+            {
+                _mapSoundPreview.SetSuspended(false);
+                browser.SetPreviewState(false, error);
+                return;
+            }
+            _previewAssetName = asset.Name;
+            _previewIsSound = true;
+            _previewMarker = marker;
+            _previewDocument = _session.Document;
+            browser.SetPreviewState(true, $"Listening to {asset.DisplayName}. Stop whenever you like.");
+            return;
+        }
+
+        string? notice = Workspace.Camera.StartFxPreview(root, asset.Name, origin);
+        bool playing = Workspace.Camera.HasActiveFxPreview;
+        if (playing)
+        {
+            _previewAssetName = asset.Name;
+            _previewMarker = marker;
+            _previewDocument = _session.Document;
+            _previewOrigin = origin;
+        }
+        browser.SetPreviewState(playing,
+            playing ? $"Playing FX {(marker is null ? "in front of the camera" : "at the selected marker")}." +
+                      (notice?.Contains("element ", StringComparison.Ordinal) == true ? " Some elements are not shown." : "")
+                    : notice?.Contains("has no supported material billboards", StringComparison.Ordinal) == true &&
+                      notice.Contains(": Runner", StringComparison.Ordinal)
+                        ? "This FX starts another effect that the editor cannot animate yet."
+                        : notice?.Contains("has no supported material billboards", StringComparison.Ordinal) == true
+                            ? "This FX uses elements the editor cannot animate yet."
+                            : notice ?? "This FX cannot be previewed.",
+            notice);
+    }
+
+    private bool StopEmitterPreview(string message)
+    {
+        _soundAudition.Stop();
+        Workspace.Camera.StopFxPreview();
+        if (_soundAudition.IsPlaying)
+        {
+            Workspace.SoundBrowser.SetPreviewState(true, "The sound is still stopping. Try Stop again.");
+            return false;
+        }
+        _previewAssetName = null;
+        _previewIsSound = false;
+        _previewMarker = null;
+        _previewDocument = null;
+        Workspace.FxBrowser.SetPreviewState(false, message);
+        Workspace.SoundBrowser.SetPreviewState(false, message);
+        _mapSoundPreview.SetSuspended(false);
+        return true;
+    }
+
+    private void RefreshEmitterPreview()
+    {
+        if (_previewAssetName is null) return;
+        if (!ReferenceEquals(_session.Document, _previewDocument))
+        {
+            StopEmitterPreview("Map changed. Preview stopped.");
+            return;
+        }
+        if (_previewMarker is not { } marker) return;
+        if (!ReferenceEquals(_session.Selection.Active, marker))
+        {
+            StopEmitterPreview("Selection changed. Preview stopped.");
+            return;
+        }
+        if (_previewIsSound) return;
+        if (!marker.TryGetOrigin(out Vector3 origin))
+        {
+            StopEmitterPreview("The selected marker has no valid position.");
+            return;
+        }
+        if (origin == _previewOrigin) return;
+        _previewOrigin = origin;
+        string? root = Workspace.FxBrowser.SourceDirectory;
+        if (root is null) return;
+        string? notice = Workspace.Camera.StartFxPreview(root, _previewAssetName, origin);
+        bool playing = Workspace.Camera.HasActiveFxPreview;
+        Workspace.FxBrowser.SetPreviewState(playing,
+            playing ? "Playing FX at the selected marker." : notice ?? "This FX cannot be previewed.",
+            playing ? notice : null);
+    }
+
+    private void SuggestEmitterSource(string? assetFolder = null)
+    {
+        if (Workspace.FxBrowser.SourceDirectory is not null) return;
+        string? root = _buildEmitterAssetsPath ??
+            (_session.FilePath is { } mapPath ? FindEmitterAssetDirectory(mapPath) : null);
+        if (root is null && assetFolder is not null)
+        {
+            string candidate = Path.TrimEndingDirectorySeparator(Path.GetFullPath(assetFolder));
+            if (Path.GetFileName(candidate) is "images" or "materials" or "xmodel")
+                candidate = Path.GetDirectoryName(candidate) ?? candidate;
+            if (Directory.Exists(Path.Combine(candidate, "fx")) ||
+                Directory.Exists(Path.Combine(candidate, "soundaliases")))
+                root = candidate;
+        }
+        if (root is null || root == _suggestedEmitterRoot) return;
+        _suggestedEmitterRoot = root;
+        _ = Workspace.FxBrowser.LoadDirectoryAsync(root, nonBlocking: true);
+    }
+
+    private FxSoundBrowser BrowserFor(bool isSound) => isSound ? Workspace.SoundBrowser : Workspace.FxBrowser;
+
+    private void RefreshMapPreviews()
+    {
+        if (!ReferenceEquals(_session.Document, _mapPreviewDocument))
+        {
+            _mapPreviewDocument = _session.Document;
+            Workspace.DisableMapPreviews();
+        }
+        RefreshMapFxPreview();
+        RefreshMapSoundPreview();
+    }
+
+    private void RefreshMapFxPreview()
+    {
+        string? root = Workspace.FxBrowser.SourceDirectory;
+        (string Name, Vector3 Origin)[] emitters = Workspace.MapFxEnabled
+            ? PlacedEmitters(isSound: false) : [];
+        if (_mapFxSource == root && _mapFxEmitters.SequenceEqual(emitters)) return;
+        _mapFxSource = root;
+        _mapFxEmitters = emitters;
+        Workspace.Camera.SetMapFxPreview(root, emitters);
+    }
+
+    private void RefreshMapSoundPreview()
+    {
+        _mapSoundPreview.Configure(Workspace.SoundBrowser.SourceDirectory,
+            Workspace.MapSoundsEnabled ? PlacedEmitters(isSound: true) : []);
+        _mapSoundPreview.UpdateListener(Workspace.Camera.Eye);
+    }
+
+    private (string Name, Vector3 Origin)[] PlacedEmitters(bool isSound) =>
+        _session.Scene.Document.Entities
+            .Where(entity => entity.ClassName == "fx_origin" &&
+                (entity.Properties.GetValueOrDefault("is_sound") == "1") == isSound &&
+                entity.TryGetOrigin(out _))
+            .Select(entity => (entity.Properties.GetValueOrDefault(isSound ? "soundalias" : "fx") ?? "",
+                entity.TryGetOrigin(out Vector3 origin) ? origin : default))
+            .ToArray();
+
+    private MaterialSource? ResolveEmitterMaterial(string name)
+    {
+        lock (_emitterMaterials)
+        {
+            if (_emitterMaterialRoot is not { } root) return null;
+            if (_emitterMaterials.TryGetValue(name, out MaterialSource? cached)) return cached;
+            MaterialSource? material;
+            try { material = MaterialCatalog.ReadOne(root, name); }
+            catch (Exception exception) when (FileOperationErrors.IsExpected(exception) ||
+                                              exception is System.Text.Json.JsonException)
+            {
+                material = null;
+            }
+            _emitterMaterials.Add(name, material);
+            return material;
+        }
+    }
+
     private MaterialSource? ResolveMaterial(string name)
     {
         if (!WaterMaterialAuthoring.IsAuthoredMaterialName(name))
-            return Workspace.Materials.ResolveMaterial(name) ?? Workspace.Models.ResolveMaterial(name);
+            return Workspace.Materials.ResolveMaterial(name) ?? Workspace.Models.ResolveMaterial(name) ?? ResolveEmitterMaterial(name);
         if (_waterDefinitionsDirty)
         {
             _waterDefinitionsDirty = false;

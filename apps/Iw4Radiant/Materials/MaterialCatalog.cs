@@ -87,6 +87,35 @@ internal static class MaterialCatalog
         }
     }
 
+    internal static MaterialSource? ReadOne(string root, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || Path.IsPathRooted(name) ||
+            name.Split('/').Any(part => part is "" or "." or "..") || name.Contains('\\'))
+            return null;
+        root = Path.GetFullPath(root);
+        string materialPath = Path.Combine(root, "materials", $"{name}.json");
+        if (!File.Exists(materialPath)) return null;
+        var (colorMap, isSky, water, waterColor, envMapParms, samplerState, surface, gameFlags,
+            surfaceTypeBits, techniqueSet) = ReadMaterial(materialPath);
+        string? imagePath = colorMap is null ? null : ResolveImage(colorMap);
+        if (imagePath is null && !isSky && water is null) return null;
+        return new MaterialSource(name, imagePath ?? "", isSky, samplerState)
+        {
+            Water = water, WaterColor = waterColor, EnvMapParms = envMapParms, Surface = surface,
+            GameFlags = gameFlags, SurfaceTypeBits = surfaceTypeBits, TechniqueSet = techniqueSet,
+            OceanFoamImagePath = water is null ? "" : ResolveImage(WaterMaterialAuthoring.OceanFoamImageName) ?? ""
+        };
+
+        string? ResolveImage(string assetName)
+        {
+            string candidate = assetName.Replace('*', '_').Replace('\\', '/');
+            if (Path.IsPathRooted(candidate) || candidate.Split('/').Any(part => part is "" or "." or ".."))
+                return null;
+            string image = Path.Combine(root, "images", candidate);
+            return ImageExtensions.Select(extension => image + extension).FirstOrDefault(File.Exists);
+        }
+    }
+
     private static Dictionary<string, MaterialSource> Ordered(Dictionary<string, MaterialSource> values) =>
         values.OrderBy(pair => pair.Key, StringComparer.Ordinal)
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);

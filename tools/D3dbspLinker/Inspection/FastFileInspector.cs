@@ -1,15 +1,34 @@
+using System.Text.Json;
 using IW4.Game.Assets.ColMap;
 using IW4.Game.Assets.ComWorld;
 using IW4.Game.Assets.FxMap;
 using IW4.Game.Assets.GameMap;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Assets.MapEnts;
+using IW4.Game.Zone;
 using IW4.Studio.Documents;
 
 namespace D3dbspLinker.Inspection;
 
 internal static class FastFileInspector
 {
+    public static void ListEmitterAssets(string input)
+    {
+        using FastFileWorkspace workspace = Open(input);
+        var assets = workspace.AssetCatalog.TargetEntries
+            .Where(entry => entry.Origin == WorkspaceAssetOrigin.TargetOwnedDefinition &&
+                entry.AssetType is XAssetType.Fx or XAssetType.Sound &&
+                !string.IsNullOrWhiteSpace(entry.OriginalName))
+            .OrderBy(entry => entry.AssetType)
+            .ThenBy(entry => entry.OriginalName, StringComparer.Ordinal)
+            .Select(entry => new
+            {
+                type = entry.AssetType.ToString(),
+                name = entry.OriginalName
+            });
+        Console.WriteLine(JsonSerializer.Serialize(assets));
+    }
+
     public static void FindAssets(string input, string contains)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(contains);

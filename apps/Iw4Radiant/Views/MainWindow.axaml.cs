@@ -109,6 +109,9 @@ public partial class MainWindow : Window
         RefreshPhaseBControls();
         Inspector.RefreshSelection(_session);
         Workspace.Prefabs.RefreshSelection(_session);
+        RefreshEmitterPreview();
+        SuggestEmitterSource();
+        RefreshMapPreviews();
         _updatingControls = true;
         TransformCombo.SelectedIndex = (int)_session.TransformMode;
         ClipCombo.SelectedIndex = (int)_session.ClipMode;

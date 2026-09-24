@@ -1,4 +1,5 @@
 using IW4.Formats.RawFile;
+using IW4.Formats.SourceFormat.Fx;
 using IW4.Formats.SourceFormat.Font;
 using IW4.Formats.SourceFormat.Image;
 using IW4.Formats.SourceFormat.Leaderboard;
@@ -22,6 +23,7 @@ using IW4.Formats.SourceFormat.Weapon;
 using IW4.Formats.SourceFormat.XAnim;
 using IW4.Formats.SourceFormat.XModel;
 using IW4.Game.Assets;
+using IW4.Game.Assets.Fx;
 using IW4.Game.Assets.Font;
 using IW4.Game.Assets.Image;
 using IW4.Game.Assets.Leaderboard;
@@ -62,6 +64,8 @@ internal static class SourceAssetDumpOperation
             XAssetType.PixelShader,
             XAssetType.VertexShader,
             XAssetType.Image,
+            XAssetType.Fx,
+            XAssetType.Sound,
             XAssetType.SndCurve,
             XAssetType.MapEnts,
             XAssetType.LightDef,
@@ -212,6 +216,13 @@ internal static class SourceAssetDumpOperation
                         sourceDirectory,
                         image,
                         imagePayloads),
+                    FxEffectDefAsset effect => new FxExchange().Unlink(
+                        sourceDirectory,
+                        effect),
+                    SoundAliasListAsset sound => DumpSoundAlias(
+                        sourceDirectory,
+                        sound,
+                        workspace),
                     SndCurve curve => new SndCurveExchange().Unlink(
                         sourceDirectory,
                         curve),
@@ -354,6 +365,25 @@ internal static class SourceAssetDumpOperation
                 $"DDS: {exception.Message}",
                 exception);
         }
+    }
+
+    private static IReadOnlyList<string> DumpSoundAlias(
+        string sourceDirectory,
+        SoundAliasListAsset sound,
+        FastFileWorkspace workspace)
+    {
+        // Source dumps capture current target rows, which may be detached from
+        // the runtime provider objects used by workspace preview resolution.
+        var resolver = workspace.LoadedZones
+            .First(zone => zone.IsTarget)
+            .LoadResult.SoundPayloadResolver;
+        return new SoundAliasListExchange().Unlink(
+            sourceDirectory,
+            sound,
+            streamed => resolver.TryResolvePayload(
+                streamed,
+                out byte[] payload,
+                out _) ? payload : null);
     }
 
     private static IReadOnlyList<string> DumpRawFile(

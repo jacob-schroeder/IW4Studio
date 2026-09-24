@@ -66,7 +66,7 @@ public partial class MapBuildWindow : Window
     internal MapBuildWindow(MapDocument document, string sourcePath,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
         string linkerPath, string templatePath,
-        IReadOnlyList<string> providerPaths, string outputFolder,
+        IReadOnlyList<string> providerPaths, string emitterAssetDirectory, string outputFolder,
         Func<SelectionPath, bool> navigate) : this(document, materials, models)
     {
         _navigate = navigate;
@@ -74,6 +74,7 @@ public partial class MapBuildWindow : Window
         SourceName.Text = Path.GetFileName(sourcePath);
         LinkerPathBox.Text = linkerPath;
         TemplatePathBox.Text = templatePath;
+        EmitterAssetDirectoryBox.Text = emitterAssetDirectory;
         OutputFolderBox.Text = outputFolder;
         foreach (string path in providerPaths) _providers.Add(path);
         BuildButton.IsEnabled = true;
@@ -84,6 +85,7 @@ public partial class MapBuildWindow : Window
     internal bool PreviewRequested { get; private set; }
     internal string LinkerPath => LinkerPathBox.Text?.Trim() ?? "";
     internal string TemplatePath => TemplatePathBox.Text?.Trim() ?? "";
+    internal string EmitterAssetDirectory => EmitterAssetDirectoryBox.Text?.Trim() ?? "";
     internal string OutputFolder => OutputFolderBox.Text?.Trim() ?? "";
     internal IReadOnlyList<string> ProviderPaths => _providers.ToArray();
 
@@ -139,6 +141,16 @@ public partial class MapBuildWindow : Window
         if (folders.Count != 0 && folders[0].TryGetLocalPath() is { } path) OutputFolderBox.Text = path;
     }
 
+    private async void BrowseEmitterAssets_Click(object? sender, RoutedEventArgs e)
+    {
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Select raw FX and sound library", AllowMultiple = false
+        });
+        if (folders.Count != 0 && folders[0].TryGetLocalPath() is { } path)
+            EmitterAssetDirectoryBox.Text = path;
+    }
+
     private async void Build_Click(object? sender, RoutedEventArgs e)
     {
         if (_buildCancellation is not null || CompletedDirectory is not null || CompletedBspPath is not null ||
@@ -163,7 +175,8 @@ public partial class MapBuildWindow : Window
             }
             else if (_sourcePath is { } sourcePath)
                 CompletedDirectory = await MapBuildPipeline.BuildAsync(_document, sourcePath, _materials, _models,
-                    LinkerPath, TemplatePath, ProviderPaths, OutputFolder, progress, cancellation.Token);
+                    LinkerPath, TemplatePath, ProviderPaths, EmitterAssetDirectory, OutputFolder,
+                    progress, cancellation.Token);
             BuildStatus.Text = "Build complete";
             AppendProgress($"Build complete: {CompletedBspPath ?? CompletedDirectory}");
             BuildButton.IsVisible = false;

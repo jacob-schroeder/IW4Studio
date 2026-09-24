@@ -26,6 +26,8 @@ internal sealed class OrthographicDrawing
     private static readonly Pen ClipBrushPen = new(Brush("#D959D9"));
     private static readonly Pen TerrainPen = new(Brush("#84988B"));
     private static readonly Pen EntityPen = new(Brush("#A29AAE"), 1.5);
+    private static readonly Pen FxMarkerPen = new(Brush("#E8B66A"), 1.8);
+    private static readonly Pen SoundMarkerPen = new(Brush("#79BCE0"), 1.8);
     private static readonly Pen MissingModelPen = new(Brush("#7A0000"), 1.5);
     private static readonly Pen TargetPen = new(Brush("#6DB8C4"), 1.2);
     private static readonly Pen VehiclePathPen = new(VehiclePathBrush, 2);
@@ -41,6 +43,15 @@ internal sealed class OrthographicDrawing
     private static readonly Pen ZAxisPen = new(Brush("#6B9AC8"), 1.5);
 
     private readonly OrthographicProjection _projection;
+    private MapDocument? _modelWireDocument;
+    private long _modelWirePreviewRevision;
+    private bool _modelWireTransformPreview;
+    private OrthoPlane _modelWirePlane;
+    private Size _modelWireSize;
+    private double _modelWireZoom;
+    private Point _modelWireOrigin;
+    private StreamGeometry? _modelWires;
+    private StreamGeometry? _selectedModelWires;
 
     internal OrthographicDrawing(OrthographicProjection projection) => _projection = projection;
     internal LeakPath? LeakPath { get; set; }
@@ -69,6 +80,7 @@ internal sealed class OrthographicDrawing
             }
             foreach (var terrain in scene.Document.Terrains)
                 DrawTerrain(context, terrain.GetSurface(), IsWholeSelected(session, terrain), !terrain.IsCurve);
+            DrawModelWireframes(context, scene, session.DeferPreviewLighting);
             foreach (var entity in scene.Document.Entities.Where(PointEntityGeometry.IsPointEntity))
             {
                 Vector3 origin = EditorSession.EntityOrigin(entity);
@@ -78,12 +90,6 @@ internal sealed class OrthographicDrawing
                 {
                     if (scene.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
                     {
-                        Pen pen = selected ? SelectedPen : EntityPen;
-                        foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
-                        {
-                            Point a = _projection.ToScreen(triangle.A.Position), b = _projection.ToScreen(triangle.B.Position), c = _projection.ToScreen(triangle.C.Position);
-                            context.DrawLine(pen, a, b); context.DrawLine(pen, b, c); context.DrawLine(pen, c, a);
-                        }
                         if (selected) DrawText(context, model.Name, _projection.ToScreen(origin) + new Vector(7, 7), SelectionBrush);
                         continue;
                     }
@@ -91,22 +97,31 @@ internal sealed class OrthographicDrawing
                 }
                 if (scene.Bounds(entity) is not { } entityBounds) continue;
                 Rect rect = _projection.ScreenBounds(entityBounds.Min, entityBounds.Max);
+                bool isFxMarker = entity.ClassName == "fx_origin";
+                bool isSoundMarker = isFxMarker && entity.Properties.GetValueOrDefault("is_sound") == "1";
+                Pen markerPen = selected ? SelectedPen : isSoundMarker ? SoundMarkerPen : isFxMarker ? FxMarkerPen : EntityPen;
                 if (!missingModel && entity.ClassName == "trigger_radius")
                     foreach (var line in PointEntityGeometry.GetRadiusLines(entity))
-                        context.DrawLine(selected ? SelectedPen : EntityPen, _projection.ToScreen(line.A), _projection.ToScreen(line.B));
+                        context.DrawLine(markerPen, _projection.ToScreen(line.A), _projection.ToScreen(line.B));
                 else
                     context.DrawRectangle(missingModel ? MissingModelFill : selected ? SelectionFill : null,
-                        selected ? SelectedPen : missingModel ? MissingModelPen : EntityPen, rect);
+                        missingModel ? MissingModelPen : markerPen, rect);
                 Point center = _projection.ToScreen(origin);
-                context.DrawLine(EntityPen, center - new Vector(4, 0), center + new Vector(4, 0));
-                context.DrawLine(EntityPen, center - new Vector(0, 4), center + new Vector(0, 4));
-                DrawText(context, entity.ClassName, new Point(rect.Right + 5, rect.Top - 2), MutedBrush);
+                context.DrawLine(markerPen, center - new Vector(4, 0), center + new Vector(4, 0));
+                context.DrawLine(markerPen, center - new Vector(0, 4), center + new Vector(0, 4));
+                // FX and sound can share X/Y while differing in height. Keep their labels
+                // in separate screen-space rows in Top view instead of drawing over each other.
+                double labelY = rect.Top + (isSoundMarker && _projection.Plane == OrthoPlane.Top ? 12 : -2);
+                DrawText(context, isSoundMarker ? "Sound" : isFxMarker ? "FX" : entity.ClassName,
+                    new Point(rect.Right + 5, labelY),
+                    isSoundMarker ? SoundMarkerPen.Brush ?? MutedBrush :
+                    isFxMarker ? FxMarkerPen.Brush ?? MutedBrush : MutedBrush);
                 if (!VehiclePathPreview.IsNode(entity) &&
                     (entity.Properties.ContainsKey("angles") || entity.Properties.ContainsKey("angle")))
                     try
                     {
                         Point forward = _projection.ToScreen(origin + EntityOrientation.Forward(EntityOrientation.Read(entity)) * 32);
-                        DrawArrow(context, center, forward, selected ? SelectedPen : EntityPen);
+                        DrawArrow(context, center, forward, markerPen);
                     }
                     catch (ArgumentException) { }
             }
@@ -139,6 +154,68 @@ internal sealed class OrthographicDrawing
         }
         if (focused)
             context.DrawRectangle(null, new Pen(Brush("#6F7787")), new Rect(_projection.Size).Deflate(0.5));
+    }
+
+    private void DrawModelWireframes(DrawingContext context, EditorScene scene, bool transformPreview)
+    {
+        MapDocument document = scene.Document;
+        Point origin = _projection.ToScreen(Vector2.Zero);
+        if (!ReferenceEquals(_modelWireDocument, document) ||
+            !transformPreview && _modelWirePreviewRevision != scene.ModelPreviewRevision ||
+            _modelWireTransformPreview != transformPreview ||
+            _modelWirePlane != _projection.Plane ||
+            _modelWireSize != _projection.Size || _modelWireZoom != _projection.Zoom || _modelWireOrigin != origin)
+        {
+            _modelWireDocument = document;
+            _modelWirePreviewRevision = scene.ModelPreviewRevision;
+            _modelWireTransformPreview = transformPreview;
+            _modelWirePlane = _projection.Plane;
+            _modelWireSize = _projection.Size;
+            _modelWireZoom = _projection.Zoom;
+            _modelWireOrigin = origin;
+            _modelWires = new StreamGeometry();
+            _selectedModelWires = new StreamGeometry();
+            using StreamGeometryContext normal = _modelWires.Open();
+            using StreamGeometryContext selected = _selectedModelWires.Open();
+            Rect viewport = new(_projection.Size);
+            foreach (MapEntity entity in document.Entities.Where(XModelGeometry.IsModel))
+            {
+                if (scene.ResolveModel?.Invoke(entity.Properties["model"]) is not { } model) continue;
+                var bounds = XModelGeometry.Bounds(entity, model);
+                Rect screenBounds = _projection.ScreenBounds(bounds.Min, bounds.Max);
+                if (!viewport.Intersects(screenBounds)) continue;
+                bool isSelected = scene.Selection.Contains(entity);
+                if (transformPreview && isSelected) continue;
+                StreamGeometryContext path = isSelected ? selected : normal;
+                // At overview scale triangles merge into a dense blot. Draw a selected
+                // model's live footprint below during a drag, then restore its mesh on release.
+                if (!isSelected && Math.Max(screenBounds.Width, screenBounds.Height) < 72)
+                {
+                    path.BeginFigure(new Point(screenBounds.Left, screenBounds.Top), false);
+                    path.LineTo(new Point(screenBounds.Right, screenBounds.Top));
+                    path.LineTo(new Point(screenBounds.Right, screenBounds.Bottom));
+                    path.LineTo(new Point(screenBounds.Left, screenBounds.Bottom));
+                    path.EndFigure(true);
+                    continue;
+                }
+                foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
+                {
+                    path.BeginFigure(_projection.ToScreen(triangle.A.Position), false);
+                    path.LineTo(_projection.ToScreen(triangle.B.Position));
+                    path.LineTo(_projection.ToScreen(triangle.C.Position));
+                    path.EndFigure(true);
+                }
+            }
+        }
+        if (_modelWires is not null) context.DrawGeometry(null, EntityPen, _modelWires);
+        if (_selectedModelWires is not null) context.DrawGeometry(null, SelectedPen, _selectedModelWires);
+        if (transformPreview)
+            foreach (MapEntity entity in scene.Selection.Items.OfType<MapEntity>().Where(XModelGeometry.IsModel))
+                if (scene.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
+                {
+                    var bounds = XModelGeometry.Bounds(entity, model);
+                    context.DrawRectangle(null, SelectedPen, _projection.ScreenBounds(bounds.Min, bounds.Max));
+                }
     }
 
     private void DrawGrid(DrawingContext context, float gridSize)

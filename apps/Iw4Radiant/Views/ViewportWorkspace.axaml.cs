@@ -49,6 +49,10 @@ public partial class ViewportWorkspace : UserControl
         });
         CameraView.NavigationModeChanged += RefreshCameraControls;
         CameraView.FoliageBrushChanged += CameraFoliageBrush.SetBrush;
+        AssetBrowserTabs.SelectionChanged += (_, args) =>
+        {
+            if (ReferenceEquals(args.Source, AssetBrowserTabs)) BrowserTabChanged?.Invoke();
+        };
         FilmLightTint.PreserveColorScale = FilmDarkTint.PreserveColorScale = true;
         foreach (var slider in new[] { FilmBrightness, FilmContrast, FilmDesaturation })
             slider.PropertyChanged += (_, change) =>
@@ -76,12 +80,19 @@ public partial class ViewportWorkspace : UserControl
     internal MaterialBrowser Materials => MaterialBrowserView;
     internal XModelBrowser Models => XModelBrowserView;
     internal PrefabBrowser Prefabs => PrefabBrowserView;
+    internal FxSoundBrowser FxBrowser => FxBrowserView;
+    internal FxSoundBrowser SoundBrowser => SoundBrowserView;
+    internal bool MapFxEnabled => MapFxToggle.IsChecked == true;
+    internal bool MapSoundsEnabled => MapSoundsToggle.IsChecked == true;
     internal IReadOnlyList<OrthoViewport> GridViews { get; }
     internal bool FourViews => _fourViews;
     internal bool IsMaximized => _maximized;
     internal bool MaterialsVisible => _materialsVisible;
     internal OrthoPlane ActivePlane => _activeGrid.Plane;
     internal event Action? LayoutChanged;
+    internal event Action? BrowserTabChanged;
+    internal event Action<bool>? MapFxPreviewChanged;
+    internal event Action<bool>? MapSoundsPreviewChanged;
 
     internal void SetCompiledPreview(CompiledBspPreview? preview)
     {
@@ -143,7 +154,14 @@ public partial class ViewportWorkspace : UserControl
 
     internal void ShowModels() => ShowBrowser(1);
     internal void ShowPrefabs() => ShowBrowser(2);
-    internal void ShowConsole() => ShowBrowser(3);
+    internal void ShowFxSounds(bool isSound) => ShowBrowser(isSound ? 4 : 3);
+    internal void ShowConsole() => ShowBrowser(5);
+
+    internal void DisableMapPreviews()
+    {
+        MapFxToggle.IsChecked = false;
+        MapSoundsToggle.IsChecked = false;
+    }
 
     private void ShowBrowser(int index)
     {
@@ -362,6 +380,18 @@ public partial class ViewportWorkspace : UserControl
         if (CameraView is null || _dialogs?.BlocksInput == true) return;
         CameraView.FlyMode = FlyCamera.IsChecked == true;
         CameraView.Focus();
+    }
+
+    private void MapFx_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (CameraView is null || _dialogs?.BlocksInput == true) return;
+        MapFxPreviewChanged?.Invoke(MapFxEnabled);
+    }
+
+    private void MapSounds_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (CameraView is null || _dialogs?.BlocksInput == true) return;
+        MapSoundsPreviewChanged?.Invoke(MapSoundsEnabled);
     }
 
     private void RefreshCameraControls()

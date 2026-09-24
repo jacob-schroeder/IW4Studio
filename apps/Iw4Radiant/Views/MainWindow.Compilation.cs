@@ -13,6 +13,7 @@ public partial class MainWindow
     private string? _buildLinkerPath;
     private string _buildTemplatePath = "";
     private string[] _buildProviderPaths = [];
+    private string? _buildEmitterAssetsPath;
     private string? _buildOutputFolder;
 
     private async void BuildD3dbsp_Click(object? sender, RoutedEventArgs e)
@@ -69,8 +70,10 @@ public partial class MainWindow
             string sourceFolder = Path.GetDirectoryName(sourcePath) ??
                 throw new InvalidDataException("The saved map has no containing directory.");
             string buildFolder = Path.Combine(sourceFolder, "map_build");
+            string[] suggestedProviders = _buildProviderPaths;
             var dialog = new MapBuildWindow(document, sourcePath, materials, models,
-                _buildLinkerPath ?? FindBuildLinker() ?? "", _buildTemplatePath, _buildProviderPaths,
+                _buildLinkerPath ?? FindBuildLinker() ?? "", _buildTemplatePath, suggestedProviders,
+                _buildEmitterAssetsPath ?? FindEmitterAssetDirectory(sourcePath) ?? "",
                 _buildOutputFolder ?? (Directory.Exists(buildFolder) ? buildFolder : sourceFolder),
                 CreateBuildNavigator(sourceDocument));
             await _dialogs.ShowModalAsync(() => dialog.ShowDialog<object?>(this));
@@ -78,6 +81,7 @@ public partial class MainWindow
             _buildLinkerPath = dialog.LinkerPath;
             _buildTemplatePath = dialog.TemplatePath;
             _buildProviderPaths = dialog.ProviderPaths.ToArray();
+            _buildEmitterAssetsPath = dialog.EmitterAssetDirectory;
             _buildOutputFolder = dialog.OutputFolder;
             string bspPath = Path.Combine(completedDirectory,
                 Path.GetFileNameWithoutExtension(sourcePath) + ".d3dbsp");
@@ -89,6 +93,20 @@ public partial class MainWindow
         {
             await _dialogs.MessageAsync("Cannot build map", exception.Message);
         }
+    }
+
+    private static string? FindEmitterAssetDirectory(string mapPath)
+    {
+        for (DirectoryInfo? directory = new(Path.GetDirectoryName(mapPath) ?? "");
+             directory is not null;
+             directory = directory.Parent)
+        {
+            string raw = Path.Combine(directory.FullName, "raw");
+            if (Directory.Exists(Path.Combine(raw, "fx")) &&
+                Directory.Exists(Path.Combine(raw, "soundaliases")))
+                return raw;
+        }
+        return null;
     }
 
     private Func<SelectionPath, bool> CreateBuildNavigator(MapDocument sourceDocument)

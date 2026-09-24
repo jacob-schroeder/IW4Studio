@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:Iw4Radiant.Views"
+             x:Class="Iw4Radiant.Views.FxSoundBrowser">
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="9" RowSpacing="7">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBlock x:Name="SourceText" Text="Choose the raw library" Classes="caption"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <Button x:Name="ChooseSourceButton" Grid.Column="1" Content="Choose library…" Classes="panelAction" />
+        </Grid>
+        <TextBox x:Name="SearchBox" Grid.Row="1" PlaceholderText="Search assets" />
+        <Grid Grid.Row="2" ColumnDefinitions="*,210" ColumnSpacing="10">
+            <ListBox x:Name="AssetList" Background="Transparent" BorderThickness="0" Padding="0">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="views:FxSoundAsset">
+                        <StackPanel Margin="2,3" Spacing="1">
+                            <TextBlock Text="{CompiledBinding DisplayName}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{CompiledBinding Category}" Classes="caption" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <StackPanel Grid.Column="1" Spacing="7">
+                <TextBlock Text="Asset" Classes="panelTitle" />
+                <TextBlock x:Name="AssetName" Text="Select an asset" TextWrapping="Wrap" FontFamily="Menlo,Consolas,monospace"
+                           FontSize="11" />
+                <TextBlock x:Name="AssetDetail" Classes="caption" TextWrapping="Wrap" />
+                <Button x:Name="PreviewButton" Content="Preview" Classes="panelAction" IsEnabled="False"
+                        ToolTip.Tip="Inspect this asset before placing it in the map." />
+                <TextBlock x:Name="PreviewStateText" Classes="caption" Text="Select an asset to preview."
+                           TextWrapping="Wrap" />
+                <Button x:Name="PlaceButton" Content="Place in view" Classes="panelAction" IsEnabled="False"
+                        ToolTip.Tip="Click a grid or camera surface to place the marker. Shift repeats; Esc cancels." />
+            </StackPanel>
+        </Grid>
+        <TextBlock x:Name="ResultText" Grid.Row="3" Classes="caption" Text="Use the same raw library as Build PS3 map."
+                   TextTrimming="CharacterEllipsis" />
+    </Grid>
+</UserControl>

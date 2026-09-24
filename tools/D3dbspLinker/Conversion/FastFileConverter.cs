@@ -1,5 +1,7 @@
 using System.Text;
 using IW4.Formats.SourceFormat.Material;
+using IW4.Formats.SourceFormat.Fx;
+using IW4.Formats.SourceFormat.Sound;
 using IW4.Game.Assets;
 using IW4.Game.Assets.Fx;
 using IW4.Game.Assets.GfxMap;
@@ -135,6 +137,7 @@ internal static class FastFileConverter
         IReadOnlyList<string> additionalMaterialNames,
         IReadOnlyList<string> additionalFxNames,
         IReadOnlyList<string> additionalSoundNames,
+        string? emitterAssetDirectory,
         IReadOnlyDictionary<string, string> rawFilePaths,
         IReadOnlyList<(string PrimaryImageName, string SecondaryImageName)> lightmapImageNames,
         string? outdoorImageName,
@@ -337,13 +340,18 @@ internal static class FastFileConverter
         static AssetKey LightingImageKey(string name) =>
             new(CanonicalAssetFamily.FromSerializedType(XAssetType.Image), name);
         string mapScriptName = assetName[..^".d3dbsp".Length] + ".gsc";
+        string mapFxScriptName = assetName[..^".d3dbsp".Length] + "_fx.gsc";
+        bool hasMapFxScript = rawFileOverrides.Any(rawFile =>
+            string.Equals(rawFile.Name, mapFxScriptName, StringComparison.Ordinal));
         RawFileAsset? waterScript = WaterVolumeScript.Create(assetName, graph.Roots.OfType<ClipMapAsset>().Single(),
             authoredWaterNames.ToDictionary(name => name, name => waterDefinitions[name], StringComparer.Ordinal));
         if (waterScript is not null && rawFileOverrides.Any(rawFile => rawFile.Name == waterScript.Name))
             throw new InvalidDataException($"RawFile '{waterScript.Name}' is generated from the map's water volumes and cannot be overridden.");
         RawFileAsset mapScript = rawFileOverrides.FirstOrDefault(rawFile =>
                 string.Equals(rawFile.Name, mapScriptName, StringComparison.Ordinal)) ??
-            CreateMapScript(assetName, waterScript);
+            CreateMapScript(assetName, waterScript, hasMapFxScript);
+        if (hasMapFxScript && rawFileOverrides.Contains(mapScript))
+            Console.WriteLine($"FX and sounds: the custom map script must call {MapFxStartup(mapFxScriptName)} during main().");
         if (waterScript is not null && rawFileOverrides.Contains(mapScript))
             Console.WriteLine($"Water effects: the custom map script must call {WaterVolumeScript.Startup(waterScript)} during main(). " +
                 "The water helper owns its HUD overlay and the level-priority reverb slot.");
@@ -413,13 +421,19 @@ internal static class FastFileConverter
             .Distinct(StringComparer.Ordinal).ToArray();
         WeaponAsset[] turretWeapons = ResolveOwnedAssetsAcrossFastFiles<WeaponAsset>(template, templatePath,
             [.. dependencyPaths, .. providerPaths], turretWeaponNames, XAssetType.Weapon, "turret Weapon");
-        FxEffectDefAsset[] additionalFx = ResolveOwnedAssetsAcrossFastFiles<FxEffectDefAsset>(
-            template,
-            templatePath,
-            dependencyPaths,
-            additionalFxNames,
-            XAssetType.Fx,
-            "requested FxEffectDef");
+        BaseAsset[] rawEmitterAssets = emitterAssetDirectory is null ? [] :
+            LoadRawEmitterAssets(emitterAssetDirectory, additionalFxNames, additionalSoundNames);
+        FxEffectDefAsset[] additionalFx = emitterAssetDirectory is null
+            ? ResolveOwnedAssetsAcrossFastFiles<FxEffectDefAsset>(
+                template, templatePath, [.. dependencyPaths, .. providerPaths],
+                additionalFxNames, XAssetType.Fx, "requested FxEffectDef")
+            : additionalFxNames.Select(name => rawEmitterAssets.OfType<FxEffectDefAsset>()
+                .Single(effect => effect.Name == name)).ToArray();
+        HashSet<AssetKey> requestedFxKeys = additionalFx.Select(AssetKey.FromDefinition).ToHashSet();
+        FxEffectDefAsset[] nestedDiskFx = emitterAssetDirectory is null ? [] :
+            rawEmitterAssets.OfType<FxEffectDefAsset>()
+                .Where(effect => !requestedFxKeys.Contains(AssetKey.FromDefinition(effect)))
+                .ToArray();
         BaseAsset[] xModelGraphProviders = bootstrapXModelGraph.Providers
             .Concat(staticXModelGraph.Providers)
             .Concat(additionalXModelGraph.Providers)
@@ -440,8 +454,10 @@ internal static class FastFileConverter
                 "The generated PS3 deathmatch configstring baseline has no mapcrc value.");
 
         LinkAssetPool baseAssets = template.InitialLinkRequest.Assets;
-        var fxAndSoundDefinitions = new Dictionary<AssetKey, BaseAsset>();
-        if (additionalFx.Length != 0 || additionalSoundNames.Count != 0)
+        var fxAndSoundDefinitions = rawEmitterAssets
+            .Where(asset => asset.SerializedAssetType is XAssetType.Fx or XAssetType.Sound)
+            .ToDictionary(AssetKey.FromDefinition);
+        if (emitterAssetDirectory is null && (additionalFx.Length != 0 || additionalSoundNames.Count != 0))
             CaptureFxAndSoundDefinitions(template, baseAssets, fxAndSoundDefinitions);
         var existingKeys = baseAssets.Providers
             .Select(provider => provider.Key)
@@ -478,7 +494,7 @@ internal static class FastFileConverter
             }
             LinkAssetPool missingAssets = dependency.InitialLinkRequest.Assets
                 .WithoutProviders(retainedFullProviderKeys);
-            if (additionalFx.Length != 0 || additionalSoundNames.Count != 0)
+            if (emitterAssetDirectory is null && (additionalFx.Length != 0 || additionalSoundNames.Count != 0))
                 CaptureFxAndSoundDefinitions(dependency, missingAssets, fxAndSoundDefinitions);
             baseAssets = baseAssets.WithHighestPrecedencePool(missingAssets);
             foreach (LinkAssetProvider provider in missingAssets.Providers)
@@ -524,6 +540,7 @@ internal static class FastFileConverter
         baseAssets = baseAssets.WithoutProviders(externalProviderKeys);
         existingKeys.ExceptWith(externalProviderKeys);
         existingFullProviderKeys.ExceptWith(externalProviderKeys);
+        existingFullProviderKeys.UnionWith(rawEmitterAssets.Select(AssetKey.FromDefinition));
         if (worldOnly || useSourceMaterials)
         {
             IEnumerable<AssetKey> requiredMaterialKeys = mapMaterialKeys;
@@ -582,11 +599,13 @@ internal static class FastFileConverter
         }
         foreach (WeaponAsset weapon in turretWeapons)
             newSources.Add(new LinkAssetProviderSource(weapon).AsAuthoredDetached());
-        foreach (FxEffectDefAsset effect in additionalFx)
+        foreach (FxEffectDefAsset effect in emitterAssetDirectory is null ? additionalFx : [])
         {
             newSources.Add(
                 new LinkAssetProviderSource(effect).AsAuthoredDetached());
         }
+        foreach (BaseAsset asset in rawEmitterAssets)
+            newSources.Add(new LinkAssetProviderSource(asset).AsAuthoredDetached());
         foreach (BaseAsset dependency in graph.DependencyReferences)
         {
             AssetKey key = AssetKey.FromDefinition(dependency);
@@ -603,7 +622,7 @@ internal static class FastFileConverter
         var roots = new List<LinkRoot>(
             fastFileMapRoots.Length + bootstrapXModelGraph.Models.Count +
             additionalXModelGraph.Models.Count + additionalMaterials.Length +
-            additionalFx.Length + additionalSounds.Length + 1);
+            additionalFx.Length + nestedDiskFx.Length + additionalSounds.Length + 1);
         roots.AddRange(fastFileMapRoots.Select(CreateOwnedRoot));
         foreach (WeaponAsset weapon in turretWeapons)
             roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:turret:weapon:{weapon.SerializedAssetName}", weapon));
@@ -633,6 +652,12 @@ internal static class FastFileConverter
             roots.Add(CreateNamedOwnedRoot(
                 $"d3dbsplinker:additional:fx:{index}:{additionalFxNames[index]}",
                 additionalFx[index]));
+        }
+        for (int index = 0; index < nestedDiskFx.Length; index++)
+        {
+            FxEffectDefAsset effect = nestedDiskFx[index];
+            roots.Add(CreateNamedOwnedRoot(
+                $"d3dbsplinker:disk:nested-fx:{index}:{effect.Name}", effect));
         }
         for (int index = 0; index < additionalSounds.Length; index++)
         {
@@ -701,6 +726,8 @@ internal static class FastFileConverter
         Console.WriteLine($"owned-additional-material-roots: {additionalMaterials.Length}");
         Console.WriteLine($"authored-water-materials: {authoredWaterMaterials.Count}");
         Console.WriteLine($"owned-additional-fx-roots: {additionalFx.Length}");
+        Console.WriteLine($"emitter-asset-source: {(emitterAssetDirectory is null ? "fastfile" : "disk")}");
+        Console.WriteLine($"disk-emitter-providers: {rawEmitterAssets.Length}");
         Console.WriteLine($"owned-rawfile-overrides: {rawFileOverrides.Length}");
         Console.WriteLine($"owned-roots: {roots.Count}");
         Console.WriteLine($"bootstrap-stringtable: {bootstrapStringTable.Name}");
@@ -756,13 +783,17 @@ internal static class FastFileConverter
             opaqueHeader: null);
     }
 
-    private static RawFileAsset CreateMapScript(string assetName, RawFileAsset? waterScript)
+    private static string MapFxStartup(string mapFxScriptName) =>
+        mapFxScriptName[..^".gsc".Length].Replace('/', '\\') + "::main();";
+
+    private static RawFileAsset CreateMapScript(string assetName, RawFileAsset? waterScript, bool hasMapFxScript)
     {
         string scriptName = assetName[..^".d3dbsp".Length] + ".gsc";
         // These factions own the player-model closure selected below.
         string script =
             "main()\r\n" +
             "{\r\n" +
+            (hasMapFxScript ? "\t" + MapFxStartup(assetName[..^".d3dbsp".Length] + "_fx.gsc") + "\r\n" : "") +
             "\tmaps\\mp\\_load::main();\r\n" +
             "\tgame[\"allies\"] = \"us_army\";\r\n" +
             "\tgame[\"axis\"] = \"opforce_airborne\";\r\n" +
@@ -1143,6 +1174,75 @@ internal static class FastFileConverter
                     continue;
                 unresolvedNames.Remove(name);
             }
+        }
+    }
+
+    private static BaseAsset[] LoadRawEmitterAssets(
+        string sourceDirectory,
+        IReadOnlyList<string> requestedFx,
+        IReadOnlyList<string> requestedSounds)
+    {
+        string root = Path.GetFullPath(sourceDirectory);
+        if (!Directory.Exists(root))
+            throw new DirectoryNotFoundException($"FX and sound asset directory '{root}' does not exist.");
+        var assets = new Dictionary<AssetKey, BaseAsset>();
+        var pending = new Queue<(XAssetType Type, string Name)>();
+        foreach (string name in requestedFx)
+            pending.Enqueue((XAssetType.Fx, name));
+        foreach (string name in requestedSounds)
+            pending.Enqueue((XAssetType.Sound, name));
+        var fxExchange = new FxExchange();
+        var soundExchange = new SoundAliasListExchange();
+        while (pending.TryDequeue(out var requested))
+        {
+            var key = AssetKey.FromWireName(
+                CanonicalAssetFamily.FromSerializedType(requested.Type), requested.Name);
+            if (assets.ContainsKey(key))
+                continue;
+            BaseAsset asset = requested.Type switch
+            {
+                XAssetType.Fx => fxExchange.Link(root, requested.Name),
+                XAssetType.Sound => soundExchange.Link(root, requested.Name),
+                _ => throw new InvalidDataException($"Unsupported emitter asset type {requested.Type}.")
+            };
+            assets.Add(key, asset);
+            if (asset is FxEffectDefAsset effect)
+            {
+                foreach (FxElemDef element in effect.ElemDefs)
+                {
+                    Enqueue(XAssetType.Fx, element.EffectOnImpact.Name);
+                    Enqueue(XAssetType.Fx, element.EffectOnDeath.Name);
+                    Enqueue(XAssetType.Fx, element.EffectEmitted.Name);
+                    foreach (FxElemDefVisuals visuals in element.VisualArray.Prepend(element.Visuals))
+                    {
+                        if (visuals.Effect is { } runner)
+                            Enqueue(XAssetType.Fx, runner.EffectDef.Name);
+                        if (visuals.Sound is { } sound)
+                            Enqueue(XAssetType.Sound, sound.SoundName);
+                    }
+                }
+            }
+            else if (asset is SoundAliasListAsset sound)
+            {
+                foreach (SndAlias alias in sound.Aliases)
+                {
+                    Enqueue(XAssetType.Sound, alias.SecondaryAliasName);
+                    Enqueue(XAssetType.Sound, alias.ChainAliasName);
+                    if (alias.VolumeFalloffCurve is { } curve)
+                        assets.TryAdd(AssetKey.FromDefinition(curve), curve);
+                    foreach (LoadedSound loaded in alias.SoundFiles
+                                 .Select(file => file.Loaded?.LoadedSound)
+                                 .OfType<LoadedSound>())
+                        assets.TryAdd(AssetKey.FromDefinition(loaded), loaded);
+                }
+            }
+        }
+        return assets.Values.ToArray();
+
+        void Enqueue(XAssetType type, string? name)
+        {
+            if (!string.IsNullOrWhiteSpace(name))
+                pending.Enqueue((type, name));
         }
     }
 

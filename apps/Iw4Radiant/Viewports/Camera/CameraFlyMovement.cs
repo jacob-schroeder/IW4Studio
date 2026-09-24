@@ -62,7 +62,8 @@ internal sealed class CameraFlyMovement
             return;
         }
         long now = Stopwatch.GetTimestamp();
-        float elapsed = (float)Math.Min(Stopwatch.GetElapsedTime(_lastTick, now).TotalSeconds, 0.05);
+        // Account for a missed frame without jumping across the map after a long UI pause.
+        float elapsed = (float)Math.Min(Stopwatch.GetElapsedTime(_lastTick, now).TotalSeconds, 0.1);
         _lastTick = now;
         float right = Pressed(Key.D) - Pressed(Key.A);
         float forward = Pressed(Key.W) - Pressed(Key.S);

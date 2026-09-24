@@ -20,6 +20,8 @@ public partial class SelectionInspector : UserControl
     internal event Action<string>? PlacementRequested;
     internal event Action? ModelBrowserRequested;
     internal event Action? PrefabBrowserRequested;
+    internal event Action<string, bool>? FxSoundBrowserRequested;
+    internal event Action<string, bool>? FxSoundPreviewRequested;
 
     internal void ShowTool(EditorTool tool)
     {
@@ -65,6 +67,32 @@ public partial class SelectionInspector : UserControl
         Gameplay.PlacementRequested += name => PlacementRequested?.Invoke(name);
         Gameplay.ModelBrowserRequested += () => ModelBrowserRequested?.Invoke();
         Gameplay.PrefabBrowserRequested += () => PrefabBrowserRequested?.Invoke();
+        BrowseFxSoundButton.Click += (_, _) =>
+        {
+            if (dialogs.BlocksInput || session.Selection.Active is not MapEntity entity ||
+                entity.ClassName != "fx_origin") return;
+            bool isSound = entity.Properties.GetValueOrDefault("is_sound") == "1";
+            FxSoundBrowserRequested?.Invoke(
+                entity.Properties.GetValueOrDefault(isSound ? "soundalias" : "fx", ""), isSound);
+        };
+        PreviewFxSoundButton.Click += (_, _) =>
+        {
+            if (dialogs.BlocksInput || session.Selection.Active is not MapEntity entity ||
+                entity.ClassName != "fx_origin") return;
+            bool isSound = entity.Properties.GetValueOrDefault("is_sound") == "1";
+            FxSoundPreviewRequested?.Invoke(
+                entity.Properties.GetValueOrDefault(isSound ? "soundalias" : "fx", ""), isSound);
+        };
+        ApplyFxSoundButton.Click += async (_, _) =>
+        {
+            if (dialogs.BlocksInput || session.Selection.Active is not MapEntity entity) return;
+            try
+            {
+                finishGestures();
+                GameplayEntityEditing.SetFxSoundReference(session, entity, FxSoundName.Text ?? "");
+            }
+            catch (ArgumentException exception) { await dialogs.MessageAsync("FX / sound reference", exception.Message); }
+        };
         TerrainPaint.InitializeActions(session, dialogs, finishGestures, supportsAlpha, supportsVertexColor);
         Decals.InitializeActions(session, dialogs, finishGestures, supportsAlpha);
         Sunlight.EditSourceRequested += () =>
@@ -113,6 +141,15 @@ public partial class SelectionInspector : UserControl
             PropertiesBox.IsReadOnly = entity is null;
             if (entityChanged || !PropertiesBox.IsKeyboardFocusWithin)
                 ShowEntityProperties(entity);
+            bool isFxSound = entity?.ClassName == "fx_origin";
+            FxSoundExpander.IsVisible = isFxSound;
+            if (isFxSound && entity is not null)
+            {
+                bool isSound = entity.Properties.GetValueOrDefault("is_sound") == "1";
+                FxSoundKind.Text = isSound ? "Sound alias · exact source name" : "FX · exact source name";
+                if (entityChanged || !FxSoundName.IsKeyboardFocusWithin)
+                    FxSoundName.Text = entity.Properties.GetValueOrDefault(isSound ? "soundalias" : "fx", "");
+            }
             _shownEntity = entity;
             if (!ReferenceEquals(_listedDocument, session.Document) || _listedEntityCount != session.Document.Entities.Count)
             {
@@ -160,7 +197,10 @@ public partial class SelectionInspector : UserControl
         if (selection.Count == 1) return Describe(selection.Active);
         string counts = string.Join(", ", selection.Items.GroupBy(item => item switch
         {
-            MapBrush => "brush", MapTerrain => "patch", MapEntity => "entity",
+            MapBrush => "brush", MapTerrain => "patch",
+            MapEntity entity when entity.ClassName == "fx_origin" =>
+                entity.Properties.GetValueOrDefault("is_sound") == "1" ? "sound" : "effect",
+            MapEntity => "entity",
             BrushFaceSelection => "face", BrushVertexSelection or TerrainVertexSelection => "vertex", _ => "item"
         }).Select(group => $"{group.Count()} " + (group.Count() == 1 ? group.Key : group.Key switch
         {
@@ -173,6 +213,11 @@ public partial class SelectionInspector : UserControl
     {
         MapBrush brush => $"Brush · {brush.Faces.Count} planes",
         MapTerrain terrain => $"{(terrain.IsCurve ? "Curve" : "Terrain")} · {terrain.Width} × {terrain.Height} {(terrain.IsCurve ? "controls" : "vertices")}\n{terrain.Material}",
+        MapEntity entity when entity.ClassName == "fx_origin" &&
+                              entity.Properties.GetValueOrDefault("is_sound") == "1" =>
+            $"Sound · {entity.Properties.GetValueOrDefault("soundalias", "unassigned")}",
+        MapEntity entity when entity.ClassName == "fx_origin" =>
+            $"FX · {entity.Properties.GetValueOrDefault("fx", "unassigned")}",
         MapEntity entity => $"Entity · {entity.ClassName}",
         BrushFaceSelection face => $"Brush face {face.Brush.Faces.IndexOf(face.Face) + 1} · {face.Face.Material}",
         BrushVertexSelection vertex => FormattableString.Invariant($"Brush vertex · {vertex.Position.X:G6} / {vertex.Position.Y:G6} / {vertex.Position.Z:G6}"),

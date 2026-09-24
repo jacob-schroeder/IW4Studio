@@ -269,7 +269,15 @@ internal sealed class OrthographicGestures
         else if (Dragged || _editStarted)
         {
             _currentWorld = Snap(world);
-            if (_gesture == Gesture.Transform) _changed = _transform.Apply(session, _cursorScreen, StartEdit);
+            if (_gesture == Gesture.Transform)
+            {
+                _changed = _transform.Apply(session, _cursorScreen, StartEdit);
+                // A changed transform already invalidates the view through the session.
+                // Pointer events inside the same snapped cell need no grid redraw.
+                _lastScreen = _cursorScreen;
+                e.Handled = true;
+                return;
+            }
             else if (_gesture == Gesture.Clip) ClipEnd = _currentWorld;
         }
         _lastScreen = _cursorScreen;
@@ -363,6 +371,7 @@ internal sealed class OrthographicGestures
     internal void EndGesture(bool cancel, bool completeEdit = true)
     {
         IPointer? pointer = _pointer;
+        bool transformPreview = _gesture == Gesture.Transform && _editStarted;
         bool editing = _editStarted, changed = _changed;
         bool clearSelectionVolume = _selectionVolumeMode != SelectionVolumeMode.None &&
             Session?.SelectionVolumeMode != SelectionVolumeMode.None;
@@ -377,6 +386,7 @@ internal sealed class OrthographicGestures
         _paintVisited.Clear();
         _editStarted = _changed = false;
         _viewport.Cursor = null;
+        if (transformPreview) Session?.EndTransformPreview();
         if (editing && completeEdit && Session is { } session)
         {
             if (cancel) session.CancelEdit();
@@ -424,6 +434,7 @@ internal sealed class OrthographicGestures
     {
         if (_editStarted || Session is null) return;
         Session.BeginEdit();
+        if (_gesture == Gesture.Transform) Session.BeginTransformPreview();
         _editStarted = true;
     }
 

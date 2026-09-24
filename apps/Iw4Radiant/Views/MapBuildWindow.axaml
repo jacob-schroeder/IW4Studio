@@ -1,8 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Iw4Radiant.Views.MapBuildWindow"
-        Title="Build PS3 map" Width="760" Height="760"
-        MinWidth="640" MinHeight="680" WindowStartupLocation="CenterOwner">
+        Title="Build PS3 map" Width="760" Height="830"
+        MinWidth="640" MinHeight="740" WindowStartupLocation="CenterOwner">
     <Grid Margin="20" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="14">
         <StackPanel Spacing="6">
             <TextBlock x:Name="SourceName" FontSize="17" FontWeight="SemiBold" />
@@ -37,6 +37,16 @@
                 <ListBox x:Name="ProviderList" Height="76" Background="#1B1D21"
                          BorderBrush="#454A52" BorderThickness="1" SelectionChanged="Provider_Changed"
                          AutomationProperties.Name="Additional provider fastfiles" />
+            </StackPanel>
+            <StackPanel Spacing="4">
+                <TextBlock Text="FX and sound library" Classes="panelTitle" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <TextBox x:Name="EmitterAssetDirectoryBox" PlaceholderText="Choose the raw folder with fx/ and soundaliases/"
+                             AutomationProperties.Name="FX and sound library folder" />
+                    <Button Grid.Column="1" Content="Browse…" Click="BrowseEmitterAssets_Click" />
+                </Grid>
+                <TextBlock Text="Required when the map places FX or sound. The build reads these assets from disk."
+                           Classes="caption" TextWrapping="Wrap" />
             </StackPanel>
             <StackPanel Spacing="4">
                 <TextBlock Text="Output folder" Classes="panelTitle" />

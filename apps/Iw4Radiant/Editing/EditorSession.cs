@@ -14,6 +14,7 @@ internal sealed class EditorSession
     private readonly List<(MapDocument Document, long Revision, SelectionPath[] Selection)> _redo = [];
     private readonly Dictionary<MapTerrain, HashSet<int>> _lockedPatchVertices = new(ReferenceEqualityComparer.Instance);
     private MapDocument? _beforeEdit;
+    private int _transformPreviewDepth;
     private SelectionPath[] _beforeSelection = [];
     private long _revision, _savedRevision, _nextRevision = 1;
     private Action<Vector3, Vector3?>? _place;
@@ -47,6 +48,7 @@ internal sealed class EditorSession
     internal float PaintOpacity { get; set; } = 0.25f;
     internal float PaintAlpha { get; set; } = 1;
     public bool IsDirty => _revision != _savedRevision || _beforeEdit is not null;
+    internal bool DeferPreviewLighting => _transformPreviewDepth > 0;
     internal long ContentRevision => _revision;
     public bool CanTransformSelection => Selection.Count > 0 && Selection.Items.All(item =>
         Visibility.CanSelect(Document, item) && SelectionGeometry.CanTransform(item)) &&
@@ -55,6 +57,10 @@ internal sealed class EditorSession
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
     public event EventHandler? Changed;
+    internal event Action<bool>? PointEntityPreviewChanged;
+
+    internal void BeginTransformPreview() => _transformPreviewDepth++;
+    internal void EndTransformPreview() => _transformPreviewDepth = Math.Max(0, _transformPreviewDepth - 1);
 
     internal bool IsPatchVertexLocked(TerrainVertexSelection vertex) =>
         _lockedPatchVertices.TryGetValue(vertex.Terrain, out var indices) && indices.Contains(vertex.Index);
@@ -88,6 +94,13 @@ internal sealed class EditorSession
             Visibility.CanSelect(Document, item)).ToArray());
         Scene.Invalidate();
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    internal bool RefreshPointEntityPreview()
+    {
+        if (!Scene.UpdatePointEntities(Selection.Items.OfType<MapEntity>(), out bool modelsChanged)) return false;
+        PointEntityPreviewChanged?.Invoke(modelsChanged);
+        return true;
     }
     public float Snap(float value) => MathF.Round(value / GridSize, MidpointRounding.AwayFromZero) * GridSize;
 
@@ -138,6 +151,7 @@ internal sealed class EditorSession
         _undo.Clear();
         _redo.Clear();
         _beforeEdit = null;
+        _transformPreviewDepth = 0;
         _beforeSelection = [];
         _revision = _savedRevision = 0;
         Refresh();

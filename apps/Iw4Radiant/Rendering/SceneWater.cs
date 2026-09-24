@@ -23,6 +23,8 @@ internal sealed class SceneWater
     private readonly Dictionary<string, Wave> _waves = new(StringComparer.Ordinal);
     private readonly SceneMaterialTextures _foamTextures = new();
     private readonly long _started = Stopwatch.GetTimestamp();
+    private long _lastSimulation;
+    private string[] _lastSimulatedMaterials = [];
     private uint _program, _framebuffer, _vertexArray, _underwaterProgram;
     private int _underwaterTintLocation;
     private readonly List<(Vector3 Minimum, Vector3 Maximum, Vector4[] Planes, MaterialVec4 Tint)> _volumes = [];
@@ -69,8 +71,14 @@ internal sealed class SceneWater
 
     internal void Update(GL gl, IReadOnlyList<string> materials, Func<string, MaterialSource?>? resolve)
     {
+        if (materials.Count == 0 || resolve is null) { Notice = null; return; }
+        long now = Stopwatch.GetTimestamp();
+        // Camera navigation can redraw faster than the water simulation needs to run.
+        // Reuse its last GPU textures between updates while the camera still renders.
+        if (_lastSimulation != 0 && Stopwatch.GetElapsedTime(_lastSimulation, now) < TimeSpan.FromMilliseconds(33) &&
+            materials.SequenceEqual(_lastSimulatedMaterials) &&
+            materials.All(name => _waves.TryGetValue(name, out Wave? wave) && wave.Source == resolve(name))) return;
         Notice = null;
-        if (materials.Count == 0 || resolve is null) return;
         gl.UseProgram(_program);
         gl.BindVertexArray(_vertexArray);
         gl.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
@@ -125,6 +133,8 @@ internal sealed class SceneWater
                 gl.GenerateMipmap(TextureTarget.Texture2D);
         }
         gl.BindVertexArray(0);
+        _lastSimulation = Stopwatch.GetTimestamp();
+        _lastSimulatedMaterials = materials.ToArray();
     }
 
     internal bool IsAvailable(string name) => _waves.TryGetValue(name, out Wave? wave) && wave.Height != 0;
@@ -304,6 +314,8 @@ internal sealed class SceneWater
         foreach (Wave wave in _waves.Values) Delete(gl, wave);
         _waves.Clear();
         _foamTextures.Reload(gl);
+        _lastSimulation = 0;
+        _lastSimulatedMaterials = [];
         Notice = null;
     }
 
@@ -330,6 +342,8 @@ internal sealed class SceneWater
     {
         _waves.Clear();
         _foamTextures.ForgetHandles();
+        _lastSimulation = 0;
+        _lastSimulatedMaterials = [];
         _program = _framebuffer = _vertexArray = _underwaterProgram = 0;
         _volumes.Clear();
         _submerged = false;

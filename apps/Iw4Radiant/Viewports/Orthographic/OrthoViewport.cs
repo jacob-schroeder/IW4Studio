@@ -38,9 +38,17 @@ public sealed class OrthoViewport : Control
             if (ReferenceEquals(Session, value)) return;
             _gestures.CancelGesture();
             _objectMenu?.Close();
-            if (Session is { } previous) previous.Changed -= SessionChanged;
+            if (Session is { } previous)
+            {
+                previous.Changed -= SessionChanged;
+                previous.PointEntityPreviewChanged -= PointEntityPreviewChanged;
+            }
             _gestures.Session = value;
-            if (Session is { } current) current.Changed += SessionChanged;
+            if (Session is { } current)
+            {
+                current.Changed += SessionChanged;
+                current.PointEntityPreviewChanged += PointEntityPreviewChanged;
+            }
             InvalidateVisual();
         }
     }
@@ -125,6 +133,8 @@ public sealed class OrthoViewport : Control
         _objectMenu?.Close();
         _gestures.SessionChanged();
     }
+
+    private void PointEntityPreviewChanged(bool _) => InvalidateVisual();
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {

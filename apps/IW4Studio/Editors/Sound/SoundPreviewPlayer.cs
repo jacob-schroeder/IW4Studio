@@ -155,6 +155,24 @@ internal sealed class SoundPreviewPlayer : IDisposable
         }
     }
 
+    internal void SetVolume(float volume)
+    {
+        lock (_sync)
+        {
+            ThrowIfDisposed();
+            SendVoidWithFloat(_player, Selectors.SetVolume, Math.Clamp(volume, 0f, 1f));
+        }
+    }
+
+    internal void SetNumberOfLoops(int count)
+    {
+        lock (_sync)
+        {
+            ThrowIfDisposed();
+            SendVoidWithNInt(_player, Selectors.SetNumberOfLoops, count);
+        }
+    }
+
     public void Restart()
     {
         lock (_sync)
@@ -395,6 +413,8 @@ internal sealed class SoundPreviewPlayer : IDisposable
         public static readonly IntPtr Play = RegisterSelector("play");
         public static readonly IntPtr Pause = RegisterSelector("pause");
         public static readonly IntPtr Stop = RegisterSelector("stop");
+        public static readonly IntPtr SetVolume = RegisterSelector("setVolume:");
+        public static readonly IntPtr SetNumberOfLoops = RegisterSelector("setNumberOfLoops:");
         public static readonly IntPtr CurrentTime = RegisterSelector("currentTime");
         public static readonly IntPtr SetCurrentTime = RegisterSelector("setCurrentTime:");
         public static readonly IntPtr Duration = RegisterSelector("duration");
@@ -447,6 +467,18 @@ internal sealed class SoundPreviewPlayer : IDisposable
         IntPtr receiver,
         IntPtr selector,
         double value);
+
+    [DllImport(ObjectiveCLibrary, EntryPoint = "objc_msgSend")]
+    private static extern void SendVoidWithFloat(
+        IntPtr receiver,
+        IntPtr selector,
+        float value);
+
+    [DllImport(ObjectiveCLibrary, EntryPoint = "objc_msgSend")]
+    private static extern void SendVoidWithNInt(
+        IntPtr receiver,
+        IntPtr selector,
+        nint value);
 
     [DllImport(ObjectiveCLibrary, EntryPoint = "objc_msgSend")]
     [return: MarshalAs(UnmanagedType.I1)]

@@ -38,7 +38,7 @@ internal static class MapBuildPipeline
     internal static async Task<string> BuildAsync(MapDocument document, string sourcePath,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
         string linkerPath, string templatePath,
-        IReadOnlyList<string> providerPaths, string outputFolder, IProgress<string> progress,
+        IReadOnlyList<string> providerPaths, string emitterAssetDirectory, string outputFolder, IProgress<string> progress,
         CancellationToken cancellationToken)
     {
         sourcePath = Path.GetFullPath(sourcePath);
@@ -49,6 +49,12 @@ internal static class MapBuildPipeline
         outputFolder = Path.GetFullPath(outputFolder);
         if (!Directory.Exists(outputFolder)) throw new DirectoryNotFoundException("Choose an existing output folder.");
         string mapName = Path.GetFileNameWithoutExtension(sourcePath);
+        MapEmitterScripts? emitters = MapEmitterScriptAuthoring.Create(document, sourcePath, mapName);
+        if (emitters is not null &&
+            (string.IsNullOrWhiteSpace(emitterAssetDirectory) ||
+             !Directory.Exists(emitterAssetDirectory)))
+            throw new DirectoryNotFoundException(
+                "Choose an FX and sound library folder containing the map's emitter assets.");
         string assetName = $"maps/mp/{mapName}.d3dbsp";
         string token = Guid.NewGuid().ToString("N")[..8];
         string staging = Path.Combine(outputFolder, $".{mapName}-{token}.building");
@@ -69,9 +75,14 @@ internal static class MapBuildPipeline
                 cancellationToken.ThrowIfCancellationRequested();
                 bsp.Write(bspPath);
             }, cancellationToken);
+            IReadOnlyList<(string Name, string Path)> emitterRawFiles = emitters?.WriteTo(staging) ?? [];
+            if (emitters is not null)
+            {
+                progress.Report($"Exported {emitters.FxNames.Length} FX references and {emitters.SoundNames.Length} sound aliases to map scripts. PS3 playback awaits validation.");
+            }
             progress.Report("Linking the PS3 fastfile with the selected asset providers…");
             await RunLinkerAsync(linkerPath, bspPath, templatePath, assetName, fastFilePath,
-                providers, progress, cancellationToken);
+                providers, emitters, emitterAssetDirectory, emitterRawFiles, progress, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(fastFilePath) || new FileInfo(fastFilePath).Length == 0)
                 throw new InvalidDataException("D3dbspLinker completed without producing a fastfile.");
@@ -86,7 +97,10 @@ internal static class MapBuildPipeline
     }
 
     private static async Task RunLinkerAsync(string linkerPath, string bspPath, string templatePath,
-        string assetName, string fastFilePath, IReadOnlyList<string> providers, IProgress<string> progress,
+        string assetName, string fastFilePath, IReadOnlyList<string> providers,
+        MapEmitterScripts? emitters, string emitterAssetDirectory,
+        IReadOnlyList<(string Name, string Path)> emitterRawFiles,
+        IProgress<string> progress,
         CancellationToken cancellationToken)
     {
         bool managed = Path.GetExtension(linkerPath).Equals(".dll", StringComparison.OrdinalIgnoreCase);
@@ -111,6 +125,26 @@ internal static class MapBuildPipeline
         {
             start.ArgumentList.Add("--provider-fastfile");
             start.ArgumentList.Add(provider);
+        }
+        if (emitters is not null)
+        {
+            start.ArgumentList.Add("--emitter-assets");
+            start.ArgumentList.Add(Path.GetFullPath(emitterAssetDirectory));
+            foreach (string name in emitters.FxNames)
+            {
+                start.ArgumentList.Add("--fx");
+                start.ArgumentList.Add(name);
+            }
+            foreach (string name in emitters.SoundNames)
+            {
+                start.ArgumentList.Add("--sound");
+                start.ArgumentList.Add(name);
+            }
+            foreach (var rawFile in emitterRawFiles)
+            {
+                start.ArgumentList.Add("--rawfile");
+                start.ArgumentList.Add($"{rawFile.Name}={rawFile.Path}");
+            }
         }
         // These match the Rangers/OpFor startup profile already emitted by D3dbspLinker.
         foreach (string faction in new[] { "rangers", "ussr" })

@@ -2,6 +2,7 @@ using System.Numerics;
 using Avalonia;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Rendering;
 using Vector = Avalonia.Vector;
 
 namespace Iw4Radiant.Viewports.Orthographic;
@@ -72,7 +73,9 @@ internal sealed class OrthographicTransform
         beginEdit();
         SelectionTransforms.Apply(session, inverse * transform);
         _applied = transform;
-        session.Refresh();
+        bool pointEntityMove = _mode == TransformMode.Move && session.Selection.Items.All(item =>
+            item is MapEntity entity && PointEntityGeometry.IsPointEntity(entity));
+        if (!pointEntityMove || !session.RefreshPointEntityPreview()) session.Refresh();
         return transform != Matrix4x4.Identity;
     }
 

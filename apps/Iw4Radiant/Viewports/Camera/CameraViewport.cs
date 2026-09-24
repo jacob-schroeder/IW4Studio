@@ -68,9 +68,23 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
             if (ReferenceEquals(_session, value)) return;
             FinishGesture(cancel: true);
             _objectMenu?.Close();
+            if (_session is not null) _session.PointEntityPreviewChanged -= OnPointEntityPreviewChanged;
             _session = value;
+            if (_session is not null) _session.PointEntityPreviewChanged += OnPointEntityPreviewChanged;
             RefreshScene();
         }
+    }
+
+    private void OnPointEntityPreviewChanged(bool modelsChanged)
+    {
+        if (_session is { } session && session.DeferPreviewLighting && session.TransformMode == TransformMode.Move &&
+            session.Selection.Count > 0 && session.Selection.Items.All(item => item is MapEntity entity &&
+                (entity.ClassName == "fx_origin" || XModelGeometry.IsModel(entity))))
+        {
+            _renderer.PreviewPointEntityMove();
+            RequestNextFrameRendering();
+        }
+        else if (modelsChanged || _transform is not null) RefreshScene();
     }
 
     internal bool PreviewLighting
@@ -133,9 +147,42 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         }
     }
     internal string? RendererError => _renderer.Error;
+    internal Vector3 PreviewFocus
+    {
+        get
+        {
+            Vector3 eye = _navigation.Eye;
+            Vector3 target = _navigation.Target;
+            float distance = Vector3.Distance(eye, target);
+            return Vector3.Lerp(eye, target, MathF.Min(0.5f, 96f / distance));
+        }
+    }
+    internal bool HasActiveFxPreview => _renderer.HasActiveFxPreview;
+    internal bool HasActiveMapFxPreview => _renderer.HasActiveMapFxPreview;
+    internal string? FxPreviewNotice => _renderer.FxPreviewNotice;
+    internal string? MapFxPreviewNotice => _renderer.MapFxPreviewNotice;
+    internal Vector3 Eye => _navigation.Eye;
+    internal string? SetMapFxPreview(string? sourceDirectory, IReadOnlyList<(string Name, Vector3 Origin)> emitters)
+    {
+        string? notice = _renderer.SetMapFxPreview(sourceDirectory, emitters);
+        RequestNextFrameRendering();
+        return notice;
+    }
+    internal string? StartFxPreview(string sourceDirectory, string assetName, Vector3 origin)
+    {
+        string? notice = _renderer.SetFxPreview(sourceDirectory, assetName, origin);
+        RequestNextFrameRendering();
+        return notice;
+    }
+    internal void StopFxPreview()
+    {
+        _renderer.StopFxPreview();
+        RequestNextFrameRendering();
+    }
     internal event EventHandler? RendererStatusChanged;
     internal event Action<string>? InteractionStatusChanged;
     internal event Action? NavigationModeChanged;
+    internal event Action? NavigationChanged;
     internal event Action<BrushKind>? BrushKindRequested;
     internal event Action<IReadOnlyList<Point>?>? FoliageBrushChanged;
     internal bool HasPointerGesture => _dragPointer is not null;
@@ -152,6 +199,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     {
         FinishGesture();
         _navigation.FrameBounds((point, point), Aspect);
+        NavigationChanged?.Invoke();
         RequestNextFrameRendering();
     }
     internal bool CanFlyMove => FlyMode || _dragPointer is not null && _dragButton == MouseButton.Right;
@@ -175,7 +223,11 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         return CanFlyMove && _session is not null && _flyMovement.KeyDown(e, canMove: _transform is null);
     }
 
-    internal void FlyMovementApplied() => _navigationMoved = true;
+    internal void FlyMovementApplied()
+    {
+        _navigationMoved = true;
+        NavigationChanged?.Invoke();
+    }
 
     internal void RefreshScene()
     {
@@ -195,6 +247,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         FinishGesture();
         if (CompiledPreview is { } preview) _navigation.FrameBounds(preview.Bounds, Aspect);
         else if (_session is { } session) _navigation.FrameBounds(session.Scene.VisibleBounds, Aspect);
+        NavigationChanged?.Invoke();
         RequestNextFrameRendering();
     }
 
@@ -202,6 +255,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     {
         FinishGesture();
         if (_session is { } session) _navigation.FrameBounds(session.SelectionBounds ?? session.Scene.VisibleBounds, Aspect);
+        NavigationChanged?.Invoke();
         RequestNextFrameRendering();
     }
 
@@ -265,7 +319,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         var size = new PixelSize(Math.Max(1, (int)(Bounds.Width * scaling)), Math.Max(1, (int)(Bounds.Height * scaling)));
         _renderer.Render(size, framebuffer, _navigation.ViewProjection((float)size.Width / size.Height), _navigation.Eye,
             session, ResolveMaterial, CompiledPreview is null && PreviewLighting, FilmAdjustment, FogAdjustment);
-        if (_renderer.HasAnimatedWater)
+        if (_renderer.HasVisibleAnimatedWater || _renderer.HasActiveFxPreview || _renderer.HasActiveMapFxPreview)
             RequestNextFrameRendering();
     }
 
@@ -373,6 +427,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
                 if (_panning) _navigation.Pan((float)delta.X, (float)delta.Y, (float)Math.Max(1, Bounds.Height));
                 else if (FlyMode) _navigation.Look((float)delta.X, (float)delta.Y);
                 else _navigation.Orbit((float)delta.X, (float)delta.Y);
+                NavigationChanged?.Invoke();
                 RequestNextFrameRendering();
             }
             e.Handled = true;
@@ -459,6 +514,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         if (_dragPointer is not null) _navigationMoved = true;
         if (FlyMode) _navigation.MoveLocal(0, (float)delta * 32, 0);
         else _navigation.Zoom((float)delta);
+        NavigationChanged?.Invoke();
         RequestNextFrameRendering();
         e.Handled = true;
     }

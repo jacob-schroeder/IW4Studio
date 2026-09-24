@@ -51,6 +51,7 @@ internal sealed class CameraTransformGesture
                 throw new ArgumentException("Drag a point on the rotation ring.");
         }
         session.BeginEdit();
+        session.BeginTransformPreview();
     }
 
     internal bool HasChanges => _applied != Matrix4x4.Identity;
@@ -104,13 +105,16 @@ internal sealed class CameraTransformGesture
             throw new ArgumentException("The transform would collapse the selection.");
         SelectionTransforms.Apply(_session, inverse * target);
         _applied = target;
-        _session.Refresh();
+        bool pointEntityMove = _mode == TransformMode.Move && _selection.All(item =>
+            item is MapEntity entity && PointEntityGeometry.IsPointEntity(entity));
+        if (!pointEntityMove || !_session.RefreshPointEntityPreview()) _session.Refresh();
         string axisName = _axis == 1 ? "X" : _axis == 2 ? "Y" : _axis == 3 ? "Z" : "uniform";
         return $"{_mode} {axisName}: {amount.ToString("0.###", CultureInfo.InvariantCulture)}{units}";
     }
 
     internal void Complete(bool cancel)
     {
+        _session.EndTransformPreview();
         if (!OwnsDocument) return;
         if (cancel) _session.CancelEdit();
         else _session.CompleteEdit(HasChanges);
