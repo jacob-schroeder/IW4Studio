@@ -1,0 +1,95 @@
+{
+  "format": "iw4-ps3-technique",
+  "version": 1,
+  "name": "build_shadowmap_model_test_nc",
+  "flags": 8,
+  "passes": [
+    {
+      "perPrimArgCount": 1,
+      "perObjArgCount": 1,
+      "stableArgCount": 1,
+      "customSamplerFlags": 0,
+      "precompiledVertexShader": 2,
+      "vertexShader": "vertcol_simple_atest_nc.hlsl",
+      "pixelShader": "vertcol_simple_atest_nc.hlsl",
+      "vertexDeclaration": {
+        "streamCount": 2,
+        "hasOptionalSourceRaw": 1,
+        "routing": [
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 2,
+            "destination": 8
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          }
+        ]
+      },
+      "arguments": [
+        {
+          "type": 3,
+          "destination": 4,
+          "argumentRaw": 6225924,
+          "literalBits": null
+        },
+        {
+          "type": 3,
+          "destination": 0,
+          "argumentRaw": 5439492,
+          "literalBits": null
+        },
+        {
+          "type": 2,
+          "destination": 0,
+          "argumentRaw": -1599401919,
+          "literalBits": null
+        }
+      ]
+    }
+  ]
+}

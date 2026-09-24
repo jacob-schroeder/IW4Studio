@@ -19,33 +19,13 @@
                 </Grid>
             </StackPanel>
             <StackPanel Spacing="4">
-                <TextBlock Text="Official bootstrap map fastfile" Classes="panelTitle" />
+                <TextBlock Text="Asset library" Classes="panelTitle" />
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                    <TextBox x:Name="TemplatePathBox" PlaceholderText="Official PS3 map (.ff), beside its shared startup fastfiles"
-                             AutomationProperties.Name="Bootstrap fastfile path" />
-                    <Button Grid.Column="1" Content="Browse…" Click="BrowseTemplate_Click" />
-                </Grid>
-                <TextBlock Text="Supplies the Rangers/OpFor startup assets through the native dependency loader."
-                           Classes="caption" TextWrapping="Wrap" />
-            </StackPanel>
-            <StackPanel Spacing="4">
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                    <TextBlock Text="Additional provider fastfiles · optional" Classes="panelTitle" VerticalAlignment="Center" />
-                    <Button Grid.Column="1" Content="Add…" Click="AddProvider_Click" />
-                    <Button x:Name="RemoveProviderButton" Grid.Column="2" Content="Remove" IsEnabled="False" Click="RemoveProvider_Click" />
-                </Grid>
-                <ListBox x:Name="ProviderList" Height="76" Background="#1B1D21"
-                         BorderBrush="#454A52" BorderThickness="1" SelectionChanged="Provider_Changed"
-                         AutomationProperties.Name="Additional provider fastfiles" />
-            </StackPanel>
-            <StackPanel Spacing="4">
-                <TextBlock Text="FX and sound library" Classes="panelTitle" />
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                    <TextBox x:Name="EmitterAssetDirectoryBox" PlaceholderText="Choose the raw folder with fx/ and soundaliases/"
-                             AutomationProperties.Name="FX and sound library folder" />
+                    <TextBox x:Name="EmitterAssetDirectoryBox" PlaceholderText="Choose the raw folder containing your source assets"
+                             AutomationProperties.Name="Asset library folder" />
                     <Button Grid.Column="1" Content="Browse…" Click="BrowseEmitterAssets_Click" />
                 </Grid>
-                <TextBlock Text="Required when the map places FX or sound. The build reads these assets from disk."
+                <TextBlock Text="Your models, materials, textures, FX and sounds come from this folder. Startup assets are included with the linker."
                            Classes="caption" TextWrapping="Wrap" />
             </StackPanel>
             <StackPanel Spacing="4">
@@ -54,7 +34,7 @@
                     <TextBox x:Name="OutputFolderBox" AutomationProperties.Name="Build output folder" />
                     <Button Grid.Column="1" Content="Browse…" Click="BrowseOutput_Click" />
                 </Grid>
-                <TextBlock Text="Each build creates a new folder containing the compiled BSP and PS3 fastfile."
+                <TextBlock Text="Each build creates a new folder with your compiled map and its texture package. Keep the .ff and matching .pak together."
                            Classes="caption" TextWrapping="Wrap" />
             </StackPanel>
         </StackPanel>

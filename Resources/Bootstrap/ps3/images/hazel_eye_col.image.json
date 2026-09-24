@@ -1,0 +1,62 @@
+{
+  "format": "iw4-image-source",
+  "version": 2,
+  "name": "hazel_eye_col",
+  "imageFormat": 134,
+  "levelCount": 1,
+  "dimensionCount": 2,
+  "multiFaceControl": 0,
+  "textureControl1": 109284,
+  "width": 1,
+  "height": 1,
+  "depth": 1,
+  "memoryLocation": 0,
+  "minLodControl": 0,
+  "renderTargetPitch": 0,
+  "pixelsOffset": 0,
+  "mapType": 3,
+  "semantic": 2,
+  "category": 3,
+  "useSrgbReads": 0,
+  "cardMemory": 0,
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "baseDepth": 1,
+  "baseLevelCount": 1,
+  "cached": 1,
+  "streamData": [
+    {
+      "width": 32,
+      "height": 32,
+      "levelSizeAndOffset": 402653952,
+      "levelMarker": 6,
+      "cumulativeByteCount": 768,
+      "hasStreamingData": true
+    },
+    {
+      "width": 64,
+      "height": 64,
+      "levelSizeAndOffset": 469764864,
+      "levelMarker": 7,
+      "cumulativeByteCount": 2816,
+      "hasStreamingData": true
+    },
+    {
+      "width": 128,
+      "height": 128,
+      "levelSizeAndOffset": 536881920,
+      "levelMarker": 8,
+      "cumulativeByteCount": 11008,
+      "hasStreamingData": true
+    },
+    {
+      "width": 0,
+      "height": 0,
+      "levelSizeAndOffset": 0,
+      "levelMarker": 0,
+      "cumulativeByteCount": 0,
+      "hasStreamingData": false
+    }
+  ],
+  "payloadByteCount": 0
+}

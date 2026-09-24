@@ -1,0 +1,62 @@
+{
+  "format": "iw4-image-source",
+  "version": 2,
+  "name": "$identitynormalmap",
+  "imageFormat": 133,
+  "levelCount": 1,
+  "dimensionCount": 2,
+  "multiFaceControl": 0,
+  "textureControl1": 109284,
+  "width": 1,
+  "height": 1,
+  "depth": 1,
+  "memoryLocation": 0,
+  "minLodControl": 0,
+  "renderTargetPitch": 0,
+  "pixelsOffset": 0,
+  "mapType": 3,
+  "semantic": 0,
+  "category": 1,
+  "useSrgbReads": 0,
+  "cardMemory": 128,
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "baseDepth": 1,
+  "baseLevelCount": 1,
+  "cached": 0,
+  "streamData": [
+    {
+      "width": 0,
+      "height": 0,
+      "levelSizeAndOffset": 0,
+      "levelMarker": 0,
+      "cumulativeByteCount": 0,
+      "hasStreamingData": false
+    },
+    {
+      "width": 0,
+      "height": 0,
+      "levelSizeAndOffset": 0,
+      "levelMarker": 0,
+      "cumulativeByteCount": 0,
+      "hasStreamingData": false
+    },
+    {
+      "width": 0,
+      "height": 0,
+      "levelSizeAndOffset": 0,
+      "levelMarker": 0,
+      "cumulativeByteCount": 0,
+      "hasStreamingData": false
+    },
+    {
+      "width": 0,
+      "height": 0,
+      "levelSizeAndOffset": 0,
+      "levelMarker": 0,
+      "cumulativeByteCount": 0,
+      "hasStreamingData": false
+    }
+  ],
+  "payloadByteCount": 128
+}

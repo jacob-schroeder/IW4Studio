@@ -1,0 +1,19 @@
+{
+  "format": "iw4-ps3-phys-preset",
+  "version": 1,
+  "name": "airdrop_crate_big",
+  "type": 0,
+  "floatBits": [
+    1065353216,
+    1036831949,
+    1056964608,
+    1048576000,
+    1065353216,
+    0,
+    0
+  ],
+  "sndAliasPrefix": "physics_weapon_container",
+  "tempDefaultToCylinder": 0,
+  "perSurfaceSndAlias": 0,
+  "pad2A": 0
+}

@@ -21,6 +21,10 @@ static int Run(string[] args)
             ["to-fastfile", string d3dbsp, string template, string assetName, string output,
                 .. string[] optionsAndDependencies] =>
                 ToFastFile(d3dbsp, template, assetName, output, optionsAndDependencies),
+            ["build", string d3dbsp, string assetName, string output, .. string[] options] =>
+                ToFastFile(d3dbsp, Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3"), assetName, output, options, diskBuild: true),
+            ["export-bootstrap", string input, string library, string output] => ExportBootstrap(input, library, output),
+            ["export-assets", string input, string library, string output, .. string[] names] => ExportAssets(input, library, output, names),
             ["rewrite", string input, string output] => Rewrite(input, output),
             _ => Usage()
         };
@@ -37,6 +41,34 @@ static int Run(string[] args)
     }
 }
 
+static int ExportAssets(string input, string library, string output, IReadOnlyList<string> names)
+{
+    var models = new List<string>();
+    var materials = new List<string>();
+    string? dependency = null;
+    for (int index = 0; index < names.Count; index += 2)
+    {
+        if (index + 1 >= names.Count || names[index] is not ("--xmodel" or "--material" or "--dependencies"))
+            throw new ArgumentException("export-assets expects --xmodel <name>, --material <name>, or --dependencies <official.ff> pairs.");
+        if (names[index] == "--dependencies")
+        {
+            if (dependency is not null) throw new ArgumentException("export-assets accepts one --dependencies fastfile.");
+            dependency = names[index + 1];
+        }
+        else (names[index] == "--xmodel" ? models : materials).Add(names[index + 1]);
+    }
+    if (models.Count + materials.Count == 0)
+        throw new ArgumentException("Choose at least one --xmodel or --material to export.");
+    FastFileConverter.ExportSourceAssets(input, library, output, models, materials, dependencyFastFile: dependency);
+    return 0;
+}
+
+static int ExportBootstrap(string input, string library, string output)
+{
+    FastFileConverter.ExportBootstrap(input, library, output);
+    return 0;
+}
+
 static int InspectPair(string d3dbsp, string fastFile)
 {
     MapPairInspector.Inspect(d3dbsp, fastFile);
@@ -48,7 +80,7 @@ static int ToFastFile(
     string template,
     string assetName,
     string output,
-    IReadOnlyList<string> optionsAndDependencies)
+    IReadOnlyList<string> optionsAndDependencies, bool diskBuild = false)
 {
     bool forceFullbright = false;
     bool useCompiledLighting = false;
@@ -70,7 +102,7 @@ static int ToFastFile(
     var distinctFxNames = new HashSet<string>(StringComparer.Ordinal);
     var additionalSoundNames = new List<string>();
     var distinctSoundNames = new HashSet<string>(StringComparer.Ordinal);
-    string? emitterAssetDirectory = null;
+    string? assetLibraryDirectory = null;
     var rawFilePaths = new Dictionary<string, string>(StringComparer.Ordinal);
     for (int index = 0; index < optionsAndDependencies.Count; index++)
     {
@@ -227,12 +259,12 @@ static int ToFastFile(
             additionalSoundNames.Add(name);
             continue;
         }
-        if (string.Equals(value, "--emitter-assets", StringComparison.Ordinal))
+        if (string.Equals(value, "--asset-library", StringComparison.Ordinal))
         {
-            if (emitterAssetDirectory is not null)
-                throw new ArgumentException("The --emitter-assets option may be supplied only once.");
-            emitterAssetDirectory = ReadRequiredOptionValue(
-                optionsAndDependencies, ref index, "--emitter-assets", "a raw FX and sound directory");
+            if (assetLibraryDirectory is not null)
+                throw new ArgumentException("The --asset-library option may be supplied only once.");
+            assetLibraryDirectory = ReadRequiredOptionValue(
+                optionsAndDependencies, ref index, "--asset-library", "a raw asset library directory");
             continue;
         }
         if (string.Equals(value, "--rawfile", StringComparison.Ordinal))
@@ -260,6 +292,10 @@ static int ToFastFile(
         dependencies.Add(value);
     }
 
+    if (diskBuild && (assetLibraryDirectory is null || dependencies.Count != 0 || providerFastFiles.Count != 0 || stockBootstrap))
+        throw new ArgumentException("build requires --asset-library and does not accept fastfile inputs or --stock-bootstrap.");
+    if (assetLibraryDirectory is not null)
+        useSourceMaterials = true;
     if (useCompiledLighting && (forceFullbright || lightmapImageNames.Count != 0))
         throw new ArgumentException("The --compiled-lighting option cannot be combined with --fullbright or --lightmap.");
     if (staticScriptModelNames.Count != 0 && (!worldOnly || !useSourceMaterials))
@@ -281,12 +317,13 @@ static int ToFastFile(
         additionalMaterialNames,
         additionalFxNames,
         additionalSoundNames,
-        emitterAssetDirectory,
+        assetLibraryDirectory,
         rawFilePaths,
         lightmapImageNames,
         outdoorImageName,
         outdoorLookupMatrix ?? [],
-        staticScriptModelNames);
+        staticScriptModelNames,
+        bootstrapDirectory: diskBuild ? template : null);
     return 0;
 }
 
@@ -375,6 +412,9 @@ static int Rewrite(string input, string output)
 static int Usage()
 {
     Console.Error.WriteLine("usage:");
+    Console.Error.WriteLine("  D3dbspLinker build <input.d3dbsp> <map-asset-name> <output.ff> --asset-library <raw-root> [--compiled-lighting] [asset options]");
+    Console.Error.WriteLine("  D3dbspLinker export-assets <official.ff> <exported-raw-root> <new-output-directory> [--xmodel <name>] [--material <name>] [--dependencies <official.ff>]  (offline extraction)");
+    Console.Error.WriteLine("  D3dbspLinker export-bootstrap <official-map.ff> <exported-raw-root> <new-output-directory>  (offline extraction)");
     Console.Error.WriteLine("  D3dbspLinker inspect <input.d3dbsp>");
     Console.Error.WriteLine("  D3dbspLinker inspect-fastfile <input.ff>");
     Console.Error.WriteLine("  D3dbspLinker find-fastfile-assets <input.ff> <name-contains>");
@@ -382,8 +422,8 @@ static int Usage()
     Console.Error.WriteLine("  D3dbspLinker inspect-pair <input.d3dbsp> <input.ff>");
     Console.Error.WriteLine("  D3dbspLinker to-d3dbsp <input.ff> <output.d3dbsp>");
     Console.Error.WriteLine(
-        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright | --compiled-lighting] [--world-only] [--source-materials] [--stock-bootstrap] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--sound <exact-name>]... [--emitter-assets <raw-root>] [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
-    Console.Error.WriteLine("  Lighting images must be owned by --provider-fastfile inputs; --lightmap order defines atlas indices. Supplied lighting cannot use --fullbright.");
+        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright | --compiled-lighting] [--world-only] [--source-materials] [--stock-bootstrap] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--sound <exact-name>]... [--asset-library <raw-root>] [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
+    Console.Error.WriteLine("  Lighting images compile from --asset-library when supplied; otherwise --provider-fastfile inputs must own them. --lightmap order defines atlas indices. Supplied lighting cannot use --fullbright.");
     Console.Error.WriteLine("  --compiled-lighting preserves the BSP's baked lightmaps and requires at least one lightmap array.");
     Console.Error.WriteLine("  --stock-bootstrap loads the template's native startup dependencies and requires resident images or installed PS3 imagefile1.pak through imagefile4.pak before writing output.");
     Console.Error.WriteLine("  D3dbspLinker rewrite <input.d3dbsp> <output.d3dbsp>");

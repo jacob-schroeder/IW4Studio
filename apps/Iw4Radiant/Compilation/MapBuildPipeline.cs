@@ -37,24 +37,19 @@ internal static class MapBuildPipeline
 
     internal static async Task<string> BuildAsync(MapDocument document, string sourcePath,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
-        string linkerPath, string templatePath,
-        IReadOnlyList<string> providerPaths, string emitterAssetDirectory, string outputFolder, IProgress<string> progress,
+        string linkerPath, string emitterAssetDirectory, string outputFolder, IProgress<string> progress,
         CancellationToken cancellationToken)
     {
         sourcePath = Path.GetFullPath(sourcePath);
         linkerPath = RequireFile(linkerPath, "D3dbspLinker");
-        templatePath = RequireFile(templatePath, "Bootstrap map fastfile");
-        string[] providers = providerPaths.Select(path => RequireFile(path, "Asset provider fastfile"))
-            .Distinct(StringComparer.Ordinal).ToArray();
         outputFolder = Path.GetFullPath(outputFolder);
         if (!Directory.Exists(outputFolder)) throw new DirectoryNotFoundException("Choose an existing output folder.");
         string mapName = Path.GetFileNameWithoutExtension(sourcePath);
         MapEmitterScripts? emitters = MapEmitterScriptAuthoring.Create(document, sourcePath, mapName);
-        if (emitters is not null &&
-            (string.IsNullOrWhiteSpace(emitterAssetDirectory) ||
-             !Directory.Exists(emitterAssetDirectory)))
+        if (string.IsNullOrWhiteSpace(emitterAssetDirectory) ||
+            !Directory.Exists(emitterAssetDirectory))
             throw new DirectoryNotFoundException(
-                "Choose an FX and sound library folder containing the map's emitter assets.");
+                "Choose the raw asset library containing the map's materials, FX and sounds.");
         string assetName = $"maps/mp/{mapName}.d3dbsp";
         string token = Guid.NewGuid().ToString("N")[..8];
         string staging = Path.Combine(outputFolder, $".{mapName}-{token}.building");
@@ -80,14 +75,15 @@ internal static class MapBuildPipeline
             {
                 progress.Report($"Exported {emitters.FxNames.Length} FX references and {emitters.SoundNames.Length} sound aliases to map scripts. PS3 playback awaits validation.");
             }
-            progress.Report("Linking the PS3 fastfile with the selected asset providers…");
-            await RunLinkerAsync(linkerPath, bspPath, templatePath, assetName, fastFilePath,
-                providers, emitters, emitterAssetDirectory, emitterRawFiles, progress, cancellationToken);
+            progress.Report("Compiling source assets and included startup assets; linking the PS3 fastfile…");
+            await RunLinkerAsync(linkerPath, bspPath, assetName, fastFilePath,
+                emitters, emitterAssetDirectory, emitterRawFiles, progress, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(fastFilePath) || new FileInfo(fastFilePath).Length == 0)
                 throw new InvalidDataException("D3dbspLinker completed without producing a fastfile.");
             Directory.Move(staging, destination);
-            progress.Report($"Built {mapName}.map, {mapName}.d3dbsp and {mapName}.ff in {destination}");
+            string packagedImages = File.Exists(Path.Combine(destination, mapName + ".pak")) ? $", {mapName}.pak" : "";
+            progress.Report($"Built {mapName}.map, {mapName}.d3dbsp, {mapName}.ff{packagedImages} in {destination}");
             return destination;
         }
         finally
@@ -96,8 +92,8 @@ internal static class MapBuildPipeline
         }
     }
 
-    private static async Task RunLinkerAsync(string linkerPath, string bspPath, string templatePath,
-        string assetName, string fastFilePath, IReadOnlyList<string> providers,
+    private static async Task RunLinkerAsync(string linkerPath, string bspPath,
+        string assetName, string fastFilePath,
         MapEmitterScripts? emitters, string emitterAssetDirectory,
         IReadOnlyList<(string Name, string Path)> emitterRawFiles,
         IProgress<string> progress,
@@ -112,8 +108,7 @@ internal static class MapBuildPipeline
             WorkingDirectory = Path.GetDirectoryName(linkerPath) ?? "."
         };
         if (managed) start.ArgumentList.Add(linkerPath);
-        foreach (string value in new[] { "to-fastfile", bspPath, templatePath, assetName, fastFilePath,
-                     "--source-materials", "--compiled-lighting", "--stock-bootstrap" }) start.ArgumentList.Add(value);
+        foreach (string value in new[] { "build", bspPath, assetName, fastFilePath, "--compiled-lighting" }) start.ArgumentList.Add(value);
         foreach (string model in IW4.Formats.D3dbsp.D3dbspFile.Read(bspPath).GetEntities()
                      .Where(entity => entity.GetValueOrDefault("classname") is "script_model" or "misc_turret")
                      .Select(entity => entity["model"]).Distinct(StringComparer.Ordinal))
@@ -121,15 +116,10 @@ internal static class MapBuildPipeline
             start.ArgumentList.Add("--xmodel");
             start.ArgumentList.Add(model);
         }
-        foreach (string provider in providers)
-        {
-            start.ArgumentList.Add("--provider-fastfile");
-            start.ArgumentList.Add(provider);
-        }
+        start.ArgumentList.Add("--asset-library");
+        start.ArgumentList.Add(Path.GetFullPath(emitterAssetDirectory));
         if (emitters is not null)
         {
-            start.ArgumentList.Add("--emitter-assets");
-            start.ArgumentList.Add(Path.GetFullPath(emitterAssetDirectory));
             foreach (string name in emitters.FxNames)
             {
                 start.ArgumentList.Add("--fx");
@@ -145,13 +135,6 @@ internal static class MapBuildPipeline
                 start.ArgumentList.Add("--rawfile");
                 start.ArgumentList.Add($"{rawFile.Name}={rawFile.Path}");
             }
-        }
-        // These match the Rangers/OpFor startup profile already emitted by D3dbspLinker.
-        foreach (string faction in new[] { "rangers", "ussr" })
-        foreach (string suffix in new[] { "", "_fade" })
-        {
-            start.ArgumentList.Add("--material");
-            start.ArgumentList.Add($"faction_128_{faction}{suffix}");
         }
         using var process = new Process { StartInfo = start };
         try

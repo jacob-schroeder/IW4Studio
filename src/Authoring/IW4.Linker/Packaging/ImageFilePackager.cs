@@ -1,6 +1,8 @@
 using System.IO.Compression;
+using IW4.Game.Assets.Image;
 using IW4.Game.Database;
 using IW4.Game.Database.Streaming;
+using IW4.Game.Zone;
 using IW4.Linker.Contracts;
 
 namespace IW4.Linker.Packaging;
@@ -28,6 +30,21 @@ public sealed class ImageFilePackage
     public IReadOnlyList<ImageFileStreamReference> References => _references;
 }
 
+/// <summary>A named map package and the image/header references it owns.</summary>
+public sealed class NamedImageFilePackage
+{
+    internal NamedImageFilePackage(
+        byte[] bytes,
+        IReadOnlyDictionary<AssetKey, IReadOnlyList<ImageFileStreamLanguageReferences>> references)
+    {
+        Bytes = bytes;
+        References = references;
+    }
+
+    public byte[] Bytes { get; }
+    public IReadOnlyDictionary<AssetKey, IReadOnlyList<ImageFileStreamLanguageReferences>> References { get; }
+}
+
 /// <summary>
 /// Writes a native PS3 image package from ordered logical stream payloads.
 /// The package uses the shared 64 KiB PS3 frame encoder; returned references
@@ -36,6 +53,61 @@ public sealed class ImageFilePackage
 public sealed class ImageFilePackager
 {
     private const int StreamPartAlignment = 0x80;
+
+    /// <summary>
+    /// Packs the four ordered stream parts of each image into one named map
+    /// package. Every selected language receives the same physical ranges.
+    /// </summary>
+    public static NamedImageFilePackage Package(
+        IReadOnlyDictionary<AssetKey, IReadOnlyList<byte[]>> imageParts,
+        uint languageMask)
+    {
+        ArgumentNullException.ThrowIfNull(imageParts);
+        if (!DbLanguageMask.IsSupported(languageMask))
+            throw new ArgumentOutOfRangeException(nameof(languageMask));
+        if (imageParts.Count == 0)
+            throw new ArgumentException("A named image package requires at least one image.", nameof(imageParts));
+
+        KeyValuePair<AssetKey, IReadOnlyList<byte[]>>[] ordered = imageParts
+            .OrderBy(pair => pair.Key.NormalizedName, StringComparer.Ordinal)
+            .ToArray();
+        var payloads = new List<ReadOnlyMemory<byte>>(checked(ordered.Length * GfxImageStreamData.EntryCount));
+        foreach ((AssetKey key, IReadOnlyList<byte[]> parts) in ordered)
+        {
+            if (!key.IsValid || key.Family.Type != XAssetType.Image)
+                throw new ArgumentException($"'{key}' is not an image asset key.", nameof(imageParts));
+            if (parts is null || parts.Count != GfxImageStreamData.EntryCount)
+                throw new ArgumentException($"Image '{key.NormalizedName}' requires exactly four stream parts.", nameof(imageParts));
+            for (int index = 0; index < parts.Count; index++)
+            {
+                byte[] part = parts[index] ?? throw new ArgumentException(
+                    $"Image '{key.NormalizedName}' stream part {index} is null.", nameof(imageParts));
+                payloads.Add(part);
+            }
+        }
+
+        ImageFilePackage package = new ImageFilePackager().Package(
+            DbHeaderImageStreamEntry.NamedFileIndex,
+            payloads);
+        var references = new Dictionary<AssetKey, IReadOnlyList<ImageFileStreamLanguageReferences>>(ordered.Length);
+        for (int imageIndex = 0; imageIndex < ordered.Length; imageIndex++)
+        {
+            ImageFileStreamReference[] parts = package.References
+                .Skip(imageIndex * GfxImageStreamData.EntryCount)
+                .Take(GfxImageStreamData.EntryCount)
+                .ToArray();
+            var languages = new List<ImageFileStreamLanguageReferences>();
+            for (int bit = 0; bit < DbLanguageMask.BitCount; bit++)
+            {
+                uint language = 1u << bit;
+                if ((languageMask & language) != 0)
+                    languages.Add(new ImageFileStreamLanguageReferences(language, parts));
+            }
+            references.Add(ordered[imageIndex].Key, languages.AsReadOnly());
+        }
+
+        return new NamedImageFilePackage(package.Bytes.ToArray(), references);
+    }
 
     public ImageFilePackage Package(
         uint fileIndex,

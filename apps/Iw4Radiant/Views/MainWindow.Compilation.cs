@@ -11,8 +11,6 @@ namespace Iw4Radiant.Views;
 public partial class MainWindow
 {
     private string? _buildLinkerPath;
-    private string _buildTemplatePath = "";
-    private string[] _buildProviderPaths = [];
     private string? _buildEmitterAssetsPath;
     private string? _buildOutputFolder;
 
@@ -70,17 +68,14 @@ public partial class MainWindow
             string sourceFolder = Path.GetDirectoryName(sourcePath) ??
                 throw new InvalidDataException("The saved map has no containing directory.");
             string buildFolder = Path.Combine(sourceFolder, "map_build");
-            string[] suggestedProviders = _buildProviderPaths;
             var dialog = new MapBuildWindow(document, sourcePath, materials, models,
-                _buildLinkerPath ?? FindBuildLinker() ?? "", _buildTemplatePath, suggestedProviders,
+                _buildLinkerPath ?? FindBuildLinker() ?? "",
                 _buildEmitterAssetsPath ?? FindEmitterAssetDirectory(sourcePath) ?? "",
                 _buildOutputFolder ?? (Directory.Exists(buildFolder) ? buildFolder : sourceFolder),
                 CreateBuildNavigator(sourceDocument));
             await _dialogs.ShowModalAsync(() => dialog.ShowDialog<object?>(this));
             if (dialog.CompletedDirectory is not { } completedDirectory) return;
             _buildLinkerPath = dialog.LinkerPath;
-            _buildTemplatePath = dialog.TemplatePath;
-            _buildProviderPaths = dialog.ProviderPaths.ToArray();
             _buildEmitterAssetsPath = dialog.EmitterAssetDirectory;
             _buildOutputFolder = dialog.OutputFolder;
             string bspPath = Path.Combine(completedDirectory,

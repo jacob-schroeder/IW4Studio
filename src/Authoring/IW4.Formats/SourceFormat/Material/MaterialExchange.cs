@@ -8,10 +8,10 @@ using IW4.Game.Assets.Material;
 namespace IW4.Formats.SourceFormat.Material;
 
 /// <summary>
-/// Writes version-one IW4 material JSON with explicit PS3 platform semantics.
+/// Writes IW4 material JSON with explicit PS3 platform semantics.
 /// State bits are decoded from the proven console load-bit words.
 /// </summary>
-public sealed class MaterialExchange
+public sealed partial class MaterialExchange
 {
     private const uint UnrepresentedStateBits0Mask = 0x20000000;
 
@@ -242,10 +242,16 @@ public sealed class MaterialExchange
         }
         if (asset.TextureCount != asset.Textures.Count ||
             asset.ConstantCount != asset.Constants.Count ||
-            asset.StateBitsCount != asset.StateBits.Count)
+            asset.StateBitsCount != asset.StateBits.Count ||
+            asset.XStringCount != asset.XStrings.Count)
         {
             throw new InvalidDataException(
                 $"Material '{assetName}' table counts do not match their materialized rows.");
+        }
+        for (int index = 0; index < asset.XStrings.Count; index++)
+        {
+            if (asset.XStrings[index].Index != index)
+                throw new InvalidDataException($"Material '{assetName}' XString row {index} has a different table index.");
         }
 
         _ = CameraRegionName(asset.CameraRegion, assetName);
@@ -414,7 +420,7 @@ public sealed class MaterialExchange
         if (nullIndex >= 0 && bytes.Skip(nullIndex).Any(value => value != 0))
         {
             throw new InvalidDataException(
-                $"Material '{assetName}' constant row {index} has nonzero bytes after its name terminator that material-v1 cannot preserve.");
+                $"Material '{assetName}' constant row {index} has nonzero bytes after its name terminator that material JSON cannot preserve.");
         }
     }
 
@@ -429,7 +435,43 @@ public sealed class MaterialExchange
             writer.WriteString("_game", "iw4");
             writer.WriteString("_platform", "ps3");
             writer.WriteString("_type", "material");
-            writer.WriteNumber("_version", 1);
+            writer.WriteNumber("_version", 2);
+
+            writer.WriteStartObject("_native");
+            writer.WriteNumber("hashIndex", asset.Info.HashIndex);
+            writer.WriteNumber("pad16", asset.Info.Pad16);
+            writer.WriteNumber("pad43", asset.Pad43);
+            writer.WriteNumber("pad8E", asset.Pad8E);
+            writer.WriteBoolean("runtimeTechniqueStatePresent",
+                asset.RuntimeTechniqueSlotStateBits.Count != 0);
+            writer.WriteStartArray("stateBitsResidual");
+            foreach (GfxStateBits state in asset.StateBits)
+            {
+                uint word0 = state.LoadBits[0];
+                uint word1 = state.LoadBits[1];
+                writer.WriteStartArray();
+                writer.WriteNumberValue(HasFlag(word0, GfxStateBits0Flags.AlphaTestDisabled)
+                    ? word0 & GfxStateBitsEncoding.AlphaTestMask : 0);
+                uint residual1 = HasFlag(word1, GfxStateBits1Flags.DepthTestDisabled)
+                    ? word1 & GfxStateBitsEncoding.DepthTestMask : 0;
+                if (!HasFlag(word1, GfxStateBits1Flags.StencilEnabled))
+                    residual1 |= word1 & 0x000fff00;
+                if (!HasFlag(word1, GfxStateBits1Flags.StencilBackFaceIndependent))
+                    residual1 |= word1 & 0xfff00000;
+                writer.WriteNumberValue(residual1);
+                writer.WriteEndArray();
+            }
+            writer.WriteEndArray();
+            writer.WriteStartArray("xstrings");
+            foreach (MaterialXStringEntry entry in asset.XStrings)
+            {
+                if (entry.Value is null)
+                    writer.WriteNullValue();
+                else
+                    writer.WriteStringValue(entry.Value);
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
 
             writer.WriteString(
                 "cameraRegion",
@@ -693,7 +735,7 @@ public sealed class MaterialExchange
         if ((word0 & UnrepresentedStateBits0Mask) != 0)
         {
             throw new InvalidDataException(
-                $"Material '{assetName}' state-bit row {index} sets word-0 bit 29, which material-v1 cannot represent.");
+                $"Material '{assetName}' state-bit row {index} sets word-0 bit 29, which material JSON cannot represent.");
         }
 
         _ = BlendName(Field(word0, GfxStateBitsEncoding.SourceBlendRgbMask,

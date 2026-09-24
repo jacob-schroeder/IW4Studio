@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "name": "com_plasticcase_rangers",
+  "numBones": 1,
+  "numRootBones": 1,
+  "numSurfs": 2,
+  "lodRampType": 0,
+  "scale": 1,
+  "noScalePartBits": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "boneNames": [
+    "tag_origin"
+  ],
+  "parentList": "",
+  "quats": [],
+  "trans": [],
+  "partClassification": "AA==",
+  "baseMat": [
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "transWeight": 2
+    }
+  ],
+  "materials": [
+    "m/mtl_plastic_case_dummy",
+    "m/mtl_plastic_case_logo_rangers"
+  ],
+  "lods": [
+    {
+      "dist": 1000000,
+      "numSurfs": 2,
+      "surfIndex": 0,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": "plastic_case_big_us_dirt_lod011"
+    },
+    {
+      "dist": 1000000,
+      "numSurfs": 0,
+      "surfIndex": 0,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": null
+    },
+    {
+      "dist": 1000000,
+      "numSurfs": 0,
+      "surfIndex": 0,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": null
+    },
+    {
+      "dist": 1000000,
+      "numSurfs": 0,
+      "surfIndex": 0,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": null
+    }
+  ],
+  "maxLoadedLod": 0,
+  "numLods": 1,
+  "collLod": 0,
+  "flags": 0,
+  "contents": 1,
+  "collSurfs": [
+    {
+      "bounds": {
+        "midPoint": {
+          "x": -0.1583786,
+          "y": -0.07045555,
+          "z": -0.75207853
+        },
+        "halfSize": {
+          "x": 29.568556,
+          "y": 16.469212,
+          "z": 14.879081
+        }
+      },
+      "boneIndex": 0,
+      "contents": 1,
+      "surfaceFlags": 25165824
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": -0.15742493,
+          "y": -0.04216814,
+          "z": -2.2428389
+        },
+        "halfSize": {
+          "x": 28.075836,
+          "y": 15.185077,
+          "z": 10.132783
+        }
+      },
+      "boneIndex": 0,
+      "contents": 1,
+      "surfaceFlags": 25165824
+    }
+  ],
+  "boneInfo": [
+    {
+      "bounds": {
+        "midPoint": {
+          "x": -0.1583786,
+          "y": -0.07045555,
+          "z": -0.752079
+        },
+        "halfSize": {
+          "x": 29.567556,
+          "y": 16.468212,
+          "z": 14.87808
+        }
+      },
+      "radiusSquared": 1366.7997
+    }
+  ],
+  "radius": 34.647568,
+  "bounds": {
+    "midPoint": {
+      "x": -0.1583786,
+      "y": -0.07045555,
+      "z": -0.75207853
+    },
+    "halfSize": {
+      "x": 29.567556,
+      "y": 16.468212,
+      "z": 14.87808
+    }
+  },
+  "invHighMipRadius": [
+    109,
+    1524
+  ],
+  "memUsage": 98119,
+  "physPreset": "airdrop_crate_big",
+  "physCollmap": null
+}

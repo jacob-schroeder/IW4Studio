@@ -1,143 +1,109 @@
+using System.Text.Json;
+using IW4.Formats.SourceFormat.Technique;
 using IW4.Game.Assets.TechniqueSet;
-using IW4.Game.Pointers;
 
 namespace IW4.Formats.SourceFormat.Techset;
 
-/// <summary>Writes an IW4 technique set in the native .techset source format.</summary>
+/// <summary>Exchanges the native PS3 technique-set fields as versioned source.</summary>
 public sealed class TechsetExchange
 {
-    private static readonly string[] TechniqueTypeNames =
-    [
-        "depth prepass",
-        "build floatz",
-        "build shadowmap depth",
-        "build shadowmap color",
-        "unlit",
-        "emissive",
-        "emissive dfog",
-        "emissive shadow",
-        "emissive shadow dfog",
-        "lit",
-        "lit dfog",
-        "lit sun",
-        "lit sun dfog",
-        "lit sun shadow",
-        "lit sun shadow dfog",
-        "lit spot",
-        "lit spot dfog",
-        "lit spot shadow",
-        "lit spot shadow dfog",
-        "lit omni",
-        "lit omni dfog",
-        "lit omni shadow",
-        "lit omni shadow dfog",
-        "lit instanced",
-        "lit instanced dfog",
-        "lit instanced sun",
-        "lit instanced sun dfog",
-        "light spot",
-        "light omni",
-        "light spot shadow",
-        "fakelight normal",
-        "fakelight view",
-        "sunlight preview",
-        "case texture",
-        "solid wireframe",
-        "shaded wireframe",
-        "debug bumpmap"
-    ];
+    private const string Format = "iw4-ps3-techset";
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    };
 
-    public IReadOnlyList<string> Unlink(
-        string sourceDirectory,
-        MaterialTechniqueSetAsset asset)
+    public IReadOnlyList<string> Unlink(string sourceDirectory, MaterialTechniqueSetAsset asset)
     {
         ArgumentNullException.ThrowIfNull(asset);
-        string assetName = SourceOutput.NormalizeOwnedAssetName(
-            asset.Name,
-            "Techset");
+        string name = SourceOutput.NormalizeOwnedAssetName(asset.Name, "Techset");
+        int count = (int)MaterialTechniqueType.Count;
+        if (asset.TechniqueSlots.Count != count)
+            throw new InvalidDataException($"Techset '{name}' requires {count} technique slots.");
 
-        int expectedSlotCount = (int)MaterialTechniqueType.Count;
-        if (TechniqueTypeNames.Length != expectedSlotCount)
-        {
-            throw new InvalidOperationException(
-                "The Techset source-name table does not match the PS3 IW4 technique-slot layout.");
-        }
-        if (asset.TechniqueSlots.Count != expectedSlotCount)
-        {
-            throw new InvalidDataException(
-                $"Techset '{assetName}' requires {expectedSlotCount} materialized technique slots but has {asset.TechniqueSlots.Count}.");
-        }
-
-        var techniqueNames = new string?[expectedSlotCount];
-        for (int index = 0; index < expectedSlotCount; index++)
+        var names = new string?[count];
+        for (int index = 0; index < count; index++)
         {
             MaterialTechniqueSlot slot = asset.TechniqueSlots[index];
-            var expectedType = (MaterialTechniqueType)index;
-            if (slot.Type != expectedType)
-            {
-                throw new InvalidDataException(
-                    $"Techset '{assetName}' slot {index} is {slot.Type} instead of {expectedType}.");
-            }
-
+            if (slot is null || slot.Index != index)
+                throw new InvalidDataException($"Techset '{name}' slot {index} has the wrong type.");
             if (slot.Technique is null)
             {
-                if (slot.Pointer.Type != PointerType.Null)
-                {
-                    throw new InvalidDataException(
-                        $"Techset '{assetName}' slot '{TechniqueTypeNames[index]}' has an unresolved technique pointer {slot.Pointer}.");
-                }
-
+                if (slot.Pointer.Type != IW4.Game.Pointers.PointerType.Null)
+                    throw new InvalidDataException($"Techset '{name}' slot {index} is unresolved.");
                 continue;
             }
-
-            techniqueNames[index] = SourceOutput.NormalizeReferencedAssetName(
-                slot.Technique.Name,
-                $"Techset '{assetName}' slot '{TechniqueTypeNames[index]}' technique");
+            names[index] = SourceOutput.NormalizeReferencedAssetName(
+                slot.Technique.Name, $"Techset '{name}' slot {index}");
         }
 
+        var document = new Document
+        {
+            Format = Format,
+            Version = 1,
+            Name = name,
+            WorldVertexFormat = (byte)asset.WorldVertexFormat,
+            Techniques = names
+        };
+        string json = JsonSerializer.Serialize(document, JsonOptions);
         return new SourceOutput(sourceDirectory).WriteTextBatch([
-            ($"techsets/{assetName}.techset", writer =>
-                WriteSource(writer, techniqueNames))
+            ($"techsets/{name}.techset.json", writer => writer.WriteLine(json))
         ]);
     }
 
-    private static void WriteSource(
-        TextWriter writer,
-        IReadOnlyList<string?> techniqueNames)
+    public MaterialTechniqueSetAsset Link(string sourceDirectory, string assetName)
     {
-        var writtenSlots = new bool[techniqueNames.Count];
-        bool wroteTechnique = false;
-        for (int index = 0; index < techniqueNames.Count; index++)
+        string name = SourceOutput.NormalizeOwnedAssetName(assetName, "Techset");
+        string path = NativeSourcePath.Resolve(
+            sourceDirectory, "techsets", name, ".techset.json");
+        using FileStream stream = File.OpenRead(path);
+        Document document = JsonSerializer.Deserialize<Document>(stream, JsonOptions)
+            ?? throw new InvalidDataException($"Techset '{name}' has an empty source document.");
+        if (document.Format != Format || document.Version != 1 || document.Name != name)
+            throw new InvalidDataException($"Techset '{name}' has an unsupported format, version, or name.");
+        if (!Enum.IsDefined((MaterialWorldVertexFormat)document.WorldVertexFormat))
+            throw new InvalidDataException($"Techset '{name}' has an invalid world vertex format.");
+        int count = (int)MaterialTechniqueType.Count;
+        if (document.Techniques is null || document.Techniques.Length != count)
+            throw new InvalidDataException($"Techset '{name}' requires {count} technique slots.");
+
+        var exchange = new TechniqueExchange();
+        var techniques = new Dictionary<string, MaterialTechniqueAsset>(StringComparer.Ordinal);
+        var slots = new MaterialTechniqueSlot[count];
+        for (int index = 0; index < count; index++)
         {
-            string? techniqueName = techniqueNames[index];
-            if (techniqueName is null || writtenSlots[index])
-                continue;
-
-            if (wroteTechnique)
-                writer.WriteLine();
-
-            for (int matchingIndex = index;
-                 matchingIndex < techniqueNames.Count;
-                 matchingIndex++)
+            string? techniqueName = document.Techniques[index];
+            MaterialTechniqueAsset? technique = null;
+            if (techniqueName is not null)
             {
-                if (!string.Equals(
-                        techniqueNames[matchingIndex],
-                        techniqueName,
-                        StringComparison.Ordinal))
+                string referencedName = SourceOutput.NormalizeOwnedAssetName(
+                    techniqueName, $"Techset '{name}' slot {index} technique");
+                if (!techniques.TryGetValue(referencedName, out technique))
                 {
-                    continue;
+                    technique = exchange.Link(sourceDirectory, referencedName);
+                    techniques.Add(referencedName, technique);
                 }
-
-                writtenSlots[matchingIndex] = true;
-                writer.Write('"');
-                writer.Write(TechniqueTypeNames[matchingIndex]);
-                writer.WriteLine("\":");
             }
-
-            writer.Write("  ");
-            writer.Write(techniqueName);
-            writer.WriteLine(';');
-            wroteTechnique = true;
+            slots[index] = new MaterialTechniqueSlot(
+                (MaterialTechniqueType)index, default, technique);
         }
+        return new MaterialTechniqueSetAsset
+        {
+            Name = name,
+            WorldVertexFormat = (MaterialWorldVertexFormat)document.WorldVertexFormat,
+            TechniqueSlots = slots
+        };
+    }
+
+    private sealed class Document
+    {
+        public Document() { }
+
+        public required string Format { get; init; }
+        public required int Version { get; init; }
+        public required string Name { get; init; }
+        public required byte WorldVertexFormat { get; init; }
+        public required string?[] Techniques { get; init; }
     }
 }

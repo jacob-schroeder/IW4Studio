@@ -5,10 +5,10 @@ using IW4.Game.Math;
 namespace IW4.Formats.SourceFormat.PhysCollmap;
 
 /// <summary>
-/// Writes the box and cylinder geometry that OpenAssetTools can represent in
-/// an IW4 physics-collision map.
+/// Exchanges native physics-collision data and writes representable box and
+/// cylinder geometry in the OpenAssetTools map format.
 /// </summary>
-public sealed class PhysCollmapExchange
+public sealed partial class PhysCollmapExchange
 {
     private const int PhysGeomBox = 1;
     private const int PhysGeomCylinder = 5;
@@ -18,10 +18,20 @@ public sealed class PhysCollmapExchange
         PhysCollmapAsset asset)
     {
         ArgumentNullException.ThrowIfNull(asset);
-        string name = ValidateAsset(asset);
+        string name = SourceOutput.NormalizeOwnedAssetName(asset.Name, "PhysCollmap");
+        string native = WriteNative(asset, name);
         var output = new SourceOutput(sourceDirectory);
+        if (asset.Geoms.All(geom => geom is not null &&
+            geom.Type is PhysGeomBox or PhysGeomCylinder))
+        {
+            ValidateAsset(asset);
+            return output.WriteTextBatch([
+                ($"phys_collmaps/{name}.map", writer => WriteMap(writer, asset)),
+                ($"phys_collmaps/{name}.phys_collmap.json", writer => writer.WriteLine(native))
+            ]);
+        }
         return output.WriteTextBatch([
-            ($"phys_collmaps/{name}.map", writer => WriteMap(writer, asset))
+            ($"phys_collmaps/{name}.phys_collmap.json", writer => writer.WriteLine(native))
         ]);
     }
 

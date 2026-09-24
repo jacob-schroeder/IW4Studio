@@ -28,7 +28,7 @@ using D3dbspLinker.Inspection;
 
 namespace D3dbspLinker.Conversion;
 
-internal static class FastFileConverter
+internal static partial class FastFileConverter
 {
     // Exact PS3 FFA startup closure for the us_army/opforce_airborne factions.
     private static readonly string[] BootstrapXModelNames =
@@ -137,12 +137,13 @@ internal static class FastFileConverter
         IReadOnlyList<string> additionalMaterialNames,
         IReadOnlyList<string> additionalFxNames,
         IReadOnlyList<string> additionalSoundNames,
-        string? emitterAssetDirectory,
+        string? assetLibraryDirectory,
         IReadOnlyDictionary<string, string> rawFilePaths,
         IReadOnlyList<(string PrimaryImageName, string SecondaryImageName)> lightmapImageNames,
         string? outdoorImageName,
         IReadOnlyList<float> outdoorLookupMatrix,
-        IReadOnlySet<string> staticScriptModelNames)
+        IReadOnlySet<string> staticScriptModelNames,
+        string? bootstrapDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(dependencyFastFiles);
         ArgumentNullException.ThrowIfNull(providerFastFiles);
@@ -218,24 +219,31 @@ internal static class FastFileConverter
         // Official map templates reference model geometry in shared startup
         // zones. Resolve those through the existing native lifecycle; converted
         // world-only templates continue to supply their own complete graph.
-        using FastFileWorkspace template = stockBootstrap
+        using FastFileWorkspace? template = bootstrapDirectory is not null ? null : stockBootstrap
             ? new FastFileDocumentService().Open(new FastFileDocumentOpenRequest(
                 templatePath, new ZonePlan(FastFileOpenProfiles.ResolveForTarget(templatePath))))
             : worldOnly
                 ? new FastFileDocumentService().Open(new FastFileDocumentOpenRequest(templatePath, Isolated.Instance))
                 : FastFileInspector.Open(templatePath);
-        GfxWorldAsset templateWorld =
-            FastFileInspector.GetSingle<GfxWorldAsset>(template) ??
-            throw new InvalidDataException(
-                $"The template fastfile '{templatePath}' does not contain exactly one GfxWorld asset.");
-        var availableXModels = CaptureActiveXModels(template)
-            .Concat(dependencyPaths.SelectMany(path => LoadActiveXModels(path, worldOnly)))
-            .ToList();
+        FastFileWorkspace RequireTemplate() => template ??
+            throw new InvalidOperationException("A disk build cannot resolve fastfile providers.");
+        Ps3MapBootstrap? bootstrap = bootstrapDirectory is null ? null : Ps3MapBootstrap.Load(bootstrapDirectory);
+        if (bootstrap is not null && (dependencyPaths.Length != 0 || providerPaths.Length != 0 || assetLibraryDirectory is null))
+            throw new ArgumentException("Disk builds require an asset library and do not accept provider fastfiles.");
+        int fragmentProgramUploadCapacity = bootstrap?.FragmentProgramUploadCapacity ??
+            (FastFileInspector.GetSingle<GfxWorldAsset>(RequireTemplate()) ??
+             throw new InvalidDataException($"Template '{templatePath}' has no single GfxWorld.")).FragmentProgramUploadCapacity;
+        var availableXModels = template is null ? new List<XModelAsset>() : CaptureActiveXModels(template)
+            .Concat(dependencyPaths.SelectMany(path => LoadActiveXModels(path, worldOnly))).ToList();
+        var materialSources = assetLibraryDirectory is null ? null : new MaterialSourceCompiler(assetLibraryDirectory, bootstrapDirectory);
+        var modelSources = materialSources is null ? null : new ModelSourceCompiler(assetLibraryDirectory ?? "", materialSources, bootstrapDirectory);
+        var bootstrapMaterials = bootstrapDirectory is null ? null : new MaterialSourceCompiler(bootstrapDirectory);
+        var bootstrapModels = bootstrapMaterials is null ? null : new ModelSourceCompiler(bootstrapDirectory ?? "", bootstrapMaterials);
         var availableMaterials = new Dictionary<AssetKey, MaterialAsset>();
         var availableLightingImages = new Dictionary<AssetKey, GfxImageAsset>();
-        if (useSourceMaterials)
+        if (useSourceMaterials && materialSources is null)
         {
-            foreach (MaterialAsset material in CaptureOwnedAssets<MaterialAsset>(template, XAssetType.Material))
+            foreach (MaterialAsset material in CaptureOwnedAssets<MaterialAsset>(RequireTemplate(), XAssetType.Material))
                 availableMaterials[AssetKey.FromDefinition(material)] = material;
         }
         if (useSourceMaterials || requestedLightingImages.Count != 0)
@@ -247,8 +255,9 @@ internal static class FastFileConverter
                 if (useSourceMaterials)
                 {
                     availableXModels.AddRange(CaptureOwnedAssets<XModelAsset>(provider, XAssetType.XModel));
-                    foreach (MaterialAsset material in CaptureOwnedAssets<MaterialAsset>(provider, XAssetType.Material))
-                        availableMaterials[AssetKey.FromDefinition(material)] = material;
+                    if (materialSources is null)
+                        foreach (MaterialAsset material in CaptureOwnedAssets<MaterialAsset>(provider, XAssetType.Material))
+                            availableMaterials[AssetKey.FromDefinition(material)] = material;
                 }
                 foreach (GfxImageAsset image in CaptureOwnedAssets<GfxImageAsset>(provider, XAssetType.Image))
                 {
@@ -259,6 +268,9 @@ internal static class FastFileConverter
             }
         }
         D3dbspFile sourceBsp = D3dbspFile.Read(inputPath);
+        if (modelSources is not null)
+            foreach (string name in sourceBsp.GetStaticModelNames(staticScriptModelNames))
+                availableXModels.Add(modelSources.LoadModel(name));
         IReadOnlyDictionary<string, string>? worldProperties = sourceBsp.GetEntities().FirstOrDefault(entity =>
             entity.GetValueOrDefault("classname") == "worldspawn");
         IReadOnlyDictionary<string, WaterMaterialDefinition> waterDefinitions = worldProperties is null
@@ -269,6 +281,24 @@ internal static class FastFileConverter
             .Distinct(StringComparer.Ordinal).ToArray();
         if (authoredWaterNames.Length != 0 && !useSourceMaterials)
             throw new InvalidDataException("Authored water materials require --source-materials.");
+        if (materialSources is not null)
+        {
+            foreach (string name in sourceBsp.GetRenderMaterialNames()
+                         .Where(name => !WaterMaterialAuthoring.IsAuthoredMaterialName(name))
+                         .Concat(authoredWaterNames.Select(name => waterDefinitions.TryGetValue(name, out var definition)
+                             ? definition.SourceMaterial
+                             : throw new InvalidDataException($"Authored water material '{name}' has no saved world definition.")))
+                         .Distinct(StringComparer.Ordinal))
+            {
+                MaterialAsset material = materialSources.LoadMaterial(name);
+                availableMaterials[AssetKey.FromDefinition(material)] = material;
+            }
+            foreach (string name in lightingNames)
+            {
+                GfxImageAsset image = materialSources.LoadImage(name);
+                availableLightingImages[AssetKey.FromDefinition(image)] = image;
+            }
+        }
         var authoredWaterMaterials = new List<MaterialAsset>(authoredWaterNames.Length);
         var authoredWaterDependencies = new List<BaseAsset>();
         foreach (string name in authoredWaterNames)
@@ -278,7 +308,8 @@ internal static class FastFileConverter
             MaterialAsset source = availableMaterials.Values.FirstOrDefault(material =>
                 string.Equals(material.Info.Name, definition.SourceMaterial, StringComparison.Ordinal)) ??
                 throw new InvalidDataException($"Authored water material '{name}' requires provider material '{definition.SourceMaterial}'.");
-            GfxImageAsset? foamImage = definition.Ocean is null ? null : availableMaterials.Values
+            GfxImageAsset? foamImage = definition.Ocean is null ? null : materialSources is not null
+                ? materialSources.LoadImage(WaterMaterialAuthoring.OceanFoamImageName) : availableMaterials.Values
                 .SelectMany(material => material.Textures).Select(texture => texture.Image)
                 .FirstOrDefault(image => image?.Name == WaterMaterialAuthoring.OceanFoamImageName);
             MaterialAsset material = WaterMaterialAuthoring.CreateMaterial(source, definition, out GfxImageAsset image, foamImage);
@@ -313,7 +344,7 @@ internal static class FastFileConverter
                 inputPath,
                 assetName,
                 forceFullbright,
-                templateWorld.FragmentProgramUploadCapacity,
+                fragmentProgramUploadCapacity,
                 availableXModels.DistinctBy(AssetKey.FromDefinition).ToArray())
             {
                 WorldOnly = worldOnly,
@@ -368,8 +399,9 @@ internal static class FastFileConverter
             .Where(asset => asset.SerializedAssetType == XAssetType.Material)
             .Select(AssetKey.FromDefinition)
             .ToHashSet();
-        var bootstrapXModelGraph = ResolveXModelGraph(
-            template,
+        var bootstrapXModelGraph = bootstrapModels is not null
+            ? ResolveDiskModelGraph(bootstrapModels, BootstrapXModelNames) : ResolveXModelGraph(
+            RequireTemplate(),
             templatePath,
             BootstrapXModelNames,
             mapMaterialKeys,
@@ -391,24 +423,28 @@ internal static class FastFileConverter
         string[] modelPaths = useSourceMaterials
             ? [.. dependencyPaths, .. providerPaths]
             : dependencyPaths;
-        var staticXModelGraph = ResolveXModelGraphAcrossFastFiles(
-            template,
+        var staticXModelGraph = modelSources is not null
+            ? ResolveDiskModelGraph(modelSources, staticXModelNames) : ResolveXModelGraphAcrossFastFiles(
+            RequireTemplate(),
             templatePath,
             modelPaths,
             staticXModelNames,
             mapMaterialKeys,
             "map static",
             worldOnly);
-        var additionalXModelGraph = ResolveXModelGraphAcrossFastFiles(
-            template,
+        var additionalXModelGraph = modelSources is not null
+            ? ResolveDiskModelGraph(modelSources, additionalXModelNames) : ResolveXModelGraphAcrossFastFiles(
+            RequireTemplate(),
             templatePath,
             modelPaths,
             additionalXModelNames,
             mapMaterialKeys,
             "requested additional",
             worldOnly);
-        MaterialAsset[] additionalMaterials = ResolveOwnedAssetsAcrossFastFiles<MaterialAsset>(
-            template,
+        MaterialAsset[] additionalMaterials = materialSources is not null
+            ? additionalMaterialNames.Select(materialSources.LoadMaterial).ToArray()
+            : ResolveOwnedAssetsAcrossFastFiles<MaterialAsset>(
+            RequireTemplate(),
             templatePath,
             [.. dependencyPaths, .. providerPaths],
             additionalMaterialNames,
@@ -419,18 +455,47 @@ internal static class FastFileConverter
             .Select(entity => entity.TryGetValue("weaponinfo", out string? name) && !string.IsNullOrWhiteSpace(name)
                 ? name : throw new InvalidDataException("A misc_turret requires a weaponinfo asset name."))
             .Distinct(StringComparer.Ordinal).ToArray();
-        WeaponAsset[] turretWeapons = ResolveOwnedAssetsAcrossFastFiles<WeaponAsset>(template, templatePath,
+        if (bootstrap is not null && turretWeaponNames.Length != 0)
+            throw new NotSupportedException("Disk map builds do not yet support misc_turret weapon definitions.");
+        WeaponAsset[] turretWeapons = turretWeaponNames.Length == 0 ? [] : ResolveOwnedAssetsAcrossFastFiles<WeaponAsset>(RequireTemplate(), templatePath,
             [.. dependencyPaths, .. providerPaths], turretWeaponNames, XAssetType.Weapon, "turret Weapon");
-        BaseAsset[] rawEmitterAssets = emitterAssetDirectory is null ? [] :
-            LoadRawEmitterAssets(emitterAssetDirectory, additionalFxNames, additionalSoundNames);
-        FxEffectDefAsset[] additionalFx = emitterAssetDirectory is null
+        BaseAsset[] rawEmitterAssets = assetLibraryDirectory is null ? [] :
+            LoadRawEmitterAssets(assetLibraryDirectory, additionalFxNames, additionalSoundNames);
+        if (bootstrap is not null)
+        {
+            SoundAliasListAsset? streamed = rawEmitterAssets.OfType<SoundAliasListAsset>()
+                .FirstOrDefault(sound => sound.Aliases.Any(alias => alias.SoundFiles.Any(file => file.Streamed is not null)));
+            if (streamed is not null)
+                throw new NotSupportedException($"Sound '{streamed.AliasName}' uses streamed audio. Disk map builds currently require loaded sounds; streamed package output is not implemented.");
+        }
+        if (modelSources is not null)
+            foreach (string name in rawEmitterAssets.OfType<FxEffectDefAsset>().SelectMany(effect => effect.ElemDefs)
+                         .SelectMany(element => element.VisualArray.Prepend(element.Visuals))
+                         .Select(visual => visual.Model?.Model?.Name).OfType<string>().Distinct(StringComparer.Ordinal))
+                modelSources.LoadModel(name);
+        if (materialSources is not null)
+        {
+            // Authored-model materials and direct FX material/decal references come from the library.
+            // The included bootstrap material graph is loaded separately below.
+            foreach (string name in staticXModelGraph.Models.Concat(additionalXModelGraph.Models)
+                         .SelectMany(model => model.Materials).OfType<MaterialAsset>()
+                         .Select(material => material.Info.Name)
+                         .Concat(rawEmitterAssets.OfType<FxEffectDefAsset>().SelectMany(effect => effect.ElemDefs)
+                             .SelectMany(element => element.VisualArray.Prepend(element.Visuals)
+                                 .Select(visual => visual.Material?.Material)
+                                 .Concat(element.MarkVisualArray.SelectMany(mark => new[] { mark.Material0, mark.Material1 })))
+                             .OfType<MaterialAsset>().Select(material => material.Info.Name))
+                         .OfType<string>().Distinct(StringComparer.Ordinal))
+                materialSources.LoadMaterial(name);
+        }
+        FxEffectDefAsset[] additionalFx = assetLibraryDirectory is null
             ? ResolveOwnedAssetsAcrossFastFiles<FxEffectDefAsset>(
-                template, templatePath, [.. dependencyPaths, .. providerPaths],
+                RequireTemplate(), templatePath, [.. dependencyPaths, .. providerPaths],
                 additionalFxNames, XAssetType.Fx, "requested FxEffectDef")
             : additionalFxNames.Select(name => rawEmitterAssets.OfType<FxEffectDefAsset>()
                 .Single(effect => effect.Name == name)).ToArray();
         HashSet<AssetKey> requestedFxKeys = additionalFx.Select(AssetKey.FromDefinition).ToHashSet();
-        FxEffectDefAsset[] nestedDiskFx = emitterAssetDirectory is null ? [] :
+        FxEffectDefAsset[] nestedDiskFx = assetLibraryDirectory is null ? [] :
             rawEmitterAssets.OfType<FxEffectDefAsset>()
                 .Where(effect => !requestedFxKeys.Contains(AssetKey.FromDefinition(effect)))
                 .ToArray();
@@ -453,12 +518,37 @@ internal static class FastFileConverter
             ?? throw new InvalidDataException(
                 "The generated PS3 deathmatch configstring baseline has no mapcrc value.");
 
-        LinkAssetPool baseAssets = template.InitialLinkRequest.Assets;
+        if (bootstrapMaterials is not null)
+            foreach (string name in Ps3MapBootstrap.FactionMaterials)
+                bootstrapMaterials.LoadMaterial(name);
+
+        var imageParts = bootstrapMaterials?.ImageStreamPayloads.ToDictionary(pair => pair.Key, pair => pair.Value) ?? [];
+        if (materialSources is not null)
+        {
+            // Raw sources replace the included definition as a whole, including
+            // a possible change from streamed to resident pixels.
+            foreach (GfxImageAsset image in materialSources.Assets.OfType<GfxImageAsset>())
+                imageParts.Remove(AssetKey.FromDefinition(image));
+            foreach (var pair in materialSources.ImageStreamPayloads) imageParts[pair.Key] = pair.Value;
+        }
+        NamedImageFilePackage? imagePackage = imageParts.Count == 0 ? null : ImageFilePackager.Package(
+            imageParts, bootstrap?.LanguageMask ?? RequireTemplate().InitialLinkRequest.LanguageMask);
+        LinkAssetProviderSource DiskProvider(BaseAsset asset) => new LinkAssetProviderSource(asset,
+            imageStreamReferences: asset is GfxImageAsset image && image.StreamData.Any(part => part.HasStreamingData)
+                ? imagePackage?.References.GetValueOrDefault(AssetKey.FromDefinition(asset)) : null).AsAuthoredDetached();
+        HashSet<AssetKey> rawSourceKeys = materialSources?.Assets.Select(AssetKey.FromDefinition).ToHashSet() ?? [];
+
+        LinkAssetPool baseAssets = template?.InitialLinkRequest.Assets ?? new LinkAssetPool([]);
+        if (bootstrapModels is not null && bootstrapMaterials is not null)
+        {
+            baseAssets = baseAssets.WithHighestPrecedenceProviders(bootstrapModels.Assets.Concat(bootstrapMaterials.Assets)
+                .Where(asset => !rawSourceKeys.Contains(AssetKey.FromDefinition(asset))).Select(DiskProvider));
+        }
         var fxAndSoundDefinitions = rawEmitterAssets
             .Where(asset => asset.SerializedAssetType is XAssetType.Fx or XAssetType.Sound)
             .ToDictionary(AssetKey.FromDefinition);
-        if (emitterAssetDirectory is null && (additionalFx.Length != 0 || additionalSoundNames.Count != 0))
-            CaptureFxAndSoundDefinitions(template, baseAssets, fxAndSoundDefinitions);
+        if (assetLibraryDirectory is null && (additionalFx.Length != 0 || additionalSoundNames.Count != 0))
+            CaptureFxAndSoundDefinitions(RequireTemplate(), baseAssets, fxAndSoundDefinitions);
         var existingKeys = baseAssets.Providers
             .Select(provider => provider.Key)
             .ToHashSet();
@@ -494,7 +584,7 @@ internal static class FastFileConverter
             }
             LinkAssetPool missingAssets = dependency.InitialLinkRequest.Assets
                 .WithoutProviders(retainedFullProviderKeys);
-            if (emitterAssetDirectory is null && (additionalFx.Length != 0 || additionalSoundNames.Count != 0))
+            if (assetLibraryDirectory is null && (additionalFx.Length != 0 || additionalSoundNames.Count != 0))
                 CaptureFxAndSoundDefinitions(dependency, missingAssets, fxAndSoundDefinitions);
             baseAssets = baseAssets.WithHighestPrecedencePool(missingAssets);
             foreach (LinkAssetProvider provider in missingAssets.Providers)
@@ -503,6 +593,15 @@ internal static class FastFileConverter
                 if (!provider.IsReferencePlaceholder)
                     existingFullProviderKeys.Add(provider.Key);
             }
+        }
+        if (materialSources is not null)
+        {
+            BaseAsset[] sourceDefinitions = materialSources.Assets.Concat(modelSources?.Assets ?? []).ToArray();
+            baseAssets = baseAssets.WithHighestPrecedenceProviders(sourceDefinitions
+                .Select(DiskProvider));
+            existingKeys.UnionWith(sourceDefinitions.Select(AssetKey.FromDefinition));
+            existingFullProviderKeys.UnionWith(sourceDefinitions.Select(AssetKey.FromDefinition));
+            Console.WriteLine($"disk material graph: {sourceDefinitions.Length} assets from {assetLibraryDirectory}");
         }
         if (authoredWaterMaterials.Count != 0)
         {
@@ -587,19 +686,19 @@ internal static class FastFileConverter
         }
         newSources.Add(
             new LinkAssetProviderSource(bootstrapStringTable).AsAuthoredDetached());
-        foreach (BaseAsset provider in xModelGraphProviders)
+        foreach (BaseAsset provider in modelSources is null ? xModelGraphProviders : bootstrapModels is null ? bootstrapXModelGraph.Providers : [])
         {
             newSources.Add(
                 new LinkAssetProviderSource(provider).AsAuthoredDetached());
         }
-        foreach (MaterialAsset material in additionalMaterials)
+        foreach (MaterialAsset material in materialSources is null ? additionalMaterials : [])
         {
             newSources.Add(
                 new LinkAssetProviderSource(material).AsAuthoredDetached());
         }
         foreach (WeaponAsset weapon in turretWeapons)
             newSources.Add(new LinkAssetProviderSource(weapon).AsAuthoredDetached());
-        foreach (FxEffectDefAsset effect in emitterAssetDirectory is null ? additionalFx : [])
+        foreach (FxEffectDefAsset effect in assetLibraryDirectory is null ? additionalFx : [])
         {
             newSources.Add(
                 new LinkAssetProviderSource(effect).AsAuthoredDetached());
@@ -624,6 +723,9 @@ internal static class FastFileConverter
             additionalXModelGraph.Models.Count + additionalMaterials.Length +
             additionalFx.Length + nestedDiskFx.Length + additionalSounds.Length + 1);
         roots.AddRange(fastFileMapRoots.Select(CreateOwnedRoot));
+        if (bootstrapMaterials is not null)
+            foreach (string name in Ps3MapBootstrap.FactionMaterials)
+                roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:bootstrap:material:{name}", bootstrapMaterials.LoadMaterial(name)));
         foreach (WeaponAsset weapon in turretWeapons)
             roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:turret:weapon:{weapon.SerializedAssetName}", weapon));
         roots.Add(CreateNamedOwnedRoot(
@@ -671,9 +773,9 @@ internal static class FastFileConverter
         var request = new ZoneLinkRequest(
             assets,
             roots,
-            template.InitialLinkRequest.LanguageMask,
-            template.InitialLinkRequest.SelectedLanguageMask,
-            template.InitialLinkRequest.ScriptStrings);
+            bootstrap?.LanguageMask ?? RequireTemplate().InitialLinkRequest.LanguageMask,
+            bootstrap?.SelectedLanguageMask ?? RequireTemplate().InitialLinkRequest.SelectedLanguageMask,
+            bootstrap?.ScriptStrings ?? RequireTemplate().InitialLinkRequest.ScriptStrings);
 
         ZoneLinkResult link = new ZoneLinker().Link(request);
         if (!link.Succeeded || link.DecodedBytes is not { } decodedBytes)
@@ -686,7 +788,8 @@ internal static class FastFileConverter
         {
             string[] unsupportedPackages = link.ImageStreamLanguageTables
                 .SelectMany(table => table.ImageStreamEntries)
-                .Where(entry => !entry.IsEmpty && entry.FileIndex is not (>= 1 and <= 4))
+                .Where(entry => !entry.IsEmpty && entry.FileIndex is not (>= 1 and <= 4) &&
+                    !(imagePackage is not null && entry.FileIndex == DbHeaderImageStreamEntry.NamedFileIndex))
                 .Select(entry => DbHeaderImageStreamEntry.GetPackageFileName(entry.FileIndex, outputPath))
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)
@@ -715,9 +818,27 @@ internal static class FastFileConverter
                     package.Errors.Select(error => $"{error.Code}: {error.Message}")));
         }
 
-        WriteNewFileAtomically(outputPath, packageBytes.Span);
+        string imagePackagePath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!,
+            DbHeaderImageStreamEntry.GetPackageFileName(DbHeaderImageStreamEntry.NamedFileIndex, outputPath));
+        bool wroteImagePackage = false;
+        try
+        {
+            if (imagePackage is not null)
+            {
+                WriteNewFileAtomically(imagePackagePath, imagePackage.Bytes);
+                wroteImagePackage = true;
+            }
+            WriteNewFileAtomically(outputPath, packageBytes.Span);
+        }
+        catch
+        {
+            if (wroteImagePackage) File.Delete(imagePackagePath);
+            throw;
+        }
 
         Console.WriteLine($"wrote: {outputPath}");
+        if (imagePackage is not null)
+            Console.WriteLine($"wrote: {imagePackagePath} ({imagePackage.Bytes.Length:N0} bytes; {imageParts.Count} streamed images)");
         Console.WriteLine($"map-asset: {assetName}");
         Console.WriteLine($"owned-map-roots: {fastFileMapRoots.Length}");
         Console.WriteLine($"nested-map-assets: {graph.NestedAssets.Count}");
@@ -726,7 +847,7 @@ internal static class FastFileConverter
         Console.WriteLine($"owned-additional-material-roots: {additionalMaterials.Length}");
         Console.WriteLine($"authored-water-materials: {authoredWaterMaterials.Count}");
         Console.WriteLine($"owned-additional-fx-roots: {additionalFx.Length}");
-        Console.WriteLine($"emitter-asset-source: {(emitterAssetDirectory is null ? "fastfile" : "disk")}");
+        Console.WriteLine($"emitter-asset-source: {(assetLibraryDirectory is null ? "fastfile" : "disk")}");
         Console.WriteLine($"disk-emitter-providers: {rawEmitterAssets.Length}");
         Console.WriteLine($"owned-rawfile-overrides: {rawFileOverrides.Length}");
         Console.WriteLine($"owned-roots: {roots.Count}");
@@ -751,7 +872,7 @@ internal static class FastFileConverter
             $"additional-material-references: {additionalXModelGraph.Providers.OfType<MaterialAsset>().Count(material => externalProviderKeys.Contains(AssetKey.FromDefinition(material)))}");
         Console.WriteLine(
             $"additional-physpreset-references: {additionalXModelGraph.PhysPresetReferenceCount}");
-        Console.WriteLine($"template-providers: {template.InitialLinkRequest.Assets.Providers.Count}");
+        Console.WriteLine($"template-providers: {(template?.InitialLinkRequest.Assets.Providers.Count ?? 0)}");
         Console.WriteLine($"dependency-fastfiles: {dependencyPaths.Length}");
         Console.WriteLine($"provider-fastfiles: {providerPaths.Length}");
         int linkedLightmapCount = graph.Roots

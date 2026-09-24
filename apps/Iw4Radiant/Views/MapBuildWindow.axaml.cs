@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -17,7 +16,6 @@ public partial class MapBuildWindow : Window
     private readonly IReadOnlyDictionary<string, MaterialSource>? _materials;
     private readonly IReadOnlyDictionary<string, XModelSource>? _models;
     private readonly Func<SelectionPath, bool>? _navigate;
-    private readonly ObservableCollection<string> _providers = [];
     private CancellationTokenSource? _buildCancellation;
     private SelectionPath? _errorLocation;
 
@@ -26,7 +24,6 @@ public partial class MapBuildWindow : Window
         InitializeComponent();
         BuildButton.IsEnabled = false;
         ScopeText.Text = MapCompiler.Scope;
-        ProviderList.ItemsSource = _providers;
         Closing += (_, e) =>
         {
             if (_buildCancellation is null) return;
@@ -65,18 +62,15 @@ public partial class MapBuildWindow : Window
 
     internal MapBuildWindow(MapDocument document, string sourcePath,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
-        string linkerPath, string templatePath,
-        IReadOnlyList<string> providerPaths, string emitterAssetDirectory, string outputFolder,
+        string linkerPath, string emitterAssetDirectory, string outputFolder,
         Func<SelectionPath, bool> navigate) : this(document, materials, models)
     {
         _navigate = navigate;
         _sourcePath = sourcePath;
         SourceName.Text = Path.GetFileName(sourcePath);
         LinkerPathBox.Text = linkerPath;
-        TemplatePathBox.Text = templatePath;
         EmitterAssetDirectoryBox.Text = emitterAssetDirectory;
         OutputFolderBox.Text = outputFolder;
-        foreach (string path in providerPaths) _providers.Add(path);
         BuildButton.IsEnabled = true;
     }
 
@@ -84,10 +78,8 @@ public partial class MapBuildWindow : Window
     internal string? CompletedBspPath { get; private set; }
     internal bool PreviewRequested { get; private set; }
     internal string LinkerPath => LinkerPathBox.Text?.Trim() ?? "";
-    internal string TemplatePath => TemplatePathBox.Text?.Trim() ?? "";
     internal string EmitterAssetDirectory => EmitterAssetDirectoryBox.Text?.Trim() ?? "";
     internal string OutputFolder => OutputFolderBox.Text?.Trim() ?? "";
-    internal IReadOnlyList<string> ProviderPaths => _providers.ToArray();
 
     private async void BrowseLinker_Click(object? sender, RoutedEventArgs e)
     {
@@ -103,35 +95,6 @@ public partial class MapBuildWindow : Window
         if (files.Count != 0 && files[0].TryGetLocalPath() is { } path) LinkerPathBox.Text = path;
     }
 
-    private async void BrowseTemplate_Click(object? sender, RoutedEventArgs e)
-    {
-        var files = await PickFastFilesAsync("Select official PS3 bootstrap fastfile", false);
-        if (files.Count != 0 && files[0].TryGetLocalPath() is { } path) TemplatePathBox.Text = path;
-    }
-
-    private async void AddProvider_Click(object? sender, RoutedEventArgs e)
-    {
-        var files = await PickFastFilesAsync("Add provider PS3 fastfiles", true);
-        foreach (IStorageFile file in files)
-            if (file.TryGetLocalPath() is { } path && !_providers.Contains(path, StringComparer.Ordinal))
-                _providers.Add(path);
-    }
-
-    private Task<IReadOnlyList<IStorageFile>> PickFastFilesAsync(string title, bool multiple) =>
-        StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = title, AllowMultiple = multiple,
-            FileTypeFilter = [new FilePickerFileType("PS3 fastfiles") { Patterns = ["*.ff"] }]
-        });
-
-    private void RemoveProvider_Click(object? sender, RoutedEventArgs e)
-    {
-        if (ProviderList.SelectedItem is string path) _providers.Remove(path);
-    }
-
-    private void Provider_Changed(object? sender, SelectionChangedEventArgs e) =>
-        RemoveProviderButton.IsEnabled = ProviderList.SelectedItem is string;
-
     private async void BrowseOutput_Click(object? sender, RoutedEventArgs e)
     {
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
@@ -145,7 +108,7 @@ public partial class MapBuildWindow : Window
     {
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            Title = "Select raw FX and sound library", AllowMultiple = false
+            Title = "Select raw asset library", AllowMultiple = false
         });
         if (folders.Count != 0 && folders[0].TryGetLocalPath() is { } path)
             EmitterAssetDirectoryBox.Text = path;
@@ -175,7 +138,7 @@ public partial class MapBuildWindow : Window
             }
             else if (_sourcePath is { } sourcePath)
                 CompletedDirectory = await MapBuildPipeline.BuildAsync(_document, sourcePath, _materials, _models,
-                    LinkerPath, TemplatePath, ProviderPaths, EmitterAssetDirectory, OutputFolder,
+                    LinkerPath, EmitterAssetDirectory, OutputFolder,
                     progress, cancellation.Token);
             BuildStatus.Text = "Build complete";
             AppendProgress($"Build complete: {CompletedBspPath ?? CompletedDirectory}");

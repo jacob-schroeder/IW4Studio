@@ -1,0 +1,62 @@
+{
+  "format": "iw4-image-source",
+  "version": 2,
+  "name": "~shiny_lense_spc-rgb\u0026shiny_le~210c19d5",
+  "imageFormat": 136,
+  "levelCount": 1,
+  "dimensionCount": 2,
+  "multiFaceControl": 0,
+  "textureControl1": 109284,
+  "width": 1,
+  "height": 1,
+  "depth": 1,
+  "memoryLocation": 0,
+  "minLodControl": 0,
+  "renderTargetPitch": 0,
+  "pixelsOffset": 0,
+  "mapType": 3,
+  "semantic": 8,
+  "category": 3,
+  "useSrgbReads": 0,
+  "cardMemory": 0,
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "baseDepth": 1,
+  "baseLevelCount": 1,
+  "cached": 1,
+  "streamData": [
+    {
+      "width": 8,
+      "height": 8,
+      "levelSizeAndOffset": 268435584,
+      "levelMarker": 4,
+      "cumulativeByteCount": 128,
+      "hasStreamingData": true
+    },
+    {
+      "width": 16,
+      "height": 16,
+      "levelSizeAndOffset": 335544704,
+      "levelMarker": 5,
+      "cumulativeByteCount": 384,
+      "hasStreamingData": true
+    },
+    {
+      "width": 32,
+      "height": 32,
+      "levelSizeAndOffset": 402654592,
+      "levelMarker": 6,
+      "cumulativeByteCount": 1408,
+      "hasStreamingData": true
+    },
+    {
+      "width": 0,
+      "height": 0,
+      "levelSizeAndOffset": 0,
+      "levelMarker": 0,
+      "cumulativeByteCount": 0,
+      "hasStreamingData": false
+    }
+  ],
+  "payloadByteCount": 0
+}

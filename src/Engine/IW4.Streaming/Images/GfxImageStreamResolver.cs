@@ -127,6 +127,36 @@ public sealed class GfxImageStreamResolver : IDisposable
         }
     }
 
+    /// <summary>Reads a complete native profile for source export, without splitting or dropping padding.</summary>
+    public bool TryReadStreamParts(GfxImageAsset image, out IReadOnlyList<byte[]> parts, out string reason)
+    {
+        EnterRead();
+        try
+        {
+            parts = [];
+            reason = string.Empty;
+            int[] lengths = GfxImageStreamData.ValidateProfileAndComputePartByteCounts(image.StreamData);
+            if (image.StreamImageIndex is not { } imageIndex || imageIndex < 0)
+            {
+                reason = "image has no valid PS3 stream index";
+                return false;
+            }
+            var resolved = new byte[GfxImageStreamData.EntryCount][];
+            for (int part = 0; part < resolved.Length; part++)
+            {
+                resolved[part] = [];
+                if (lengths[part] == 0) continue;
+                int entryIndex = checked(imageIndex * GfxImageStreamData.EntryCount + part);
+                if (!TryGetEntry(image, part, entryIndex, out DbHeaderImageStreamEntry entry, out reason) ||
+                    !TryReadPackagePayload(entry, lengths[part], out resolved[part], out reason))
+                    return false;
+            }
+            parts = resolved;
+            return true;
+        }
+        finally { ExitRead(); }
+    }
+
     public bool TryReadMipPayloads(
         GfxImageAsset image,
         out IReadOnlyList<GfxImageStreamMipPayload> mips,

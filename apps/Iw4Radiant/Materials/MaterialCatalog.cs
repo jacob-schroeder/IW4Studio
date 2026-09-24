@@ -137,8 +137,8 @@ internal static class MaterialCatalog
             MaterialSurfaceState surface = MaterialSurfaceState.Read(root);
             string techniqueSet = root.GetProperty("techniqueSet").GetString() ?? throw Invalid("Expected a techniqueSet name");
             if (root.TryGetProperty("_version", out var version) &&
-                (version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out int number) || number != 1))
-                throw Invalid("Expected material version 1");
+                (version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out int number) || number is not (1 or 2)))
+                throw Invalid("Expected material version 1 or 2");
             MaterialSurfaceTypeBits surfaceTypeBits = root.TryGetProperty("surfaceTypeBits", out var surfaceTypes)
                 ? (MaterialSurfaceTypeBits)surfaceTypes.GetUInt32() : MaterialSurfaceTypeBits.None;
             MaterialGameFlags gameFlags = MaterialGameFlags.None;

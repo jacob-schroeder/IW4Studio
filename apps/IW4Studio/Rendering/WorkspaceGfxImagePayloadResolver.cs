@@ -61,6 +61,16 @@ internal sealed class WorkspaceGfxImagePayloadResolver(
         return source;
     }
 
+    public bool TryResolveStreamParts(GfxImageAsset image, out IReadOnlyList<byte[]> parts, out string reason)
+    {
+        if (!TryResolveProvider(image, out IGfxImagePayloadResolver resolver, out _, out reason))
+        {
+            parts = [];
+            return false;
+        }
+        return resolver.TryResolveStreamParts(image, out parts, out reason);
+    }
+
     private bool TryResolveProvider(
         GfxImageAsset image,
         out IGfxImagePayloadResolver resolver,

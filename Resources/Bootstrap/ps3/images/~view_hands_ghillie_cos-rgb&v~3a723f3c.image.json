@@ -1,0 +1,62 @@
+{
+  "format": "iw4-image-source",
+  "version": 2,
+  "name": "~view_hands_ghillie_cos-rgb\u0026v~3a723f3c",
+  "imageFormat": 136,
+  "levelCount": 1,
+  "dimensionCount": 2,
+  "multiFaceControl": 0,
+  "textureControl1": 109284,
+  "width": 1,
+  "height": 1,
+  "depth": 1,
+  "memoryLocation": 0,
+  "minLodControl": 0,
+  "renderTargetPitch": 0,
+  "pixelsOffset": 0,
+  "mapType": 3,
+  "semantic": 8,
+  "category": 3,
+  "useSrgbReads": 0,
+  "cardMemory": 0,
+  "baseWidth": 1,
+  "baseHeight": 1,
+  "baseDepth": 1,
+  "baseLevelCount": 1,
+  "cached": 1,
+  "streamData": [
+    {
+      "width": 256,
+      "height": 128,
+      "levelSizeAndOffset": 604023552,
+      "levelMarker": 9,
+      "cumulativeByteCount": 43776,
+      "hasStreamingData": true
+    },
+    {
+      "width": 512,
+      "height": 256,
+      "levelSizeAndOffset": 671263488,
+      "levelMarker": 10,
+      "cumulativeByteCount": 174848,
+      "hasStreamingData": true
+    },
+    {
+      "width": 1024,
+      "height": 512,
+      "levelSizeAndOffset": 738896640,
+      "levelMarker": 11,
+      "cumulativeByteCount": 699136,
+      "hasStreamingData": true
+    },
+    {
+      "width": 2048,
+      "height": 1024,
+      "levelSizeAndOffset": 808102656,
+      "levelMarker": 12,
+      "cumulativeByteCount": 2796288,
+      "hasStreamingData": true
+    }
+  ],
+  "payloadByteCount": 0
+}

@@ -37,6 +37,9 @@ public sealed class GfxImageStreamPayloadResolver : IGfxImagePayloadResolver
         return true;
     }
 
+    public bool TryResolveStreamParts(GfxImageAsset image, out IReadOnlyList<byte[]> parts, out string reason) =>
+        _streams.TryReadStreamParts(image, out parts, out reason);
+
     public bool TryResolveMipPayloads(
         GfxImageAsset image,
         out IReadOnlyList<GfxImagePayload> mips,

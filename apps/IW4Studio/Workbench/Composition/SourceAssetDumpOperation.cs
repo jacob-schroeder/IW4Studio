@@ -117,11 +117,6 @@ internal static class SourceAssetDumpOperation
             .Select(value => value.Definition)
             .OfType<MaterialTechniqueSetAsset>()
             .ToArray();
-        MaterialShaderAsset[] shaderProviders = definitions
-            .Select(value => value.Definition)
-            .OfType<MaterialShaderAsset>()
-            .Concat(targetShaderProviders)
-            .ToArray();
 
         MenuExchange? menuExchange = null;
         Exception? menuContextFailure = null;
@@ -317,7 +312,7 @@ internal static class SourceAssetDumpOperation
 
             try
             {
-                techniqueExchange ??= new TechniqueExchange(shaderProviders);
+                techniqueExchange ??= new TechniqueExchange();
                 IReadOnlyList<string> writtenFiles = techniqueExchange.Unlink(
                     sourceDirectory,
                     technique);
@@ -347,23 +342,24 @@ internal static class SourceAssetDumpOperation
         GfxImageAsset image,
         WorkspaceGfxImagePayloadResolver imagePayloads)
     {
+        IReadOnlyList<string> nativeFiles = NativeImageSourceExport.Unlink(sourceDirectory, image, imagePayloads);
         try
         {
             IReadOnlyList<ImageSourceMipLevel> mipLevels =
                 SourceImageDumpDecoder.DecodeForExport(image, imagePayloads);
-            return new ImageExchange().Unlink(
+            IReadOnlyList<string> previewFiles = new ImageExchange().UnlinkPreview(
                 sourceDirectory,
                 image,
                 mipLevels);
+            return nativeFiles.Concat(previewFiles).ToArray();
         }
         catch (Exception exception) when (exception is InvalidDataException or
                                           NotSupportedException or
                                           OverflowException)
         {
-            throw new InvalidDataException(
-                $"Image '{image.Name ?? "<unnamed>"}' cannot be converted to " +
-                $"DDS: {exception.Message}",
-                exception);
+            // Native pixels remain usable even when the decoded preview format
+            // cannot represent this image (for example floating-point water).
+            return nativeFiles;
         }
     }
 
@@ -403,6 +399,9 @@ internal static class SourceAssetDumpOperation
         string sourceDirectory,
         XModelAsset model)
     {
+        IReadOnlyList<string> nativeFiles = new XModelNativeExchange().Unlink(
+            sourceDirectory,
+            model);
         int lodCount = model.NumLods == 0
             ? model.Lods.Count
             : model.NumLods;
@@ -413,21 +412,27 @@ internal static class SourceAssetDumpOperation
                     model,
                     lodIndex,
                     out XModelExportDocument? document,
-                    out IReadOnlyList<string> blockers) ||
+                    out _) ||
                 document is null)
             {
-                string detail = string.Join(" ", blockers);
-                throw new InvalidDataException(
-                    $"LOD {lodIndex} cannot be converted to XMODEL_EXPORT. {detail}");
+                return nativeFiles;
             }
 
             documents.Add(lodIndex, document);
         }
 
-        return new XModelExchange().Unlink(
-            sourceDirectory,
-            model,
-            documents);
+        try
+        {
+            IReadOnlyList<string> previewFiles = new XModelExchange().Unlink(
+                sourceDirectory,
+                model,
+                documents);
+            return nativeFiles.Concat(previewFiles).ToArray();
+        }
+        catch (Exception exception) when (exception is InvalidDataException or NotSupportedException)
+        {
+            return nativeFiles;
+        }
     }
 }
 

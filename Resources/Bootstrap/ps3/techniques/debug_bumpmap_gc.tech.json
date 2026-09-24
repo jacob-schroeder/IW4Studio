@@ -1,0 +1,101 @@
+{
+  "format": "iw4-ps3-technique",
+  "version": 1,
+  "name": "debug_bumpmap_gc",
+  "flags": 8,
+  "passes": [
+    {
+      "perPrimArgCount": 1,
+      "perObjArgCount": 1,
+      "stableArgCount": 2,
+      "customSamplerFlags": 0,
+      "precompiledVertexShader": 2,
+      "vertexShader": "debug_normals.hlsl",
+      "pixelShader": "debug_normals.hlsl",
+      "vertexDeclaration": {
+        "streamCount": 4,
+        "hasOptionalSourceRaw": 1,
+        "routing": [
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 2,
+            "destination": 8
+          },
+          {
+            "source": 3,
+            "destination": 2
+          },
+          {
+            "source": 4,
+            "destination": 9
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          }
+        ]
+      },
+      "arguments": [
+        {
+          "type": 3,
+          "destination": 4,
+          "argumentRaw": 6225924,
+          "literalBits": null
+        },
+        {
+          "type": 3,
+          "destination": 0,
+          "argumentRaw": 5439492,
+          "literalBits": null
+        },
+        {
+          "type": 2,
+          "destination": 5,
+          "argumentRaw": 1507003663,
+          "literalBits": null
+        },
+        {
+          "type": 5,
+          "destination": 5,
+          "argumentRaw": 2228225,
+          "literalBits": null
+        }
+      ]
+    }
+  ]
+}

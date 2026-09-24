@@ -17,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="../../Resources/Bootstrap/ps3/**/*" Link="bootstrap/ps3/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <EmbeddedResource Include="Resources/water-volumes.gsc" LogicalName="IW4.WaterVolumes.gsc" />
   </ItemGroup>
 

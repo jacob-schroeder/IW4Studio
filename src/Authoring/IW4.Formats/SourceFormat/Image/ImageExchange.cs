@@ -1,14 +1,97 @@
+using System.Text.Json;
 using IW4.Game.Assets.Image;
 
 namespace IW4.Formats.SourceFormat.Image;
 
 /// <summary>
-/// Writes a decoded PS3 IW4 image to the DDS source layout consumed by
-/// OpenAssetTools. The source DDS uses uncompressed RGBA8 mip levels so it
-/// does not mislabel RSX texture bytes as a PC texture payload.
+/// Exchanges native PS3 images and decoded DDS authoring images.
+/// DDS uses uncompressed RGBA8 mip levels so it does not mislabel RSX texture
+/// bytes as a PC texture payload.
 /// </summary>
-public sealed class ImageExchange
+public sealed partial class ImageExchange
 {
+    private static readonly JsonSerializerOptions MetadataOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    };
+
+    private sealed record ImageMetadata
+    {
+        public required string Format { get; init; }
+        public required int Version { get; init; }
+        public required string Name { get; init; }
+        public required TextureSemantic Semantic { get; init; }
+        public required bool UsesSrgbReads { get; init; }
+    }
+
+    /// <summary>Writes a decoded editor preview without replacing native source metadata.</summary>
+    public IReadOnlyList<string> UnlinkPreview(string sourceDirectory, GfxImageAsset asset,
+        IReadOnlyList<ImageSourceMipLevel> mipLevels)
+    {
+        string name = SourceOutput.NormalizeOwnedAssetName(asset.Name, "Image");
+        return new SourceOutput(sourceDirectory).WriteBinaryBatch([
+            ($"images/{name.Replace('*', '_')}.dds", stream => Write(stream, ImageFileFormat.Dds, asset, mipLevels))
+        ]);
+    }
+
+    private static void WriteMetadata(Stream stream, GfxImageAsset asset, string name) =>
+        JsonSerializer.Serialize(stream, new ImageMetadata
+        {
+            Format = "iw4-image-source", Version = 1, Name = name,
+            Semantic = asset.TextureSemantic, UsesSrgbReads = asset.UsesSrgbReads
+        }, MetadataOptions);
+
+    /// <summary>Reads source pixels and their explicit PS3 sampling metadata.</summary>
+    public GfxImageAsset Link(string sourceDirectory, string assetName)
+    {
+        GfxImageAsset asset = Link(sourceDirectory, assetName, out IReadOnlyList<byte[]> streamParts);
+        if (streamParts.Any(part => part.Length != 0))
+            throw new NotSupportedException($"Streamed image '{assetName}' requires its native stream part payloads.");
+        return asset;
+    }
+
+    public GfxImageAsset Link(
+        string sourceDirectory,
+        string assetName,
+        out IReadOnlyList<byte[]> streamParts)
+    {
+        streamParts = [];
+        string name = SourceOutput.NormalizeOwnedAssetName(assetName, "Image");
+        string imagePath = Path.Combine(Path.GetFullPath(sourceDirectory), "images", name.Replace('*', '_'));
+        string metadataPath = imagePath + ".image.json";
+        if (!File.Exists(metadataPath))
+            throw new FileNotFoundException(
+                $"Image '{name}' needs sampling metadata at '{metadataPath}'. Re-export this image from IW4Studio.", metadataPath);
+        using FileStream metadataStream = File.OpenRead(metadataPath);
+        using JsonDocument document = JsonDocument.Parse(metadataStream);
+        JsonElement root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("format", out JsonElement format) ||
+            format.ValueKind != JsonValueKind.String ||
+            format.GetString() != "iw4-image-source" ||
+            !root.TryGetProperty("version", out JsonElement version) ||
+            version.ValueKind != JsonValueKind.Number ||
+            !version.TryGetInt32(out int sourceVersion) ||
+            !root.TryGetProperty("name", out JsonElement sourceName) ||
+            sourceName.ValueKind != JsonValueKind.String ||
+            sourceName.GetString() != name)
+            throw new InvalidDataException($"Image '{name}' has invalid source metadata.");
+        if (sourceVersion == 2)
+            return LinkNative(imagePath, name, root, out streamParts);
+        if (sourceVersion != 1)
+            throw new InvalidDataException($"Image '{name}' has unsupported source version {sourceVersion}.");
+        ImageMetadata metadata = root.Deserialize<ImageMetadata>(MetadataOptions)
+            ?? throw new InvalidDataException($"Image '{name}' has empty metadata.");
+        if (!Enum.IsDefined(metadata.Semantic))
+            throw new InvalidDataException($"Image '{name}' has an invalid texture semantic.");
+        using FileStream pixels = File.OpenRead(imagePath + ".dds");
+        ImageFileDocument source = Read(pixels, ImageFileFormat.Dds);
+        if (source.UsesSrgbReads is { } encodedSrgb && encodedSrgb != metadata.UsesSrgbReads)
+            throw new InvalidDataException($"Image '{name}' has conflicting DDS and metadata color-space settings.");
+        return ImageSourceCompiler.Compile(name, source, metadata.Semantic, metadata.UsesSrgbReads);
+    }
+
     private const byte Iwi8Version = 8;
     private const byte Iwi8BitmapRgba = 1;
     private const uint Iwi8NoMipMaps = 1u << 1;
@@ -52,7 +135,8 @@ public sealed class ImageExchange
         var output = new SourceOutput(sourceDirectory);
         return output.WriteBinaryBatch([
             ($"images/{cleanName}.dds", stream =>
-                Write(stream, ImageFileFormat.Dds, asset, mipLevels))
+                Write(stream, ImageFileFormat.Dds, asset, mipLevels)),
+            ($"images/{cleanName}.image.json", stream => WriteMetadata(stream, asset, assetName))
         ]);
     }
 

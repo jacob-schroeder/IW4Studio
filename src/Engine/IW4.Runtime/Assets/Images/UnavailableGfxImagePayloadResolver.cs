@@ -14,6 +14,14 @@ public sealed class UnavailableGfxImagePayloadResolver : IGfxImagePayloadResolve
     {
     }
 
+    public bool TryResolveStreamParts(GfxImageAsset image, out IReadOnlyList<byte[]> parts, out string reason)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        parts = [];
+        reason = "no external image payload resolver is available";
+        return false;
+    }
+
     public bool TryResolveBestPayload(
         GfxImageAsset image,
         out GfxImagePayload payload,

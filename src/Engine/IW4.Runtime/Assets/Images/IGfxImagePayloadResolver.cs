@@ -14,6 +14,9 @@ namespace IW4.Runtime.Assets.Images;
 /// </remarks>
 public interface IGfxImagePayloadResolver
 {
+    /// <summary>Reads all four exact native stream parts, retaining their mip tails and alignment.</summary>
+    bool TryResolveStreamParts(GfxImageAsset image, out IReadOnlyList<byte[]> parts, out string reason);
+
     bool TryResolveBestPayload(
         GfxImageAsset image,
         out GfxImagePayload payload,

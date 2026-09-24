@@ -1,0 +1,239 @@
+{
+    "_game": "iw4",
+    "_platform": "ps3",
+    "_type": "material",
+    "_version": 2,
+    "_native": {
+        "hashIndex": 0,
+        "pad16": 0,
+        "pad43": 0,
+        "pad8E": 0,
+        "runtimeTechniqueStatePresent": false,
+        "stateBitsResidual": [
+            [
+                0,
+                3835578624
+            ],
+            [
+                0,
+                0
+            ],
+            [
+                0,
+                0
+            ],
+            [
+                0,
+                3758096384
+            ],
+            [
+                0,
+                3835578624
+            ]
+        ],
+        "xstrings": []
+    },
+    "cameraRegion": "litOpaque",
+    "constants": [
+        {
+            "literal": [
+                1,
+                1,
+                1.5,
+                3.0769231
+            ],
+            "name": "envMapParms"
+        },
+        {
+            "literal": [
+                1,
+                1,
+                1,
+                1
+            ],
+            "name": "colorTint"
+        }
+    ],
+    "gameFlags": [
+        "10",
+        "40"
+    ],
+    "sortKey": 1,
+    "stateBits": [
+        {
+            "alphaTest": "disabled",
+            "blendOpAlpha": "disabled",
+            "blendOpRgb": "disabled",
+            "colorWriteAlpha": false,
+            "colorWriteRgb": false,
+            "cullFace": "back",
+            "depthTest": "less_equal",
+            "depthWrite": true,
+            "dstBlendAlpha": "zero",
+            "dstBlendRgb": "zero",
+            "gammaWrite": false,
+            "polygonOffset": "offset0",
+            "polymodeLine": false,
+            "srcBlendAlpha": "one",
+            "srcBlendRgb": "one"
+        },
+        {
+            "alphaTest": "disabled",
+            "blendOpAlpha": "disabled",
+            "blendOpRgb": "disabled",
+            "colorWriteAlpha": false,
+            "colorWriteRgb": false,
+            "cullFace": "back",
+            "depthTest": "less_equal",
+            "depthWrite": true,
+            "dstBlendAlpha": "zero",
+            "dstBlendRgb": "zero",
+            "gammaWrite": false,
+            "polygonOffset": "inherit",
+            "polymodeLine": false,
+            "srcBlendAlpha": "one",
+            "srcBlendRgb": "one"
+        },
+        {
+            "alphaTest": "disabled",
+            "blendOpAlpha": "disabled",
+            "blendOpRgb": "disabled",
+            "colorWriteAlpha": true,
+            "colorWriteRgb": true,
+            "cullFace": "back",
+            "depthTest": "less_equal",
+            "depthWrite": true,
+            "dstBlendAlpha": "zero",
+            "dstBlendRgb": "zero",
+            "gammaWrite": true,
+            "polygonOffset": "offset0",
+            "polymodeLine": false,
+            "srcBlendAlpha": "one",
+            "srcBlendRgb": "one"
+        },
+        {
+            "alphaTest": "disabled",
+            "blendOpAlpha": "add",
+            "blendOpRgb": "add",
+            "colorWriteAlpha": true,
+            "colorWriteRgb": true,
+            "cullFace": "back",
+            "depthTest": "equal",
+            "depthWrite": false,
+            "dstBlendAlpha": "one",
+            "dstBlendRgb": "one",
+            "gammaWrite": true,
+            "polygonOffset": "offset0",
+            "polymodeLine": false,
+            "srcBlendAlpha": "invdestcolor",
+            "srcBlendRgb": "invdestcolor",
+            "stencilFront": {
+                "fail": "keep",
+                "func": "equal",
+                "pass": "keep",
+                "zfail": "keep"
+            }
+        },
+        {
+            "alphaTest": "disabled",
+            "blendOpAlpha": "disabled",
+            "blendOpRgb": "disabled",
+            "colorWriteAlpha": false,
+            "colorWriteRgb": true,
+            "cullFace": "back",
+            "depthTest": "less_equal",
+            "depthWrite": false,
+            "dstBlendAlpha": "zero",
+            "dstBlendRgb": "zero",
+            "gammaWrite": false,
+            "polygonOffset": "offset2",
+            "polymodeLine": true,
+            "srcBlendAlpha": "one",
+            "srcBlendRgb": "one"
+        }
+    ],
+    "stateBitsEntry": [
+        0,
+        -1,
+        1,
+        -1,
+        2,
+        -1,
+        -1,
+        -1,
+        -1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        3,
+        3,
+        3,
+        -1,
+        -1,
+        -1,
+        -1,
+        4,
+        -1,
+        2
+    ],
+    "stateFlags": 121,
+    "surfaceTypeBits": 4096,
+    "techniqueSet": "m_l_sm_r0c0n0s0p0",
+    "textureAtlas": {
+        "columns": 1,
+        "rows": 1
+    },
+    "textures": [
+        {
+            "image": "~us_army_lmg_spc-rgb&us_army_~9da4dacd",
+            "name": "specularMap",
+            "samplerState": {
+                "clampU": false,
+                "clampV": false,
+                "clampW": false,
+                "filter": "aniso2x",
+                "mipMap": "nearest"
+            },
+            "semantic": "specularMap"
+        },
+        {
+            "image": "us_army_lmg_nml",
+            "name": "normalMap",
+            "samplerState": {
+                "clampU": false,
+                "clampV": false,
+                "clampW": false,
+                "filter": "aniso2x",
+                "mipMap": "nearest"
+            },
+            "semantic": "normalMap"
+        },
+        {
+            "image": "us_army_lmg_col",
+            "name": "colorMap",
+            "samplerState": {
+                "clampU": false,
+                "clampV": false,
+                "clampW": false,
+                "filter": "aniso2x",
+                "mipMap": "nearest"
+            },
+            "semantic": "colorMap"
+        }
+    ]
+}

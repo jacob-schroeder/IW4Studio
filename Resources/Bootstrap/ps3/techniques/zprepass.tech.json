@@ -1,0 +1,89 @@
+{
+  "format": "iw4-ps3-technique",
+  "version": 1,
+  "name": "zprepass",
+  "flags": 4,
+  "passes": [
+    {
+      "perPrimArgCount": 1,
+      "perObjArgCount": 1,
+      "stableArgCount": 0,
+      "customSamplerFlags": 0,
+      "precompiledVertexShader": 2,
+      "vertexShader": "transform_only.hlsl",
+      "pixelShader": "null.hlsl",
+      "vertexDeclaration": {
+        "streamCount": 1,
+        "hasOptionalSourceRaw": 0,
+        "routing": [
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          }
+        ]
+      },
+      "arguments": [
+        {
+          "type": 3,
+          "destination": 4,
+          "argumentRaw": 6225924,
+          "literalBits": null
+        },
+        {
+          "type": 3,
+          "destination": 0,
+          "argumentRaw": 5439492,
+          "literalBits": null
+        }
+      ]
+    }
+  ]
+}
