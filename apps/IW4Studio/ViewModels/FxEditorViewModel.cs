@@ -27,13 +27,13 @@ public sealed class FxEditorViewModel
     private static readonly TimeSpan PlaybackTickInterval =
         TimeSpan.FromMilliseconds(16);
 
-    private readonly FxEffectDefAsset _effect;
+    private FxEffectDefAsset _effect;
     private readonly FastFileWorkspace? _workspace;
     private readonly WorkspaceGfxImagePayloadResolver? _imagePayloads;
     private readonly XModelSceneBuilder _visualSceneBuilder = new();
-    private readonly FxPreviewScene? _previewScene;
+    private FxPreviewScene? _previewScene;
     private readonly DispatcherTimer _playbackTimer;
-    private readonly string _previewUnavailableReason;
+    private string _previewUnavailableReason = string.Empty;
     private IReadOnlyList<FxVisualDependencyViewModel>
         _selectedVisualDependencies = [];
     private FxElementViewModel? _selectedElement;
@@ -66,6 +66,27 @@ public sealed class FxEditorViewModel
             ? null
             : new WorkspaceGfxImagePayloadResolver(workspace);
 
+        _playbackTimer = new DispatcherTimer(DispatcherPriority.Render)
+        {
+            Interval = PlaybackTickInterval
+        };
+        _playbackTimer.Tick += PlaybackTimer_Tick;
+        Reload(effect);
+    }
+
+    public void Reload(FxEffectDefAsset effect)
+    {
+        ArgumentNullException.ThrowIfNull(effect);
+        if (_disposed) throw new ObjectDisposedException(nameof(FxEditorViewModel));
+        PausePlayback();
+        ClearVisualSceneCache();
+        ReplaceSelectedSoundPreview(null);
+        int selectedIndex = _selectedElement?.GlobalIndex ?? 0;
+        _effect = effect;
+        _previewScene = null;
+        _previewFrame = null;
+        _previewUnavailableReason = string.Empty;
+        _currentMilliseconds = 0;
         Name = string.IsNullOrWhiteSpace(effect.Name)
             ? "<unnamed FX>"
             : effect.Name;
@@ -107,7 +128,8 @@ public sealed class FxEditorViewModel
         }
 
         Elements = Array.AsReadOnly(elements);
-        _selectedElement = Elements.FirstOrDefault();
+        FxElementViewModel? selectedElement = Elements.ElementAtOrDefault(selectedIndex) ?? Elements.FirstOrDefault();
+        _selectedElement = null;
         RootProperties =
         [
             new("Flags", rootFlagsText),
@@ -133,23 +155,34 @@ public sealed class FxEditorViewModel
             _previewUnavailableReason = reason;
         }
 
-        _playbackTimer = new DispatcherTimer(DispatcherPriority.Render)
+        OnPropertyChanged(nameof(Elements));
+        if (selectedElement is null)
+            RefreshSelectedVisualDependencies();
+        else
+            SelectedElement = selectedElement;
+        foreach (string property in new[]
         {
-            Interval = PlaybackTickInterval
-        };
-        _playbackTimer.Tick += PlaybackTimer_Tick;
-        RefreshSelectedVisualDependencies();
+            nameof(Name), nameof(LoopingLifeText), nameof(LoopingCount), nameof(OneShotCount),
+            nameof(EmissionCount), nameof(ElementCount), nameof(ElementCountText), nameof(GroupCountText),
+            nameof(RootProperties), nameof(SelectedElement), nameof(SelectedElementIndex),
+            nameof(HasSelectedElement), nameof(SelectedElementTitle), nameof(SelectedElementSummary),
+            nameof(SelectedProperties), nameof(PropertySectionName), nameof(EditorProperties),
+            nameof(PreviewRepresentationText),
+            nameof(HasPreview), nameof(PreviewDurationMilliseconds), nameof(PreviewDurationText),
+            nameof(PreviewFrame), nameof(CurrentMilliseconds), nameof(CurrentTimeText),
+            nameof(VisibleInstanceCountText), nameof(PreviewStatus), nameof(CanPlay), nameof(CanRestart)
+        }) OnPropertyChanged(property);
     }
 
-    public string Name { get; }
+    public string Name { get; private set; } = string.Empty;
 
-    public string LoopingLifeText { get; }
+    public string LoopingLifeText { get; private set; } = string.Empty;
 
-    public int LoopingCount { get; }
+    public int LoopingCount { get; private set; }
 
-    public int OneShotCount { get; }
+    public int OneShotCount { get; private set; }
 
-    public int EmissionCount { get; }
+    public int EmissionCount { get; private set; }
 
     public int ElementCount => Elements.Count;
 
@@ -160,9 +193,9 @@ public sealed class FxEditorViewModel
         $"{LoopingCount:N0} looping · {OneShotCount:N0} one-shot · " +
         $"{EmissionCount:N0} emission";
 
-    public IReadOnlyList<FxElementViewModel> Elements { get; }
+    public IReadOnlyList<FxElementViewModel> Elements { get; private set; } = [];
 
-    public IReadOnlyList<AssetEditorProperty> RootProperties { get; }
+    public IReadOnlyList<AssetEditorProperty> RootProperties { get; private set; } = [];
 
     public FxElementViewModel? SelectedElement
     {

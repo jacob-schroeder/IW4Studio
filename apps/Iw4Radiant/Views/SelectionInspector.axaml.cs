@@ -93,6 +93,18 @@ public partial class SelectionInspector : UserControl
             }
             catch (ArgumentException exception) { await dialogs.MessageAsync("FX / sound reference", exception.Message); }
         };
+        FxPlaybackMode.SelectionChanged += (_, _) => ShowFxPlaybackMode();
+        ApplyFxPlaybackButton.Click += async (_, _) =>
+        {
+            if (dialogs.BlocksInput || session.Selection.Active is not MapEntity entity) return;
+            try
+            {
+                finishGestures();
+                GameplayEntityEditing.SetFxPlayback(session, entity, FxPlaybackMode.SelectedIndex == 1,
+                    FxStartDelay.Text ?? "", FxTriggerKey.Text ?? "");
+            }
+            catch (ArgumentException exception) { await dialogs.MessageAsync("FX playback", exception.Message); }
+        };
         TerrainPaint.InitializeActions(session, dialogs, finishGestures, supportsAlpha, supportsVertexColor);
         Decals.InitializeActions(session, dialogs, finishGestures, supportsAlpha);
         Sunlight.EditSourceRequested += () =>
@@ -152,8 +164,16 @@ public partial class SelectionInspector : UserControl
                 ApplyFxSoundButton.IsVisible = !isSound;
                 BrowseFxSoundButton.Content = isSound ? "Change sound…" : "Browse…";
                 PreviewFxSoundButton.Content = isSound ? "Listen to selected marker" : "Preview selected marker";
+                FxPlaybackPanel.IsVisible = !isSound;
                 if (entityChanged || !FxSoundName.IsKeyboardFocusWithin)
                     FxSoundName.Text = entity.Properties.GetValueOrDefault(isSound ? "soundalias" : "fx", "");
+                if (!isSound && (entityChanged || !FxPlaybackPanel.IsKeyboardFocusWithin))
+                {
+                    FxPlaybackMode.SelectedIndex = entity.Properties.GetValueOrDefault("fx_playback") == "script" ? 1 : 0;
+                    FxStartDelay.Text = entity.Properties.GetValueOrDefault("fx_start_delay", "");
+                    FxTriggerKey.Text = entity.Properties.GetValueOrDefault("fx_trigger_key", "");
+                    ShowFxPlaybackMode();
+                }
             }
             _shownEntity = entity;
             if (!ReferenceEquals(_listedDocument, session.Document) || _listedEntityCount != session.Document.Entities.Count)
@@ -193,6 +213,13 @@ public partial class SelectionInspector : UserControl
             Skies.RefreshSelection(session);
         }
         finally { _updating = false; }
+    }
+
+    private void ShowFxPlaybackMode()
+    {
+        bool script = FxPlaybackMode.SelectedIndex == 1;
+        FxStartDelay.IsVisible = FxStartDelayHint.IsVisible = !script;
+        FxTriggerKey.IsVisible = FxTriggerHint.IsVisible = script;
     }
 
     private static string EntityListLabel(MapEntity entity, int index) =>

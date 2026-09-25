@@ -2,8 +2,6 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Avalonia.Controls;
 using IW4.Game.Assets;
-using IW4.Game.Assets.Image;
-using IW4.Game.Assets.TechniqueSet;
 using IW4.Formats.D3dbsp;
 using IW4.Game.Zone;
 using IW4.Runtime.Assets;
@@ -658,14 +656,11 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             int unsupportedRowCount = rows.Length - supportedRowCount;
             AppliedAssetDefinitionsCapture capture = session.CaptureCurrentTargetAssets(
                 SourceAssetDumpOperation.SupportedAssetTypes);
-            IReadOnlyList<MaterialShaderAsset> targetShaderProviders =
-                session.CaptureCurrentTargetShaderProviders();
-            IReadOnlyList<GfxImageAsset> targetImageProviders =
-                session.CaptureCurrentTargetImageProviders();
+            IReadOnlyList<BaseAsset> targetProviders =
+                session.CaptureCurrentTargetProviders(
+                    SourceAssetDumpOperation.SupportedAssetTypes);
             int supportedAssetCount = checked(
-                supportedRowCount +
-                targetShaderProviders.Count +
-                targetImageProviders.Count);
+                supportedRowCount + targetProviders.Count);
 
             ConsoleOutput.Append(
                 ConsoleOutputLevel.Information,
@@ -679,8 +674,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     sourceDirectory,
                     Workspace,
                     capture,
-                    targetShaderProviders,
-                    targetImageProviders,
+                    targetProviders,
                     supportedRowCount,
                     unsupportedRowCount,
                     cancellationToken),

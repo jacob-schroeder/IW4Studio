@@ -1,3 +1,4 @@
+using IW4.Formats.SourceFormat.Material;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Avalonia;

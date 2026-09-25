@@ -87,8 +87,7 @@ internal static class SourceAssetDumpOperation
         string sourceDirectory,
         FastFileWorkspace workspace,
         AppliedAssetDefinitionsCapture capture,
-        IReadOnlyList<MaterialShaderAsset> targetShaderProviders,
-        IReadOnlyList<GfxImageAsset> targetImageProviders,
+        IReadOnlyList<BaseAsset> targetProviders,
         int supportedRowCount,
         int unsupportedRowCount,
         CancellationToken cancellationToken)
@@ -96,8 +95,7 @@ internal static class SourceAssetDumpOperation
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceDirectory);
         ArgumentNullException.ThrowIfNull(workspace);
         ArgumentNullException.ThrowIfNull(capture);
-        ArgumentNullException.ThrowIfNull(targetShaderProviders);
-        ArgumentNullException.ThrowIfNull(targetImageProviders);
+        ArgumentNullException.ThrowIfNull(targetProviders);
         ArgumentOutOfRangeException.ThrowIfNegative(supportedRowCount);
         ArgumentOutOfRangeException.ThrowIfNegative(unsupportedRowCount);
 
@@ -105,16 +103,19 @@ internal static class SourceAssetDumpOperation
             .Where(value => SupportedAssetTypes.Contains(
                 value.Definition.SerializedAssetType))
             .ToArray();
-        MenuFileAsset[] menuFiles = definitions
+        BaseAsset[] assets = definitions
+            .OrderBy(value => value.RowIdentity.SerializedIndex)
             .Select(value => value.Definition)
+            .Concat(targetProviders.Where(asset => SupportedAssetTypes.Contains(
+                asset.SerializedAssetType)))
+            .ToArray();
+        MenuFileAsset[] menuFiles = assets
             .OfType<MenuFileAsset>()
             .ToArray();
-        LocalizeAsset[] localizeEntries = definitions
-            .Select(value => value.Definition)
+        LocalizeAsset[] localizeEntries = assets
             .OfType<LocalizeAsset>()
             .ToArray();
-        MaterialTechniqueSetAsset[] techniqueSets = definitions
-            .Select(value => value.Definition)
+        MaterialTechniqueSetAsset[] techniqueSets = assets
             .OfType<MaterialTechniqueSetAsset>()
             .ToArray();
 
@@ -166,13 +167,9 @@ internal static class SourceAssetDumpOperation
             }
         }
 
-        IEnumerable<BaseAsset> orderedAssets = definitions
-            .Where(value => value.Definition is not LocalizeAsset)
-            .OrderBy(value => value.Definition is MenuFileAsset ? 0 : 1)
-            .ThenBy(value => value.RowIdentity.SerializedIndex)
-            .Select(value => value.Definition)
-            .Concat(targetShaderProviders)
-            .Concat(targetImageProviders);
+        IEnumerable<BaseAsset> orderedAssets = assets
+            .Where(asset => asset is not LocalizeAsset)
+            .OrderBy(asset => asset is MenuFileAsset ? 0 : 1);
         foreach (BaseAsset asset in orderedAssets)
         {
             cancellationToken.ThrowIfCancellationRequested();

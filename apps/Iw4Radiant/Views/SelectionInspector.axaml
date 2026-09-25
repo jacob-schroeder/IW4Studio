@@ -92,6 +92,20 @@
                                     <Button x:Name="PreviewFxSoundButton" Content="Preview selected marker" Classes="panelAction" />
                                     <Button x:Name="BrowseFxSoundButton" Grid.Column="1" Content="Browse…" />
                                 </Grid>
+                                <StackPanel x:Name="FxPlaybackPanel" Spacing="7">
+                                    <TextBlock Text="In-game playback" Classes="caption" />
+                                    <ComboBox x:Name="FxPlaybackMode" SelectedIndex="0">
+                                        <ComboBoxItem Content="At map start" />
+                                        <ComboBoxItem Content="When called from a map script" />
+                                    </ComboBox>
+                                    <TextBox x:Name="FxStartDelay" PlaceholderText="Optional start delay in seconds" />
+                                    <TextBlock x:Name="FxStartDelayHint" Classes="caption" TextWrapping="Wrap"
+                                               Text="Leave empty for the stock effect timing. Enter 0 or a positive number to set a delay." />
+                                    <TextBox x:Name="FxTriggerKey" PlaceholderText="Unique script key, e.g. gate_open" IsVisible="False" />
+                                    <TextBlock x:Name="FxTriggerHint" Classes="caption" TextWrapping="Wrap" IsVisible="False"
+                                               Text="After map FX startup, call maps\mp\&lt;map&gt;_fx::trigger( &quot;key&quot; ); from your script. Each key must be unique, including inside prefabs." />
+                                    <Button x:Name="ApplyFxPlaybackButton" Content="Apply playback" Classes="panelAction" />
+                                </StackPanel>
                             </StackPanel>
                         </Expander>
                         <views:LightInspector x:Name="Lights" />

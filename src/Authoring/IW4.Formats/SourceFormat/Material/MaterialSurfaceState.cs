@@ -2,25 +2,25 @@ using System.Text.Json;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.TechniqueSet;
 
-namespace Iw4Radiant.Materials;
+namespace IW4.Formats.SourceFormat.Material;
 
-internal sealed record MaterialSurfaceState(GfxBlendOperation BlendOperation, GfxBlend Source, GfxBlend Destination,
+public sealed record MaterialSurfaceState(GfxBlendOperation BlendOperation, GfxBlend Source, GfxBlend Destination,
     GfxAlphaTest? AlphaTest, bool DepthWrite, int SortKey)
 {
-    internal static MaterialSurfaceState Opaque { get; } = new(GfxBlendOperation.Disabled, GfxBlend.One, GfxBlend.Zero, null, true, 0);
-    internal bool IgnoresVertexColor { get; init; }
-    internal MaterialTechniqueType TechniqueType { get; init; } = MaterialTechniqueType.None;
-    internal bool HasShadowMapTechnique { get; init; }
-    internal GfxCullFace ShadowCullFace { get; init; }
-    internal GfxAlphaTest? ShadowAlphaTest { get; init; }
-    internal GfxCullFace CullFace { get; init; } = GfxCullFace.Back;
-    internal GfxDepthTest? DepthTest { get; init; } = GfxDepthTest.LessThanOrEqual;
-    internal GfxPolygonOffset PolygonOffset { get; init; }
-    internal bool IsBlended => BlendOperation != GfxBlendOperation.Disabled;
-    internal bool SupportsAlpha => BlendOperation == GfxBlendOperation.Add && Source is GfxBlend.One or GfxBlend.SourceAlpha &&
+    public static MaterialSurfaceState Opaque { get; } = new(GfxBlendOperation.Disabled, GfxBlend.One, GfxBlend.Zero, null, true, 0);
+    public bool IgnoresVertexColor { get; init; }
+    public MaterialTechniqueType TechniqueType { get; init; } = MaterialTechniqueType.None;
+    public bool HasShadowMapTechnique { get; init; }
+    public GfxCullFace ShadowCullFace { get; init; }
+    public GfxAlphaTest? ShadowAlphaTest { get; init; }
+    public GfxCullFace CullFace { get; init; } = GfxCullFace.Back;
+    public GfxDepthTest? DepthTest { get; init; } = GfxDepthTest.LessThanOrEqual;
+    public GfxPolygonOffset PolygonOffset { get; init; }
+    public bool IsBlended => BlendOperation != GfxBlendOperation.Disabled;
+    public bool SupportsAlpha => BlendOperation == GfxBlendOperation.Add && Source is GfxBlend.One or GfxBlend.SourceAlpha &&
         Destination == GfxBlend.InverseSourceAlpha && !DepthWrite;
 
-    internal static MaterialSurfaceState Read(JsonElement material)
+    public static MaterialSurfaceState Read(JsonElement material)
     {
         if (!material.TryGetProperty("stateBitsEntry", out var entries) || !material.TryGetProperty("stateBits", out var states) ||
             entries.ValueKind != JsonValueKind.Array || entries.GetArrayLength() != (int)MaterialTechniqueType.Count ||

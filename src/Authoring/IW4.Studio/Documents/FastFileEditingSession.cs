@@ -1,11 +1,9 @@
 using System.Numerics;
 using IW4.Game.Assets;
 using IW4.Game.Assets.ColMap;
-using IW4.Game.Assets.Image;
 using IW4.Game.Assets.RawFile;
 using IW4.Game.Assets.Sound;
 using IW4.Game.Assets.StringTable;
-using IW4.Game.Assets.TechniqueSet;
 using IW4.Game.Assets.XModel;
 using IW4.Formats.D3dbsp;
 using IW4.Game.Database;
@@ -763,48 +761,28 @@ public sealed class FastFileEditingSession : IDisposable
     }
 
     /// <summary>
-    /// Captures active full shader providers owned by the selected target that
+    /// Captures active full providers owned by the selected target that
     /// are not represented by serialized target rows.
     /// </summary>
-    public IReadOnlyList<MaterialShaderAsset> CaptureCurrentTargetShaderProviders()
+    public IReadOnlyList<BaseAsset> CaptureCurrentTargetProviders(
+        IEnumerable<XAssetType> assetTypes)
     {
-        lock (_gate)
-        {
-            ThrowIfDisposedCore();
-            MaterialShaderAsset[] shaders = Workspace.AssetCatalog.DependencyEntries
-                .Where(entry =>
-                    entry.Origin == WorkspaceAssetOrigin.DependencyOnly &&
-                    entry.Access == WorkspaceAssetAccess.ReadOnly &&
-                    entry.ContentSource == WorkspaceAssetContentSource.ResolvedProvider &&
-                    entry.ProviderZone?.IsTarget == true &&
-                    entry.AssetType is XAssetType.PixelShader or XAssetType.VertexShader &&
-                    entry.Definition is MaterialShaderAsset)
-                .Select(entry => (MaterialShaderAsset)entry.Definition!)
-                .ToArray();
-            return Array.AsReadOnly(shaders);
-        }
-    }
+        HashSet<XAssetType> requested = ValidateCapturedAssetTypes(assetTypes);
 
-    /// <summary>
-    /// Captures active full image providers owned by the selected target that
-    /// are not represented by serialized target rows.
-    /// </summary>
-    public IReadOnlyList<GfxImageAsset> CaptureCurrentTargetImageProviders()
-    {
         lock (_gate)
         {
             ThrowIfDisposedCore();
-            GfxImageAsset[] images = Workspace.AssetCatalog.DependencyEntries
+            BaseAsset[] providers = Workspace.AssetCatalog.DependencyEntries
                 .Where(entry =>
                     entry.Origin == WorkspaceAssetOrigin.DependencyOnly &&
                     entry.Access == WorkspaceAssetAccess.ReadOnly &&
                     entry.ContentSource == WorkspaceAssetContentSource.ResolvedProvider &&
                     entry.ProviderZone?.IsTarget == true &&
-                    entry.AssetType == XAssetType.Image &&
-                    entry.Definition is GfxImageAsset)
-                .Select(entry => (GfxImageAsset)entry.Definition!)
+                    requested.Contains(entry.AssetType) &&
+                    entry.Definition is not null)
+                .Select(entry => entry.Definition!)
                 .ToArray();
-            return Array.AsReadOnly(images);
+            return Array.AsReadOnly(providers);
         }
     }
 

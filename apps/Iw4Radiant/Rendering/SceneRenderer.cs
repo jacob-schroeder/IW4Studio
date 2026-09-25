@@ -1,3 +1,4 @@
+using IW4.Render.EditorPreview;
 using System.Numerics;
 using System.Text.Json;
 using Avalonia;
@@ -598,8 +599,8 @@ internal sealed class SceneRenderer
             gl.Disable(EnableCap.CullFace);
             gl.Uniform1(_ignoreVertexColorLocation, 0);
             gl.BindTexture(TextureTarget.Texture2D, texture);
-            fixed (SceneVertex* pointer = vertices)
-                gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(SceneVertex)), pointer,
+            fixed (FxPreviewVertex* pointer = vertices)
+                gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(FxPreviewVertex)), pointer,
                     BufferUsageARB.DynamicDraw);
             gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)vertices.Length);
         }
@@ -672,8 +673,8 @@ internal sealed class SceneRenderer
                 gl.Disable(EnableCap.CullFace);
                 gl.Uniform1(_ignoreVertexColorLocation, 0);
                 gl.BindTexture(TextureTarget.Texture2D, texture);
-                fixed (SceneVertex* pointer = vertices)
-                    gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(SceneVertex)), pointer,
+                fixed (FxPreviewVertex* pointer = vertices)
+                    gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(FxPreviewVertex)), pointer,
                         BufferUsageARB.DynamicDraw);
                 gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)vertices.Length);
             }

@@ -18,6 +18,14 @@ internal static class SourceImageDumpDecoder
         WorkspaceGfxImagePayloadResolver payloadResolver)
     {
         IReadOnlyList<ImageSourceMipLevel> levels = Decode(image, payloadResolver);
+        return levels.Select(level => level with
+        {
+            RgbaBytes = ApplyComponentMapping(image, level.RgbaBytes.ToArray())
+        }).ToArray();
+    }
+
+    internal static byte[] ApplyComponentMapping(GfxImageAsset image, byte[] pixels)
+    {
         RsxTextureSwizzle swizzle = RsxTextureSwizzleDecoder.Decode(
             RsxTextureCommandBuilder.FromImage(image));
         if (swizzle == new RsxTextureSwizzle(
@@ -26,28 +34,21 @@ internal static class SourceImageDumpDecoder
                 RsxTextureSwizzleSource.Blue,
                 RsxTextureSwizzleSource.Alpha))
         {
-            return levels;
+            return pixels;
         }
 
-        // DDS/IWI pixels have no RSX sampler remap. Bake the sampled channels
-        // into exported RGBA; interactive native previews apply it on the GPU.
-        var exported = new ImageSourceMipLevel[levels.Count];
-        for (int mip = 0; mip < levels.Count; mip++)
+        // DDS/IWI and the shared FX viewport consume RGBA without RSX sampler
+        // state. Native material previews instead apply this mapping on the GPU.
+        byte[] rgba = new byte[pixels.Length];
+        for (int pixel = 0; pixel < pixels.Length; pixel += 4)
         {
-            ImageSourceMipLevel level = levels[mip];
-            ReadOnlySpan<byte> source = level.RgbaBytes.Span;
-            byte[] rgba = new byte[source.Length];
-            for (int pixel = 0; pixel < source.Length; pixel += 4)
-            {
-                ReadOnlySpan<byte> channels = source.Slice(pixel, 4);
-                rgba[pixel] = SampleChannel(channels, swizzle.Red);
-                rgba[pixel + 1] = SampleChannel(channels, swizzle.Green);
-                rgba[pixel + 2] = SampleChannel(channels, swizzle.Blue);
-                rgba[pixel + 3] = SampleChannel(channels, swizzle.Alpha);
-            }
-            exported[mip] = level with { RgbaBytes = rgba };
+            ReadOnlySpan<byte> channels = pixels.AsSpan(pixel, 4);
+            rgba[pixel] = SampleChannel(channels, swizzle.Red);
+            rgba[pixel + 1] = SampleChannel(channels, swizzle.Green);
+            rgba[pixel + 2] = SampleChannel(channels, swizzle.Blue);
+            rgba[pixel + 3] = SampleChannel(channels, swizzle.Alpha);
         }
-        return exported;
+        return rgba;
     }
 
     private static byte SampleChannel(

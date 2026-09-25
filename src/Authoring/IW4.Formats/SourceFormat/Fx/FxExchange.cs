@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text;
 using IW4.Game.Assets.Fx;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.XModel;
@@ -21,8 +22,15 @@ public sealed class FxExchange
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceDirectory);
         string name = SourceOutput.NormalizeOwnedAssetName(assetName, "Fx");
         string path = Path.Combine(Path.GetFullPath(sourceDirectory), "fx", $"{name}.json");
-        using FileStream stream = File.OpenRead(path);
-        using JsonDocument document = JsonDocument.Parse(stream);
+        return LinkJson(File.ReadAllText(path), name);
+    }
+
+    /// <summary>Validates and imports an in-memory version-one native Fx graph.</summary>
+    public FxEffectDefAsset LinkJson(string sourceJson, string assetName)
+    {
+        ArgumentNullException.ThrowIfNull(sourceJson);
+        string name = SourceOutput.NormalizeOwnedAssetName(assetName, "Fx");
+        using JsonDocument document = JsonDocument.Parse(sourceJson);
         JsonElement root = Object(document.RootElement, "Fx");
         if (String(root, "format", "Fx") != "iw4-fx-native-graph" ||
             Int(root, "version", "Fx") != 1)
@@ -365,6 +373,24 @@ public sealed class FxExchange
 
     public IReadOnlyList<string> Unlink(string sourceDirectory, FxEffectDefAsset asset)
     {
+        IReadOnlyList<FxElemDef> elements = ValidatedElements(asset);
+        string name = SourceOutput.NormalizeOwnedAssetName(asset.Name, "Fx");
+        return new SourceOutput(sourceDirectory).WriteBinaryBatch([
+            ($"fx/{name}.json", stream => WriteJson(stream, asset, elements))
+        ]);
+    }
+
+    /// <summary>Projects a materialized FX into the same version-one graph without writing a source file.</summary>
+    public string ToJson(FxEffectDefAsset asset)
+    {
+        IReadOnlyList<FxElemDef> elements = ValidatedElements(asset);
+        using var stream = new MemoryStream();
+        WriteJson(stream, asset, elements);
+        return Encoding.UTF8.GetString(stream.ToArray()).TrimEnd('\n');
+    }
+
+    private static IReadOnlyList<FxElemDef> ValidatedElements(FxEffectDefAsset asset)
+    {
         ArgumentNullException.ThrowIfNull(asset);
         string name = SourceOutput.NormalizeOwnedAssetName(asset.Name, "Fx");
         IReadOnlyList<FxElemDef> elements = asset.ElemDefs ??
@@ -384,9 +410,7 @@ public sealed class FxExchange
                 $"Fx '{name}' declares {count} elements but materialized {elements.Count}.");
         }
 
-        return new SourceOutput(sourceDirectory).WriteBinaryBatch([
-            ($"fx/{name}.json", stream => WriteJson(stream, asset, elements))
-        ]);
+        return elements;
     }
 
     private static void WriteJson(

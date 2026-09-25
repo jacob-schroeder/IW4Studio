@@ -1,3 +1,4 @@
+using IW4.Formats.SourceFormat.Material;
 using System.Buffers;
 using System.Numerics;
 using IW4.Formats.SourceFormat.Image;

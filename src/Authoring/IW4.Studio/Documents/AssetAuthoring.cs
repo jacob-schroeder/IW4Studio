@@ -14,6 +14,7 @@ using IW4.Formats.XModel;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
 using IW4.Studio.Documents.MenuEditing;
+using IW4.Studio.Fx;
 using IW4.Unlinker.D3dbsp;
 
 namespace IW4.Studio.Documents;
@@ -127,6 +128,7 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new MaterialAdapter());
         registry.Register(new XModelAdapter());
         registry.Register(new FontAdapter());
+        registry.Register(new FxAdapter());
         registry.Register(new WeaponAdapter());
         registry.Register(new StructuredDataAdapter());
         registry.Register(new SoundAdapter());

@@ -3,10 +3,10 @@ using System.Numerics;
 using IW4.Formats.SourceFormat.Fx;
 using IW4.Game.Assets.Fx;
 
-namespace Iw4Radiant.Rendering;
+namespace IW4.Render.EditorPreview;
 
 // Source FX preview. Sampling is deterministic and all source/model I/O happens during Load.
-internal sealed class FxSpritePreview
+public sealed class FxSpritePreview
 {
     private const int BoundsSampleWindowMilliseconds = 8_000;
     private const int MaximumSprites = 128;
@@ -43,15 +43,15 @@ internal sealed class FxSpritePreview
         _clock.Start();
     }
 
-    internal Vector3 Origin { get; }
-    internal string? Notice { get; }
-    internal bool HasDrawableElements { get; }
-    internal bool IsPaused => !_clock.IsRunning;
-    internal bool IsLooping => double.IsPositiveInfinity(_effect.DurationMilliseconds);
-    internal bool IsFinished => !IsLooping && !Repeat &&
+    public Vector3 Origin { get; }
+    public string? Notice { get; }
+    public bool HasDrawableElements { get; }
+    public bool IsPaused => !_clock.IsRunning;
+    public bool IsLooping => double.IsPositiveInfinity(_effect.DurationMilliseconds);
+    public bool IsFinished => !IsLooping && !Repeat &&
         TimelineMilliseconds >= _effect.DurationMilliseconds;
-    internal bool IsPlaying => !IsPaused && !IsFinished;
-    internal bool Repeat
+    public bool IsPlaying => !IsPaused && !IsFinished;
+    public bool Repeat
     {
         get => _repeat;
         set
@@ -70,18 +70,18 @@ internal sealed class FxSpritePreview
         }
     }
     private double TimelineMilliseconds => _clock.Elapsed.TotalMilliseconds + _timelineOffsetMilliseconds;
-    internal IReadOnlyList<string> Materials => _materials;
-    internal (Vector3 Min, Vector3 Max) PreviewBounds { get; }
+    public IReadOnlyList<string> Materials => _materials;
+    public (Vector3 Min, Vector3 Max) PreviewBounds { get; }
 
-    internal FxSpritePreview CreateInstance() => new(this);
+    public FxSpritePreview CreateInstance() => new(this);
 
-    internal void SetPaused(bool paused)
+    public void SetPaused(bool paused)
     {
         if (paused) _clock.Stop();
         else _clock.Start();
     }
 
-    internal void Restart()
+    public void Restart()
     {
         bool paused = IsPaused;
         _clock.Reset();
@@ -89,12 +89,30 @@ internal sealed class FxSpritePreview
         if (!paused) _clock.Start();
     }
 
-    internal static FxSpritePreview Load(string sourceDirectory, string assetName, Vector3 origin,
+    public static FxSpritePreview Load(string sourceDirectory, string assetName, Vector3 origin,
         Matrix4x4 orientation)
     {
         var exchange = new FxExchange();
+        return LoadGraph(assetName, origin, orientation,
+            name => exchange.Link(sourceDirectory, name),
+            name => FxModelPreviewGeometry.Load(sourceDirectory, name));
+    }
+
+    public static FxSpritePreview Load(FxEffectDefAsset effect, Vector3 origin, Matrix4x4 orientation,
+        Func<string, FxEffectDefAsset> resolveEffect,
+        Func<string, IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)>> resolveModel)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(effect.Name);
+        return LoadGraph(effect.Name, origin, orientation,
+            name => name == effect.Name ? effect : resolveEffect(name), resolveModel);
+    }
+
+    private static FxSpritePreview LoadGraph(string assetName, Vector3 origin, Matrix4x4 orientation,
+        Func<string, FxEffectDefAsset> resolveEffect,
+        Func<string, IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)>> resolveModel)
+    {
         var cache = new Dictionary<string, EffectNode>(StringComparer.Ordinal);
-        var modelCache = new Dictionary<string, IReadOnlyList<(string Material, SceneVertex[] Vertices)>>(StringComparer.Ordinal);
+        var modelCache = new Dictionary<string, IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)>>(StringComparer.Ordinal);
         var notices = new HashSet<string>(StringComparer.Ordinal);
         EffectNode LoadEffect(string name, HashSet<string> ancestry)
         {
@@ -104,7 +122,7 @@ internal sealed class FxSpritePreview
                 notices.Add("nested or cyclic runner graph omitted");
                 return new EffectNode([], 0, 0);
             }
-            FxEffectDefAsset effect = exchange.Link(sourceDirectory, name);
+            FxEffectDefAsset effect = resolveEffect(name);
             ValidateCounts(effect);
             var elements = new List<ElementNode>();
             for (int index = 0; index < effect.ElemDefs.Count; index++)
@@ -151,7 +169,7 @@ internal sealed class FxSpritePreview
                     {
                         if (!modelCache.TryGetValue(modelName, out var geometry))
                         {
-                            try { geometry = FxModelPreviewGeometry.Load(sourceDirectory, modelName); }
+                            try { geometry = resolveModel(modelName); }
                             catch (Exception exception) when (exception is IOException or InvalidDataException or
                                 UnauthorizedAccessException or ArgumentException or NotSupportedException or
                                 System.Text.Json.JsonException)
@@ -198,11 +216,11 @@ internal sealed class FxSpritePreview
         return new FxSpritePreview(root, origin, orientation, notices);
     }
 
-    internal IReadOnlyList<(string Material, SceneVertex[] Vertices)> Sample(Vector3 eye,
+    public IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)> Sample(Vector3 eye,
         bool applyDistanceFade = false) =>
         Sample(eye, Origin, _orientation, MaximumSprites, applyDistanceFade);
 
-    internal IReadOnlyList<(string Material, SceneVertex[] Vertices)> Sample(Vector3 eye, Vector3 origin,
+    public IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)> Sample(Vector3 eye, Vector3 origin,
         Matrix4x4 orientation, int maximumSprites, bool applyDistanceFade = false,
         uint variationSeed = 0)
     {
@@ -211,7 +229,7 @@ internal sealed class FxSpritePreview
         double time = TimelineMilliseconds;
         if (Repeat && !IsLooping && _effect.DurationMilliseconds > 0)
             time %= _effect.DurationMilliseconds;
-        var batches = new Dictionary<string, List<SceneVertex>>(StringComparer.Ordinal);
+        var batches = new Dictionary<string, List<FxPreviewVertex>>(StringComparer.Ordinal);
         SampleEffect(_effect, time, eye, origin, orientation, Mix(0x46585052u ^ variationSeed),
             applyDistanceFade, batches, ref budget);
         return batches.Select(batch => (batch.Key, batch.Value.ToArray())).ToArray();
@@ -219,7 +237,7 @@ internal sealed class FxSpritePreview
 
     private static void SampleEffect(EffectNode effect, double time, Vector3 eye, Vector3 origin,
         Matrix4x4 orientation, uint parentSeed, bool applyDistanceFade,
-        Dictionary<string, List<SceneVertex>> batches, ref int budget)
+        Dictionary<string, List<FxPreviewVertex>> batches, ref int budget)
     {
         for (int elementIndex = 0; elementIndex < effect.Elements.Count; elementIndex++)
         {
@@ -344,26 +362,26 @@ internal sealed class FxSpritePreview
         }
     }
 
-    private static void AddModel(Dictionary<string, List<SceneVertex>> batches,
-        IReadOnlyList<(string Material, SceneVertex[] Vertices)>? geometry, Vector3 center,
+    private static void AddModel(Dictionary<string, List<FxPreviewVertex>> batches,
+        IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)>? geometry, Vector3 center,
         Matrix4x4 orientation, FxElemDef element, float age, uint seed, float scale,
         Vector4 color, ref int budget)
     {
         if (geometry is null || !float.IsFinite(scale) || scale <= 0 || budget < 3 ||
             geometry.Sum(batch => batch.Vertices.Length) > budget) return;
         Matrix4x4 rotation = ElementAxis(element, age, seed, orientation);
-        foreach ((string material, SceneVertex[] vertices) in geometry)
+        foreach ((string material, FxPreviewVertex[] vertices) in geometry)
         {
-            if (!batches.TryGetValue(material, out List<SceneVertex>? output))
+            if (!batches.TryGetValue(material, out List<FxPreviewVertex>? output))
                 batches.Add(material, output = []);
             int triangles = vertices.Length / 3;
             for (int index = 0; index < triangles * 3; index++)
             {
-                SceneVertex vertex = vertices[index];
+                FxPreviewVertex vertex = vertices[index];
                 Vector3 position = center + Vector3.TransformNormal(vertex.Position * scale, rotation);
                 Vector3 normal = Vector3.TransformNormal(vertex.Normal, rotation);
                 if (normal.LengthSquared() > 0.0001f) normal = Vector3.Normalize(normal);
-                output.Add(new SceneVertex(position, normal, vertex.Uv, vertex.Color * color));
+                output.Add(new FxPreviewVertex(position, normal, vertex.Uv, vertex.Color * color));
             }
             budget -= triangles * 3;
             if (budget < 3) break;
@@ -396,10 +414,10 @@ internal sealed class FxSpritePreview
         for (int frame = 1; frame <= 24; frame++)
         {
             int budget = MaximumSprites * 6;
-            var batches = new Dictionary<string, List<SceneVertex>>(StringComparer.Ordinal);
+            var batches = new Dictionary<string, List<FxPreviewVertex>>(StringComparer.Ordinal);
             SampleEffect(effect, frame * (window / 25), new Vector3(128, -128, 96),
                 Vector3.Zero, Matrix4x4.Identity, Mix(0x46585052u), false, batches, ref budget);
-            foreach (SceneVertex vertex in batches.Values.SelectMany(vertices => vertices))
+            foreach (FxPreviewVertex vertex in batches.Values.SelectMany(vertices => vertices))
             {
                 if (vertex.Color.W < 0.1f || !float.IsFinite(vertex.Position.X) ||
                     !float.IsFinite(vertex.Position.Y) || !float.IsFinite(vertex.Position.Z)) continue;
@@ -609,7 +627,7 @@ internal sealed class FxSpritePreview
             (float)(column + 1) / columns, (float)(row + 1) / rows);
     }
 
-    private static void AddParticle(Dictionary<string, List<SceneVertex>> batches, string material,
+    private static void AddParticle(Dictionary<string, List<FxPreviewVertex>> batches, string material,
         FxElemType type, Vector3 eye, Vector3 center, Vector3 velocity, Matrix4x4 orientation,
         float size0, float size1, float rotation, Vector4 color, Vector4 uv)
     {
@@ -653,14 +671,14 @@ internal sealed class FxSpritePreview
         Vector3 a = center - right - up, b = center + right - up;
         Vector3 c = type == FxElemType.Tail ? center + right : center + right + up;
         Vector3 d = type == FxElemType.Tail ? center - right : center - right + up;
-        if (!batches.TryGetValue(material, out List<SceneVertex>? vertices))
+        if (!batches.TryGetValue(material, out List<FxPreviewVertex>? vertices))
             batches.Add(material, vertices = []);
-        vertices.Add(new SceneVertex(a, forward, new Vector2(uv.X, uv.W), color));
-        vertices.Add(new SceneVertex(b, forward, new Vector2(uv.Z, uv.W), color));
-        vertices.Add(new SceneVertex(c, forward, new Vector2(uv.Z, uv.Y), color));
-        vertices.Add(new SceneVertex(a, forward, new Vector2(uv.X, uv.W), color));
-        vertices.Add(new SceneVertex(c, forward, new Vector2(uv.Z, uv.Y), color));
-        vertices.Add(new SceneVertex(d, forward, new Vector2(uv.X, uv.Y), color));
+        vertices.Add(new FxPreviewVertex(a, forward, new Vector2(uv.X, uv.W), color));
+        vertices.Add(new FxPreviewVertex(b, forward, new Vector2(uv.Z, uv.W), color));
+        vertices.Add(new FxPreviewVertex(c, forward, new Vector2(uv.Z, uv.Y), color));
+        vertices.Add(new FxPreviewVertex(a, forward, new Vector2(uv.X, uv.W), color));
+        vertices.Add(new FxPreviewVertex(c, forward, new Vector2(uv.Z, uv.Y), color));
+        vertices.Add(new FxPreviewVertex(d, forward, new Vector2(uv.X, uv.Y), color));
     }
 
     private static void SampleVisual(FxElemDef element, float normalizedLife,
@@ -692,12 +710,12 @@ internal sealed class FxSpritePreview
         (Mix(seed ^ (channel * 0x9e3779b9u)) >> 8) * (1f / 16777216f);
 
     private sealed record VisualNode(string? Material,
-        IReadOnlyList<(string Material, SceneVertex[] Vertices)>? Model, EffectNode? Child);
+        IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)>? Model, EffectNode? Child);
     private sealed record ElementNode(FxElemDef Definition, bool Looping, IReadOnlyList<VisualNode> Visuals);
     private sealed record EffectNode(IReadOnlyList<ElementNode> Elements,
         double DurationMilliseconds, double LoopingLifeMilliseconds)
     {
-        internal IEnumerable<string> Materials
+        public IEnumerable<string> Materials
         {
             get
             {

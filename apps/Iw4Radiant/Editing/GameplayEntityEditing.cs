@@ -138,6 +138,43 @@ internal static class GameplayEntityEditing
         session.Edit(() => entity.Properties[key] = assetName);
     }
 
+    internal static void SetFxPlayback(EditorSession session, MapEntity entity, bool scriptTrigger,
+        string startDelay, string triggerKey)
+    {
+        if (entity.ClassName != "fx_origin" || entity.Properties.GetValueOrDefault("is_sound") == "1")
+            throw new ArgumentException("Select an FX marker.");
+        startDelay = startDelay.Trim();
+        triggerKey = triggerKey.Trim();
+        if (scriptTrigger)
+        {
+            if (triggerKey.Length == 0 || !(char.IsAsciiLetter(triggerKey[0]) || triggerKey[0] == '_') ||
+                triggerKey.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '_'))
+                throw new ArgumentException("Enter a script key using letters, numbers and underscores, starting with a letter or underscore.");
+        }
+        else if (startDelay.Length != 0 &&
+                 (!float.TryParse(startDelay, NumberStyles.Float, CultureInfo.InvariantCulture, out float delay) ||
+                  !float.IsFinite(delay) || delay < 0))
+            throw new ArgumentException("Start delay must be a finite number of seconds, zero or greater. Leave it empty for stock timing.");
+
+        session.Edit(() =>
+        {
+            if (scriptTrigger)
+            {
+                entity.Properties["fx_playback"] = "script";
+                entity.Properties["fx_trigger_key"] = triggerKey;
+                entity.Properties.Remove("fx_start_delay");
+            }
+            else
+            {
+                entity.Properties.Remove("fx_playback");
+                entity.Properties.Remove("fx_trigger_key");
+                if (startDelay.Length == 0) entity.Properties.Remove("fx_start_delay");
+                else entity.Properties["fx_start_delay"] =
+                    float.Parse(startDelay, CultureInfo.InvariantCulture).ToString("G9", CultureInfo.InvariantCulture);
+            }
+        });
+    }
+
     internal static MapEntity CreateBrushEntity(EditorSession session, string className)
     {
         if (!RequireType(className).UsesBrushes) throw new ArgumentException("Choose a brush entity type.");

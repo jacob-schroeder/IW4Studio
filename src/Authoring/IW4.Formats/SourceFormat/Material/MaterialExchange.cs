@@ -233,6 +233,16 @@ public sealed partial class MaterialExchange
         ]);
     }
 
+    public string ToJson(MaterialAsset asset)
+    {
+        ArgumentNullException.ThrowIfNull(asset);
+        string assetName = SourceOutput.NormalizeOwnedAssetName(asset.Info.Name, "Material");
+        Validate(asset, assetName);
+        using var stream = new MemoryStream();
+        WriteJson(stream, asset, assetName);
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
     private static void Validate(MaterialAsset asset, string assetName)
     {
         if (asset.StateBitsEntries.Count != MaterialAsset.TechniqueSlotCount)

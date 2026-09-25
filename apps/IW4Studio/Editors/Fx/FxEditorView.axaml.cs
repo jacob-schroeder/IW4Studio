@@ -3,12 +3,16 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using IW4.Studio.Desktop.Editors.XModel;
 using IW4.Studio.Desktop.ViewModels;
+using IW4.Studio.Documents;
+using IW4.Studio.Fx;
+using IW4.Formats.SourceFormat.Fx;
 
 namespace IW4.Studio.Desktop.Editors.Fx;
 
 public sealed partial class FxEditorView : UserControl
 {
     private readonly XModelPreviewControl? _selectedVisualPreview;
+    private AssetEditorSession? _editorSession;
     private bool _isAttached;
 
     public FxEditorView()
@@ -16,6 +20,24 @@ public sealed partial class FxEditorView : UserControl
         InitializeComponent();
         _selectedVisualPreview =
             this.FindControl<XModelPreviewControl>("SelectedVisualPreview");
+    }
+
+    public void SetEditorSession(AssetEditorSession? session)
+    {
+        _editorSession = session;
+        EditLayersButton.IsVisible = session?.CanEdit == true;
+    }
+
+    private async void EditLayersButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_editorSession is not { CanEdit: true } session ||
+            TopLevel.GetTopLevel(this) is not Window owner)
+            return;
+        var editor = new FxLayerEditorWindow(session);
+        bool applied = await editor.ShowDialog<bool>(owner);
+        if (!applied || DataContext is not FxEditorViewModel viewModel) return;
+        FxDraft draft = session.OpenDraft<FxDraft>();
+        viewModel.Reload(new FxExchange().LinkJson(draft.Json, draft.AssetName));
     }
 
     protected override void OnAttachedToVisualTree(

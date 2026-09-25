@@ -64,6 +64,12 @@ public partial class MainWindow
             {
                 StopEmitterPreview("Select an asset to preview.");
                 _buildEmitterAssetsPath = root;
+                if (!browser.IsSoundBrowser)
+                {
+                    Workspace.Camera.SetMapFxPreview(null, []);
+                    _mapFxSource = null;
+                    _mapFxEmitters = [];
+                }
                 lock (_emitterMaterials)
                 {
                     _emitterMaterialRoot = root;

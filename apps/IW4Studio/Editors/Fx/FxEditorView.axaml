@@ -72,6 +72,8 @@
                     Orientation="Horizontal"
                     VerticalAlignment="Center"
                     Spacing="7">
+          <Button x:Name="EditLayersButton" Content="Edit layers…" Click="EditLayersButton_Click"
+                  IsVisible="False" />
           <Border Padding="9,4"
                   CornerRadius="4"
                   Background="#253F8E63"
@@ -88,7 +90,7 @@
                   Background="{DynamicResource StudioSurfaceSunkenBrush}"
                   BorderBrush="{DynamicResource StudioBorderBrush}"
                   BorderThickness="1">
-            <TextBlock Text="READ ONLY"
+            <TextBlock Text="COMPILED DETAILS"
                        FontSize="9"
                        FontWeight="SemiBold"
                        LetterSpacing="0.5"

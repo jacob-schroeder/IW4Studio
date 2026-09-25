@@ -1,0 +1,68 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:fx="using:IW4.Studio.Desktop.Editors.Fx"
+        x:Class="IW4.Studio.Desktop.Editors.Fx.FxLayerEditorWindow"
+        Title="Edit FX layers — IW4 Studio"
+        Width="1480" Height="900" MinWidth="1100" MinHeight="680"
+        WindowStartupLocation="CenterScreen">
+  <Grid RowDefinitions="Auto,*,Auto" Background="{DynamicResource StudioSurfaceSunkenBrush}">
+    <Border Padding="18,12" Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="18">
+        <StackPanel Spacing="3">
+          <TextBlock x:Name="AssetTitle" FontSize="18" FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+          <TextBlock x:Name="PathText" FontSize="11" TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Button x:Name="UndoButton" Content="Undo" Click="Undo_Click" />
+          <Button x:Name="RedoButton" Content="Redo" Click="Redo_Click" />
+          <Button Content="Cancel" Click="Cancel_Click" />
+          <Button x:Name="ApplyButton" Content="Apply to workspace" Click="Apply_Click"
+                  Background="{DynamicResource StudioAccentStrongBrush}"
+                  Foreground="{DynamicResource StudioOnAccentBrush}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1" Margin="12" ColumnDefinitions="260,8,*,8,340">
+      <Border Grid.Column="0" CornerRadius="8" Background="{DynamicResource StudioSurfaceBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <StackPanel Margin="14,12" Spacing="4">
+            <TextBlock Text="LAYERS" FontSize="11" FontWeight="Bold"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Text="Unsupported layers are preserved read-only."
+                       TextWrapping="Wrap" FontSize="10"
+                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          </StackPanel>
+          <ListBox Grid.Row="1" x:Name="LayerList" Margin="8,0" SelectionChanged="LayerList_SelectionChanged" />
+          <StackPanel Grid.Row="2" Margin="10" Orientation="Horizontal" Spacing="6">
+            <Button x:Name="DuplicateLayerButton" Content="Duplicate" Click="DuplicateLayer_Click" />
+            <Button x:Name="RemoveLayerButton" Content="Remove" Click="RemoveLayer_Click" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Grid.Column="2" CornerRadius="8" ClipToBounds="True"
+              Background="{DynamicResource StudioSurfaceBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+        <fx:FxSourcePreviewControl x:Name="Preview" />
+      </Border>
+
+      <Border Grid.Column="4" CornerRadius="8" Background="{DynamicResource StudioSurfaceBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel x:Name="Inspector" Margin="16" Spacing="12" />
+        </ScrollViewer>
+      </Border>
+    </Grid>
+
+    <Border Grid.Row="2" Padding="16,8" Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="0,1,0,0">
+      <TextBlock x:Name="StatusText" FontSize="11" TextWrapping="Wrap"
+                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+    </Border>
+  </Grid>
+</Window>
