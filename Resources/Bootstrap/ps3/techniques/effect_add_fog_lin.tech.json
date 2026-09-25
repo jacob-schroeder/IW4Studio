@@ -1,0 +1,112 @@
+{
+  "format": "iw4-ps3-technique",
+  "version": 1,
+  "name": "effect_add_fog_lin",
+  "flags": 8,
+  "passes": [
+    {
+      "perPrimArgCount": 1,
+      "perObjArgCount": 1,
+      "stableArgCount": 3,
+      "customSamplerFlags": 0,
+      "precompiledVertexShader": 2,
+      "vertexShader": "vertcol_simple_fog.hlsl",
+      "pixelShader": "vertcol_simple_add_lin_fog.hlsl",
+      "vertexDeclaration": {
+        "streamCount": 3,
+        "hasOptionalSourceRaw": 1,
+        "routing": [
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 1,
+            "destination": 3
+          },
+          {
+            "source": 2,
+            "destination": 8
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          }
+        ]
+      },
+      "arguments": [
+        {
+          "type": 3,
+          "destination": 4,
+          "argumentRaw": 6225924,
+          "literalBits": null
+        },
+        {
+          "type": 3,
+          "destination": 0,
+          "argumentRaw": 5439492,
+          "literalBits": null
+        },
+        {
+          "type": 2,
+          "destination": 0,
+          "argumentRaw": -1599401919,
+          "literalBits": null
+        },
+        {
+          "type": 3,
+          "destination": 21,
+          "argumentRaw": 2359297,
+          "literalBits": null
+        },
+        {
+          "type": 7,
+          "destination": 2,
+          "argumentRaw": 0,
+          "literalBits": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    }
+  ]
+}

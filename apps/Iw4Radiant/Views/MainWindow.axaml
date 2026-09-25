@@ -97,6 +97,7 @@
                 <MenuItem Header="Import leak path (.lin)…" Click="ImportLeakPath_Click" />
             </MenuItem>
             <MenuItem Header="_Create">
+                <MenuItem Header="_Factions…" Click="Factions_Click" />
                 <MenuItem Header="_Models…" Click="Models_Click" />
                 <MenuItem Header="_Prefabs…" Click="Prefabs_Click" />
                 <MenuItem Header="_Curves, ropes, arches and stairs…" Click="Geometry_Click" />

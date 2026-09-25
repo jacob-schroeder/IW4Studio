@@ -81,6 +81,11 @@ internal sealed class SceneRenderer
     private IReadOnlyList<(MapEntity Entity, XModelSource Model)> _foliagePreview = [];
     private bool _previewMeshesDirty;
     private CompiledBspPreview? _compiledPreview;
+    private WalkPlayerPreview? _walkPlayer;
+    private WalkPlayerPreview? _uploadedWalkPlayer;
+    private WalkPlayerGl? _walkPlayerGl;
+    private string? _walkPlayerNotice;
+    private bool _walkPlayerFailed;
     internal CompiledBspPreview? CompiledPreview
     {
         get => _compiledPreview;
@@ -101,6 +106,7 @@ internal sealed class SceneRenderer
     internal bool IsFxPreviewLooping => _fxPreview?.IsLooping == true;
     internal bool IsFxPreviewRepeating => _fxPreview?.Repeat == true;
     internal string? FxPreviewNotice => _fxPreviewNotice;
+    internal string? WalkPlayerNotice => _walkPlayerNotice;
     internal (Vector3 Min, Vector3 Max)? FxPreviewBounds => _fxPreview?.PreviewBounds;
     internal bool HasActiveMapFxPreview => _mapFxPreviews.Count != 0;
     internal bool HasPlayingMapFxPreview => _mapFxPreviews.Any(item => item.Preview.IsPlaying);
@@ -111,6 +117,14 @@ internal sealed class SceneRenderer
     internal event EventHandler? StatusChanged;
 
     internal void RefreshScene() => _sceneDirty = true;
+    internal void SetWalkPlayer(WalkPlayerPreview? preview)
+    {
+        if (ReferenceEquals(_walkPlayer, preview)) return;
+        _walkPlayer = preview;
+        _walkPlayerFailed = false;
+        _walkPlayerNotice = null;
+        // OpenGL deletion is deferred until Render or ReleaseResources has a current context.
+    }
     internal void PreviewPointEntityMove() => _movePreviewDirty = true;
     internal void ReloadTextures()
     {
@@ -369,12 +383,14 @@ internal sealed class SceneRenderer
 
     internal unsafe void Render(PixelSize size, int framebuffer, Matrix4x4 viewProjection, Vector3 eye,
         EditorSession session,
-        Func<string, MaterialSource?>? resolveMaterial, bool previewLighting, FilmPreview filmPreview, FogPreview fogPreview)
+        Func<string, MaterialSource?>? resolveMaterial, bool previewLighting, FilmPreview filmPreview, FogPreview fogPreview,
+        bool showWalkPlayer = false, double walkPlayerSeconds = 0)
     {
         if (_gl is not { } gl || _program == 0)
             return;
         try
         {
+            SyncWalkPlayer(gl, showWalkPlayer);
             MapDocument document = session.Scene.Document;
             RemoveUnusedPreviewMeshes(gl);
             if (_texturesDirty)
@@ -485,6 +501,15 @@ internal sealed class SceneRenderer
             gl.Uniform1(_cubicClipLocation, 0);
             gl.DrawArrays(PrimitiveType.Lines, _leakPathStart, (uint)_leakPathCount);
             if (_compiledPreview is null) _water.RenderUnderwater(gl, eye);
+            if (showWalkPlayer && _walkPlayer is not null && !_walkPlayerFailed)
+            {
+                try { RenderWalkPlayer(gl, size, walkPlayerSeconds); }
+                catch (Exception exception) when (IsRenderException(exception) || exception is InvalidDataException or IndexOutOfRangeException)
+                {
+                    _walkPlayerFailed = true;
+                    _walkPlayerNotice = $"Walk viewmodel: {exception.Message}";
+                }
+            }
             gl.BindVertexArray(0);
             gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.UseProgram(0);
@@ -498,12 +523,13 @@ internal sealed class SceneRenderer
             else
                 DrawFilmPreview(gl, size, framebuffer, filmPreview);
             string?[] notices = _compiledPreview is not null
-                ? [_fxPreviewNotice, _mapFxPreviewNotice, _materialTextures.Error]
+                ? [_fxPreviewNotice, _mapFxPreviewNotice, _materialTextures.Error, _walkPlayerNotice]
                 : [session.Scene.Notice, _fxPreviewNotice, _mapFxPreviewNotice, _materialTextures.Error,
                     _skies.Notice, _water.Notice,
                     HasAnimatedWater ? _reflections.Notice : null,
                     previewLighting ? _lighting.GetNotice(_sunlight.IsAvailable) : null,
-                    previewLighting ? _shadows.Notice : null, previewLighting ? _sunlight.Notice : null];
+                    previewLighting ? _shadows.Notice : null, previewLighting ? _sunlight.Notice : null,
+                    _walkPlayerNotice];
             string notice = string.Join('\n', notices.Where(value => !string.IsNullOrEmpty(value)));
             PublishStatus(notice.Length == 0 ? null : notice);
         }
@@ -539,6 +565,70 @@ internal sealed class SceneRenderer
             gl.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
             gl.BindFramebuffer(FramebufferTarget.Framebuffer, (uint)framebuffer);
         }
+    }
+
+    private void SyncWalkPlayer(GL gl, bool show)
+    {
+        if (!ReferenceEquals(_walkPlayer, _uploadedWalkPlayer))
+        {
+            _walkPlayerGl?.Delete(gl);
+            _walkPlayerGl = null;
+            _uploadedWalkPlayer = _walkPlayer;
+        }
+        if (!show || _walkPlayer is null || _walkPlayerGl is not null || _walkPlayerFailed) return;
+        try { _walkPlayerGl = WalkPlayerGl.Create(gl, _walkPlayer); }
+        catch (Exception exception) when (IsRenderException(exception) || exception is OutOfMemoryException)
+        {
+            _walkPlayerFailed = true;
+            _walkPlayerNotice = $"Walk viewmodel upload: {exception.Message}";
+        }
+    }
+
+    private unsafe void RenderWalkPlayer(GL gl, PixelSize size, double seconds)
+    {
+        if (_walkPlayer is not { } preview || _walkPlayerGl is not { } gpu) return;
+        gpu.UploadFrame(gl, preview.Sample(seconds, out Vector3 viewOrigin));
+        // The authored idle pose is held in camera space. Editor FOV and clipping
+        // mirror the Radiant camera convention; they are not recovered PS3 offsets.
+        const float near = 0.01f, far = 4096f;
+        float aspect = size.Width / (float)size.Height;
+        float y = 1 / MathF.Tan(MathF.PI / 6);
+        var projection = new Matrix4x4(y / aspect, 0, 0, 0, 0, y, 0, 0,
+            0, 0, -(far + near) / (far - near), -1, 0, 0, -2 * far * near / (far - near), 0);
+        Matrix4x4 viewProjection = Matrix4x4.CreateLookAt(viewOrigin, viewOrigin + Vector3.UnitX, Vector3.UnitZ) * projection;
+        Matrix4x4 identity = Matrix4x4.Identity;
+        gl.UseProgram(_program);
+        gl.UniformMatrix4(_viewProjectionLocation, 1, false, (float*)&viewProjection);
+        gl.UniformMatrix4(_modelLocation, 1, false, (float*)&identity);
+        gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&identity);
+        gl.Uniform1(_cubicClipLocation, 0);
+        gl.Uniform1(_fogEnabledLocation, 0);
+        gl.Uniform1(_waterPreviewLocation, 0);
+        gl.Uniform1(_hasWaterReflectionLocation, 0);
+        gl.Uniform1(_litLocation, 0);
+        gl.Uniform1(_texturedLocation, 1);
+        gl.Uniform3(_eyeLocation, viewOrigin.X, viewOrigin.Y, viewOrigin.Z);
+        gl.ColorMask(true, true, true, false);
+        gl.DepthMask(true);
+        gl.Clear(ClearBufferMask.DepthBufferBit);
+        gl.Enable(EnableCap.DepthTest);
+        gl.DepthFunc(DepthFunction.Lequal);
+        gl.Disable(EnableCap.PolygonOffsetFill);
+        gl.BindVertexArray(gpu.VertexArray);
+        gl.ActiveTexture(TextureUnit.Texture0);
+        foreach (var batch in preview.Batches)
+        {
+            var texture = preview.Texture(batch.Material);
+            SceneMaterialDrawing.Apply(gl, texture.Surface, _alphaTestLocation,
+                _premultiplyAlphaLocation, _ignoreVertexColorLocation);
+            gl.BindTexture(TextureTarget.Texture2D, gpu.Texture(batch.Material));
+            gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
+        }
+        gl.DepthMask(true);
+        gl.Disable(EnableCap.Blend);
+        gl.Disable(EnableCap.CullFace);
+        gl.Disable(EnableCap.PolygonOffsetFill);
+        gl.Disable(EnableCap.DepthTest);
     }
 
     private static bool Contains((Vector3 Min, Vector3 Max) bounds, Vector3 point) =>
@@ -1200,6 +1290,7 @@ internal sealed class SceneRenderer
             _water.Clear(gl);
             _reflections.Clear(gl);
             foreach (PreviewModelMesh mesh in _previewMeshes.Values) mesh.Delete(gl);
+            _walkPlayerGl?.Delete(gl);
             if (_fxVertexBuffer != 0) gl.DeleteBuffer(_fxVertexBuffer);
             if (_fxVertexArray != 0) gl.DeleteVertexArray(_fxVertexArray);
             if (_vertexBuffer != 0) gl.DeleteBuffer(_vertexBuffer);
@@ -1244,6 +1335,10 @@ internal sealed class SceneRenderer
         _movePreviewSource = null;
         _movePreviewDirty = false;
         _previewMeshes.Clear();
+        _walkPlayerGl = null;
+        _uploadedWalkPlayer = null;
+        _walkPlayerFailed = false;
+        _walkPlayerNotice = null;
         _foliagePreview = [];
         _previewMeshesDirty = false;
         HasAnimatedWater = HasVisibleAnimatedWater = false;

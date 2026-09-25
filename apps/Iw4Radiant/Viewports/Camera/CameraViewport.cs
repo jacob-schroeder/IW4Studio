@@ -12,7 +12,7 @@ using Iw4Radiant.Rendering;
 
 namespace Iw4Radiant.Viewports.Camera;
 
-public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
+public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
 {
     private EditorSession? _session;
     private readonly CameraNavigation _navigation = new();
@@ -45,6 +45,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         Focusable = true;
         ClipToBounds = true;
         _flyMovement = new CameraFlyMovement(this, _navigation);
+        _walkMovement = new CameraWalkMovement(this, _navigation);
         _renderer.StatusChanged += (_, _) => RendererStatusChanged?.Invoke(this, EventArgs.Empty);
         PointerPressed += OnPointerPressed;
         PointerMoved += OnPointerMoved;
@@ -53,10 +54,11 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         PointerCaptureLost += (_, _) => { if (_dragPointer is not null) FinishGesture(cancel: true); };
         PointerWheelChanged += OnPointerWheelChanged;
         KeyDown += (_, e) => HandleNavigationKeyDown(e);
-        KeyUp += (_, e) => _flyMovement.KeyUp(e);
+        KeyUp += (_, e) => { if (WalkMode) _walkMovement.KeyUp(e); else _flyMovement.KeyUp(e); };
+        GotFocus += (_, _) => _walkMovement.Start();
         LostFocus += (_, _) => FinishGesture(cancel: true);
         SizeChanged += (_, _) => { FinishGesture(cancel: true); RequestNextFrameRendering(); };
-        DetachedFromVisualTree += (_, _) => { FinishGesture(cancel: true); _objectMenu?.Close(); };
+        DetachedFromVisualTree += (_, _) => { StopWalk(); FinishGesture(cancel: true); _objectMenu?.Close(); };
         DragDrop.SetAllowDrop(this, true);
         DragDrop.AddDragOverHandler(this, OnModelDragOver);
         DragDrop.AddDropHandler(this, OnModelDrop);
@@ -68,6 +70,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         set
         {
             if (ReferenceEquals(_session, value)) return;
+            StopWalk();
             FinishGesture(cancel: true);
             _objectMenu?.Close();
             if (_session is not null) _session.PointEntityPreviewChanged -= OnPointEntityPreviewChanged;
@@ -79,6 +82,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
 
     private void OnPointEntityPreviewChanged(bool modelsChanged)
     {
+        StopWalk();
         if (_session is { } session && session.DeferPreviewLighting && session.TransformMode == TransformMode.Move &&
             session.Selection.Count > 0 && session.Selection.Items.All(item => item is MapEntity entity &&
                 (entity.ClassName == "fx_origin" || XModelGeometry.IsModel(entity))))
@@ -99,6 +103,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         get => _renderer.CompiledPreview;
         set
         {
+            StopWalk();
             FinishGesture(cancel: true);
             _objectMenu?.Close();
             _renderer.CompiledPreview = value;
@@ -122,6 +127,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         set
         {
             if (_flyMode == value) return;
+            StopWalk();
             FinishGesture(cancel: true);
             _flyMode = value;
             NavigationModeChanged?.Invoke();
@@ -261,6 +267,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     }
     internal void FramePoint(Vector3 point)
     {
+        StopWalk();
         FinishGesture();
         _navigation.FrameBounds((point, point), Aspect);
         NavigationChanged?.Invoke();
@@ -268,16 +275,18 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     }
     internal void FrameBounds(Vector3 min, Vector3 max)
     {
+        StopWalk();
         FinishGesture();
         _navigation.FrameBounds((min, max), Aspect);
         NavigationChanged?.Invoke();
         RequestNextFrameRendering();
     }
-    internal bool CanFlyMove => FlyMode || _dragPointer is not null && _dragButton == MouseButton.Right;
+    internal bool CanFlyMove => !WalkMode && (FlyMode || _dragPointer is not null && _dragButton == MouseButton.Right);
 
     internal bool HandleNavigationKeyDown(KeyEventArgs e)
     {
         if (!IsFocused || !IsEffectivelyVisible || !IsEffectivelyEnabled) return false;
+        if (WalkMode) return HandleWalkKeyDown(e);
         if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta | KeyModifiers.Alt)) != 0)
         {
             _flyMovement.Stop();
@@ -302,6 +311,8 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
 
     internal void RefreshScene()
     {
+        // A walk world is a source snapshot. Never continue against stale collision.
+        StopWalk();
         if (_transform is { IsCurrent: false }) FinishGesture(cancel: true);
         _renderer.RefreshScene();
         RequestNextFrameRendering();
@@ -309,12 +320,14 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
 
     internal void ReloadTextures()
     {
+        StopWalk();
         _renderer.ReloadTextures();
         RequestNextFrameRendering();
     }
 
     internal void FrameAll()
     {
+        StopWalk();
         FinishGesture();
         if (CompiledPreview is { } preview) _navigation.FrameBounds(preview.Bounds, Aspect);
         else if (_session is { } session) _navigation.FrameBounds(session.Scene.VisibleBounds, Aspect);
@@ -324,6 +337,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
 
     internal void FrameSelection()
     {
+        StopWalk();
         FinishGesture();
         if (_session is { } session) _navigation.FrameBounds(session.SelectionBounds ?? session.Scene.VisibleBounds, Aspect);
         NavigationChanged?.Invoke();
@@ -333,6 +347,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     internal void FinishGesture(bool cancel = false)
     {
         _flyMovement.Stop();
+        _walkMovement.Stop();
         FinishPointerGesture(cancel);
     }
 
@@ -374,11 +389,13 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     protected override void OnOpenGlInit(GlInterface gl) => _renderer.Initialize(gl);
     protected override void OnOpenGlDeinit(GlInterface gl)
     {
+        StopWalk();
         FinishGesture(cancel: true);
         _renderer.ReleaseResources();
     }
     protected override void OnOpenGlLost()
     {
+        StopWalk();
         FinishGesture(cancel: true);
         _renderer.ContextLost();
     }
@@ -392,7 +409,8 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         double scaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
         var size = new PixelSize(Math.Max(1, (int)(Bounds.Width * scaling)), Math.Max(1, (int)(Bounds.Height * scaling)));
         _renderer.Render(size, framebuffer, _navigation.ViewProjection((float)size.Width / size.Height), _navigation.Eye,
-            session, ResolveMaterial, CompiledPreview is null && PreviewLighting, FilmAdjustment, FogAdjustment);
+            session, ResolveMaterial, CompiledPreview is null && PreviewLighting, FilmAdjustment, FogAdjustment,
+            WalkMode && ShowWalkPlayer, _walkPlayerSeconds);
         NotifyFxPreviewStatusChanged(fxWasActive, previousFxNotice);
         NotifyMapFxPreviewStatusChanged(mapFxWasActive, previousMapFxNotice);
         // Render one final frame when an effect finishes so its last particles disappear.
@@ -407,6 +425,15 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         Focus(NavigationMethod.Pointer, e.KeyModifiers);
         var properties = e.GetCurrentPoint(this).Properties;
         Point point = e.GetPosition(this);
+        if (WalkMode)
+        {
+            _walkMovement.Start();
+            if (properties.PointerUpdateKind != PointerUpdateKind.RightButtonPressed)
+            {
+                e.Handled = true;
+                return;
+            }
+        }
         if (properties.PointerUpdateKind is PointerUpdateKind.RightButtonPressed or PointerUpdateKind.MiddleButtonPressed)
         {
             FinishPointerGesture(cancel: true);
@@ -415,7 +442,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
             _lastPointer = _pressPoint = point;
             _navigationMoved = false;
             bool middle = properties.PointerUpdateKind == PointerUpdateKind.MiddleButtonPressed;
-            _panning = middle || e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            _panning = !WalkMode && (middle || e.KeyModifiers.HasFlag(KeyModifiers.Shift));
             _dragButton = middle ? MouseButton.Middle : MouseButton.Right;
             e.Pointer.Capture(this);
             e.Handled = true;
@@ -487,7 +514,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         try
         {
             Point position = e.GetPosition(this);
-            UpdateFoliageBrush(position);
+            if (!WalkMode) UpdateFoliageBrush(position);
             if (!ReferenceEquals(e.Pointer, _dragPointer)) return;
             if (_paintingFoliage)
                 ContinueFoliageStroke(position);
@@ -503,7 +530,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
                 Avalonia.Vector delta = position - _lastPointer;
                 _lastPointer = position;
                 if (_panning) _navigation.Pan((float)delta.X, (float)delta.Y, (float)Math.Max(1, Bounds.Height));
-                else if (FlyMode) _navigation.Look((float)delta.X, (float)delta.Y);
+                else if (FlyMode || WalkMode) _navigation.Look((float)delta.X, (float)delta.Y);
                 else _navigation.Orbit((float)delta.X, (float)delta.Y);
                 NavigationChanged?.Invoke();
                 RequestNextFrameRendering();
@@ -526,7 +553,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         {
             Point point = e.GetPosition(this);
             Avalonia.Vector fromPress = point - _pressPoint;
-            bool showMenu = _dragButton == MouseButton.Right && !_navigationMoved && fromPress.SquaredLength < 16;
+            bool showMenu = !WalkMode && _dragButton == MouseButton.Right && !_navigationMoved && fromPress.SquaredLength < 16;
             if (_paintingFoliage) ContinueFoliageStroke(point);
             else if (_transform is { } transform) UpdateTransform(transform, point);
             else if (_dragButton == MouseButton.Left) UpdateSelectionPaint(point);
@@ -586,6 +613,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
 
     private void OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
+        if (WalkMode) { e.Handled = true; return; }
         if (_transform is not null) { e.Handled = true; return; }
         double delta = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
         if (!double.IsFinite(delta) || delta == 0) return;
@@ -792,7 +820,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
 
     private void OnModelDragOver(object? sender, DragEventArgs e)
     {
-        if (CompiledPreview is not null) { e.DragEffects = DragDropEffects.None; return; }
+        if (WalkMode || CompiledPreview is not null) { e.DragEffects = DragDropEffects.None; e.Handled = true; return; }
         try
         {
             e.DragEffects = CanAcceptModelDrop?.Invoke() != false && XModelDrag.TryRead(e.DataTransfer, out _, out _) &&
@@ -811,7 +839,7 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     {
         e.Handled = true;
         e.DragEffects = DragDropEffects.None;
-        if (CompiledPreview is not null) return;
+        if (WalkMode || CompiledPreview is not null) return;
         try
         {
             if (CanAcceptModelDrop?.Invoke() == false || _session is not { } session ||

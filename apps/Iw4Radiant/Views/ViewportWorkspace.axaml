@@ -9,7 +9,7 @@
         <Border x:Name="CameraPanel" Classes="viewportPanel" Grid.Column="2">
             <Grid RowDefinitions="30,*">
                 <Border Classes="panelHeader">
-                    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="7,0,2,0">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="7,0,2,0">
                         <TextBlock Text="Camera" VerticalAlignment="Center" />
                         <ToggleButton x:Name="FilmToggle" Grid.Column="1" Classes="viewportAction" Content="Film" Width="44" Margin="0,0,5,0"
                                       IsCheckedChanged="FilmPanel_Changed" ToolTip.Tip="Adjust the camera image only; preview changes are not saved or baked."
@@ -43,11 +43,18 @@
                         <ToggleButton x:Name="FlyCamera" Grid.Column="5" Classes="viewportAction" Content="Fly" Width="42" Margin="0,0,5,0"
                                       IsCheckedChanged="FlyCamera_Changed" ToolTip.Tip="Fly through the map: WASD to move, Q/E down/up, right-drag to look, Shift for speed. Escape returns to orbit."
                                       AutomationProperties.Name="Fly camera" />
-                        <ToggleButton x:Name="PreviewLights" Grid.Column="6" Classes="viewportAction" IsChecked="True"
+                        <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="3" Margin="0,0,5,0">
+                            <ToggleButton x:Name="WalkCamera" Classes="viewportAction" Content="Walk" Width="48"
+                                          IsCheckedChanged="WalkCamera_Changed" AutomationProperties.Name="Player walk preview" />
+                            <Button x:Name="ResetWalkCamera" Classes="viewportAction" Content="Reset" Width="48" IsVisible="False"
+                                    Click="ResetWalkCamera_Click" ToolTip.Tip="Return to the walk entry position (R)"
+                                    AutomationProperties.Name="Reset player walk position" />
+                        </StackPanel>
+                        <ToggleButton x:Name="PreviewLights" Grid.Column="7" Classes="viewportAction" IsChecked="True"
                                       IsCheckedChanged="PreviewLights_Changed" ToolTip.Tip="Preview sunlight, point and spot lights with shadows" AutomationProperties.Name="Preview lights">
                             <icons:MaterialIcon Kind="LightbulbOutline" Width="16" Height="16" />
                         </ToggleButton>
-                        <Button Grid.Column="7" Classes="viewportAction" Tag="0" Click="Maximize_Click" ToolTip.Tip="Maximize / restore camera (Ctrl/Cmd+Space)" AutomationProperties.Name="Maximize or restore camera">
+                        <Button Grid.Column="8" Classes="viewportAction" Tag="0" Click="Maximize_Click" ToolTip.Tip="Maximize / restore camera (Ctrl/Cmd+Space)" AutomationProperties.Name="Maximize or restore camera">
                             <icons:MaterialIcon Kind="Fullscreen" Width="16" Height="16" />
                         </Button>
                     </Grid>
@@ -58,6 +65,17 @@
                     <Border Background="#BF1B1D21" Padding="7,4" VerticalAlignment="Top" HorizontalAlignment="Left"
                             IsHitTestVisible="False">
                         <TextBlock x:Name="CameraControlsHint" FontSize="11" Foreground="#BEC7D2" TextWrapping="Wrap" />
+                    </Border>
+                    <Border x:Name="WalkPlayerControls" IsVisible="False" Background="#BF1B1D21" Padding="7,4" Margin="8"
+                            VerticalAlignment="Bottom" HorizontalAlignment="Left" CornerRadius="4">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <ToggleButton x:Name="ShowWalkPlayer" Classes="viewportAction" Content="Show player" MinWidth="92"
+                                          IsCheckedChanged="ShowWalkPlayer_Changed"
+                                          ToolTip.Tip="Show Rangers assault arms and a Beretta during Walk. This preview does not change the map."
+                                          AutomationProperties.Name="Show player during Walk" />
+                            <TextBlock x:Name="WalkPlayerStatus" Text="Rangers · Beretta" FontSize="11" Foreground="#BEC7D2"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
                     </Border>
                     <Border x:Name="FilmPreviewPanel" IsVisible="False" Background="#F225282D" BorderBrush="#515B69"
                             BorderThickness="1" CornerRadius="5" Padding="12" Margin="8" Width="304"
@@ -183,7 +201,7 @@
                     <TextBox x:Name="RendererErrorText" IsReadOnly="True" AcceptsReturn="True"
                              TextWrapping="Wrap" FontFamily="Menlo,Consolas,monospace" FontSize="11"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             AutomationProperties.Name="Renderer status" />
+                             AutomationProperties.Name="Editor diagnostics" />
                 </Border>
             </TabItem>
         </TabControl>

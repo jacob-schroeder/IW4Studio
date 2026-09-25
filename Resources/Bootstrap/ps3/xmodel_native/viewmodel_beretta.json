@@ -1,0 +1,492 @@
+{
+  "version": 1,
+  "name": "viewmodel_beretta",
+  "numBones": 10,
+  "numRootBones": 1,
+  "numSurfs": 8,
+  "lodRampType": 0,
+  "scale": 1,
+  "noScalePartBits": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "boneNames": [
+    "j_gun",
+    "tag_knife",
+    "j_bolt",
+    "j_press_rear",
+    "tag_silencer",
+    "tag_brass",
+    "tag_clip",
+    "tag_flash",
+    "tag_knife_fx",
+    "tag_flash_silenced"
+  ],
+  "parentList": "AQIDBAUGBwcF",
+  "quats": [
+    0,
+    0,
+    0,
+    32767,
+    0,
+    0,
+    0,
+    32767,
+    0,
+    0,
+    0,
+    32767,
+    0,
+    0,
+    0,
+    32767,
+    -21406,
+    8867,
+    -21406,
+    8867,
+    0,
+    0,
+    0,
+    32767,
+    0,
+    0,
+    0,
+    32767,
+    0,
+    23170,
+    0,
+    23170,
+    0,
+    0,
+    0,
+    32767
+  ],
+  "trans": [
+    0,
+    0,
+    0,
+    -1.230062,
+    0.074513,
+    1.676113,
+    -2.554184,
+    0.057018,
+    0.485518,
+    5.966926,
+    0.084613,
+    1.292845,
+    -0.74723,
+    0,
+    1.559035,
+    -1.474159,
+    0.078795,
+    -1.361017,
+    5.966926,
+    0.084613,
+    1.292845,
+    7.915124,
+    -0.001431,
+    -1.408214,
+    5.253205,
+    0,
+    0
+  ],
+  "partClassification": "AAAAAAAAAAAAAA==",
+  "baseMat": [
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "transWeight": 2
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "transWeight": 2
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": -1.230062,
+        "y": 0.074513,
+        "z": 1.676113
+      },
+      "transWeight": 2
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": -2.554184,
+        "y": 0.057018,
+        "z": 0.485518
+      },
+      "transWeight": 2
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": 5.966926,
+        "y": 0.084613,
+        "z": 1.292845
+      },
+      "transWeight": 2
+    },
+    {
+      "quat": {
+        "x": -0.6532792,
+        "y": 0.27060762,
+        "z": -0.6532792,
+        "w": 0.27060762
+      },
+      "trans": {
+        "x": -0.74723,
+        "y": 0,
+        "z": 1.559035
+      },
+      "transWeight": 1.9999912
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": -1.474159,
+        "y": 0.078795,
+        "z": -1.361017
+      },
+      "transWeight": 2
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": 5.966926,
+        "y": 0.084613,
+        "z": 1.292845
+      },
+      "transWeight": 2
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0.70711386,
+        "z": 0,
+        "w": 0.70711386
+      },
+      "trans": {
+        "x": 7.915124,
+        "y": -0.001431,
+        "z": -1.408214
+      },
+      "transWeight": 1.99996
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": 11.220131,
+        "y": 0.084613,
+        "z": 1.292845
+      },
+      "transWeight": 2
+    }
+  ],
+  "materials": [
+    "m/mtl_weapon_beretta",
+    "m/mtl_weapon_beretta",
+    "m/mtl_weapon_beretta",
+    "m/mtl_weapon_beretta",
+    "m/mtl_weapon_trinium_sight_glow",
+    "m/mtl_weapon_trinium_sight",
+    "m/mtl_weapon_suppressor_b",
+    "m/mtl_weapon_bolo_knife"
+  ],
+  "lods": [
+    {
+      "dist": 1000,
+      "numSurfs": 8,
+      "surfIndex": 0,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": "viewmodel_beretta10"
+    },
+    {
+      "dist": 1000000,
+      "numSurfs": 0,
+      "surfIndex": 0,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": null
+    },
+    {
+      "dist": 1000000,
+      "numSurfs": 0,
+      "surfIndex": 0,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": null
+    },
+    {
+      "dist": 1000000,
+      "numSurfs": 0,
+      "surfIndex": 0,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": null
+    }
+  ],
+  "maxLoadedLod": 0,
+  "numLods": 1,
+  "collLod": 255,
+  "flags": 0,
+  "contents": 0,
+  "collSurfs": [],
+  "boneInfo": [
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 1.2240964,
+          "y": 0.17678799,
+          "z": -1.176547
+        },
+        "halfSize": {
+          "x": 4.742255,
+          "y": 0.645457,
+          "z": 2.816772
+        }
+      },
+      "radiusSquared": 30.839804
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 4.07335,
+          "y": 0,
+          "z": -0.80366707
+        },
+        "halfSize": {
+          "x": 8.020316,
+          "y": 0.309915,
+          "z": 1.379401
+        }
+      },
+      "radiusSquared": 66.324265
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 2.6456432,
+          "y": 0.004222989,
+          "z": -0.614372
+        },
+        "halfSize": {
+          "x": 4.1955585,
+          "y": 0.606355,
+          "z": 0.927317
+        }
+      },
+      "radiusSquared": 18.830296
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": -0.030122995,
+          "y": 0.020970494,
+          "z": 0.47748798
+        },
+        "halfSize": {
+          "x": 0.297992,
+          "y": 0.1706295,
+          "z": 0.703059
+        }
+      },
+      "radiusSquared": 0.6122056
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 2.5245109,
+          "y": -0.006625533,
+          "z": 0.002611518
+        },
+        "halfSize": {
+          "x": 2.846343,
+          "y": 0.6789165,
+          "z": 0.67891645
+        }
+      },
+      "radiusSquared": 9.023524
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": -0.2640885,
+          "y": -5.9485435E-05,
+          "z": -0.6609406
+        },
+        "halfSize": {
+          "x": 1.3729655,
+          "y": 0.3372175,
+          "z": 2.2626066
+        }
+      },
+      "radiusSquared": 7.1181383
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    }
+  ],
+  "radius": 12.11372,
+  "bounds": {
+    "midPoint": {
+      "x": 4.07335,
+      "y": 0.11065799,
+      "z": -1.147753
+    },
+    "halfSize": {
+      "x": 8.020316,
+      "y": 0.711587,
+      "z": 3.136811
+    }
+  },
+  "invHighMipRadius": [
+    4902,
+    6833,
+    3431,
+    10720,
+    47678,
+    62076,
+    7585,
+    9422
+  ],
+  "memUsage": 73619,
+  "physPreset": null,
+  "physCollmap": null
+}

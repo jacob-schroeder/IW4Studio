@@ -1,4 +1,5 @@
 using System.Text;
+using IW4.Formats.SourceFormat.Character;
 using IW4.Formats.SourceFormat.Material;
 using IW4.Formats.SourceFormat.Fx;
 using IW4.Formats.SourceFormat.Sound;
@@ -273,6 +274,8 @@ internal static partial class FastFileConverter
                 availableXModels.Add(modelSources.LoadModel(name));
         IReadOnlyDictionary<string, string>? worldProperties = sourceBsp.GetEntities().FirstOrDefault(entity =>
             entity.GetValueOrDefault("classname") == "worldspawn");
+        MapFactionSettings factions = MapFactionAuthoring.Read(worldProperties ??
+            new Dictionary<string, string>(StringComparer.Ordinal));
         IReadOnlyDictionary<string, WaterMaterialDefinition> waterDefinitions = worldProperties is null
             ? new Dictionary<string, WaterMaterialDefinition>(StringComparer.Ordinal)
             : WaterMaterialAuthoring.ReadDefinitions(worldProperties);
@@ -359,7 +362,8 @@ internal static partial class FastFileConverter
                 OutdoorLookupMatrix = outdoorLookupMatrix,
                 RuntimeEntityPropertiesToRemove = new HashSet<string>(StringComparer.Ordinal)
                 {
-                    WaterMaterialAuthoring.MapPropertyName
+                    WaterMaterialAuthoring.MapPropertyName,
+                    MapFactionAuthoring.MapPropertyName
                 }
             });
         GfxImageAsset ResolveLightingImage(string name) =>
@@ -378,9 +382,12 @@ internal static partial class FastFileConverter
             authoredWaterNames.ToDictionary(name => name, name => waterDefinitions[name], StringComparer.Ordinal));
         if (waterScript is not null && rawFileOverrides.Any(rawFile => rawFile.Name == waterScript.Name))
             throw new InvalidDataException($"RawFile '{waterScript.Name}' is generated from the map's water volumes and cannot be overridden.");
+        if (worldProperties?.ContainsKey(MapFactionAuthoring.MapPropertyName) == true &&
+            rawFileOverrides.Any(rawFile => string.Equals(rawFile.Name, mapScriptName, StringComparison.Ordinal)))
+            throw new InvalidDataException($"Faction settings require the generated map script; RawFile '{mapScriptName}' overrides it.");
         RawFileAsset mapScript = rawFileOverrides.FirstOrDefault(rawFile =>
                 string.Equals(rawFile.Name, mapScriptName, StringComparison.Ordinal)) ??
-            CreateMapScript(assetName, waterScript, hasMapFxScript);
+            CreateMapScript(assetName, waterScript, hasMapFxScript, factions);
         if (hasMapFxScript && rawFileOverrides.Contains(mapScript))
             Console.WriteLine($"FX and sounds: the custom map script must call {MapFxStartup(mapFxScriptName)} in main() before maps\\mp\\_load::main(); so its emitters are registered before playback starts.");
         if (waterScript is not null && rawFileOverrides.Contains(mapScript))
@@ -909,7 +916,8 @@ internal static partial class FastFileConverter
     private static string MapFxStartup(string mapFxScriptName) =>
         mapFxScriptName[..^".gsc".Length].Replace('/', '\\') + "::main();";
 
-    private static RawFileAsset CreateMapScript(string assetName, RawFileAsset? waterScript, bool hasMapFxScript)
+    private static RawFileAsset CreateMapScript(string assetName, RawFileAsset? waterScript, bool hasMapFxScript,
+        MapFactionSettings factions)
     {
         string scriptName = assetName[..^".d3dbsp".Length] + ".gsc";
         // These factions own the player-model closure selected below.
@@ -918,8 +926,8 @@ internal static partial class FastFileConverter
             "{\r\n" +
             (hasMapFxScript ? "\t" + MapFxStartup(assetName[..^".d3dbsp".Length] + "_fx.gsc") + "\r\n" : "") +
             "\tmaps\\mp\\_load::main();\r\n" +
-            "\tgame[\"allies\"] = \"us_army\";\r\n" +
-            "\tgame[\"axis\"] = \"opforce_airborne\";\r\n" +
+            $"\tgame[\"allies\"] = \"{factions.Allies}\";\r\n" +
+            $"\tgame[\"axis\"] = \"{factions.Axis}\";\r\n" +
             "\tgame[\"attackers\"] = \"allies\";\r\n" +
             "\tgame[\"defenders\"] = \"axis\";\r\n" +
             (waterScript is null ? "" : "\t" + WaterVolumeScript.Startup(waterScript) + "\r\n") +

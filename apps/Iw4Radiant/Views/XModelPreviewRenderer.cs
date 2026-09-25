@@ -12,11 +12,20 @@ namespace Iw4Radiant.Views;
 
 // Thumbnails need CPU images rather than one OpenGL surface per browser item.
 // The same rasterizer supplies the orbitable enlarged browser preview.
-internal sealed class XModelPreviewRenderer(Func<string, MaterialSource?> resolveMaterial)
+internal sealed class XModelPreviewRenderer
 {
+    private readonly Func<string, MaterialSource?>? _resolveMaterial;
+    private readonly Func<string, (int Width, int Height, byte[] Pixels, MaterialSurfaceState Surface)>? _resolveNativeTexture;
     private readonly Dictionary<string, (int Width, int Height, byte[] Pixels, MaterialSurfaceState Surface)> _textures = new(StringComparer.Ordinal);
 
-    internal unsafe Bitmap Render(XModelSource source, int size, float yaw = -45, float pitch = 25, float zoom = 1)
+    internal XModelPreviewRenderer(Func<string, MaterialSource?> resolveMaterial) =>
+        _resolveMaterial = resolveMaterial;
+
+    internal XModelPreviewRenderer(Func<string, (int Width, int Height, byte[] Pixels, MaterialSurfaceState Surface)> resolveNativeTexture) =>
+        _resolveNativeTexture = resolveNativeTexture;
+
+    internal unsafe Bitmap Render(XModelSource source, int size, float yaw = -45, float pitch = 25, float zoom = 1,
+        Vector2 pan = default)
     {
         XModelExportDocument document = source.Document;
         var textures = document.Materials.Select(material => Texture(material.Name)).ToArray();
@@ -34,7 +43,8 @@ internal sealed class XModelPreviewRenderer(Func<string, MaterialSource?> resolv
         for (int index = 0; index < vertices.Length; index++)
         {
             Vector3 point = vertices[index] - center;
-            vertices[index] = new Vector3(size * 0.5f + point.X * scale, size * 0.5f - point.Y * scale, point.Z);
+            vertices[index] = new Vector3(size * (0.5f + pan.X) + point.X * scale,
+                size * (0.5f + pan.Y) - point.Y * scale, point.Z);
         }
         byte[] pixels = new byte[checked(size * size * 4)];
         float[] depth = new float[size * size];
@@ -93,7 +103,13 @@ internal sealed class XModelPreviewRenderer(Func<string, MaterialSource?> resolv
     private (int Width, int Height, byte[] Pixels, MaterialSurfaceState Surface) Texture(string name)
     {
         if (_textures.TryGetValue(name, out var texture)) return texture;
-        if (resolveMaterial(name) is not { IsSky: false } material)
+        if (_resolveNativeTexture is not null)
+        {
+            texture = _resolveNativeTexture(name);
+            _textures.Add(name, texture);
+            return texture;
+        }
+        if (_resolveMaterial?.Invoke(name) is not { IsSky: false } material)
             throw new FileNotFoundException($"Model material '{name}' has no available color image. Extract its material and image into the raw asset folder.");
         using var image = MaterialImages.Load(material, 256);
         using var converted = new WriteableBitmap(image.PixelSize, new Avalonia.Vector(96, 96), PixelFormat.Rgba8888, AlphaFormat.Unpremul);

@@ -20,6 +20,8 @@ public partial class ViewportWorkspace : UserControl
     private bool _updatingFilm;
     private bool _updatingFog;
     private bool _compiledPreviewVisible;
+    private bool _updatingCameraControls;
+    private string? _walkError;
     private Control? _activeBeforeCompiledPreview;
     private GridLength[] _twoColumns = [new(1, GridUnitType.Star), new(5), new(1.2, GridUnitType.Star)];
     private GridLength[] _fourColumns = [new(1, GridUnitType.Star), new(5), new(1, GridUnitType.Star)];
@@ -42,11 +44,13 @@ public partial class ViewportWorkspace : UserControl
             entry.Panel.AddHandler(PointerPressedEvent, (_, _) => ActivateVisibleView(), RoutingStrategies.Tunnel);
             entry.Panel.AddHandler(GotFocusEvent, (_, _) => ActivateVisibleView(), RoutingStrategies.Bubble, handledEventsToo: true);
         }
-        CameraView.RendererStatusChanged += (_, _) => Dispatcher.UIThread.Post(() =>
+        CameraView.RendererStatusChanged += (_, _) => Dispatcher.UIThread.Post(RefreshCameraControls);
+        CameraView.WalkErrorChanged += error =>
         {
-            RendererErrorText.Text = CameraView.RendererError;
-            RendererErrorPanel.IsVisible = CameraView.RendererError is not null;
-        });
+            _walkError = error;
+            RefreshConsoleOutput();
+            if (error is not null && !CameraView.WalkMode) ShowConsole();
+        };
         CameraView.NavigationModeChanged += RefreshCameraControls;
         CameraView.FoliageBrushChanged += CameraFoliageBrush.SetBrush;
         AssetBrowserTabs.SelectionChanged += (_, args) =>
@@ -174,6 +178,13 @@ public partial class ViewportWorkspace : UserControl
     internal void ShowFxSounds(bool isSound) => ShowBrowser(isSound ? 4 : 3);
     internal void ShowConsole() => ShowBrowser(5);
 
+    private void RefreshConsoleOutput()
+    {
+        RendererErrorText.Text = string.Join(Environment.NewLine + Environment.NewLine,
+            new[] { CameraView.RendererError, _walkError, CameraView.WalkPlayerError }.Where(message => !string.IsNullOrEmpty(message)));
+        RendererErrorPanel.IsVisible = !string.IsNullOrEmpty(RendererErrorText.Text);
+    }
+
     internal void DisableMapPreviews()
     {
         MapFxToggle.IsChecked = false;
@@ -223,6 +234,7 @@ public partial class ViewportWorkspace : UserControl
 
     private void Activate(Control view)
     {
+        if (!ReferenceEquals(view, CameraView)) CameraView.StopWalk();
         _activeView = view;
         if (view is OrthoViewport grid) _activeGrid = grid;
         foreach (var entry in _views) entry.Panel.Classes.Set("activeViewport", ReferenceEquals(entry.View, view));
@@ -395,8 +407,29 @@ public partial class ViewportWorkspace : UserControl
 
     private void FlyCamera_Changed(object? sender, RoutedEventArgs e)
     {
-        if (CameraView is null || _dialogs?.BlocksInput == true) return;
+        if (_updatingCameraControls || CameraView is null || _dialogs?.BlocksInput == true) return;
         CameraView.FlyMode = FlyCamera.IsChecked == true;
+        CameraView.Focus();
+    }
+
+    private void WalkCamera_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingCameraControls || CameraView is null || _dialogs?.BlocksInput == true) return;
+        if (WalkCamera.IsChecked == true) CameraView.StartWalk();
+        else CameraView.StopWalk();
+        RefreshCameraControls();
+        CameraView.Focus();
+    }
+
+    private void ResetWalkCamera_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs?.BlocksInput != true) CameraView.ResetWalk();
+    }
+
+    private void ShowWalkPlayer_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingCameraControls || CameraView is null || _dialogs?.BlocksInput == true) return;
+        CameraView.ShowWalkPlayer = ShowWalkPlayer.IsChecked == true;
         CameraView.Focus();
     }
 
@@ -427,9 +460,29 @@ public partial class ViewportWorkspace : UserControl
 
     private void RefreshCameraControls()
     {
-        FlyCamera.IsChecked = CameraView.FlyMode;
+        _updatingCameraControls = true;
+        try
+        {
+            FlyCamera.IsChecked = CameraView.FlyMode;
+            WalkCamera.IsChecked = CameraView.WalkMode;
+            WalkCamera.IsEnabled = !_compiledPreviewVisible;
+            ResetWalkCamera.IsVisible = CameraView.WalkMode;
+            WalkPlayerControls.IsVisible = CameraView.WalkMode;
+            ShowWalkPlayer.IsChecked = CameraView.ShowWalkPlayer;
+            WalkPlayerStatus.Text = CameraView.WalkPlayerStatus;
+        }
+        finally { _updatingCameraControls = false; }
+        RefreshConsoleOutput();
+        ToolTip.SetTip(WalkCamera, CameraViewport.WalkProfile +
+            "\nSolid world/group brushes, player clips and terrain/patches, including hidden geometry. Models need player clips. " +
+            "No swimming, crouch/prone, sprint, mantle, ladders or moving entities.\nWASD move · Space jump · Right-drag look · R reset · Esc exit.");
         CameraControlsHint.Text = _compiledPreviewVisible
             ? "Read-only BSP · Right-drag orbit · Middle-drag pan · Scroll zoom · Fly for WASD"
+            : CameraView.WalkMode
+            ? (CameraView.WalkNeedsReset ? "Walk paused · Reset to recover or Esc to exit" :
+               CameraView.WalkPaused ? "Walk paused · Click camera to resume · Reset to recover" : "Walk · WASD move · Space jump · Right-drag look") +
+              "\nR reset · Esc restore camera · Approximate standing traversal" +
+              "\nHidden geometry collides · Models need player clips · No swimming"
             : CameraView.FlyMode
             ? "Fly · WASD move · Q/E down/up · Right-drag look\nShift faster · Scroll move · End frame · Esc orbit"
             : "Right-drag orbit · Shift+right-drag or middle-drag pan\nHold right + WASD move · Scroll zoom · End frame · Right-click objects";

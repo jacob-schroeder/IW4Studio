@@ -19,6 +19,14 @@ internal sealed class XModelSource
         });
     }
 
+    internal XModelSource(string name, XModelExportDocument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        Name = name;
+        SourcePath = string.Empty;
+        _document = new Lazy<XModelExportDocument>(() => document);
+    }
+
     internal string Name { get; }
     internal string SourcePath { get; }
     internal XModelExportDocument Document => _document.Value;

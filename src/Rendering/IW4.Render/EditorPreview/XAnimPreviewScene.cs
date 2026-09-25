@@ -31,7 +31,7 @@ public sealed class XAnimPreviewPose
 
     public IReadOnlyList<XAnimPreviewBone> Bones { get; }
 
-    internal IReadOnlyList<Matrix4x4> SkinningPalette { get; }
+    public IReadOnlyList<Matrix4x4> SkinningPalette { get; }
 }
 
 /// <summary>

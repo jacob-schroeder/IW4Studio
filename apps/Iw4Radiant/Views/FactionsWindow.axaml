@@ -1,0 +1,88 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Iw4Radiant.Views.FactionsWindow" x:CompileBindings="False"
+        Title="Factions" Width="1040" Height="760" MinWidth="880" MinHeight="640"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="24" RowSpacing="18">
+        <StackPanel Spacing="5">
+            <TextBlock Text="Factions" FontSize="26" FontWeight="SemiBold" />
+            <TextBlock Text="Choose the default teams for this map." Opacity="0.7" />
+        </StackPanel>
+        <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12">
+            <Border x:Name="AlliesCard" BorderThickness="1" CornerRadius="8" Padding="14">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                    <Button x:Name="AlliesButton" Content="Allies" MinWidth="86" Click="Allies_Click" />
+                    <ComboBox x:Name="AlliesFaction" Grid.Column="1" HorizontalAlignment="Stretch"
+                              SelectionChanged="Faction_Changed" AutomationProperties.Name="Allies faction" />
+                </Grid>
+            </Border>
+            <Border x:Name="AxisCard" Grid.Column="1" BorderThickness="1" CornerRadius="8" Padding="14">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                    <Button x:Name="AxisButton" Content="Axis" MinWidth="86" Click="Axis_Click" />
+                    <ComboBox x:Name="AxisFaction" Grid.Column="1" HorizontalAlignment="Stretch"
+                              SelectionChanged="Faction_Changed" AutomationProperties.Name="Axis faction" />
+                </Grid>
+            </Border>
+        </Grid>
+        <Grid Grid.Row="2" ColumnDefinitions="250,*" ColumnSpacing="18">
+            <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10">
+                <TextBlock x:Name="RosterTitle" FontWeight="SemiBold" FontSize="16" />
+                <TextBox x:Name="Search" Grid.Row="1" PlaceholderText="Find a player model…"
+                         TextChanged="Search_Changed" AutomationProperties.Name="Find player models" />
+                <ListBox x:Name="Variants" Grid.Row="2" SelectionChanged="Variant_Changed"
+                         AutomationProperties.Name="Player model variants">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="5,7" Spacing="3">
+                                <TextBlock Text="{Binding Label}" FontWeight="Medium" />
+                                <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="11" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+            <Border Grid.Column="1" Background="#191B1F" CornerRadius="8" Padding="16">
+                <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="10">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                        <StackPanel Spacing="3">
+                            <TextBlock x:Name="PreviewTitle" FontSize="18" FontWeight="SemiBold" />
+                            <TextBlock Text="Appearance preview · default pose" Opacity="0.55" FontSize="11" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Reset view" Click="ResetView_Click" />
+                    </Grid>
+                    <Grid Grid.Row="1" ClipToBounds="True" Background="Transparent">
+                        <Image x:Name="PreviewImage" Stretch="Uniform" Focusable="True" KeyDown="Preview_KeyDown"
+                               PointerPressed="Preview_Pressed" PointerMoved="Preview_Moved"
+                               PointerReleased="Preview_Released" PointerCaptureLost="Preview_CaptureLost"
+                               PointerWheelChanged="Preview_Wheel" AutomationProperties.Name="Player appearance preview" />
+                        <TextBlock x:Name="PreviewMessage" TextWrapping="Wrap" MaxWidth="410"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
+                                   IsHitTestVisible="False" />
+                    </Grid>
+                    <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <TextBlock x:Name="PartLabel" Text="Preview head" VerticalAlignment="Center" Opacity="0.7" />
+                        <ComboBox x:Name="Heads" Grid.Column="1" HorizontalAlignment="Stretch"
+                                  SelectionChanged="Head_Changed" AutomationProperties.Name="Preview head" />
+                        <ComboBox x:Name="HandModels" Grid.Column="1" HorizontalAlignment="Stretch" IsVisible="False"
+                                  SelectionChanged="Head_Changed" AutomationProperties.Name="Preview hands" />
+                        <CheckBox x:Name="HandsPreview" Grid.Column="2" Content="View hands"
+                                  IsCheckedChanged="Hands_Changed" />
+                    </Grid>
+                    <TextBlock Grid.Row="3" Text="Right-drag orbit · middle-drag or Shift+right-drag pan · scroll zoom · End frame. Appearance varies by class and environment."
+                               TextWrapping="Wrap" Opacity="0.6" FontSize="11" />
+                </Grid>
+            </Border>
+        </Grid>
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel VerticalAlignment="Center" Spacing="3">
+                <TextBlock x:Name="Summary" TextWrapping="Wrap" />
+                <TextBlock Text="Apply saves team choices to the map. Browsing a model only changes this preview."
+                           TextWrapping="Wrap" FontSize="11" Opacity="0.6" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button Content="Cancel" MinWidth="80" Click="Cancel_Click" />
+                <Button Content="Apply" MinWidth="88" Classes="primary" Click="Apply_Click" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

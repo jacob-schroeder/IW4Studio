@@ -46,11 +46,13 @@ static int ExportAssets(string input, string library, string output, IReadOnlyLi
     var models = new List<string>();
     var materials = new List<string>();
     var effects = new List<string>();
+    var weapons = new List<string>();
+    var animations = new List<string>();
     string? dependency = null;
     for (int index = 0; index < names.Count; index += 2)
     {
-        if (index + 1 >= names.Count || names[index] is not ("--xmodel" or "--material" or "--fx" or "--dependencies"))
-            throw new ArgumentException("export-assets expects --xmodel <name>, --material <name>, --fx <name>, or --dependencies <official.ff> pairs.");
+        if (index + 1 >= names.Count || names[index] is not ("--xmodel" or "--material" or "--fx" or "--weapon" or "--xanim" or "--dependencies"))
+            throw new ArgumentException("export-assets expects --xmodel, --material, --fx, --weapon, --xanim <name>, or --dependencies <official.ff> pairs.");
         if (names[index] == "--dependencies")
         {
             if (dependency is not null) throw new ArgumentException("export-assets accepts one --dependencies fastfile.");
@@ -60,12 +62,14 @@ static int ExportAssets(string input, string library, string output, IReadOnlyLi
         {
             "--xmodel" => models,
             "--material" => materials,
-            _ => effects
+            "--fx" => effects,
+            "--weapon" => weapons,
+            _ => animations
         }).Add(names[index + 1]);
     }
-    if (models.Count + materials.Count + effects.Count == 0)
-        throw new ArgumentException("Choose at least one --xmodel, --material, or --fx to export.");
-    FastFileConverter.ExportSourceAssets(input, library, output, models, materials, dependencyFastFile: dependency, fxNames: effects);
+    if (models.Count + materials.Count + effects.Count + weapons.Count + animations.Count == 0)
+        throw new ArgumentException("Choose at least one --xmodel, --material, --fx, --weapon, or --xanim to export.");
+    FastFileConverter.ExportSourceAssets(input, library, output, models, materials, dependencyFastFile: dependency, fxNames: effects, weaponNames: weapons, xanimNames: animations);
     return 0;
 }
 
@@ -419,7 +423,7 @@ static int Usage()
 {
     Console.Error.WriteLine("usage:");
     Console.Error.WriteLine("  D3dbspLinker build <input.d3dbsp> <map-asset-name> <output.ff> --asset-library <raw-root> [--compiled-lighting] [asset options]");
-    Console.Error.WriteLine("  D3dbspLinker export-assets <official.ff> <exported-raw-root> <new-output-directory> [--xmodel <name>] [--material <name>] [--fx <name>] [--dependencies <official.ff>]  (offline extraction)");
+    Console.Error.WriteLine("  D3dbspLinker export-assets <official.ff> <exported-raw-root> <new-output-directory> [--xmodel <name>] [--material <name>] [--fx <name>] [--weapon <name>] [--xanim <name>] [--dependencies <official.ff>]  (offline extraction)");
     Console.Error.WriteLine("  D3dbspLinker export-bootstrap <official-map.ff> <exported-raw-root> <new-output-directory>  (offline extraction)");
     Console.Error.WriteLine("  D3dbspLinker inspect <input.d3dbsp>");
     Console.Error.WriteLine("  D3dbspLinker inspect-fastfile <input.ff>");

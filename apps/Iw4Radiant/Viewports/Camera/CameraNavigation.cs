@@ -4,6 +4,8 @@ namespace Iw4Radiant.Viewports.Camera;
 
 internal sealed class CameraNavigation
 {
+    internal const float OrbitSensitivity = 0.008f;
+    internal const float ZoomSensitivity = 0.14f;
     private const float FieldOfView = MathF.PI / 3;
     private const float MinimumOrbitDistance = 0.05f;
     private Vector3 _target;
@@ -28,6 +30,25 @@ internal sealed class CameraNavigation
     internal Vector3 Right => ViewAxes().Right;
     internal Vector3 Target => _target;
     internal float NearPlane => Math.Clamp(_distance * 0.01f, 0.001f, 0.5f);
+
+    internal (Vector3 Target, float Yaw, float Pitch, float Distance) CapturePose() =>
+        (_target, _yaw, _pitch, _distance);
+
+    internal void RestorePose((Vector3 Target, float Yaw, float Pitch, float Distance) pose) =>
+        (_target, _yaw, _pitch, _distance) = pose;
+
+    internal void SetEye(Vector3 eye) => _target = eye - EyeOffset;
+
+    internal void EnterPlayerView(Vector3 eye, float? heading)
+    {
+        _distance = 128;
+        if (heading is { } yaw)
+        {
+            _yaw = yaw * (MathF.PI / 180) - MathF.PI;
+            _pitch = 0;
+        }
+        SetEye(eye);
+    }
 
     private Vector3 EyeOffset => _distance * new Vector3(MathF.Cos(_pitch) * MathF.Cos(_yaw),
         MathF.Cos(_pitch) * MathF.Sin(_yaw), MathF.Sin(_pitch));
@@ -55,8 +76,8 @@ internal sealed class CameraNavigation
 
     internal void Orbit(float deltaX, float deltaY)
     {
-        _yaw -= deltaX * 0.008f;
-        _pitch = Math.Clamp(_pitch + deltaY * 0.008f, -1.5f, 1.5f);
+        _yaw -= deltaX * OrbitSensitivity;
+        _pitch = Math.Clamp(_pitch + deltaY * OrbitSensitivity, -1.5f, 1.5f);
     }
 
     internal void Look(float deltaX, float deltaY)
@@ -73,7 +94,7 @@ internal sealed class CameraNavigation
     }
 
     internal void Zoom(float delta) =>
-        _distance = Math.Clamp(_distance * MathF.Exp(-delta * 0.14f), MinimumOrbitDistance, 1000000);
+        _distance = Math.Clamp(_distance * MathF.Exp(-delta * ZoomSensitivity), MinimumOrbitDistance, 1000000);
 
     internal (Vector3 Origin, Vector3 Direction) PickRay(float x, float y, float aspect)
     {

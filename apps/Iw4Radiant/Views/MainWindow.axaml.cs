@@ -64,6 +64,8 @@ public partial class MainWindow : Window
         }
         Workspace.Camera.Session = _session;
         Workspace.Camera.CanAcceptModelDrop = () => !_dialogs.BlocksInput;
+        Workspace.Camera.CanWalk = () => !_dialogs.BlocksInput;
+        Workspace.Camera.ResolvePlayerAssets = FindBootstrapAssets;
         Workspace.Camera.InteractionStatusChanged += SetStatus;
         Workspace.Camera.RendererStatusChanged += OnCompiledPreviewRendererStatus;
         Workspace.Camera.BrushKindRequested += ApplyBrushKind;
@@ -150,6 +152,7 @@ public partial class MainWindow : Window
     private void SetStatus(string message) => StatusText.Text = message;
     private void FinishGestures()
     {
+        Workspace.Camera.StopWalk();
         foreach (var view in Workspace.GridViews) view.CompleteGesture();
         Workspace.Camera.FinishGesture();
         if (_session.SelectionVolumeMode != SelectionVolumeMode.None)
@@ -381,6 +384,7 @@ public partial class MainWindow : Window
         "Terrain: create/sculpt in XY; choose Raise/lower, Smooth or Flatten. Shift lowers. Select vertices for exact Smooth/Flatten, or two whole patches to Stitch their adjoining edges.\n" +
         "Camera: Shift-click selects; right-click lists overlapping objects and their materials. Right-drag orbits; Shift+right-drag or middle-drag pans; scroll zooms. Hold right and use WASD to move, Q/E down/up. End frames selection in camera and 2D views.\n" +
         "Fly: enable Fly in the camera header, then use WASD to move, Q/E down/up, right-drag to look, and Shift for speed. Scroll moves forward/back. Escape returns to orbit. Movement keys apply only while the camera is focused.\n" +
+        "Walk: enable Walk for approximate standing player traversal. WASD moves, right-drag looks, Space jumps, R/Reset returns to entry, and Escape restores the editor camera. Losing focus pauses; click the camera to resume. Editing the scene leaves Walk. Brushes, player clips and solid terrain/patches collide, including hidden geometry; models require authored player clips. Swimming, stance changes, sprint, mantle, ladders and moving entities are unsupported.\n" +
         "Lights: select a light and open Entity for color, radius and intensity. Expand Target and cone to create a spotlight target. The camera bulb button toggles lighting and shadows.\n" +
         "Environment: open the sun tab to author sunlight with Apply/Revert and to assign different sky materials to world brush faces. Drag the sun direction control to aim; Apply commits. Skies can enclose selected geometry and remain independent materials.\n" +
         "Materials: click a thumbnail to repaint selected faces or geometry immediately and use it for new geometry. Explicit face selections take priority over whole brushes. In Use combines map materials with search. Preview shows image details and Size adjusts the tiles.\n" +
@@ -403,6 +407,11 @@ public partial class MainWindow : Window
     private void OnEditorKeyDown(object? sender, KeyEventArgs e)
     {
         if (_dialogs.BlocksInput || e.Handled) return;
+        if (Workspace.Camera.WalkMode)
+        {
+            if (Workspace.Camera.HandleNavigationKeyDown(e)) return;
+            if (!Workspace.Camera.IsFocused) Workspace.Camera.StopWalk();
+        }
         if (_previewBspPath is not null)
         {
             if (e.Key == Key.Escape)

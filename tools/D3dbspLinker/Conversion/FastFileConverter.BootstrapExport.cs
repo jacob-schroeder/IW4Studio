@@ -9,6 +9,8 @@ using IW4.Formats.SourceFormat.Sound;
 using IW4.Formats.SourceFormat.Technique;
 using IW4.Formats.SourceFormat.Techset;
 using IW4.Formats.SourceFormat.XModel;
+using IW4.Formats.SourceFormat.XAnim;
+using IW4.Formats.SourceFormat.Weapon;
 using IW4.Game.Assets;
 using IW4.Game.Assets.Fx;
 using IW4.Game.Assets.GfxMap;
@@ -18,6 +20,8 @@ using IW4.Game.Assets.Physics;
 using IW4.Game.Assets.Sound;
 using IW4.Game.Assets.TechniqueSet;
 using IW4.Game.Assets.XModel;
+using IW4.Game.Assets.XAnim;
+using IW4.Game.Assets.Weapon;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.Linking;
@@ -36,7 +40,8 @@ internal static partial class FastFileConverter
 
     internal static void ExportSourceAssets(string input, string imageLibrary, string output,
         IReadOnlyList<string> modelNames, IReadOnlyList<string> materialNames, bool bootstrap = false,
-        string? dependencyFastFile = null, IReadOnlyList<string>? fxNames = null)
+        string? dependencyFastFile = null, IReadOnlyList<string>? fxNames = null,
+        IReadOnlyList<string>? weaponNames = null, IReadOnlyList<string>? xanimNames = null)
     {
         string source = Path.GetFullPath(input);
         string destination = Path.GetFullPath(output);
@@ -96,6 +101,8 @@ internal static partial class FastFileConverter
         foreach (string name in modelNames) Include(Resolve(XAssetType.XModel, name));
         foreach (string name in materialNames) Include(Resolve(XAssetType.Material, name));
         foreach (string name in fxNames ?? []) Include(Resolve(XAssetType.Fx, name));
+        foreach (string name in weaponNames ?? []) Include(Resolve(XAssetType.Weapon, name));
+        foreach (string name in xanimNames ?? []) Include(Resolve(XAssetType.XAnim, name));
         string staging = destination + "." + Guid.NewGuid().ToString("N") + ".extracting";
         Directory.CreateDirectory(staging);
         try
@@ -106,6 +113,12 @@ internal static partial class FastFileConverter
                 {
                     switch (asset)
                     {
+                        case WeaponAsset weapon:
+                            new WeaponExchange().Unlink(staging, weapon);
+                            break;
+                        case XAnimPartsAsset animation:
+                            new XAnimExchange().Unlink(staging, animation);
+                            break;
                         case XModelAsset model:
                             new XModelNativeExchange().Unlink(staging, model,
                                 name => (XModelSurfsAsset)Resolve(XAssetType.XModelSurfs, name));

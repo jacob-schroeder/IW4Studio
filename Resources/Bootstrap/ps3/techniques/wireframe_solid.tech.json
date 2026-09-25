@@ -1,0 +1,83 @@
+{
+  "format": "iw4-ps3-technique",
+  "version": 1,
+  "name": "wireframe_solid",
+  "flags": 8,
+  "passes": [
+    {
+      "perPrimArgCount": 1,
+      "perObjArgCount": 0,
+      "stableArgCount": 0,
+      "customSamplerFlags": 0,
+      "precompiledVertexShader": 0,
+      "vertexShader": "vertcol_untextured_nofog.hlsl",
+      "pixelShader": "vertcol_untextured_lin_nofog.hlsl",
+      "vertexDeclaration": {
+        "streamCount": 2,
+        "hasOptionalSourceRaw": 1,
+        "routing": [
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 1,
+            "destination": 3
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          }
+        ]
+      },
+      "arguments": [
+        {
+          "type": 3,
+          "destination": 0,
+          "argumentRaw": 6750212,
+          "literalBits": null
+        }
+      ]
+    }
+  ]
+}

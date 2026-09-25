@@ -1,0 +1,134 @@
+{
+    "_game": "iw4",
+    "_platform": "ps3",
+    "_type": "material",
+    "_version": 2,
+    "_native": {
+        "hashIndex": 0,
+        "pad16": 0,
+        "pad43": 0,
+        "pad8E": 0,
+        "runtimeTechniqueStatePresent": false,
+        "stateBitsResidual": [
+            [
+                0,
+                0
+            ],
+            [
+                0,
+                3835578624
+            ]
+        ],
+        "xstrings": []
+    },
+    "cameraRegion": "litTrans",
+    "constants": [
+        {
+            "literal": [
+                1,
+                1,
+                1,
+                1
+            ],
+            "name": "colorTint"
+        }
+    ],
+    "gameFlags": [],
+    "sortKey": 33,
+    "stateBits": [
+        {
+            "alphaTest": "disabled",
+            "blendOpAlpha": "add",
+            "blendOpRgb": "add",
+            "colorWriteAlpha": true,
+            "colorWriteRgb": true,
+            "cullFace": "back",
+            "depthTest": "less_equal",
+            "depthWrite": false,
+            "dstBlendAlpha": "one",
+            "dstBlendRgb": "one",
+            "gammaWrite": true,
+            "polygonOffset": "offset0",
+            "polymodeLine": false,
+            "srcBlendAlpha": "zero",
+            "srcBlendRgb": "invdestcolor"
+        },
+        {
+            "alphaTest": "disabled",
+            "blendOpAlpha": "disabled",
+            "blendOpRgb": "disabled",
+            "colorWriteAlpha": false,
+            "colorWriteRgb": true,
+            "cullFace": "back",
+            "depthTest": "less_equal",
+            "depthWrite": false,
+            "dstBlendAlpha": "zero",
+            "dstBlendRgb": "zero",
+            "gammaWrite": false,
+            "polygonOffset": "offset2",
+            "polymodeLine": true,
+            "srcBlendAlpha": "one",
+            "srcBlendRgb": "one"
+        }
+    ],
+    "stateBitsEntry": [
+        -1,
+        -1,
+        -1,
+        -1,
+        0,
+        -1,
+        -1,
+        -1,
+        -1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        1,
+        -1,
+        -1
+    ],
+    "stateFlags": 17,
+    "surfaceTypeBits": 0,
+    "techniqueSet": "m_unlit_add_lin",
+    "textureAtlas": {
+        "columns": 1,
+        "rows": 1
+    },
+    "textures": [
+        {
+            "image": "weapon_trinium_site_c",
+            "name": "colorMap",
+            "samplerState": {
+                "clampU": true,
+                "clampV": true,
+                "clampW": true,
+                "filter": "linear",
+                "mipMap": "nearest"
+            },
+            "semantic": "colorMap"
+        }
+    ]
+}

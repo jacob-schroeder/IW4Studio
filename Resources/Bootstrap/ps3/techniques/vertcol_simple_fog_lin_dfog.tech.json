@@ -1,0 +1,137 @@
+{
+  "format": "iw4-ps3-technique",
+  "version": 1,
+  "name": "vertcol_simple_fog_lin_dfog",
+  "flags": 8,
+  "passes": [
+    {
+      "perPrimArgCount": 1,
+      "perObjArgCount": 1,
+      "stableArgCount": 8,
+      "customSamplerFlags": 0,
+      "precompiledVertexShader": 2,
+      "vertexShader": "vertcol_simple_dfog.hlsl",
+      "pixelShader": "vertcol_simple_dfog_lin.hlsl",
+      "vertexDeclaration": {
+        "streamCount": 3,
+        "hasOptionalSourceRaw": 1,
+        "routing": [
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 1,
+            "destination": 3
+          },
+          {
+            "source": 2,
+            "destination": 8
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          }
+        ]
+      },
+      "arguments": [
+        {
+          "type": 3,
+          "destination": 4,
+          "argumentRaw": 6225924,
+          "literalBits": null
+        },
+        {
+          "type": 3,
+          "destination": 0,
+          "argumentRaw": 5439492,
+          "literalBits": null
+        },
+        {
+          "type": 2,
+          "destination": 0,
+          "argumentRaw": -1599401919,
+          "literalBits": null
+        },
+        {
+          "type": 3,
+          "destination": 21,
+          "argumentRaw": 2359297,
+          "literalBits": null
+        },
+        {
+          "type": 3,
+          "destination": 32,
+          "argumentRaw": 2555905,
+          "literalBits": null
+        },
+        {
+          "type": 3,
+          "destination": 33,
+          "argumentRaw": 2752513,
+          "literalBits": null
+        },
+        {
+          "type": 5,
+          "destination": 3,
+          "argumentRaw": 2424833,
+          "literalBits": null
+        },
+        {
+          "type": 5,
+          "destination": 4,
+          "argumentRaw": 2555905,
+          "literalBits": null
+        },
+        {
+          "type": 5,
+          "destination": 5,
+          "argumentRaw": 2752513,
+          "literalBits": null
+        },
+        {
+          "type": 5,
+          "destination": 6,
+          "argumentRaw": 2621441,
+          "literalBits": null
+        }
+      ]
+    }
+  ]
+}
