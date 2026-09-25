@@ -32,14 +32,15 @@ internal sealed class CameraWalkSimulation : IDisposable
     internal const float EyeHeight = 60;
     private const float PlayerRadius = 15;
     private const float PlayerHeight = 70;
-    private const float WalkSpeed = 190;
+    internal const float WalkSpeed = 190;
+    internal const float RunSpeed = 285;
     private const float JumpHeight = 39;
     private const float Gravity = 800;
     private static readonly float JumpSpeed = MathF.Sqrt(2 * Gravity * JumpHeight);
     private const float StepHeight = 18;
     private const float WalkableNormal = 0.7f;
     internal static string ProfileDescription => FormattableString.Invariant(
-        $"Editor approximation (PS3 parity unverified): capsule {PlayerRadius * 2} wide × {PlayerHeight} high, eye {EyeHeight} above feet; {WalkSpeed} units/s walk, {StepHeight}-unit step, nominal {JumpHeight}-unit jump, {Gravity} units/s² gravity, {MathF.Acos(WalkableNormal) * 180 / MathF.PI:0.0}° maximum slope.");
+        $"Editor approximation (PS3 parity unverified): capsule {PlayerRadius * 2} wide × {PlayerHeight} high, eye {EyeHeight} above feet; {WalkSpeed} units/s walk, {RunSpeed} units/s run (hold Shift), {StepHeight}-unit step, nominal {JumpHeight}-unit jump, {Gravity} units/s² gravity, {MathF.Acos(WalkableNormal) * 180 / MathF.PI:0.0}° maximum slope.");
 
     private CameraWalkSimulation(ObjectLayerPairFilterTable pairFilter,
         BroadPhaseLayerInterfaceTable broadPhase, ObjectVsBroadPhaseLayerFilterTable broadPhaseFilter,
@@ -67,6 +68,7 @@ internal sealed class CameraWalkSimulation : IDisposable
     }
 
     internal Vector3 Eye => _player.Position + Vector3.UnitZ * EyeHeight;
+    internal bool IsGrounded => _player.GroundState == GroundState.OnGround;
 
     internal static CameraWalkSimulation Create(EditorSession session, Func<string, MaterialSource?> resolveMaterial)
     {
@@ -268,7 +270,7 @@ internal sealed class CameraWalkSimulation : IDisposable
         return true;
     }
 
-    internal void Step(Vector3 desiredDirectionNormalized, bool jump, float seconds)
+    internal void Step(Vector3 desiredDirectionNormalized, bool jump, bool run, float seconds)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(CameraWalkSimulation));
         if (!BrushGeometry.IsFinite(desiredDirectionNormalized) || !float.IsFinite(seconds) || seconds <= 0 || seconds > 0.1f)
@@ -279,7 +281,7 @@ internal sealed class CameraWalkSimulation : IDisposable
         float vertical = _player.GroundState == GroundState.OnGround ? MathF.Max(0, velocity.Z) : velocity.Z;
         if (jump && _player.GroundState == GroundState.OnGround) vertical = JumpSpeed;
         else vertical -= Gravity * seconds;
-        _player.LinearVelocity = horizontal * WalkSpeed + Vector3.UnitZ * vertical;
+        _player.LinearVelocity = horizontal * (run ? RunSpeed : WalkSpeed) + Vector3.UnitZ * vertical;
         _player.ExtendedUpdate(seconds, _updateSettings, PlayerLayer, _physics);
         if (_player.Position.Z < _lowestSurface - 2 * PlayerHeight)
             throw new InvalidOperationException("Walk mode fell below the map collision. Reset to a player spawn or exit Walk.");

@@ -16,7 +16,7 @@ internal sealed class CameraWalkMovement
     private readonly HashSet<Key> _keys = [];
     private long _lastTick;
     private double _accumulator;
-    private bool _jump;
+    private bool _jump, _run;
 
     internal CameraWalkMovement(CameraViewport viewport, CameraNavigation navigation)
     {
@@ -38,6 +38,7 @@ internal sealed class CameraWalkMovement
 
     internal void KeyDown(KeyEventArgs e)
     {
+        _run = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         if (e.Key is not (Key.W or Key.A or Key.S or Key.D or Key.Space)) return;
         if (_keys.Add(e.Key) && e.Key == Key.Space) _jump = true;
         Start();
@@ -45,7 +46,9 @@ internal sealed class CameraWalkMovement
 
     internal void KeyUp(KeyEventArgs e)
     {
+        _run = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         if (_keys.Remove(e.Key)) e.Handled = true;
+        if (e.Key is Key.LeftShift or Key.RightShift) e.Handled = true;
     }
 
     internal void Stop()
@@ -54,6 +57,7 @@ internal sealed class CameraWalkMovement
         _timer.Stop();
         _keys.Clear();
         _jump = false;
+        _run = false;
         _accumulator = 0;
         if (running) _viewport.WalkActivityChanged();
     }
@@ -78,7 +82,7 @@ internal sealed class CameraWalkMovement
             bool jump = _jump;
             _jump = false;
             _accumulator -= StepSeconds;
-            if (!_viewport.AdvanceWalk(direction, jump, (float)StepSeconds))
+            if (!_viewport.AdvanceWalk(direction, jump, _run, (float)StepSeconds))
             {
                 Stop();
                 return;

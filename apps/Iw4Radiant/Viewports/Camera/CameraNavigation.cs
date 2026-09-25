@@ -27,6 +27,7 @@ internal sealed class CameraNavigation
     }
 
     internal Vector3 Eye => _target + EyeOffset;
+    internal Vector3 Forward => ViewAxes().Forward;
     internal Vector3 Right => ViewAxes().Right;
     internal Vector3 Target => _target;
     internal float NearPlane => Math.Clamp(_distance * 0.01f, 0.001f, 0.5f);

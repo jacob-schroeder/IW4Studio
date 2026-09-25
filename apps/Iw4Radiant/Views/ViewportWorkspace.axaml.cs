@@ -475,12 +475,12 @@ public partial class ViewportWorkspace : UserControl
         RefreshConsoleOutput();
         ToolTip.SetTip(WalkCamera, CameraViewport.WalkProfile +
             "\nSolid world/group brushes, player clips and terrain/patches, including hidden geometry. Models need player clips. " +
-            "No swimming, crouch/prone, sprint, mantle, ladders or moving entities.\nWASD move · Space jump · Right-drag look · R reset · Esc exit.");
+            "No swimming, crouch/prone, mantle, ladders or moving entities.\nWASD move · Hold Shift run · Space jump · Right-drag look · R reset · Esc exit.");
         CameraControlsHint.Text = _compiledPreviewVisible
             ? "Read-only BSP · Right-drag orbit · Middle-drag pan · Scroll zoom · Fly for WASD"
             : CameraView.WalkMode
             ? (CameraView.WalkNeedsReset ? "Walk paused · Reset to recover or Esc to exit" :
-               CameraView.WalkPaused ? "Walk paused · Click camera to resume · Reset to recover" : "Walk · WASD move · Space jump · Right-drag look") +
+               CameraView.WalkPaused ? "Walk paused · Click camera to resume · Reset to recover" : "Walk · WASD move · Hold Shift run · Space jump · Right-drag look") +
               "\nR reset · Esc restore camera · Approximate standing traversal" +
               "\nHidden geometry collides · Models need player clips · No swimming"
             : CameraView.FlyMode

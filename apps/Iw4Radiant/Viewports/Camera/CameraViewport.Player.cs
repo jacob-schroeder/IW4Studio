@@ -9,6 +9,8 @@ public sealed partial class CameraViewport
     private bool _showWalkPlayer = true, _walkPlayerLoading;
     private int _walkPlayerRevision;
     private double _walkPlayerSeconds;
+    private float _walkPlayerMotionAmount;
+    private bool _walkPlayerRunning;
     private string? _walkPlayerError;
 
     internal Func<string?>? ResolvePlayerAssets { get; set; }
@@ -46,6 +48,8 @@ public sealed partial class CameraViewport
             if (revision != _walkPlayerRevision || !WalkMode) return;
             _walkPlayerPreview = preview;
             _walkPlayerSeconds = 0;
+            _walkPlayerMotionAmount = 0;
+            _walkPlayerRunning = false;
             _renderer.SetWalkPlayer(preview);
         }
         catch (Exception exception) when (IsWalkError(exception) || exception is JsonException or OverflowException)
@@ -72,6 +76,8 @@ public sealed partial class CameraViewport
         _walkPlayerPreview = null;
         _walkPlayerError = null;
         _walkPlayerSeconds = 0;
+        _walkPlayerMotionAmount = 0;
+        _walkPlayerRunning = false;
         _renderer.SetWalkPlayer(null);
     }
 }

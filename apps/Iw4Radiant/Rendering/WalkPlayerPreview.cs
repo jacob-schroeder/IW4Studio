@@ -6,32 +6,50 @@ using Iw4Radiant.Materials;
 
 namespace Iw4Radiant.Rendering;
 
-/// <summary>Prepared, in-place Rangers hands and Beretta idle viewmodel for Walk.</summary>
+/// <summary>Prepared, in-place Rangers hands and Beretta viewmodel for Walk.</summary>
 internal sealed class WalkPlayerPreview
 {
     private const string HandModelName = "viewhands_us_army";
     private const string WeaponName = "beretta_mp";
     private readonly XAnimPlaybackClip _clip;
     private readonly XAnimPreviewScene _scene;
+    private readonly XAnimPlaybackClip _runClip;
+    private readonly XAnimPreviewScene _runScene;
     private readonly int _viewBoneIndex;
     private readonly Vector3 _viewBindPosition;
     private readonly WalkVertex[] _vertices;
     private readonly SceneVertex[] _sampledVertices;
+    private readonly XAnimLocalBoneTransform[] _sampledTracks;
+    private readonly Matrix4x4[] _globalTransforms;
+    private readonly Matrix4x4[] _idlePalette;
+    private readonly Matrix4x4[] _runPalette;
+    private readonly Matrix4x4[] _blendedPalette;
     private readonly IReadOnlyList<(string Material, int Start, int Count)> _batches;
     private readonly IReadOnlyDictionary<string, (int Width, int Height, byte[] Pixels,
         IW4.Formats.SourceFormat.Material.MaterialSurfaceState Surface)> _textures;
+    private double _lastSeconds = -1;
+    private float _runBlend;
+    private float _motionBlend;
 
-    private WalkPlayerPreview(XAnimPlaybackClip clip, XAnimPreviewScene scene, int viewBoneIndex, Vector3 viewBindPosition,
+    private WalkPlayerPreview(XAnimPlaybackClip clip, XAnimPreviewScene scene,
+        XAnimPlaybackClip runClip, XAnimPreviewScene runScene, int viewBoneIndex, Vector3 viewBindPosition,
         WalkVertex[] vertices, IReadOnlyList<(string Material, int Start, int Count)> batches,
         IReadOnlyDictionary<string, (int Width, int Height, byte[] Pixels,
             IW4.Formats.SourceFormat.Material.MaterialSurfaceState Surface)> textures)
     {
         _clip = clip;
         _scene = scene;
+        _runClip = runClip;
+        _runScene = runScene;
         _viewBoneIndex = viewBoneIndex;
         _viewBindPosition = viewBindPosition;
         _vertices = vertices;
         _sampledVertices = new SceneVertex[vertices.Length];
+        _sampledTracks = new XAnimLocalBoneTransform[Math.Max(scene.TrackCount, runScene.TrackCount)];
+        _globalTransforms = new Matrix4x4[scene.BoneCount];
+        _idlePalette = new Matrix4x4[scene.BoneCount];
+        _runPalette = new Matrix4x4[scene.BoneCount];
+        _blendedPalette = new Matrix4x4[scene.BoneCount];
         _batches = batches;
         _textures = textures;
     }
@@ -45,7 +63,7 @@ internal sealed class WalkPlayerPreview
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(bootstrapRoot);
         string root = Path.GetFullPath(bootstrapRoot);
-        var (gunName, idleName, hiddenTags) = ReadWeapon(Path.Combine(root, "weapons", WeaponName));
+        var (gunName, idleName, runName, hiddenTags) = ReadWeapon(Path.Combine(root, "weapons", WeaponName));
         var assets = new NativeModelPreviewAssets(root);
         XModelSource hands = assets.LoadSource(HandModelName);
         XModelSource gun = assets.LoadSource(gunName);
@@ -57,9 +75,12 @@ internal sealed class WalkPlayerPreview
         XAnimPlaybackClip clip = new XAnimExchange().Read(root, idleName);
         if (!XAnimPreviewScene.TryCreate(clip, components, out XAnimPreviewScene? scene, out string reason) || scene is null)
             throw new InvalidDataException($"Beretta idle viewmodel cannot be composed: {reason}");
+        XAnimPlaybackClip runClip = new XAnimExchange().Read(root, runName);
+        if (!XAnimPreviewScene.TryCreate(runClip, components, out XAnimPreviewScene? runScene, out reason) || runScene is null)
+            throw new InvalidDataException($"Beretta run viewmodel cannot be composed: {reason}");
         int expectedBoneCount = hands.Document.Bones.Count + gun.Document.Bones.Count;
-        if (scene.BoneCount != expectedBoneCount)
-            throw new InvalidDataException("Beretta idle viewmodel skeleton does not match projected geometry.");
+        if (scene.BoneCount != expectedBoneCount || runScene.BoneCount != expectedBoneCount)
+            throw new InvalidDataException("Beretta viewmodel skeleton does not match projected geometry.");
         int viewBoneIndex = -1;
         for (int index = 0; index < hands.Document.Bones.Count; index++)
             if (hands.Document.Bones[index].Name == "tag_view") viewBoneIndex = index;
@@ -81,20 +102,44 @@ internal sealed class WalkPlayerPreview
         }
         if (vertices.Count == 0)
             throw new InvalidDataException("Beretta idle viewmodel has no visible triangles.");
-        return new WalkPlayerPreview(clip, scene, viewBoneIndex, hands.Document.Bones[viewBoneIndex].GlobalOffset,
+        return new WalkPlayerPreview(clip, scene, runClip, runScene,
+            viewBoneIndex, hands.Document.Bones[viewBoneIndex].GlobalOffset,
             vertices.ToArray(), batches, textures);
     }
 
-    internal SceneVertex[] Sample(double seconds, out Vector3 viewOrigin)
+    internal SceneVertex[] Sample(double seconds, float horizontalMotionAmount, bool running,
+        out Vector3 viewOrigin)
     {
         if (!double.IsFinite(seconds)) seconds = 0;
-        float frame = _clip.NumFrames > 0
-            ? (float)((Math.Max(0, seconds) * _clip.Framerate) % _clip.NumFrames)
-            : 0;
-        IReadOnlyList<Matrix4x4> palette = _scene.Sample(frame).SkinningPalette;
+        seconds = Math.Max(0, seconds);
+        if (!float.IsFinite(horizontalMotionAmount)) horizontalMotionAmount = 0;
+        horizontalMotionAmount = Math.Clamp(horizontalMotionAmount, 0, 1);
+        double elapsed = _lastSeconds < 0 || seconds < _lastSeconds ? 0 : Math.Min(0.1, seconds - _lastSeconds);
+        if (_lastSeconds >= 0 && seconds < _lastSeconds) _runBlend = _motionBlend = 0;
+        _lastSeconds = seconds;
+        float runTarget = running ? horizontalMotionAmount : 0;
+        float runStep = 1 - MathF.Exp(-(float)elapsed / 0.18f);
+        float motionStep = 1 - MathF.Exp(-(float)elapsed / 0.12f);
+        _runBlend += (runTarget - _runBlend) * runStep;
+        _motionBlend += (horizontalMotionAmount - _motionBlend) * motionStep;
+
+        _scene.SamplePalette(Frame(_clip), _sampledTracks, _globalTransforms, _idlePalette);
+        Matrix4x4[] palette = _idlePalette;
+        if (_runBlend > 0.0001f)
+        {
+            _runScene.SamplePalette(Frame(_runClip), _sampledTracks, _globalTransforms, _runPalette);
+            for (int index = 0; index < _blendedPalette.Length; index++)
+                _blendedPalette[index] = Matrix4x4.Lerp(palette[index], _runPalette[index], _runBlend);
+            palette = _blendedPalette;
+        }
         // The rig's camera is above its model origin. Use the same sampled pose
         // as the geometry so first-person framing stays relative to tag_view.
         viewOrigin = Vector3.Transform(_viewBindPosition, palette[_viewBoneIndex]);
+        float walkAmount = _motionBlend * (1 - _runBlend);
+        float phase = (float)(seconds * MathF.Tau * 1.8);
+        // Editor feedback only: the stock weapon has no walk animation slot.
+        Vector3 walkOffset = new(0, MathF.Sin(phase) * 0.10f,
+            -MathF.Abs(MathF.Cos(phase)) * 0.18f);
         for (int index = 0; index < _vertices.Length; index++)
         {
             WalkVertex vertex = _vertices[index];
@@ -106,10 +151,15 @@ internal sealed class WalkPlayerPreview
                 position += Vector3.Transform(vertex.BindPosition, transform) * weight.Weight;
                 normal += Vector3.TransformNormal(vertex.BindNormal, transform) * weight.Weight;
             }
+            position += walkOffset * walkAmount;
             if (normal.LengthSquared() > 0.000001f) normal = Vector3.Normalize(normal);
             _sampledVertices[index] = new SceneVertex(position, normal, vertex.Uv, vertex.Color);
         }
         return _sampledVertices;
+
+        float Frame(XAnimPlaybackClip animation) => animation.NumFrames > 0
+            ? (float)((seconds * animation.Framerate) % animation.NumFrames)
+            : 0;
     }
 
     private static void AddModel(XModelExportDocument model, int boneOffset,
@@ -160,7 +210,7 @@ internal sealed class WalkPlayerPreview
         }
     }
 
-    private static (string Gun, string Idle, IReadOnlySet<string> HiddenTags) ReadWeapon(string path)
+    private static (string Gun, string Idle, string Run, IReadOnlySet<string> HiddenTags) ReadWeapon(string path)
     {
         string[] parts = File.ReadAllText(path).Split('\\');
         if (parts.Length < 3 || parts[0] != "WEAPONFILE" || parts.Length % 2 != 1)
@@ -178,7 +228,7 @@ internal sealed class WalkPlayerPreview
         }
         string[] hidden = fields.GetValueOrDefault("hideTags", string.Empty)
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return (Required("gunModel"), Required("idleAnim"),
+        return (Required("gunModel"), Required("idleAnim"), Required("sprintLoopAnim"),
             new HashSet<string>(hidden, StringComparer.Ordinal));
     }
 

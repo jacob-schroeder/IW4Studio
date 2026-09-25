@@ -384,7 +384,8 @@ internal sealed class SceneRenderer
     internal unsafe void Render(PixelSize size, int framebuffer, Matrix4x4 viewProjection, Vector3 eye,
         EditorSession session,
         Func<string, MaterialSource?>? resolveMaterial, bool previewLighting, FilmPreview filmPreview, FogPreview fogPreview,
-        bool showWalkPlayer = false, double walkPlayerSeconds = 0)
+        bool showWalkPlayer, double walkPlayerSeconds, Vector3 walkForward,
+        float horizontalMotionAmount, bool running)
     {
         if (_gl is not { } gl || _program == 0)
             return;
@@ -503,7 +504,8 @@ internal sealed class SceneRenderer
             if (_compiledPreview is null) _water.RenderUnderwater(gl, eye);
             if (showWalkPlayer && _walkPlayer is not null && !_walkPlayerFailed)
             {
-                try { RenderWalkPlayer(gl, size, walkPlayerSeconds); }
+                try { RenderWalkPlayer(gl, size, eye, walkForward, previewLighting,
+                    walkPlayerSeconds, horizontalMotionAmount, running); }
                 catch (Exception exception) when (IsRenderException(exception) || exception is InvalidDataException or IndexOutOfRangeException)
                 {
                     _walkPlayerFailed = true;
@@ -584,30 +586,40 @@ internal sealed class SceneRenderer
         }
     }
 
-    private unsafe void RenderWalkPlayer(GL gl, PixelSize size, double seconds)
+    private unsafe void RenderWalkPlayer(GL gl, PixelSize size, Vector3 eye, Vector3 forward,
+        bool previewLighting, double seconds, float horizontalMotionAmount, bool running)
     {
         if (_walkPlayer is not { } preview || _walkPlayerGl is not { } gpu) return;
-        gpu.UploadFrame(gl, preview.Sample(seconds, out Vector3 viewOrigin));
-        // The authored idle pose is held in camera space. Editor FOV and clipping
-        // mirror the Radiant camera convention; they are not recovered PS3 offsets.
+        gpu.UploadFrame(gl, preview.Sample(seconds, horizontalMotionAmount, running, out Vector3 viewOrigin));
+        // Preserve the editor's first-person framing and depth range while
+        // placing the posed rig in the map's world space for light/shadow lookup.
+        forward = Vector3.Normalize(forward);
+        Vector3 right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitZ));
+        Vector3 up = Vector3.Cross(right, forward);
+        var rotation = new Matrix4x4(
+            forward.X, forward.Y, forward.Z, 0,
+            -right.X, -right.Y, -right.Z, 0,
+            up.X, up.Y, up.Z, 0,
+            0, 0, 0, 1);
+        Matrix4x4 model = rotation;
+        model.Translation = eye - Vector3.TransformNormal(viewOrigin, rotation);
         const float near = 0.01f, far = 4096f;
         float aspect = size.Width / (float)size.Height;
         float y = 1 / MathF.Tan(MathF.PI / 6);
         var projection = new Matrix4x4(y / aspect, 0, 0, 0, 0, y, 0, 0,
             0, 0, -(far + near) / (far - near), -1, 0, 0, -2 * far * near / (far - near), 0);
-        Matrix4x4 viewProjection = Matrix4x4.CreateLookAt(viewOrigin, viewOrigin + Vector3.UnitX, Vector3.UnitZ) * projection;
-        Matrix4x4 identity = Matrix4x4.Identity;
+        Matrix4x4 viewProjection = Matrix4x4.CreateLookAt(eye, eye + forward, up) * projection;
         gl.UseProgram(_program);
         gl.UniformMatrix4(_viewProjectionLocation, 1, false, (float*)&viewProjection);
-        gl.UniformMatrix4(_modelLocation, 1, false, (float*)&identity);
-        gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&identity);
+        gl.UniformMatrix4(_modelLocation, 1, false, (float*)&model);
+        gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&rotation);
         gl.Uniform1(_cubicClipLocation, 0);
         gl.Uniform1(_fogEnabledLocation, 0);
         gl.Uniform1(_waterPreviewLocation, 0);
         gl.Uniform1(_hasWaterReflectionLocation, 0);
-        gl.Uniform1(_litLocation, 0);
+        gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
         gl.Uniform1(_texturedLocation, 1);
-        gl.Uniform3(_eyeLocation, viewOrigin.X, viewOrigin.Y, viewOrigin.Z);
+        gl.Uniform3(_eyeLocation, eye.X, eye.Y, eye.Z);
         gl.ColorMask(true, true, true, false);
         gl.DepthMask(true);
         gl.Clear(ClearBufferMask.DepthBufferBit);

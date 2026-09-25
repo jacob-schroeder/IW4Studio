@@ -67,6 +67,8 @@ public sealed class XAnimPreviewScene
 
     public int UnmatchedTrackCount => _clip.BoneCount - MatchedTrackCount;
 
+    public int TrackCount => _clip.BoneCount;
+
     public static bool TryCreate(
         XAnimPlaybackClip clip,
         XModelAsset model,
@@ -147,25 +149,44 @@ public sealed class XAnimPreviewScene
     public XAnimPreviewPose Sample(float frame)
     {
         var sampledTracks = new XAnimLocalBoneTransform[_clip.BoneCount];
-        _clip.Sample(frame, sampledTracks);
-
         var globalTransforms = new Matrix4x4[_bones.Count];
         var poseBones = new XAnimPreviewBone[_bones.Count];
         var skinningPalette = new Matrix4x4[_bones.Count];
+        SamplePalette(frame, sampledTracks, globalTransforms, skinningPalette);
+        for (int boneIndex = 0; boneIndex < _bones.Count; boneIndex++)
+        {
+            Vector3 renderPosition =
+                RenderCoordinateConverter.GameToRenderPosition(globalTransforms[boneIndex].Translation);
+            poseBones[boneIndex] = new XAnimPreviewBone(
+                _bones[boneIndex].ParentIndex,
+                renderPosition,
+                _trackIndexByBone[boneIndex] >= 0);
+        }
+
+        return new XAnimPreviewPose(
+            Array.AsReadOnly(poseBones),
+            Array.AsReadOnly(skinningPalette));
+    }
+
+    /// <summary>Samples skinning transforms into caller-owned buffers for animation playback.</summary>
+    public void SamplePalette(float frame, Span<XAnimLocalBoneTransform> sampledTracks,
+        Span<Matrix4x4> globalTransforms, Span<Matrix4x4> skinningPalette)
+    {
+        if (sampledTracks.Length < _clip.BoneCount ||
+            globalTransforms.Length < _bones.Count || skinningPalette.Length < _bones.Count)
+            throw new ArgumentException("XAnim palette sampling buffers are too small.");
+        _clip.Sample(frame, sampledTracks);
         for (int boneIndex = 0; boneIndex < _bones.Count; boneIndex++)
         {
             int trackIndex = _trackIndexByBone[boneIndex];
             XAnimPreviewCompositionBone bone = _bones[boneIndex];
             Vector3 localPosition = bone.BindLocalPosition;
             Quaternion localRotation = bone.BindLocalRotation;
-            bool isAnimated = false;
             if (trackIndex >= 0)
             {
                 XAnimLocalBoneTransform sampled = sampledTracks[trackIndex];
-                localPosition =
-                    bone.ModelLocalTranslation + sampled.Translation;
+                localPosition = bone.ModelLocalTranslation + sampled.Translation;
                 localRotation = sampled.Rotation;
-                isAnimated = true;
             }
 
             Matrix4x4 local = Matrix4x4.CreateFromQuaternion(localRotation);
@@ -175,20 +196,8 @@ public sealed class XAnimPreviewScene
                 ? local
                 : local * globalTransforms[parentIndex];
             globalTransforms[boneIndex] = global;
-            skinningPalette[boneIndex] =
-                bone.InverseModelBindGlobalTransform * global;
-
-            Vector3 renderPosition =
-                RenderCoordinateConverter.GameToRenderPosition(global.Translation);
-            poseBones[boneIndex] = new XAnimPreviewBone(
-                parentIndex,
-                renderPosition,
-                isAnimated);
+            skinningPalette[boneIndex] = bone.InverseModelBindGlobalTransform * global;
         }
-
-        return new XAnimPreviewPose(
-            Array.AsReadOnly(poseBones),
-            Array.AsReadOnly(skinningPalette));
     }
 
     private static string CreateModelName(

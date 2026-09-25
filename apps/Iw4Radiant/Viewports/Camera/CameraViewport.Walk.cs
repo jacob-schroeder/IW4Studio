@@ -102,7 +102,7 @@ public sealed partial class CameraViewport
             NavigationModeChanged?.Invoke();
             NavigationChanged?.Invoke();
             RequestNextFrameRendering();
-            InteractionStatusChanged?.Invoke($"Walk started at {_walkLocation}. Approximate standing traversal; Space jumps, R resets, Escape restores the editor camera.");
+            InteractionStatusChanged?.Invoke($"Walk started at {_walkLocation}. Hold Shift to run; Space jumps, R resets, Escape restores the editor camera.");
         }
         catch (Exception exception) when (IsWalkError(exception))
         {
@@ -138,6 +138,8 @@ public sealed partial class CameraViewport
                 throw new InvalidOperationException(error);
             _walkFaulted = false;
             _walkPlayerSeconds = 0;
+            _walkPlayerMotionAmount = 0;
+            _walkPlayerRunning = false;
             _navigation.RestorePose(_walkEntryPose);
             _navigation.SetEye(simulation.Eye);
             Focus();
@@ -166,12 +168,19 @@ public sealed partial class CameraViewport
         return true;
     }
 
-    internal bool AdvanceWalk(Vector3 direction, bool jump, float seconds)
+    internal bool AdvanceWalk(Vector3 direction, bool jump, bool run, float seconds)
     {
         if (_walkSimulation is not { } simulation) return false;
         try
         {
-            simulation.Step(direction, jump, seconds);
+            Vector3 before = simulation.Eye;
+            simulation.Step(direction, jump, run, seconds);
+            Vector3 displacement = simulation.Eye - before;
+            float speed = new Vector2(displacement.X, displacement.Y).Length() / seconds;
+            _walkPlayerMotionAmount = simulation.IsGrounded
+                ? Math.Clamp(speed / (run ? CameraWalkSimulation.RunSpeed : CameraWalkSimulation.WalkSpeed), 0, 1)
+                : 0;
+            _walkPlayerRunning = run && _walkPlayerMotionAmount > 0.01f;
             _walkPlayerSeconds += seconds;
             _navigation.SetEye(simulation.Eye);
             NavigationChanged?.Invoke();

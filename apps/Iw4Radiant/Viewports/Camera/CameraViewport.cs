@@ -410,7 +410,8 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         var size = new PixelSize(Math.Max(1, (int)(Bounds.Width * scaling)), Math.Max(1, (int)(Bounds.Height * scaling)));
         _renderer.Render(size, framebuffer, _navigation.ViewProjection((float)size.Width / size.Height), _navigation.Eye,
             session, ResolveMaterial, CompiledPreview is null && PreviewLighting, FilmAdjustment, FogAdjustment,
-            WalkMode && ShowWalkPlayer, _walkPlayerSeconds);
+            WalkMode && ShowWalkPlayer, _walkPlayerSeconds,
+            _navigation.Forward, _walkPlayerMotionAmount, _walkPlayerRunning);
         NotifyFxPreviewStatusChanged(fxWasActive, previousFxNotice);
         NotifyMapFxPreviewStatusChanged(mapFxWasActive, previousMapFxNotice);
         // Render one final frame when an effect finishes so its last particles disappear.
