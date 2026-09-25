@@ -26,15 +26,20 @@ public partial class MaterialBrowser : UserControl
     private RadiantSettings? _settings;
     private bool _updatingCollections;
     private int _loadRevision;
+    private string? _libraryRoot;
+    private readonly Dictionary<string, MaterialThumbnail> _missingMaterials = new(StringComparer.Ordinal);
 
     public MaterialBrowser() => InitializeComponent();
 
     internal void InitializeActions(Window owner, EditorSession session, EditorDialogs dialogs,
-        Action finishGestures, Action<string> setStatus)
+        Action finishGestures, Action<string> setStatus, Func<string?> findBootstrapDirectory)
     {
         _dialogs = dialogs;
         _session = session;
         _setStatus = setStatus;
+        _findBootstrapDirectory = findBootstrapDirectory;
+        ShowSourceButton.Click += async (_, _) => await ShowSourceAsync();
+        RefreshSourceButton.Click += async (_, _) => await RefreshSourceReadinessAsync();
         BrowseButton.Click += async (_, _) => await BrowseAsync(owner, session, dialogs, finishGestures, setStatus);
         MaterialFilter.TextChanged += (_, _) => FilterMaterials();
         InUseToggle.IsCheckedChanged += (_, _) =>
@@ -87,7 +92,9 @@ public partial class MaterialBrowser : UserControl
 
     internal event Action? CatalogChanged;
     internal event Func<string, bool, Task>? FolderLoaded;
-    internal MaterialSource? ResolveMaterial(string name) => _materials.GetValueOrDefault(name)?.Material;
+    internal MaterialSource? ResolveMaterial(string name) =>
+        _materials.GetValueOrDefault(name) is { Material.PreviewDefinitionAvailable: true } thumbnail &&
+        (thumbnail.Preview is not null || thumbnail.IsSky) ? thumbnail.Material : null;
     internal IReadOnlyList<MaterialSource> AvailableSkies => _materials.Values
         .Where(material => material.IsSky && material.Preview is not null)
         .Select(material => material.Material).OrderBy(material => material.Name, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -454,6 +461,7 @@ public partial class MaterialBrowser : UserControl
     {
         MaterialList.SelectedItem = null;
         ReleasePreview();
+        ClearSourceReadiness();
         MaterialName.Text = ClipBrushMaterial.PlayerClip;
         PreviewInfo.Text = "Player clip · invisible in game; blocks players. Magenta outlines show the editable volume.";
         session.Material = ClipBrushMaterial.PlayerClip;
@@ -468,6 +476,9 @@ public partial class MaterialBrowser : UserControl
         ReleasePreview();
         foreach (var material in _materials.Values) material.Preview?.Dispose();
         _materials.Clear();
+        _missingMaterials.Clear();
+        _libraryRoot = null;
+        ClearSourceReadiness();
     }
 
     private void ReleasePreview()
@@ -498,10 +509,11 @@ public partial class MaterialBrowser : UserControl
         {
             if (nonBlocking) setStatus("Loading saved material previews…");
             else dialogs.SetBusy(true);
-            var (catalog, unsupportedMaterials) = await Task.Run(() => MaterialCatalog.Read(root));
+            var (catalog, unsupportedMaterials) = await Task.Run(() => MaterialCatalog.Read(root, includeUnavailable: true));
             if (revision != _loadRevision)
                 return false;
             ReleaseImages(invalidateLoad: false);
+            _libraryRoot = MaterialCatalog.NormalizeRoot(root);
             MaterialSource[] sources = catalog.Values.ToArray();
             catalogInstalled = true;
             session.Material = "";
@@ -531,7 +543,7 @@ public partial class MaterialBrowser : UserControl
             loaded = true;
             setStatus($"Loaded {_materials.Values.Count(material => material.Preview is not null)} material previews from {root}." +
                 (skippedImages > 0 ? $" {skippedImages} images could not be read." : "") +
-                (unsupportedMaterials > 0 ? $" {unsupportedMaterials} unsupported material definitions were skipped." : ""));
+                (unsupportedMaterials > 0 ? $" {unsupportedMaterials} material definitions have no editor preview." : ""));
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
         {
@@ -573,7 +585,7 @@ public partial class MaterialBrowser : UserControl
                 catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
                 {
                     skipped++;
-                    if (material.IsSky) thumbnails.Add(new MaterialThumbnail(material, null));
+                    thumbnails.Add(new MaterialThumbnail(material, null));
                 }
             }
             return (thumbnails, skipped);
@@ -608,8 +620,18 @@ public partial class MaterialBrowser : UserControl
         bool inUse = InUseToggle.IsChecked == true;
         MaterialFavoriteCollection? collection = ActiveFavoriteCollection();
         HashSet<string>? favorites = collection is null ? null : new(collection.Materials, StringComparer.Ordinal);
-        int available = _materials.Values.Count(material => material.Preview is not null);
-        MaterialThumbnail[] matches = _materials.Values.Where(material => material.Preview is not null &&
+        // Keep referenced but absent definitions discoverable without adding them to the renderer's catalog.
+        var candidates = _materials.Values.AsEnumerable();
+        if (inUse)
+        {
+            foreach (string name in _usedMaterials.Where(name => !_materials.ContainsKey(name)))
+                _missingMaterials.TryAdd(name, new MaterialThumbnail(new MaterialSource(name, "", false,
+                    IW4.Game.Assets.Material.MaterialSamplerState.None) { PreviewDefinitionAvailable = false }, null));
+            candidates = candidates.Concat(_missingMaterials.Values.Where(material =>
+                _usedMaterials.Contains(material.Name) && !_materials.ContainsKey(material.Name)));
+        }
+        int available = _materials.Count;
+        MaterialThumbnail[] matches = candidates.Where(material =>
                 (favorites is null || favorites.Contains(material.Name)) &&
                 (!inUse || _usedMaterials.Contains(material.Name)) &&
                 material.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
@@ -635,9 +657,10 @@ public partial class MaterialBrowser : UserControl
         if (selected is not null && MaterialList.SelectedItem is null)
         {
             ReleasePreview();
+            ClearSourceReadiness();
             PreviewInfo.Text = "Choose a material to preview.";
         }
-        MaterialInfo.Text = (matches.Length == available
+        MaterialInfo.Text = (inUse ? $"{matches.Length} materials" : matches.Length == available
             ? $"{available} materials"
             : $"{matches.Length} of {available} materials") + (inUse ? " · in use" : "") +
             (collection is null ? "" : $" · {collection.Name}") +
@@ -647,6 +670,8 @@ public partial class MaterialBrowser : UserControl
     {
         ReleasePreview();
         PreviewInfo.Text = "Choose a material to preview.";
+        ToolTip.SetTip(PreviewInfo, null);
+        _ = RefreshSourceReadinessAsync();
         if (MaterialList.SelectedItem is not MaterialThumbnail material) return;
         MaterialName.Text = material.Name;
         session.Material = "";
@@ -661,15 +686,15 @@ public partial class MaterialBrowser : UserControl
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
         {
-            PreviewInfo.Text = exception.Message;
-            PreviewToggle.IsChecked = true;
+            PreviewInfo.Text = "Preview unavailable";
+            ToolTip.SetTip(PreviewInfo, exception.Message);
         }
         session.Refresh();
     }
     private async Task ApplyMaterialAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures,
         MaterialThumbnail material)
     {
-        if (dialogs.BlocksInput) return;
+        if (dialogs.BlocksInput || material.Preview is null) return;
         finishGestures();
         try
         {

@@ -8,9 +8,9 @@
             <TextBox x:Name="MaterialFilter" Grid.Column="1" Classes="compact" MinWidth="60"
                      PlaceholderText="Search materials" ToolTip.Tip="Filter the loaded material names" />
             <ToggleButton x:Name="InUseToggle" Grid.Column="2" Classes="compact" Content="In Use"
-                          ToolTip.Tip="Show loaded materials used by this map's brushes, terrain and resolved prefabs. Combines with search." />
+                          ToolTip.Tip="Show materials used by this map's brushes, terrain and resolved prefabs. Combines with search." />
             <Button x:Name="BrowseButton" Grid.Column="3" Classes="panelAction" Content="Browse…"
-                    ToolTip.Tip="Load previews from a raw asset or texture folder" />
+                    ToolTip.Tip="Choose a raw asset library or texture folder" />
             <ToggleButton x:Name="PreviewToggle" Grid.Column="4" Classes="compact" Content="Preview"
                           IsChecked="False" ToolTip.Tip="Show the selected image and its details" />
         </Grid>
@@ -47,7 +47,12 @@
                     <DataTemplate x:DataType="views:MaterialThumbnail">
                         <Grid RowDefinitions="*,Auto" ToolTip.Tip="{CompiledBinding Name}">
                             <Border Background="#303237" CornerRadius="2">
-                                <Image Source="{CompiledBinding Preview}" Stretch="Uniform" Margin="2" />
+                                <Grid>
+                                    <TextBlock Text="No preview" Classes="caption" FontSize="10"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               IsVisible="{CompiledBinding HasNoPreview}" />
+                                    <Image Source="{CompiledBinding Preview}" Stretch="Uniform" Margin="2" />
+                                </Grid>
                             </Border>
                             <Border Background="#DC202226" HorizontalAlignment="Left" VerticalAlignment="Top"
                                     Padding="3,1" IsVisible="{CompiledBinding IsSky}">
@@ -79,6 +84,16 @@
                              ToolTip.Tip="Choose a thumbnail to apply it to the current selection and use it for new geometry." />
                 </Grid>
                 <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                    <Grid x:Name="SourceReadinessRow" ColumnDefinitions="*,Auto,Auto"
+                          ColumnSpacing="6" IsVisible="False">
+                        <TextBlock x:Name="SourceReadiness" Classes="caption" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
+                        <Button x:Name="ShowSourceButton" Grid.Column="1" Classes="panelAction" Content="Show source"
+                                ToolTip.Tip="Open the folder containing this material's source" />
+                        <Button x:Name="RefreshSourceButton" Grid.Column="2" Classes="panelAction" Content="↻"
+                                AutomationProperties.Name="Refresh material source status"
+                                ToolTip.Tip="Check the material and its dependencies again" />
+                    </Grid>
                     <TextBlock x:Name="MaterialInfo" Classes="caption" VerticalAlignment="Center"
                                Text="Browse raw assets or a texture folder." TextTrimming="CharacterEllipsis"
                                ToolTip.Tip="{Binding #MaterialInfo.Text}" />

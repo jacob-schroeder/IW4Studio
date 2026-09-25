@@ -382,7 +382,7 @@ internal static partial class FastFileConverter
                 string.Equals(rawFile.Name, mapScriptName, StringComparison.Ordinal)) ??
             CreateMapScript(assetName, waterScript, hasMapFxScript);
         if (hasMapFxScript && rawFileOverrides.Contains(mapScript))
-            Console.WriteLine($"FX and sounds: the custom map script must call {MapFxStartup(mapFxScriptName)} during main().");
+            Console.WriteLine($"FX and sounds: the custom map script must call {MapFxStartup(mapFxScriptName)} in main() before maps\\mp\\_load::main(); so its emitters are registered before playback starts.");
         if (waterScript is not null && rawFileOverrides.Contains(mapScript))
             Console.WriteLine($"Water effects: the custom map script must call {WaterVolumeScript.Startup(waterScript)} during main(). " +
                 "The water helper owns its HUD overlay and the level-priority reverb slot.");
@@ -522,14 +522,16 @@ internal static partial class FastFileConverter
             foreach (string name in Ps3MapBootstrap.FactionMaterials)
                 bootstrapMaterials.LoadMaterial(name);
 
-        var imageParts = bootstrapMaterials?.ImageStreamPayloads.ToDictionary(pair => pair.Key, pair => pair.Value) ?? [];
+        var imageParts = bootstrapMaterials?.ImageStreamPayloads.ToDictionary(
+            pair => AssetKey.FromDefinition(pair.Key), pair => pair.Value) ?? [];
         if (materialSources is not null)
         {
             // Raw sources replace the included definition as a whole, including
             // a possible change from streamed to resident pixels.
             foreach (GfxImageAsset image in materialSources.Assets.OfType<GfxImageAsset>())
                 imageParts.Remove(AssetKey.FromDefinition(image));
-            foreach (var pair in materialSources.ImageStreamPayloads) imageParts[pair.Key] = pair.Value;
+            foreach (var pair in materialSources.ImageStreamPayloads)
+                imageParts[AssetKey.FromDefinition(pair.Key)] = pair.Value;
         }
         NamedImageFilePackage? imagePackage = imageParts.Count == 0 ? null : ImageFilePackager.Package(
             imageParts, bootstrap?.LanguageMask ?? RequireTemplate().InitialLinkRequest.LanguageMask);

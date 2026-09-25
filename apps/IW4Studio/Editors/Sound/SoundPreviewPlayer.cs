@@ -173,6 +173,15 @@ internal sealed class SoundPreviewPlayer : IDisposable
         }
     }
 
+    internal void SetPan(float pan)
+    {
+        lock (_sync)
+        {
+            ThrowIfDisposed();
+            SendVoidWithFloat(_player, Selectors.SetPan, Math.Clamp(pan, -1f, 1f));
+        }
+    }
+
     public void Restart()
     {
         lock (_sync)
@@ -414,6 +423,7 @@ internal sealed class SoundPreviewPlayer : IDisposable
         public static readonly IntPtr Pause = RegisterSelector("pause");
         public static readonly IntPtr Stop = RegisterSelector("stop");
         public static readonly IntPtr SetVolume = RegisterSelector("setVolume:");
+        public static readonly IntPtr SetPan = RegisterSelector("setPan:");
         public static readonly IntPtr SetNumberOfLoops = RegisterSelector("setNumberOfLoops:");
         public static readonly IntPtr CurrentTime = RegisterSelector("currentTime");
         public static readonly IntPtr SetCurrentTime = RegisterSelector("setCurrentTime:");

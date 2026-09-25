@@ -31,7 +31,11 @@ public partial class MainWindow : Window
             name => ResolveMaterial(name)?.UsesVertexColor == true, SetStatus);
         Workspace.InitializeActions(_dialogs, FinishGestures);
         Workspace.LayoutChanged += RefreshLayoutControls;
-        Workspace.Materials.InitializeActions(this, _session, _dialogs, FinishGestures, SetStatus);
+        Workspace.Materials.InitializeActions(this, _session, _dialogs, FinishGestures, SetStatus, () =>
+        {
+            string? linker = _buildLinkerPath ?? FindBuildLinker();
+            return linker is null ? null : Path.Combine(Path.GetDirectoryName(linker)!, "bootstrap", "ps3");
+        });
         InitializeAuthoring();
         var gridViews = Workspace.GridViews;
         foreach (var view in gridViews)
@@ -108,6 +112,7 @@ public partial class MainWindow : Window
         RefreshClipControls();
         RefreshPhaseBControls();
         Inspector.RefreshSelection(_session);
+        Workspace.SoundBrowser.RefreshSelectedSound(SelectedSoundMarker() is not null);
         Workspace.Prefabs.RefreshSelection(_session);
         RefreshEmitterPreview();
         SuggestEmitterSource();

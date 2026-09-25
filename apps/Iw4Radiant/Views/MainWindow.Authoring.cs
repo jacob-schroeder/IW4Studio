@@ -23,11 +23,10 @@ public partial class MainWindow
     private bool _previewIsSound;
     private MapEntity? _previewMarker;
     private MapDocument? _previewDocument;
-    private Vector3 _previewOrigin;
-    private Matrix4x4 _previewOrientation;
+    private FxPreviewWindow? _fxPreviewWindow;
     private MapDocument? _mapPreviewDocument;
     private string? _mapFxSource;
-    private (string Name, Vector3 Origin, Matrix4x4 Orientation)[] _mapFxEmitters = [];
+    private (MapEntity Owner, string Name, Vector3 Origin, Matrix4x4 Orientation)[] _mapFxEmitters = [];
 
     private void InitializeAuthoring()
     {
@@ -38,7 +37,7 @@ public partial class MainWindow
         Inspector.FxSoundBrowserRequested += (name, isSound) =>
         {
             Workspace.ShowFxSounds(isSound);
-            BrowserFor(isSound).ShowReference(name);
+            BrowserFor(isSound).ShowReference(name, browseAlternatives: isSound);
         };
         Inspector.FxSoundPreviewRequested += (name, isSound) =>
         {
@@ -53,6 +52,12 @@ public partial class MainWindow
             browser.InitializeActions(this, _dialogs, FinishGestures, SetStatus);
             browser.PlacementRequested += (name, isSound) => BeginPlacement(name,
                 (position, _) => GameplayEntityEditing.PlaceFxSound(_session, name, isSound, position));
+            browser.SelectedSoundRequested += name =>
+            {
+                if (_dialogs.BlocksInput) return;
+                if (SelectedSoundMarker() is { } marker)
+                    GameplayEntityEditing.SetFxSoundReference(_session, marker, name);
+            };
             browser.PreviewRequested += StartEmitterPreview;
             browser.PreviewStopRequested += () => StopEmitterPreview("Preview stopped.");
             browser.SourceLoaded += root =>
@@ -76,24 +81,34 @@ public partial class MainWindow
         {
             if (_previewAssetName is not null) StopEmitterPreview("Preview stopped.");
         };
-        _soundAudition.PlaybackEnded += error => Dispatcher.UIThread.Post(() =>
+        _soundAudition.PlaybackEnded += () =>
         {
             if (!_previewIsSound) return;
             _previewAssetName = null;
             _previewMarker = null;
             _previewDocument = null;
             _previewIsSound = false;
-            Workspace.SoundBrowser.SetPreviewState(false, error ?? "Sound preview finished.");
+            Workspace.SoundBrowser.SetPreviewState(false, "Sound preview finished.");
             _mapSoundPreview.SetSuspended(false);
-        });
+        };
+        Workspace.MapFxPauseRequested += () =>
+        {
+            Workspace.Camera.SetMapFxPreviewPaused(!Workspace.Camera.IsMapFxPreviewPaused);
+            UpdateMapFxPreviewState();
+        };
+        Workspace.MapFxRestartRequested += () =>
+        {
+            bool finished = Workspace.Camera.IsMapFxPreviewFinished;
+            Workspace.Camera.RestartMapFxPreview();
+            if (finished) Workspace.Camera.SetMapFxPreviewPaused(false);
+            UpdateMapFxPreviewState();
+        };
+        Workspace.Camera.MapFxPreviewStatusChanged += () => Dispatcher.UIThread.Post(UpdateMapFxPreviewState);
         Workspace.MapFxPreviewChanged += enabled =>
         {
             RefreshMapFxPreview();
-            SetStatus(enabled
-                ? Workspace.Camera.MapFxPreviewNotice ?? (_mapFxEmitters.Length == 0
-                    ? "FX preview on. Place an FX marker to see it in the camera."
-                    : "Placed FX are visible in the camera.")
-                : "Placed FX preview off.");
+            UpdateMapFxPreviewState();
+            SetStatus(enabled ? "Placed FX preview on." : "Placed FX preview off.");
         };
         Workspace.MapSoundsPreviewChanged += enabled =>
         {
@@ -102,14 +117,25 @@ public partial class MainWindow
                 : "Placed sounds preview off.");
             _mapSoundPreview.SetEnabled(enabled);
         };
-        Workspace.Camera.NavigationChanged += () => _mapSoundPreview.UpdateListener(Workspace.Camera.Eye);
-        _mapSoundPreview.StatusChanged += SetStatus;
+        Workspace.Camera.NavigationChanged += () =>
+            _mapSoundPreview.UpdateListener(Workspace.Camera.Eye, Workspace.Camera.Right);
+        _session.PointEntityPreviewChanged += _ =>
+        {
+            RefreshEmitterPreview();
+            if (Workspace.MapFxEnabled) Workspace.Camera.UpdateMapFxPreviewTransforms();
+        };
+        _mapSoundPreview.StatusChanged += (message, detail) =>
+        {
+            Workspace.SoundBrowser.SetMapPreviewStatus(message, detail);
+            SetStatus(message);
+        };
         _mapPreviewDocument = _session.Document;
         Closed += (_, _) =>
         {
-            StopEmitterPreview("Preview stopped.");
-            _soundAudition.Dispose();
             _mapSoundPreview.Dispose();
+            StopEmitterPreview("Preview stopped.");
+            Workspace.Camera.SetMapFxPreview(null, []);
+            _soundAudition.Dispose();
         };
         Workspace.Materials.CatalogChanged += RefreshAssets;
         Workspace.Models.CatalogChanged += RefreshAssets;
@@ -187,11 +213,18 @@ public partial class MainWindow
 
     private void StartEmitterPreview(FxSoundAsset asset)
     {
-        if (!StopEmitterPreview("Preview stopped.")) return;
+        if (!asset.IsSound && _fxPreviewWindow is { } openPreview && _previewAssetName == asset.Name)
+        {
+            openPreview.Activate();
+            return;
+        }
+        FinishGestures();
+        StopEmitterPreview("Preview stopped.", suspendMapSounds: asset.IsSound);
         FxSoundBrowser browser = BrowserFor(asset.IsSound);
         string? root = browser.SourceDirectory;
         if (string.IsNullOrWhiteSpace(root))
         {
+            _mapSoundPreview.SetSuspended(false);
             browser.SetPreviewState(false, "Choose the raw FX and sound library first.");
             return;
         }
@@ -201,8 +234,6 @@ public partial class MainWindow
             (marker.Properties.GetValueOrDefault("is_sound") == "1") == asset.IsSound &&
             marker.Properties.GetValueOrDefault(asset.IsSound ? "soundalias" : "fx") == asset.Name;
         if (!matchesMarker) marker = null;
-        Vector3 origin = marker is not null && marker.TryGetOrigin(out Vector3 placed)
-            ? placed : Workspace.Camera.PreviewFocus;
 
         if (asset.IsSound)
         {
@@ -222,43 +253,53 @@ public partial class MainWindow
             return;
         }
 
-        Matrix4x4 orientation = marker is null ? Matrix4x4.Identity : EntityOrientation.Rotation(marker);
-        string? notice = Workspace.Camera.StartFxPreview(root, asset.Name, origin, orientation);
-        bool playing = Workspace.Camera.HasActiveFxPreview;
-        if (playing)
+        var preview = new FxPreviewWindow(root, asset, ResolveEmitterMaterial);
+        _fxPreviewWindow = preview;
+        _previewAssetName = asset.Name;
+        _previewDocument = _session.Document;
+        preview.Closed += (_, _) =>
         {
-            _previewAssetName = asset.Name;
-            _previewMarker = marker;
-            _previewDocument = _session.Document;
-            _previewOrigin = origin;
-            _previewOrientation = orientation;
-        }
-        browser.SetPreviewState(playing,
-            playing ? $"Playing FX {(marker is null ? "in front of the camera" : "at the selected marker")}." +
-                      (notice?.Contains("element ", StringComparison.Ordinal) == true ? " Some elements are not shown." : "")
-                    : notice?.Contains("has no supported material sprites", StringComparison.Ordinal) == true
-                        ? "This FX uses elements the editor cannot animate yet."
-                        : notice ?? "This FX cannot be previewed.",
-            notice);
+            if (!ReferenceEquals(_fxPreviewWindow, preview)) return;
+            _fxPreviewWindow = null;
+            _previewAssetName = null;
+            _previewDocument = null;
+            Workspace.FxBrowser.SetPreviewState(false, "Preview closed.");
+        };
+        browser.SetPreviewState(true, "Preview window open.");
+        preview.Show(this);
     }
 
-    private bool StopEmitterPreview(string message)
+    private void UpdateMapFxPreviewState()
+    {
+        bool active = Workspace.Camera.HasActiveMapFxPreview;
+        bool paused = Workspace.Camera.IsMapFxPreviewPaused;
+        bool finished = Workspace.Camera.IsMapFxPreviewFinished;
+        string? notice = Workspace.Camera.MapFxPreviewNotice;
+        Workspace.SetMapFxPlaybackState(active, paused, finished);
+        string message = !Workspace.MapFxEnabled ? "Map FX off · use FX above the camera." :
+            Workspace.FxBrowser.SourceDirectory is null ? "Choose a library to preview map FX." :
+            _mapFxEmitters.Length == 0 ? "No visible FX markers in this map." :
+            !active ? "Map FX unavailable · see details." : finished ? "Map FX finished · replay above the camera." :
+            paused ? "Map FX paused." : "Map FX playing.";
+        if (active && !string.IsNullOrWhiteSpace(notice)) message += " Preview limited.";
+        Workspace.FxBrowser.SetMapPreviewStatus(message,
+            string.IsNullOrWhiteSpace(notice)
+                ? "Editor preview of supported FX components. Game export support is separate." : notice);
+    }
+
+    private void StopEmitterPreview(string message, bool suspendMapSounds = false)
     {
         _soundAudition.Stop();
-        Workspace.Camera.StopFxPreview();
-        if (_soundAudition.IsPlaying)
-        {
-            Workspace.SoundBrowser.SetPreviewState(true, "The sound is still stopping. Try Stop again.");
-            return false;
-        }
+        FxPreviewWindow? preview = _fxPreviewWindow;
+        _fxPreviewWindow = null;
+        preview?.Close();
         _previewAssetName = null;
         _previewIsSound = false;
         _previewMarker = null;
         _previewDocument = null;
         Workspace.FxBrowser.SetPreviewState(false, message);
         Workspace.SoundBrowser.SetPreviewState(false, message);
-        _mapSoundPreview.SetSuspended(false);
-        return true;
+        _mapSoundPreview.SetSuspended(suspendMapSounds);
     }
 
     private void RefreshEmitterPreview()
@@ -275,23 +316,9 @@ public partial class MainWindow
             StopEmitterPreview("Selection changed. Preview stopped.");
             return;
         }
-        if (_previewIsSound) return;
-        if (!marker.TryGetOrigin(out Vector3 origin))
-        {
-            StopEmitterPreview("The selected marker has no valid position.");
-            return;
-        }
-        Matrix4x4 orientation = EntityOrientation.Rotation(marker);
-        if (origin == _previewOrigin && orientation == _previewOrientation) return;
-        _previewOrigin = origin;
-        _previewOrientation = orientation;
-        string? root = Workspace.FxBrowser.SourceDirectory;
-        if (root is null) return;
-        string? notice = Workspace.Camera.StartFxPreview(root, _previewAssetName, origin, orientation);
-        bool playing = Workspace.Camera.HasActiveFxPreview;
-        Workspace.FxBrowser.SetPreviewState(playing,
-            playing ? "Playing FX at the selected marker." : notice ?? "This FX cannot be previewed.",
-            playing ? notice : null);
+        if (marker.Properties.GetValueOrDefault("is_sound") != "1" ||
+            marker.Properties.GetValueOrDefault("soundalias") != _previewAssetName)
+            StopEmitterPreview("Sound changed. Preview stopped.");
     }
 
     private void SuggestEmitterSource(string? assetFolder = null)
@@ -315,6 +342,12 @@ public partial class MainWindow
 
     private FxSoundBrowser BrowserFor(bool isSound) => isSound ? Workspace.SoundBrowser : Workspace.FxBrowser;
 
+    private MapEntity? SelectedSoundMarker() => _session.Selection.Count == 1 &&
+        _session.Selection.Active is MapEntity entity &&
+        _session.Document.Entities.Contains(entity) &&
+        entity.ClassName == "fx_origin" && entity.Properties.GetValueOrDefault("is_sound") == "1"
+            ? entity : null;
+
     private void RefreshMapPreviews()
     {
         if (!ReferenceEquals(_session.Document, _mapPreviewDocument))
@@ -329,23 +362,37 @@ public partial class MainWindow
     private void RefreshMapFxPreview()
     {
         string? root = Workspace.FxBrowser.SourceDirectory;
-        (string Name, Vector3 Origin, Matrix4x4 Orientation)[] emitters = Workspace.MapFxEnabled
+        (MapEntity Owner, string Name, Vector3 Origin, Matrix4x4 Orientation)[] emitters = Workspace.MapFxEnabled
             ? PlacedEmitterEntities(isSound: false)
-                .Select(entity => (entity.Properties.GetValueOrDefault("fx") ?? "",
+                .Select(entity => (entity, entity.Properties.GetValueOrDefault("fx") ?? "",
                     EditorSession.EntityOrigin(entity), EntityOrientation.Rotation(entity))).ToArray() : [];
         if (_mapFxSource == root && _mapFxEmitters.SequenceEqual(emitters)) return;
         _mapFxSource = root;
         _mapFxEmitters = emitters;
         Workspace.Camera.SetMapFxPreview(root, emitters);
+        UpdateMapFxPreviewState();
     }
 
     private void RefreshMapSoundPreview()
     {
+        var emitters = new List<(MapEntity Owner, int Slot, string Name, Vector3 Origin)>();
+        if (Workspace.MapSoundsEnabled)
+        {
+            var slots = new Dictionary<MapEntity, int>();
+            foreach (MapEntity entity in PlacedEmitterEntities(isSound: true))
+            {
+                // Scene copies change on edits. Keep voices keyed to their authored owner;
+                // prefab children get separate slots within that instance.
+                if (_session.Scene.Owner(entity) is not MapEntity owner) continue;
+                int slot = slots.GetValueOrDefault(owner);
+                slots[owner] = slot + 1;
+                emitters.Add((owner, slot, entity.Properties.GetValueOrDefault("soundalias") ?? "",
+                    EditorSession.EntityOrigin(entity)));
+            }
+        }
         _mapSoundPreview.Configure(Workspace.SoundBrowser.SourceDirectory,
-            Workspace.MapSoundsEnabled ? PlacedEmitterEntities(isSound: true)
-                .Select(entity => (entity.Properties.GetValueOrDefault("soundalias") ?? "",
-                    EditorSession.EntityOrigin(entity))).ToArray() : []);
-        _mapSoundPreview.UpdateListener(Workspace.Camera.Eye);
+            emitters);
+        _mapSoundPreview.UpdateListener(Workspace.Camera.Eye, Workspace.Camera.Right);
     }
 
     private IEnumerable<MapEntity> PlacedEmitterEntities(bool isSound) =>

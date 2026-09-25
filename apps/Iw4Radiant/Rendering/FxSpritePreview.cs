@@ -5,323 +5,453 @@ using IW4.Game.Assets.Fx;
 
 namespace Iw4Radiant.Rendering;
 
-// A deliberately narrow viewport renderer for source FX material sprites.
+// Source FX preview. Sampling is deterministic and all source/model I/O happens during Load.
 internal sealed class FxSpritePreview
 {
-    private const int LoopMilliseconds = 8_000;
+    private const int BoundsSampleWindowMilliseconds = 8_000;
     private const int MaximumSprites = 128;
-    private readonly FxEffectDefAsset _effect;
-    private readonly FxEffectDefAsset? _sandChild;
-    private readonly int _drawableRunnerVisual;
-    private readonly Stopwatch _clock = Stopwatch.StartNew();
-    private readonly List<(int Index, string Material)> _elements = [];
+    private const int MaximumSequencesPerElement = 256;
+    private readonly EffectNode _effect;
+    private readonly Stopwatch _clock = new();
     private readonly Matrix4x4 _orientation;
+    private readonly string[] _materials;
+    private double _timelineOffsetMilliseconds;
+    private bool _repeat;
 
-    private FxSpritePreview(FxEffectDefAsset effect, IReadOnlyList<FxEffectDefAsset>? runnerChildren,
-        Vector3 origin, Matrix4x4 orientation)
+    private FxSpritePreview(EffectNode effect, Vector3 origin, Matrix4x4 orientation,
+        IReadOnlyCollection<string> notices)
     {
-        ValidateCounts(effect);
         _effect = effect;
         Origin = origin;
         _orientation = orientation;
-        if (IsSandChild(effect))
-        {
-            _sandChild = effect;
-            _drawableRunnerVisual = -1;
-        }
-        else if (runnerChildren is not null)
-        {
-            _drawableRunnerVisual = FindDrawableRunnerVisual(effect, runnerChildren);
-            if (_drawableRunnerVisual < 0)
-            {
-                Notice = "this effect's particle setup is not supported by the editor preview yet";
-                return;
-            }
-            _sandChild = runnerChildren[_drawableRunnerVisual];
-        }
-        if (_sandChild is not null)
-        {
-            for (int index = 0; index < _sandChild.ElemDefs.Count; index++)
-                _elements.Add((index, _sandChild.ElemDefs[index].Visuals.Material?.Material?.Info.Name
-                    ?? throw new InvalidDataException("Sand child material is missing.")));
-            Notice = _drawableRunnerVisual < 0
-                ? "one-shot preview repeats every 8 seconds; lighting and soft intersections may differ in game"
-                : "animated preview; lighting, distance fading, and soft intersections may differ in game";
-            return;
-        }
+        _materials = effect.Materials.Distinct(StringComparer.Ordinal).ToArray();
+        HasDrawableElements = _materials.Length != 0;
+        Notice = string.Join("; ", notices);
+        PreviewBounds = EstimateBounds(effect);
+        _clock.Start();
+    }
 
-        var unsupported = new List<string>();
-        for (int index = 0; index < effect.ElemDefs.Count; index++)
-        {
-            FxElemDef element = effect.ElemDefs[index];
-            if (index >= effect.ElemDefCountLooping)
-            {
-                unsupported.Add($"element {index}: one-shot or emitted child");
-                continue;
-            }
-            if (element.ElemType != FxElemType.SpriteBillboard)
-            {
-                unsupported.Add($"element {index}: {element.ElemType}");
-                continue;
-            }
-            if (element.VisualCount != 1 || element.Visuals.Material?.Material?.Info.Name is not { Length: > 0 } material)
-            {
-                unsupported.Add($"element {index}: material visual");
-                continue;
-            }
-            if (element.Flags is not (0 or 134) || element.Spawn.LoopingIntervalMsec <= 0 ||
-                element.Spawn.Count <= 0 || element.Atlas.EntryCount != 1 || element.SpawnOrigin.Count != 3 ||
-                element.VisSamples.Count != element.VisStateIntervalCount + 1 ||
-                element.SpawnOrigin.Any(range => range.Base != 0 || range.Amplitude != 0) ||
-                element.Gravity.Base != 0 || element.Gravity.Amplitude != 0 ||
-                element.VelSamples.Any(sample => HasMotion(sample.Local) || HasMotion(sample.World)) ||
-                (element.Flags & (0x30 | 0x07000000 | 0x10000000)) != 0 ||
-                element.SpawnDelayMsec.Amplitude != 0 || element.LifeSpanMsec.Amplitude != 0 ||
-                element.InitialRotation.Base != 0 || element.InitialRotation.Amplitude != 0 ||
-                element.VisSamples.Any(sample => sample.Amplitude.Size0 != 0 ||
-                    sample.Base.Scale != 0 || sample.Amplitude.Scale != 0 ||
-                    sample.Base.RotationDelta != 0 || sample.Base.RotationTotal != 0 ||
-                    sample.Amplitude.RotationDelta != 0 || sample.Amplitude.RotationTotal != 0 ||
-                    sample.Base.Color != sample.Amplitude.Color))
-            {
-                unsupported.Add($"element {index}: flags, motion, random range, rotation, or atlas");
-                continue;
-            }
-            if (element.Spawn.Count > MaximumSprites &&
-                LoopMilliseconds / element.Spawn.LoopingIntervalMsec + 1 > MaximumSprites)
-                unsupported.Add($"element {index}: preview limits each 8-second cycle to {MaximumSprites} spawns");
-            _elements.Add((index, material));
-        }
-        if (_elements.Count != 0)
-            unsupported.Insert(0, "FX sprite preview loops an 8-second source-timed window with exported size, color, and material; native distance fade and eye-offset shading are unavailable");
-        Notice = string.Join("; ", unsupported);
+    private FxSpritePreview(FxSpritePreview prototype)
+    {
+        _effect = prototype._effect;
+        _orientation = prototype._orientation;
+        _materials = prototype._materials;
+        Origin = prototype.Origin;
+        HasDrawableElements = prototype.HasDrawableElements;
+        Notice = prototype.Notice;
+        PreviewBounds = prototype.PreviewBounds;
+        _clock.Start();
     }
 
     internal Vector3 Origin { get; }
     internal string? Notice { get; }
-    internal bool HasDrawableElements => _elements.Count != 0;
-    internal IReadOnlyList<string> Materials => _elements.Select(element => element.Material).Distinct(StringComparer.Ordinal).ToArray();
+    internal bool HasDrawableElements { get; }
+    internal bool IsPaused => !_clock.IsRunning;
+    internal bool IsLooping => double.IsPositiveInfinity(_effect.DurationMilliseconds);
+    internal bool IsFinished => !IsLooping && !Repeat &&
+        TimelineMilliseconds >= _effect.DurationMilliseconds;
+    internal bool IsPlaying => !IsPaused && !IsFinished;
+    internal bool Repeat
+    {
+        get => _repeat;
+        set
+        {
+            if (_repeat == value) return;
+            if (!IsLooping && _effect.DurationMilliseconds > 0)
+            {
+                double elapsed = TimelineMilliseconds;
+                if (_repeat)
+                    _timelineOffsetMilliseconds -= Math.Floor(elapsed / _effect.DurationMilliseconds) *
+                        _effect.DurationMilliseconds;
+                else if (elapsed >= _effect.DurationMilliseconds)
+                    _timelineOffsetMilliseconds -= elapsed;
+            }
+            _repeat = value;
+        }
+    }
+    private double TimelineMilliseconds => _clock.Elapsed.TotalMilliseconds + _timelineOffsetMilliseconds;
+    internal IReadOnlyList<string> Materials => _materials;
+    internal (Vector3 Min, Vector3 Max) PreviewBounds { get; }
+
+    internal FxSpritePreview CreateInstance() => new(this);
+
+    internal void SetPaused(bool paused)
+    {
+        if (paused) _clock.Stop();
+        else _clock.Start();
+    }
+
+    internal void Restart()
+    {
+        bool paused = IsPaused;
+        _clock.Reset();
+        _timelineOffsetMilliseconds = 0;
+        if (!paused) _clock.Start();
+    }
 
     internal static FxSpritePreview Load(string sourceDirectory, string assetName, Vector3 origin,
         Matrix4x4 orientation)
     {
         var exchange = new FxExchange();
-        FxEffectDefAsset effect = exchange.Link(sourceDirectory, assetName);
-        IReadOnlyList<FxEffectDefAsset>? children = null;
-        if (HasRunnerVisuals(effect))
+        var cache = new Dictionary<string, EffectNode>(StringComparer.Ordinal);
+        var modelCache = new Dictionary<string, IReadOnlyList<(string Material, SceneVertex[] Vertices)>>(StringComparer.Ordinal);
+        var notices = new HashSet<string>(StringComparer.Ordinal);
+        EffectNode LoadEffect(string name, HashSet<string> ancestry)
         {
-            var loaded = new Dictionary<string, FxEffectDefAsset>(StringComparer.Ordinal);
-            children = effect.ElemDefs[0].VisualArray.Select(visual =>
+            if (cache.TryGetValue(name, out EffectNode? cached)) return cached;
+            if (ancestry.Count >= 4 || !ancestry.Add(name))
             {
-                string name = visual.Effect?.EffectDef.Name
-                    ?? throw new InvalidDataException("Runner child reference is missing.");
-                if (!loaded.TryGetValue(name, out FxEffectDefAsset? child))
-                    loaded.Add(name, child = exchange.Link(sourceDirectory, name));
-                return child ?? throw new InvalidDataException("Runner child failed to load.");
-            }).ToArray();
+                notices.Add("nested or cyclic runner graph omitted");
+                return new EffectNode([], 0, 0);
+            }
+            FxEffectDefAsset effect = exchange.Link(sourceDirectory, name);
+            ValidateCounts(effect);
+            var elements = new List<ElementNode>();
+            for (int index = 0; index < effect.ElemDefs.Count; index++)
+            {
+                FxElemDef element = effect.ElemDefs[index];
+                if (index >= effect.ElemDefCountLooping + effect.ElemDefCountOneShot)
+                {
+                    notices.Add("emitted elements omitted");
+                    continue;
+                }
+                if (element.EffectEmitted.Name is not null || element.EffectOnImpact.Name is not null ||
+                    element.EffectOnDeath.Name is not null)
+                    notices.Add("emission and impact/death child effects omitted");
+                if ((element.Flags & 0x100) != 0)
+                    notices.Add("collision omitted");
+                if ((element.Flags & 0x08000000) != 0)
+                    notices.Add("model physics omitted");
+                if (element.ElemType is FxElemType.OmniLight or FxElemType.SpotLight)
+                {
+                    notices.Add("FX lights omitted");
+                    continue;
+                }
+                if (element.ElemType is not (FxElemType.SpriteBillboard or FxElemType.SpriteOriented or
+                    FxElemType.Tail or FxElemType.Cloud or FxElemType.SparkCloud or
+                    FxElemType.Model or FxElemType.Runner))
+                {
+                    notices.Add($"{element.ElemType} elements omitted");
+                    continue;
+                }
+                if (element.VisualCount == 0 || element.SpawnOrigin.Count != 3 ||
+                    (element.ElemType != FxElemType.Runner && element.VisSamples.Count == 0))
+                {
+                    notices.Add($"incomplete {element.ElemType} element omitted");
+                    continue;
+                }
+                var visuals = new List<VisualNode>();
+                foreach (FxElemDefVisuals visual in element.VisualCount > 1
+                    ? element.VisualArray : new[] { element.Visuals })
+                {
+                    string? material = visual.Material?.Material?.Info.Name?.TrimStart(',');
+                    if (material is { Length: > 0 })
+                        visuals.Add(new VisualNode(material, null, null));
+                    else if (visual.Model?.Model?.Name is { Length: > 0 } modelName)
+                    {
+                        if (!modelCache.TryGetValue(modelName, out var geometry))
+                        {
+                            try { geometry = FxModelPreviewGeometry.Load(sourceDirectory, modelName); }
+                            catch (Exception exception) when (exception is IOException or InvalidDataException or
+                                UnauthorizedAccessException or ArgumentException or NotSupportedException or
+                                System.Text.Json.JsonException)
+                            {
+                                notices.Add($"model {modelName} unavailable");
+                                geometry = [];
+                            }
+                            modelCache.Add(modelName, geometry);
+                        }
+                        if (geometry.Count == 0) notices.Add($"model {modelName} unavailable");
+                        visuals.Add(new VisualNode(null, geometry, null));
+                    }
+                    else if (visual.Effect?.EffectDef.Name is { Length: > 0 } childName)
+                    {
+                        try { visuals.Add(new VisualNode(null, null, LoadEffect(childName, ancestry))); }
+                        catch (Exception exception) when (exception is IOException or InvalidDataException or
+                            UnauthorizedAccessException or ArgumentException or System.Text.Json.JsonException)
+                        {
+                            ancestry.Remove(childName);
+                            notices.Add($"runner child {childName} unavailable");
+                            visuals.Add(new VisualNode(null, null, null));
+                        }
+                    }
+                    else
+                        visuals.Add(new VisualNode(null, null, null));
+                }
+                if (visuals.Count != element.VisualCount)
+                    notices.Add($"incomplete {element.ElemType} visual array");
+                if (visuals.Count == 0) continue;
+                elements.Add(new ElementNode(element, index < effect.ElemDefCountLooping, visuals));
+            }
+            ancestry.Remove(name);
+            double loopingLife = effect.MsecLoopingLife == int.MaxValue
+                ? double.PositiveInfinity : Math.Max(0, effect.MsecLoopingLife);
+            var node = new EffectNode(elements, CalculateDuration(elements, loopingLife), loopingLife);
+            cache.Add(name, node);
+            return node;
         }
-        return new FxSpritePreview(effect, children, origin, orientation);
+        EffectNode root = LoadEffect(assetName, new HashSet<string>(StringComparer.Ordinal));
+        if (root.Materials.Any())
+            notices.Add("authoring approximation; lighting and soft intersections may differ in game");
+        if (root.Elements.Any(node => node.Definition.ElemType is FxElemType.Cloud or FxElemType.SparkCloud))
+            notices.Add("cloud and spark-cloud shapes are editor approximations");
+        return new FxSpritePreview(root, origin, orientation, notices);
     }
 
-    internal IReadOnlyList<(string Material, SceneVertex[] Vertices)> Sample(Vector3 eye) =>
-        Sample(eye, Origin, _orientation, MaximumSprites);
+    internal IReadOnlyList<(string Material, SceneVertex[] Vertices)> Sample(Vector3 eye,
+        bool applyDistanceFade = false) =>
+        Sample(eye, Origin, _orientation, MaximumSprites, applyDistanceFade);
 
     internal IReadOnlyList<(string Material, SceneVertex[] Vertices)> Sample(Vector3 eye, Vector3 origin,
-        Matrix4x4 orientation, int maximumSprites)
+        Matrix4x4 orientation, int maximumSprites, bool applyDistanceFade = false,
+        uint variationSeed = 0)
     {
-        maximumSprites = Math.Clamp(maximumSprites, 0, MaximumSprites);
-        if (maximumSprites == 0) return [];
-        float time = (float)(_clock.Elapsed.TotalMilliseconds % LoopMilliseconds);
-        return _sandChild is { } child
-            ? SampleSand(child, eye, origin, orientation, time, maximumSprites)
-            : SampleGlow(eye, origin, time, maximumSprites);
-    }
-
-    private IReadOnlyList<(string Material, SceneVertex[] Vertices)> SampleSand(FxEffectDefAsset child,
-        Vector3 eye, Vector3 origin, Matrix4x4 orientation, float time, int maximumSprites)
-    {
+        int budget = Math.Clamp(maximumSprites, 0, MaximumSprites) * 6;
+        if (budget == 0 || !HasDrawableElements || IsFinished) return [];
+        double time = TimelineMilliseconds;
+        if (Repeat && !IsLooping && _effect.DurationMilliseconds > 0)
+            time %= _effect.DurationMilliseconds;
         var batches = new Dictionary<string, List<SceneVertex>>(StringComparer.Ordinal);
-        bool directChild = _drawableRunnerVisual < 0;
-        FxElemDef? runner = directChild ? null : _effect.ElemDefs[0];
-        int interval = runner?.Spawn.LoopingIntervalMsec ?? LoopMilliseconds;
-        int runnerCount = runner is null ? 1 : Math.Min(LoopMilliseconds / interval, runner.Spawn.Count);
-        int spriteCount = 0;
-        for (int sequence = 0; sequence < runnerCount && spriteCount < maximumSprites; sequence++)
-        {
-            float age = time - sequence * interval;
-            if (age < 0) age += LoopMilliseconds;
-            uint seed = Mix((uint)sequence + 0x53414E44u);
-            if (runner is not null &&
-                (int)(Random(seed, 0) * runner.VisualCount) != _drawableRunnerVisual) continue;
-            Vector3 runnerPosition = runner is null ? origin :
-                origin + Vector3.TransformNormal(SampleOrigin(runner, seed), orientation);
-            for (int elementIndex = 0; elementIndex < 2 && spriteCount < maximumSprites; elementIndex++)
-            {
-                FxElemDef element = child.ElemDefs[elementIndex];
-                int count = element.Spawn.LoopingIntervalMsec; // one-shot count uses this union field
-                string material = _elements[elementIndex].Material;
-                for (int particle = 0; particle < count && spriteCount < maximumSprites; particle++)
-                {
-                    uint particleSeed = Mix(seed ^ (uint)(elementIndex * 32 + particle + 1));
-                    float life = SampleRange(element.LifeSpanMsec.Base, element.LifeSpanMsec.Amplitude,
-                        Random(particleSeed, 1));
-                    if (age >= life || life <= 0) continue;
-                    float normalizedLife = Math.Clamp(age / life, 0, MathF.BitDecrement(1));
-                    Vector3 localOrigin = SampleOrigin(element, particleSeed);
-                    Vector3 displacement = SampleDisplacement(element, normalizedLife, life, particleSeed);
-                    Vector3 center = runnerPosition + Vector3.TransformNormal(localOrigin + displacement, orientation);
-                    SampleVisual(element, normalizedLife, out FxElemVisStateSample visual,
-                        out FxElemVisStateSample next, out float fraction);
-                    float size0 = VisualSize(visual.Base.Size0, visual.Amplitude.Size0,
-                        next.Base.Size0, next.Amplitude.Size0, fraction, Random(particleSeed, 7));
-                    float size1 = element.ElemType == FxElemType.Tail
-                        ? VisualSize(visual.Base.Size1, visual.Amplitude.Size1,
-                            next.Base.Size1, next.Amplitude.Size1, fraction, Random(particleSeed, 8))
-                        : size0;
-                    if (!float.IsFinite(size0) || !float.IsFinite(size1) || size0 <= 0 || size1 <= 0)
-                        continue;
-                    Vector4 color = Vector4.Lerp(
-                        SampleColor(visual, particleSeed), SampleColor(next, particleSeed), fraction);
-                    if (color.W <= 0) continue;
-                    float rotation = SampleRange(element.InitialRotation.Base,
-                        element.InitialRotation.Amplitude, Random(particleSeed, 9));
-                    int atlasIndex = SampleAtlas(element.Atlas, normalizedLife, age, particleSeed);
-                    Vector4 uv = AtlasUv(element.Atlas, atlasIndex);
-                    Vector3 direction = element.ElemType == FxElemType.Tail
-                        ? Vector3.TransformNormal(SampleVelocity(element, normalizedLife, particleSeed), orientation)
-                        : Vector3.Zero;
-                    AddParticle(batches, material, element.ElemType, eye, center, direction,
-                        size0, size1, rotation, color, uv, sourceSizesAreHalfExtents: true);
-                    spriteCount++;
-                }
-            }
-        }
+        SampleEffect(_effect, time, eye, origin, orientation, Mix(0x46585052u ^ variationSeed),
+            applyDistanceFade, batches, ref budget);
         return batches.Select(batch => (batch.Key, batch.Value.ToArray())).ToArray();
     }
 
-    private IReadOnlyList<(string Material, SceneVertex[] Vertices)> SampleGlow(Vector3 eye, Vector3 origin,
-        float time, int maximumSprites)
+    private static void SampleEffect(EffectNode effect, double time, Vector3 eye, Vector3 origin,
+        Matrix4x4 orientation, uint parentSeed, bool applyDistanceFade,
+        Dictionary<string, List<SceneVertex>> batches, ref int budget)
     {
-        var batches = new Dictionary<string, List<SceneVertex>>(StringComparer.Ordinal);
-        int spriteCount = 0;
-        foreach (var (index, material) in _elements)
+        for (int elementIndex = 0; elementIndex < effect.Elements.Count; elementIndex++)
         {
-            FxElemDef element = _effect.ElemDefs[index];
+            if (budget < 3) return;
+            ElementNode node = effect.Elements[elementIndex];
+            FxElemDef element = node.Definition;
             int interval = element.Spawn.LoopingIntervalMsec;
-            int count = Math.Min(MaximumSprites,
-                Math.Min(element.Spawn.Count, LoopMilliseconds / interval + 1));
-            for (int sequence = 0; sequence < count && spriteCount < maximumSprites; sequence++)
+            long first, last;
+            if (node.Looping)
             {
-                float start = sequence * interval;
-                start += element.SpawnDelayMsec.Base;
-                float age = time - start;
-                float life = element.LifeSpanMsec.Base;
-                if (age < 0 || life <= 0 || age >= life) continue;
-                float normalizedLife = Math.Clamp(age / life, 0, MathF.BitDecrement(1));
-                SampleVisual(element, normalizedLife, out FxElemVisStateSample visual,
+                if (interval <= 0 || element.Spawn.Count <= 0) continue;
+                long count = element.Spawn.Count == int.MaxValue ? long.MaxValue : element.Spawn.Count;
+                double lastSpawnTime = Math.Min(time, effect.LoopingLifeMilliseconds);
+                last = Math.Min(count, Math.Max(0, (long)Math.Floor(lastSpawnTime / interval) + 1));
+                double active = Maximum(element.SpawnDelayMsec) + ActiveDuration(node);
+                first = double.IsPositiveInfinity(active) ? 0 :
+                    Math.Max(0, (long)Math.Floor((time - active) / interval));
+                first = Math.Max(first, last - MaximumSequencesPerElement);
+            }
+            else
+            {
+                // One-shot count occupies the spawn union's interval and count fields.
+                long count = interval + (long)(element.Spawn.Count *
+                    Random(parentSeed, (uint)(elementIndex + 31)));
+                first = 0;
+                last = Math.Clamp(count, 0, MaximumSequencesPerElement);
+            }
+            int elementBudget = Math.Max(6, budget / (effect.Elements.Count - elementIndex));
+            for (long sequence = first; sequence < last && elementBudget >= 3 && budget >= 3; sequence++)
+            {
+                uint seed = Mix(parentSeed ^ ((uint)(elementIndex + 1) * 0x9e3779b9u) ^
+                    ((uint)(sequence + 1) * 0x85ebca6bu));
+                double birth = node.Looping ? sequence * (double)interval : 0;
+                birth += SampleRange(element.SpawnDelayMsec.Base, element.SpawnDelayMsec.Amplitude,
+                    Random(seed, 0));
+                double elapsed = time - birth;
+                if (elapsed < 0 || elapsed >= ActiveDuration(node)) continue;
+                VisualNode visual = node.Visuals[Math.Min(node.Visuals.Count - 1,
+                    (int)(Random(seed, 1) * node.Visuals.Count))];
+                if (element.ElemType == FxElemType.Runner)
+                {
+                    if (visual.Child is null) continue;
+                    Vector3 childOrigin = SampleOrigin(element, seed, origin, orientation);
+                    int childBudget = Math.Min(budget, elementBudget);
+                    SampleEffect(visual.Child, elapsed, eye, childOrigin,
+                        ElementOrientation(element, orientation, seed), seed,
+                        applyDistanceFade, batches, ref childBudget);
+                    int used = Math.Min(budget, elementBudget) - childBudget;
+                    budget -= used;
+                    elementBudget -= used;
+                    continue;
+                }
+                float life = SampleRange(element.LifeSpanMsec.Base, element.LifeSpanMsec.Amplitude,
+                    Random(seed, 5));
+                if (life <= 0 || elapsed >= life) continue;
+                float age = (float)elapsed;
+                float fractionLife = Math.Clamp(age / life, 0, MathF.BitDecrement(1));
+                SampleVisual(element, fractionLife, out FxElemVisStateSample state,
                     out FxElemVisStateSample next, out float fraction);
-                float size = visual.Base.Size0 + (next.Base.Size0 - visual.Base.Size0) * fraction;
-                if (!float.IsFinite(size) || size <= 0) continue;
-                Vector4 color = Vector4.Lerp(Color(visual.Base.Color), Color(next.Base.Color), fraction);
+                Vector4 color = Vector4.Lerp(SampleColor(state, seed), SampleColor(next, seed), fraction);
                 if (color.W <= 0) continue;
-                AddParticle(batches, material, FxElemType.SpriteBillboard, eye, origin, Vector3.Zero,
-                    size, size, 0, color, new Vector4(0, 0, 1, 1), sourceSizesAreHalfExtents: false);
-                spriteCount++;
+                Vector3 spawned = SampleOrigin(element, seed, origin, orientation);
+                Vector3 localMotion = SampleDisplacement(element, fractionLife, life, seed, world: false);
+                Vector3 worldMotion = SampleDisplacement(element, fractionLife, life, seed, world: true);
+                float gravity = SampleRange(element.Gravity.Base, element.Gravity.Amplitude, Random(seed, 19));
+                Matrix4x4 elementOrientation = ElementOrientation(element, orientation, seed);
+                Vector3 center = spawned + Vector3.TransformNormal(localMotion, elementOrientation) +
+                    worldMotion - Vector3.UnitZ * (400f * gravity * age * age / 1_000_000f);
+                if (applyDistanceFade)
+                {
+                    color.W *= DistanceFade(element, Vector3.Distance(eye, center));
+                    if (color.W <= 0) continue;
+                }
+                float rotation = SampleRange(element.InitialRotation.Base, element.InitialRotation.Amplitude,
+                    Random(seed, 20));
+                float halfSquared = fraction * fraction * 0.5f;
+                float rotationRandom = Random(seed, 21);
+                rotation += life * (SampleRange(state.Base.RotationTotal, state.Amplitude.RotationTotal,
+                    rotationRandom) + SampleRange(state.Base.RotationDelta, state.Amplitude.RotationDelta,
+                    rotationRandom) * (fraction - halfSquared) +
+                    SampleRange(next.Base.RotationDelta, next.Amplitude.RotationDelta,
+                        rotationRandom) * halfSquared);
+                if (element.ElemType == FxElemType.Model)
+                {
+                    float scale = VisualSize(state.Base.Scale, state.Amplitude.Scale,
+                        next.Base.Scale, next.Amplitude.Scale, fraction, Random(seed, 7));
+                    int before = budget;
+                    budget = Math.Min(budget, elementBudget);
+                    AddModel(batches, visual.Model, center, elementOrientation, element, age, seed,
+                        scale, color, ref budget);
+                    int modelUsed = Math.Min(before, elementBudget) - budget;
+                    budget = before - modelUsed;
+                    elementBudget -= modelUsed;
+                    continue;
+                }
+                if (visual.Material is null || budget < 6 || elementBudget < 6) continue;
+                float size0 = VisualSize(state.Base.Size0, state.Amplitude.Size0,
+                    next.Base.Size0, next.Amplitude.Size0, fraction, Random(seed, 7));
+                float size1 = (element.Flags & 0x10000000) != 0
+                    ? VisualSize(state.Base.Size1, state.Amplitude.Size1,
+                        next.Base.Size1, next.Amplitude.Size1, fraction, Random(seed, 8)) : size0;
+                if (element.ElemType == FxElemType.Cloud)
+                {
+                    // Native cloud placement carries the visual scale separately
+                    // from the two visual radii. A quad approximates that volume.
+                    float scale = VisualSize(state.Base.Scale, state.Amplitude.Scale,
+                        next.Base.Scale, next.Amplitude.Scale, fraction, Random(seed, 9));
+                    size0 *= scale;
+                    size1 *= scale;
+                }
+                if (!float.IsFinite(size0) || !float.IsFinite(size1) || size0 <= 0 || size1 <= 0) continue;
+                Vector3 velocity = SampleVelocity(element, fractionLife, seed, elementOrientation);
+                Vector4 uv = AtlasUv(element.Atlas, SampleAtlas(element.Atlas, fractionLife, age,
+                    (int)sequence, seed));
+                Matrix4x4 spriteOrientation = element.ElemType == FxElemType.SpriteOriented
+                    ? ElementAxis(element, age, seed, elementOrientation) : elementOrientation;
+                AddParticle(batches, visual.Material, element.ElemType, eye, center, velocity,
+                    spriteOrientation, size0, size1, rotation, color, uv);
+                budget -= 6;
+                elementBudget -= 6;
             }
         }
-        return batches.Select(batch => (batch.Key, batch.Value.ToArray())).ToArray();
     }
 
-    private static bool HasRunnerVisuals(FxEffectDefAsset effect) =>
-        effect.ElemDefs.Count == 1 && effect.ElemDefCountLooping == 1 &&
-        effect.ElemDefs[0].ElemType == FxElemType.Runner &&
-        effect.ElemDefs[0].VisualCount == 3 && effect.ElemDefs[0].VisualArray.Count == 3;
-
-    private static int FindDrawableRunnerVisual(FxEffectDefAsset runner,
-        IReadOnlyList<FxEffectDefAsset> children)
+    private static void AddModel(Dictionary<string, List<SceneVertex>> batches,
+        IReadOnlyList<(string Material, SceneVertex[] Vertices)>? geometry, Vector3 center,
+        Matrix4x4 orientation, FxElemDef element, float age, uint seed, float scale,
+        Vector4 color, ref int budget)
     {
-        if (runner.ElemDefCountLooping != 1 || runner.ElemDefCountOneShot != 0 ||
-            runner.ElemDefCountEmission != 0 || children.Count != 3)
-            return -1;
-        FxElemDef trigger = runner.ElemDefs[0];
-        if (trigger.ElemType != FxElemType.Runner || trigger.Flags != 0x06000086 ||
-            trigger.Spawn.LoopingIntervalMsec != 100 || trigger.Spawn.Count <= 0 ||
-            trigger.VisualCount != 3 || trigger.VisualArray.Count != 3 ||
-            trigger.SpawnOrigin.Count != 3 || trigger.SpawnDelayMsec.Base != 0 ||
-            trigger.SpawnDelayMsec.Amplitude != 0 ||
-            !NoAngles(trigger) || trigger.EffectOnImpact.Name is not null ||
-            trigger.EffectOnDeath.Name is not null || trigger.EffectEmitted.Name is not null)
-            return -1;
-        int drawable = -1;
-        for (int index = 0; index < children.Count; index++)
+        if (geometry is null || !float.IsFinite(scale) || scale <= 0 || budget < 3 ||
+            geometry.Sum(batch => batch.Vertices.Length) > budget) return;
+        Matrix4x4 rotation = ElementAxis(element, age, seed, orientation);
+        foreach ((string material, SceneVertex[] vertices) in geometry)
         {
-            FxEffectDefAsset child = children[index];
-            if (IsSandChild(child))
+            if (!batches.TryGetValue(material, out List<SceneVertex>? output))
+                batches.Add(material, output = []);
+            int triangles = vertices.Length / 3;
+            for (int index = 0; index < triangles * 3; index++)
             {
-                if (drawable >= 0) return -1;
-                drawable = index;
+                SceneVertex vertex = vertices[index];
+                Vector3 position = center + Vector3.TransformNormal(vertex.Position * scale, rotation);
+                Vector3 normal = Vector3.TransformNormal(vertex.Normal, rotation);
+                if (normal.LengthSquared() > 0.0001f) normal = Vector3.Normalize(normal);
+                output.Add(new SceneVertex(position, normal, vertex.Uv, vertex.Color * color));
             }
-            else if (!IsEmptyChild(child))
-                return -1;
+            budget -= triangles * 3;
+            if (budget < 3) break;
         }
-        return drawable;
     }
 
-    private static bool IsSandChild(FxEffectDefAsset child)
+    private static Matrix4x4 ElementAxis(FxElemDef element, float age, uint seed,
+        Matrix4x4 orientation)
     {
-        ValidateCounts(child);
-        if (child.ElemDefCountLooping != 0 || child.ElemDefCountOneShot != 2 ||
-            child.ElemDefCountEmission != 0)
-            return false;
-        return IsSandElement(child.ElemDefs[0], FxElemType.Tail, 0x11000086, 3,
-                   5, 0, 16, 2, 2) &&
-               IsSandElement(child.ElemDefs[1], FxElemType.SpriteBillboard, 0x01000086, 1,
-                   1, 24, 32, 3, 2);
+        if (element.SpawnAngles.Count < 3 || element.AngularVelocity.Count < 3)
+            return orientation;
+        Vector3 angles = new(
+            SampleRange(element.SpawnAngles[0].Base, element.SpawnAngles[0].Amplitude, Random(seed, 12)) +
+                age * SampleRange(element.AngularVelocity[0].Base, element.AngularVelocity[0].Amplitude, Random(seed, 3)),
+            SampleRange(element.SpawnAngles[1].Base, element.SpawnAngles[1].Amplitude, Random(seed, 13)) +
+                age * SampleRange(element.AngularVelocity[1].Base, element.AngularVelocity[1].Amplitude, Random(seed, 4)),
+            SampleRange(element.SpawnAngles[2].Base, element.SpawnAngles[2].Amplitude, Random(seed, 14)) +
+                age * SampleRange(element.AngularVelocity[2].Base, element.AngularVelocity[2].Amplitude, Random(seed, 5)));
+        return Matrix4x4.CreateRotationX(angles.Z) *
+            Matrix4x4.CreateRotationY(angles.X) * Matrix4x4.CreateRotationZ(angles.Y) * orientation;
     }
 
-    private static bool IsEmptyChild(FxEffectDefAsset child)
+    private static (Vector3 Min, Vector3 Max) EstimateBounds(EffectNode effect)
     {
-        ValidateCounts(child);
-        return child.ElemDefCountLooping == 0 && child.ElemDefCountOneShot == 1 &&
-            child.ElemDefCountEmission == 0 && child.ElemDefs[0].ElemType == FxElemType.SpriteBillboard &&
-            child.ElemDefs[0].Flags == 0x04000042 &&
-            child.ElemDefs[0].EffectOnImpact.Name is null &&
-            child.ElemDefs[0].EffectOnDeath.Name is null &&
-            child.ElemDefs[0].EffectEmitted.Name is null &&
-            child.ElemDefs[0].VisSamples.Count > 0 &&
-            child.ElemDefs[0].VisSamples.All(sample =>
-                sample.Base.Size0 == 0 && sample.Base.Size1 == 0 &&
-                sample.Amplitude.Size0 == 0 && sample.Amplitude.Size1 == 0);
+        // Frame the visible animation once at load time. Peak speed times lifetime
+        // greatly overestimates curved motion and leaves small fires lost in space.
+        Vector3 min = new(-8), max = new(8);
+        double window = double.IsPositiveInfinity(effect.DurationMilliseconds)
+            ? BoundsSampleWindowMilliseconds : effect.DurationMilliseconds;
+        for (int frame = 1; frame <= 24; frame++)
+        {
+            int budget = MaximumSprites * 6;
+            var batches = new Dictionary<string, List<SceneVertex>>(StringComparer.Ordinal);
+            SampleEffect(effect, frame * (window / 25), new Vector3(128, -128, 96),
+                Vector3.Zero, Matrix4x4.Identity, Mix(0x46585052u), false, batches, ref budget);
+            foreach (SceneVertex vertex in batches.Values.SelectMany(vertices => vertices))
+            {
+                if (vertex.Color.W < 0.1f || !float.IsFinite(vertex.Position.X) ||
+                    !float.IsFinite(vertex.Position.Y) || !float.IsFinite(vertex.Position.Z)) continue;
+                min = Vector3.Min(min, vertex.Position);
+                max = Vector3.Max(max, vertex.Position);
+            }
+        }
+        return (min - new Vector3(8), max + new Vector3(8));
     }
 
-    private static bool IsSandElement(FxElemDef element, FxElemType type, int flags, int count,
-        byte atlasBehavior, byte fps, short atlasEntries, byte columnBits, byte rowBits) =>
-        element.ElemType == type && element.Flags == flags &&
-        element.Spawn.LoopingIntervalMsec == count && element.Spawn.Count == 0 &&
-        element.VisualCount == 1 &&
-        element.Visuals.Material?.Material?.Info.Name is { Length: > 0 } &&
-        element.SpawnOrigin.Count == 3 && element.VelIntervalCount == 1 &&
-        element.VelSamples.Count == 2 && element.VisSamples.Count == element.VisStateIntervalCount + 1 &&
-        element.Atlas.Behavior == atlasBehavior && element.Atlas.Index == 10 &&
-        element.Atlas.Fps == fps && element.Atlas.LoopCount == 1 &&
-        element.Atlas.EntryCount == atlasEntries &&
-        element.Atlas.ColIndexBits == columnBits && element.Atlas.RowIndexBits == rowBits &&
-        element.SpawnDelayMsec.Base == 0 && element.SpawnDelayMsec.Amplitude == 0 &&
-        element.LifeSpanMsec.Base > 0 && element.LifeSpanMsec.Amplitude >= 0 &&
-        (long)element.LifeSpanMsec.Base + element.LifeSpanMsec.Amplitude < LoopMilliseconds &&
-        element.Gravity.Base == 0 && element.Gravity.Amplitude == 0 &&
-        NoAngles(element) && element.VelSamples.All(sample =>
-            !HasMotion(sample.World)) && element.VisSamples.All(sample =>
-            sample.Base.RotationDelta == 0 && sample.Base.RotationTotal == 0 &&
-            sample.Amplitude.RotationDelta == 0 && sample.Amplitude.RotationTotal == 0 &&
-            sample.Base.Scale == 0 && sample.Amplitude.Scale == 0) &&
-        element.EffectOnImpact.Name is null && element.EffectOnDeath.Name is null &&
-        element.EffectEmitted.Name is null;
+    private static double CalculateDuration(IReadOnlyList<ElementNode> elements, double loopingLife)
+    {
+        double duration = 0;
+        foreach (ElementNode node in elements)
+        {
+            FxElemDef element = node.Definition;
+            double active = ActiveDuration(node);
+            if (node.Looping)
+            {
+                if (element.Spawn.Count <= 0 || element.Spawn.LoopingIntervalMsec <= 0) continue;
+                double lastSpawn = element.Spawn.Count == int.MaxValue
+                    ? loopingLife : Math.Min(loopingLife, (element.Spawn.Count - 1d) *
+                        element.Spawn.LoopingIntervalMsec);
+                duration = Math.Max(duration, lastSpawn + Maximum(element.SpawnDelayMsec) + active);
+            }
+            else if (element.Spawn.LoopingIntervalMsec > 0 || element.Spawn.Count > 0)
+                duration = Math.Max(duration, Maximum(element.SpawnDelayMsec) + active);
+        }
+        return duration;
+    }
 
-    private static bool NoAngles(FxElemDef element) =>
-        element.SpawnAngles.Count == 3 && element.AngularVelocity.Count == 3 &&
-        element.SpawnAngles.All(range => range.Base == 0 && range.Amplitude == 0) &&
-        element.AngularVelocity.All(range => range.Base == 0 && range.Amplitude == 0);
+    private static double ActiveDuration(ElementNode node)
+    {
+        if (node.Definition.ElemType == FxElemType.Runner)
+            return node.Visuals.Max(visual => visual.Child?.DurationMilliseconds ?? 0);
+        return Math.Max(0, Maximum(node.Definition.LifeSpanMsec));
+    }
+
+    private static long Maximum(FxIntRange range) =>
+        Math.Max(range.Base, (long)range.Base + range.Amplitude);
+
+    private static float DistanceFade(FxElemDef element, float distance)
+    {
+        float fade = 1;
+        if (element.FadeInRange.Amplitude > 0)
+            fade = MathF.Min(fade, Math.Clamp(1 -
+                (distance - element.FadeInRange.Base) / element.FadeInRange.Amplitude, 0, 1));
+        if (element.FadeOutRange.Amplitude > 0)
+            fade = MathF.Min(fade, Math.Clamp(
+                (distance - element.FadeOutRange.Base) / element.FadeOutRange.Amplitude, 0, 1));
+        return fade;
+    }
 
     private static void ValidateCounts(FxEffectDefAsset effect)
     {
@@ -330,25 +460,100 @@ internal sealed class FxSpritePreview
             throw new InvalidDataException("FX element counts are invalid.");
     }
 
-    private static Vector3 SampleOrigin(FxElemDef element, uint seed) => new(
-        SampleRange(element.SpawnOrigin[0].Base, element.SpawnOrigin[0].Amplitude, Random(seed, 2)),
-        SampleRange(element.SpawnOrigin[1].Base, element.SpawnOrigin[1].Amplitude, Random(seed, 3)),
-        SampleRange(element.SpawnOrigin[2].Base, element.SpawnOrigin[2].Amplitude, Random(seed, 4)));
-
-    private static Vector3 SampleDisplacement(FxElemDef element, float normalizedLife,
-        float life, uint seed)
+    private static Vector3 SampleOrigin(FxElemDef element, uint seed, Vector3 origin,
+        Matrix4x4 orientation)
     {
-        FxElemVelStateInFrame first = element.VelSamples[0].Local;
-        FxElemVelStateInFrame last = element.VelSamples[1].Local;
-        float u = normalizedLife;
-        float firstWeight = u - u * u * 0.5f, lastWeight = u * u * 0.5f;
-        return life * (SampleVector(first.Velocity, seed) * firstWeight +
-            SampleVector(last.Velocity, seed) * lastWeight);
+        Vector3 source = new(
+            SampleRange(element.SpawnOrigin[0].Base, element.SpawnOrigin[0].Amplitude, Random(seed, 2)),
+            SampleRange(element.SpawnOrigin[1].Base, element.SpawnOrigin[1].Amplitude, Random(seed, 3)),
+            SampleRange(element.SpawnOrigin[2].Base, element.SpawnOrigin[2].Amplitude, Random(seed, 4)));
+        // Spawn-relative coordinates rotate with the placed effect; world-relative
+        // coordinates stay on world axes. Static editor placements share spawn/now frames.
+        Vector3 spawned = origin + ((element.Flags & 0x2) != 0
+            ? Vector3.TransformNormal(source, orientation) : source);
+        return spawned + SampleOffset(element, seed, orientation);
     }
 
-    private static Vector3 SampleVelocity(FxElemDef element, float normalizedLife, uint seed) =>
-        Vector3.Lerp(SampleVector(element.VelSamples[0].Local.Velocity, seed),
-            SampleVector(element.VelSamples[1].Local.Velocity, seed), normalizedLife);
+    private static Vector3 SampleOffset(FxElemDef element, uint seed, Matrix4x4 orientation)
+    {
+        float radius = SampleRange(element.SpawnOffsetRadius.Base, element.SpawnOffsetRadius.Amplitude,
+            Random(seed, 24));
+        float angle = Random(seed, 25) * MathF.Tau;
+        switch (element.Flags & 0x30)
+        {
+            case 0x10: // sphere
+                float z = Random(seed, 26) * 2 - 1;
+                float xy = MathF.Sqrt(Math.Max(0, 1 - z * z));
+                return radius * new Vector3(MathF.Cos(angle) * xy, MathF.Sin(angle) * xy, z);
+            case 0x20: // cylinder
+                float height = SampleRange(element.SpawnOffsetHeight.Base,
+                    element.SpawnOffsetHeight.Amplitude, Random(seed, 27));
+                return Vector3.TransformNormal(new Vector3(height,
+                    radius * MathF.Cos(angle), radius * MathF.Sin(angle)), orientation);
+        }
+        return Vector3.Zero;
+    }
+
+    private static Matrix4x4 ElementOrientation(FxElemDef element, Matrix4x4 orientation, uint seed)
+    {
+        switch (element.Flags & 0xC0)
+        {
+            case 0x40: // frame at spawn
+            case 0x80: // current effect frame; equal to spawn for static editor emitters
+                return orientation;
+            case 0xC0: // align the local X axis with the sampled spawn offset
+                Vector3 forward = SampleOffset(element, seed, orientation);
+                if (forward.LengthSquared() < 0.0001f) return orientation;
+                forward = Vector3.Normalize(forward);
+                Vector3 reference = MathF.Abs(forward.Z) < 0.999f ? Vector3.UnitZ : Vector3.UnitY;
+                Vector3 right = Vector3.Normalize(Vector3.Cross(reference, forward));
+                Vector3 up = Vector3.Cross(forward, right);
+                return new Matrix4x4(forward.X, forward.Y, forward.Z, 0,
+                    right.X, right.Y, right.Z, 0, up.X, up.Y, up.Z, 0, 0, 0, 0, 1);
+            default: // world-relative particles retain world axes after spawning
+                return Matrix4x4.Identity;
+        }
+    }
+
+    private static Vector3 SampleDisplacement(FxElemDef element, float normalizedLife,
+        float life, uint seed, bool world)
+    {
+        int flag = world ? 0x02000000 : 0x01000000;
+        if ((element.Flags & flag) == 0 || element.VelSamples.Count < 2) return Vector3.Zero;
+        int segments = element.VelSamples.Count - 1;
+        float progress = normalizedLife * segments;
+        int full = Math.Min(segments - 1, (int)progress);
+        Vector3 displacement = Vector3.Zero;
+        for (int index = 0; index <= full; index++)
+        {
+            float end = index == full ? progress - index : 1;
+            FxElemVelStateInFrame a = world ? element.VelSamples[index].World : element.VelSamples[index].Local;
+            FxElemVelStateInFrame b = world ? element.VelSamples[index + 1].World : element.VelSamples[index + 1].Local;
+            float weightB = end * end * 0.5f;
+            float weightA = end - weightB;
+            displacement += (SampleVector(a.Velocity, seed) * weightA +
+                SampleVector(b.Velocity, seed) * weightB) * (life / segments);
+        }
+        return displacement;
+    }
+
+    private static Vector3 SampleVelocity(FxElemDef element, float normalizedLife, uint seed,
+        Matrix4x4 orientation)
+    {
+        if (element.VelSamples.Count < 2) return Vector3.Zero;
+        float progress = normalizedLife * (element.VelSamples.Count - 1);
+        int index = Math.Min(element.VelSamples.Count - 2, (int)progress);
+        float fraction = progress - index;
+        Vector3 local = (element.Flags & 0x01000000) != 0
+            ? Vector3.Lerp(SampleVector(element.VelSamples[index].Local.Velocity, seed),
+                SampleVector(element.VelSamples[index + 1].Local.Velocity, seed), fraction)
+            : Vector3.Zero;
+        Vector3 world = (element.Flags & 0x02000000) != 0
+            ? Vector3.Lerp(SampleVector(element.VelSamples[index].World.Velocity, seed),
+                SampleVector(element.VelSamples[index + 1].World.Velocity, seed), fraction)
+            : Vector3.Zero;
+        return Vector3.TransformNormal(local, orientation) + world;
+    }
 
     private static Vector3 SampleVector(FxElemVec3Range range, uint seed) => new(
         SampleRange(range.Base.X, range.Amplitude.X, Random(seed, 11)),
@@ -364,22 +569,36 @@ internal sealed class FxSpritePreview
         return first + (lastBase + lastAmplitude * random - first) * fraction;
     }
 
-    private static Vector4 SampleColor(FxElemVisStateSample sample, uint seed) => new(
-        SampleColorChannel(sample.Base.Color.R, sample.Amplitude.Color.R, Random(seed, 14)),
-        SampleColorChannel(sample.Base.Color.G, sample.Amplitude.Color.G, Random(seed, 15)),
-        SampleColorChannel(sample.Base.Color.B, sample.Amplitude.Color.B, Random(seed, 16)),
-        SampleColorChannel(sample.Base.Color.A, sample.Amplitude.Color.A, Random(seed, 17)));
+    private static Vector4 SampleColor(FxElemVisStateSample sample, uint seed)
+    {
+        // The authored colors are endpoints of one range; preserve their hue relationship.
+        float random = Random(seed, 14);
+        return new Vector4(
+            SampleColorChannel(sample.Base.Color.R, sample.Amplitude.Color.R, random),
+            SampleColorChannel(sample.Base.Color.G, sample.Amplitude.Color.G, random),
+            SampleColorChannel(sample.Base.Color.B, sample.Amplitude.Color.B, random),
+            SampleColorChannel(sample.Base.Color.A, sample.Amplitude.Color.A, random));
+    }
 
     private static float SampleColorChannel(byte first, byte last, float random) =>
         (first + (last - first) * random) / 255f;
 
-    private static int SampleAtlas(FxElemAtlas atlas, float normalizedLife, float age, uint seed)
+    private static int SampleAtlas(FxElemAtlas atlas, float normalizedLife, float age,
+        int sequence, uint seed)
     {
-        int frame = (int)(Random(seed, 22) * atlas.EntryCount);
+        if (atlas.EntryCount <= 1) return 0;
+        int frame = (atlas.Behavior & 3) switch
+        {
+            1 => (int)(Random(seed, 22) * atlas.EntryCount),
+            2 => sequence & (atlas.EntryCount - 1),
+            _ => atlas.Index
+        };
         frame += (atlas.Behavior & 4) != 0
             ? (int)(normalizedLife * atlas.EntryCount)
-            : atlas.Fps * (int)age / 1000;
-        return frame & (atlas.EntryCount - 1);
+            : (int)(atlas.Fps * age / 1000);
+        if ((atlas.Behavior & 8) != 0 && frame >= atlas.EntryCount * atlas.LoopCount)
+            frame = atlas.EntryCount - 1;
+        return ((frame % atlas.EntryCount) + atlas.EntryCount) % atlas.EntryCount;
     }
 
     private static Vector4 AtlasUv(FxElemAtlas atlas, int index)
@@ -391,14 +610,15 @@ internal sealed class FxSpritePreview
     }
 
     private static void AddParticle(Dictionary<string, List<SceneVertex>> batches, string material,
-        FxElemType type, Vector3 eye, Vector3 center, Vector3 velocity, float size0, float size1,
-        float rotation, Vector4 color, Vector4 uv, bool sourceSizesAreHalfExtents)
+        FxElemType type, Vector3 eye, Vector3 center, Vector3 velocity, Matrix4x4 orientation,
+        float size0, float size1, float rotation, Vector4 color, Vector4 uv)
     {
-        Vector3 forward = eye - center;
+        Vector3 forward = type == FxElemType.SpriteOriented
+            ? Vector3.TransformNormal(Vector3.UnitX, orientation) : eye - center;
         if (forward.LengthSquared() < 0.0001f) forward = Vector3.UnitY;
         forward = Vector3.Normalize(forward);
         Vector3 right, up;
-        if (type == FxElemType.Tail)
+        if (type is FxElemType.Tail or FxElemType.SparkCloud)
         {
             if (velocity.LengthSquared() < 0.0001f) velocity = Vector3.UnitX;
             velocity = Vector3.Normalize(velocity);
@@ -406,35 +626,33 @@ internal sealed class FxSpritePreview
             if (right.LengthSquared() < 0.0001f)
                 right = Vector3.Cross(velocity, MathF.Abs(velocity.Z) < 0.9f
                     ? Vector3.UnitZ : Vector3.UnitY);
-            right = Vector3.Normalize(right) * (sourceSizesAreHalfExtents ? size0 : size0 * 0.5f);
-            up = velocity * (sourceSizesAreHalfExtents ? size1 * 2 : size1);
+            // Spark-cloud vertices are a motion-aligned editor proxy; the
+            // native SparkCloud geometry is not available in this renderer.
+            right = Vector3.Normalize(right) * (type == FxElemType.SparkCloud ? size1 : size0);
+            up = velocity * (type == FxElemType.SparkCloud ? size0 : size1 * 2);
         }
         else
         {
-            right = Vector3.Cross(Vector3.UnitZ, forward);
-            if (right.LengthSquared() < 0.0001f) right = Vector3.UnitX;
-            right = Vector3.Normalize(right);
-            up = Vector3.Normalize(Vector3.Cross(forward, right));
+            if (type == FxElemType.SpriteOriented)
+            {
+                right = Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitY, orientation));
+                up = Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, orientation));
+            }
+            else
+            {
+                right = Vector3.Cross(Vector3.UnitZ, forward);
+                if (right.LengthSquared() < 0.0001f) right = Vector3.UnitX;
+                right = Vector3.Normalize(right);
+                up = Vector3.Normalize(Vector3.Cross(forward, right));
+            }
             float cosine = MathF.Cos(rotation), sine = MathF.Sin(rotation);
             (right, up) = (right * cosine + up * sine, up * cosine - right * sine);
-            right *= sourceSizesAreHalfExtents ? size0 : size0 * 0.5f;
-            up *= sourceSizesAreHalfExtents ? size1 : size1 * 0.5f;
+            right *= size0;
+            up *= size1;
         }
-        Vector3 a, b, c, d;
-        if (type == FxElemType.Tail)
-        {
-            a = center - right - up;
-            b = center + right - up;
-            c = center + right;
-            d = center - right;
-        }
-        else
-        {
-            a = center - right - up;
-            b = center + right - up;
-            c = center + right + up;
-            d = center - right + up;
-        }
+        Vector3 a = center - right - up, b = center + right - up;
+        Vector3 c = type == FxElemType.Tail ? center + right : center + right + up;
+        Vector3 d = type == FxElemType.Tail ? center - right : center - right + up;
         if (!batches.TryGetValue(material, out List<SceneVertex>? vertices))
             batches.Add(material, vertices = []);
         vertices.Add(new SceneVertex(a, forward, new Vector2(uv.X, uv.W), color));
@@ -461,9 +679,6 @@ internal sealed class FxSpritePreview
         next = element.VisSamples[index + 1];
     }
 
-    private static Vector4 Color(FxElemColor color) =>
-        new(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
-
     private static uint Mix(uint value)
     {
         value ^= value >> 16;
@@ -476,10 +691,26 @@ internal sealed class FxSpritePreview
     private static float Random(uint seed, uint channel) =>
         (Mix(seed ^ (channel * 0x9e3779b9u)) >> 8) * (1f / 16777216f);
 
-    private static bool HasMotion(FxElemVelStateInFrame frame) =>
-        HasVector(frame.Velocity.Base) || HasVector(frame.Velocity.Amplitude) ||
-        HasVector(frame.TotalDelta.Base) || HasVector(frame.TotalDelta.Amplitude);
-
-    private static bool HasVector(Vec3 vector) =>
-        vector.X != 0 || vector.Y != 0 || vector.Z != 0;
+    private sealed record VisualNode(string? Material,
+        IReadOnlyList<(string Material, SceneVertex[] Vertices)>? Model, EffectNode? Child);
+    private sealed record ElementNode(FxElemDef Definition, bool Looping, IReadOnlyList<VisualNode> Visuals);
+    private sealed record EffectNode(IReadOnlyList<ElementNode> Elements,
+        double DurationMilliseconds, double LoopingLifeMilliseconds)
+    {
+        internal IEnumerable<string> Materials
+        {
+            get
+            {
+                foreach (ElementNode element in Elements)
+                    foreach (VisualNode visual in element.Visuals)
+                    {
+                        if (visual.Material is { } material) yield return material;
+                        if (visual.Model is { } model)
+                            foreach (var batch in model) yield return batch.Material;
+                        if (visual.Child is { } child)
+                            foreach (string childMaterial in child.Materials) yield return childMaterial;
+                    }
+            }
+        }
+    }
 }

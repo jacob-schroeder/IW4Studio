@@ -1,5 +1,6 @@
 using IW4.Formats.SourceFormat.PhysCollmap;
 using IW4.Formats.SourceFormat.PhysPreset;
+using IW4.Formats.SourceFormat.Material;
 using IW4.Formats.SourceFormat.XModel;
 using IW4.Game.Assets;
 using IW4.Game.Assets.Physics;

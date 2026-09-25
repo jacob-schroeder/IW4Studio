@@ -10,6 +10,7 @@ internal sealed record MaterialSource(
     bool IsSky,
     MaterialSamplerState SamplerState)
 {
+    internal bool PreviewDefinitionAvailable { get; init; } = true;
     internal string TechniqueSet { get; init; } = "";
     internal bool UsesVertexColor => TechniqueSet.StartsWith("wc_", StringComparison.Ordinal);
     internal MaterialWater? Water { get; init; }

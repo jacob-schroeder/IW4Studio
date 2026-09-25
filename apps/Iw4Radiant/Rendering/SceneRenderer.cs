@@ -52,11 +52,15 @@ internal sealed class SceneRenderer
     private readonly SceneReflections _reflections = new();
     private FxSpritePreview? _fxPreview;
     private string? _fxPreviewNotice;
-    private readonly List<(FxSpritePreview Preview, Vector3 Origin, Matrix4x4 Orientation)> _mapFxPreviews = [];
+    private readonly List<(FxSpritePreview Preview, MapEntity Owner, Vector3 Origin, Matrix4x4 Orientation)> _mapFxPreviews = [];
+    private readonly Dictionary<MapEntity, (string Name, FxSpritePreview Preview)> _mapFxInstances =
+        new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<string, (FxSpritePreview? Preview, string? Notice)> _mapFxAssets =
         new(StringComparer.OrdinalIgnoreCase);
     private string? _mapFxAssetRoot;
     private string? _mapFxSourceNotice, _mapFxPreviewNotice;
+    private readonly Dictionary<string, MaterialSource?> _fxMaterials = new(StringComparer.Ordinal);
+    private bool _mapFxPaused;
     private readonly List<string> _waterMaterials = [];
     private readonly Dictionary<string, (Vector3 Min, Vector3 Max)> _waterMaterialBounds = new(StringComparer.Ordinal);
     private readonly List<GfxReflectionProbe> _probeOrigins = [];
@@ -86,20 +90,36 @@ internal sealed class SceneRenderer
 
     internal string? Error { get; private set; } =
         "Camera is waiting for OpenGL. If it remains blank, a compatible OpenGL driver is required.";
+    internal bool HasRenderingError { get; private set; }
     internal bool HasAnimatedWater { get; private set; }
     internal bool HasVisibleAnimatedWater { get; private set; }
     internal bool HasActiveFxPreview => _fxPreview is not null;
+    internal bool HasPlayingFxPreview => _fxPreview?.IsPlaying == true;
+    internal bool IsFxPreviewPaused => _fxPreview?.IsPaused == true;
+    internal bool IsFxPreviewFinished => _fxPreview?.IsFinished == true;
+    internal bool IsFxPreviewLooping => _fxPreview?.IsLooping == true;
+    internal bool IsFxPreviewRepeating => _fxPreview?.Repeat == true;
     internal string? FxPreviewNotice => _fxPreviewNotice;
+    internal (Vector3 Min, Vector3 Max)? FxPreviewBounds => _fxPreview?.PreviewBounds;
     internal bool HasActiveMapFxPreview => _mapFxPreviews.Count != 0;
+    internal bool HasPlayingMapFxPreview => _mapFxPreviews.Any(item => item.Preview.IsPlaying);
+    internal bool IsMapFxPreviewPaused => HasActiveMapFxPreview && _mapFxPaused;
+    internal bool IsMapFxPreviewFinished => HasActiveMapFxPreview &&
+        _mapFxPreviews.All(item => item.Preview.IsFinished);
     internal string? MapFxPreviewNotice => _mapFxPreviewNotice;
     internal event EventHandler? StatusChanged;
 
     internal void RefreshScene() => _sceneDirty = true;
     internal void PreviewPointEntityMove() => _movePreviewDirty = true;
-    internal void ReloadTextures() => _texturesDirty = _sceneDirty = true;
+    internal void ReloadTextures()
+    {
+        _texturesDirty = _sceneDirty = true;
+        _fxMaterials.Clear();
+    }
     internal string? SetFxPreview(string? sourceDirectory, string? assetName, Vector3 origin, Matrix4x4 orientation)
     {
         StopFxPreview();
+        _fxMaterials.Clear();
         if (string.IsNullOrWhiteSpace(sourceDirectory) || string.IsNullOrWhiteSpace(assetName))
             return null;
         try
@@ -112,7 +132,7 @@ internal sealed class SceneRenderer
                 _fxPreviewNotice = preview.Notice;
             }
             else
-                _fxPreviewNotice = $"FX '{assetName}' has no supported material sprites. {preview.Notice}";
+                _fxPreviewNotice = $"FX '{assetName}' has no supported visual components. {preview.Notice}";
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
                                            ArgumentException or NotSupportedException or JsonException or OverflowException)
@@ -129,25 +149,68 @@ internal sealed class SceneRenderer
         _fxPreviewNotice = null;
     }
 
+    internal void SetFxPreviewPaused(bool paused) => _fxPreview?.SetPaused(paused);
+
+    internal void RestartFxPreview() => _fxPreview?.Restart();
+
+    internal void SetFxPreviewRepeat(bool repeat)
+    {
+        if (_fxPreview is not null) _fxPreview.Repeat = repeat;
+    }
+
+    internal void SetMapFxPreviewPaused(bool paused)
+    {
+        if (!HasActiveMapFxPreview) return;
+        _mapFxPaused = paused;
+        foreach (var (_, preview) in _mapFxInstances.Values)
+            preview.SetPaused(paused);
+    }
+
+    internal void RestartMapFxPreview()
+    {
+        foreach (var (_, preview) in _mapFxInstances.Values)
+            preview.Restart();
+    }
+
+    internal void UpdateMapFxPreviewTransforms()
+    {
+        for (int index = 0; index < _mapFxPreviews.Count; index++)
+        {
+            var (preview, owner, origin, orientation) = _mapFxPreviews[index];
+            if (!owner.TryGetOrigin(out Vector3 currentOrigin)) continue;
+            Matrix4x4 currentOrientation = EntityOrientation.Rotation(owner);
+            if (origin != currentOrigin || orientation != currentOrientation)
+                _mapFxPreviews[index] = (preview, owner, currentOrigin, currentOrientation);
+        }
+    }
+
     internal string? SetMapFxPreview(string? sourceDirectory,
-        IReadOnlyList<(string Name, Vector3 Origin, Matrix4x4 Orientation)> emitters)
+        IReadOnlyList<(MapEntity Owner, string Name, Vector3 Origin, Matrix4x4 Orientation)> emitters)
     {
         _sceneDirty = true;
         _mapFxPreviews.Clear();
+        _fxMaterials.Clear();
         _mapFxSourceNotice = _mapFxPreviewNotice = null;
         if (_mapFxAssetRoot != sourceDirectory || emitters.Count == 0)
         {
             _mapFxAssets.Clear();
+            _mapFxInstances.Clear();
             _mapFxAssetRoot = sourceDirectory;
         }
         if (emitters.Count == 0)
+        {
+            _mapFxPaused = false;
             return null;
+        }
         if (string.IsNullOrWhiteSpace(sourceDirectory))
+        {
+            _mapFxPaused = false;
             return _mapFxPreviewNotice = "Choose a raw library in the FX tab to preview placed effects.";
+        }
 
         var described = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var notices = new List<string>();
-        foreach (var (name, origin, orientation) in emitters)
+        foreach (var (owner, name, origin, orientation) in emitters)
         {
             if (string.IsNullOrWhiteSpace(name))
             {
@@ -163,9 +226,13 @@ internal sealed class SceneRenderer
                 {
                     loaded = FxSpritePreview.Load(sourceDirectory, name, Vector3.Zero, Matrix4x4.Identity);
                     if (!loaded.HasDrawableElements)
-                        notice = $"FX '{name}' has no supported material sprites. {loaded.Notice}";
-                    else if (!string.IsNullOrEmpty(loaded.Notice))
-                        notice = $"FX '{name}': {loaded.Notice}";
+                        notice = $"FX '{name}' has no supported visual components. {loaded.Notice}";
+                    else
+                    {
+                        loaded.SetPaused(_mapFxPaused);
+                        if (!string.IsNullOrEmpty(loaded.Notice))
+                            notice = $"FX '{name}': {loaded.Notice}";
+                    }
                 }
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
                                                    ArgumentException or NotSupportedException or JsonException or OverflowException)
@@ -178,11 +245,26 @@ internal sealed class SceneRenderer
             }
             if (described.Add(name) && asset.Notice is { } message) notices.Add(message);
             if (asset.Preview is { HasDrawableElements: true } preview)
-                _mapFxPreviews.Add((preview, origin, orientation));
+            {
+                if (!_mapFxInstances.TryGetValue(owner, out var instance) || instance.Name != name)
+                {
+                    instance = (name, preview.CreateInstance());
+                    instance.Preview.SetPaused(_mapFxPaused);
+                    _mapFxInstances[owner] = instance;
+                }
+                _mapFxPreviews.Add((instance.Preview, owner, origin, orientation));
+            }
         }
+        var activeOwners = new HashSet<MapEntity>(_mapFxPreviews.Select(item => item.Owner),
+            ReferenceEqualityComparer.Instance);
+        foreach (MapEntity obsolete in _mapFxInstances.Keys.Where(owner => !activeOwners.Contains(owner)).ToArray())
+            _mapFxInstances.Remove(obsolete);
+        foreach (string obsolete in _mapFxAssets.Keys.Where(name => !described.Contains(name)).ToArray())
+            _mapFxAssets.Remove(obsolete);
         _mapFxSourceNotice = string.Join("; ", notices.Take(4));
         if (notices.Count > 4) _mapFxSourceNotice += $"; {notices.Count - 4} more FX notices";
         _mapFxPreviewNotice = _mapFxSourceNotice;
+        if (!HasActiveMapFxPreview) _mapFxPaused = false;
         return _mapFxPreviewNotice;
     }
     internal void SetFoliagePreview(IReadOnlyList<(MapEntity Entity, XModelSource Model)> preview)
@@ -271,7 +353,7 @@ internal sealed class SceneRenderer
         catch (Exception exception) when (IsRenderException(exception))
         {
             ReleaseResources();
-            PublishStatus($"OpenGL initialization: {exception.Message}");
+            PublishStatus($"OpenGL initialization: {exception.Message}", failure: true);
         }
     }
 
@@ -281,7 +363,7 @@ internal sealed class SceneRenderer
         _gl?.Dispose();
         _gl = null;
         ResetResources();
-        PublishStatus("OpenGL context lost. Reopen the window to restore the camera viewport.");
+        PublishStatus("OpenGL context lost. Reopen the window to restore the camera viewport.", failure: true);
     }
 
     internal unsafe void Render(PixelSize size, int framebuffer, Matrix4x4 viewProjection, Vector3 eye,
@@ -426,7 +508,7 @@ internal sealed class SceneRenderer
         }
         catch (Exception exception) when (IsRenderException(exception))
         {
-            PublishStatus($"Camera rendering: {exception.Message}");
+            PublishStatus($"Camera rendering: {exception.Message}", failure: true);
         }
         finally
         {
@@ -493,10 +575,11 @@ internal sealed class SceneRenderer
         var available = new Dictionary<string, MaterialSource>(StringComparer.Ordinal);
         foreach (string material in preview.Materials)
         {
-            MaterialSource? source = resolveMaterial?.Invoke(material);
-            if (source is null || string.IsNullOrEmpty(source.TechniqueSet) ||
-                string.IsNullOrEmpty(source.ImagePath) || !File.Exists(source.ImagePath))
+            MaterialSource? source = ResolveFxMaterial(material, resolveMaterial);
+            if (source is null)
                 materialNotice ??= $"FX material '{material}' is unavailable; load its materials/images catalog.";
+            else if (source.Surface.SortKey == (int)MaterialSortKey.Distortion)
+                materialNotice ??= "Heat distortion is omitted from this preview.";
             else available.Add(material, source);
         }
         gl.BindVertexArray(_fxVertexArray);
@@ -538,28 +621,32 @@ internal sealed class SceneRenderer
         var materials = new Dictionary<string, MaterialSource?>(StringComparer.Ordinal);
         var ordered = _mapFxPreviews
             .OrderByDescending(item => IsNearView(item.Origin, viewProjection))
-            .ThenBy(item => Vector3.DistanceSquared(item.Origin, eye));
+            .ThenBy(item => Vector3.DistanceSquared(item.Origin, eye)).ToArray();
+        int emittersRemaining = ordered.Length;
         gl.BindVertexArray(_fxVertexArray);
         gl.BindBuffer(BufferTargetARB.ArrayBuffer, _fxVertexBuffer);
         gl.ActiveTexture(TextureUnit.Texture0);
         gl.Uniform1(_waterPreviewLocation, 0);
         gl.Uniform1(_litLocation, 0);
         gl.Uniform1(_texturedLocation, 1);
-        foreach (var (preview, origin, orientation) in ordered)
+        foreach (var (preview, owner, origin, orientation) in ordered)
         {
             if (remaining == 0)
             {
                 capped = true;
                 break;
             }
-            foreach (var (material, vertices) in preview.Sample(eye, origin, orientation, remaining))
+            // Share the frame budget so one dense fire does not hide every other emitter.
+            int budget = Math.Min(128, Math.Max(1, remaining / emittersRemaining--));
+            foreach (var (material, vertices) in preview.Sample(eye, origin, orientation, budget,
+                         applyDistanceFade: true,
+                         variationSeed: (uint)System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(owner)))
             {
-                remaining -= vertices.Length / 6;
+                remaining = Math.Max(0, remaining - (vertices.Length + 5) / 6);
                 if (!materials.TryGetValue(material, out MaterialSource? source))
                 {
-                    source = resolveMaterial?.Invoke(material);
-                    if (source is null || string.IsNullOrEmpty(source.TechniqueSet) ||
-                        string.IsNullOrEmpty(source.ImagePath) || !File.Exists(source.ImagePath))
+                    source = ResolveFxMaterial(material, resolveMaterial);
+                    if (source is null)
                     {
                         source = null;
                         materialNotice ??= $"FX material '{material}' is unavailable; load its materials/images catalog.";
@@ -567,6 +654,13 @@ internal sealed class SceneRenderer
                     materials.Add(material, source);
                 }
                 if (source is null) continue;
+                // Distortion colorMap pixels encode offsets into the resolved scene,
+                // not visible color. Drawing them as RGBA paints red/green over the FX.
+                if (source.Surface.SortKey == (int)MaterialSortKey.Distortion)
+                {
+                    materialNotice ??= "Heat distortion is omitted from this preview.";
+                    continue;
+                }
                 uint texture = _materialTextures.GetTexture(gl, material, resolveMaterial);
                 if (texture == 0)
                 {
@@ -592,6 +686,17 @@ internal sealed class SceneRenderer
         if (_mapFxPreviewNotice.Length == 0) _mapFxPreviewNotice = null;
         gl.BindVertexArray(_vertexArray);
         ResetSurfaceState(gl);
+    }
+
+    private MaterialSource? ResolveFxMaterial(string name, Func<string, MaterialSource?>? resolveMaterial)
+    {
+        if (_fxMaterials.TryGetValue(name, out var cached)) return cached;
+        MaterialSource? source = resolveMaterial?.Invoke(name);
+        if (source is null || string.IsNullOrEmpty(source.TechniqueSet) ||
+            string.IsNullOrEmpty(source.ImagePath) || !File.Exists(source.ImagePath))
+            source = null;
+        _fxMaterials.Add(name, source);
+        return source;
     }
 
     private static bool IsNearView(Vector3 origin, Matrix4x4 viewProjection)
@@ -1146,11 +1251,12 @@ internal sealed class SceneRenderer
         _sceneDirty = _texturesDirty = _shadowsDirty = true;
     }
 
-    private void PublishStatus(string? error)
+    private void PublishStatus(string? error, bool failure = false)
     {
-        if (Error == error)
+        if (Error == error && HasRenderingError == failure)
             return;
         Error = error;
+        HasRenderingError = failure;
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
 

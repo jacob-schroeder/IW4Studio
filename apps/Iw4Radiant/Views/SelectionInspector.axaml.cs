@@ -146,7 +146,12 @@ public partial class SelectionInspector : UserControl
             if (isFxSound && entity is not null)
             {
                 bool isSound = entity.Properties.GetValueOrDefault("is_sound") == "1";
-                FxSoundKind.Text = isSound ? "Sound alias · exact source name" : "FX · exact source name";
+                FxSoundExpander.Header = isSound ? "Sound" : "FX";
+                FxSoundKind.Text = isSound ? "Sound alias · choose a supported loop in Sounds" : "FX · exact source name";
+                FxSoundName.IsReadOnly = isSound;
+                ApplyFxSoundButton.IsVisible = !isSound;
+                BrowseFxSoundButton.Content = isSound ? "Change sound…" : "Browse…";
+                PreviewFxSoundButton.Content = isSound ? "Listen to selected marker" : "Preview selected marker";
                 if (entityChanged || !FxSoundName.IsKeyboardFocusWithin)
                     FxSoundName.Text = entity.Properties.GetValueOrDefault(isSound ? "soundalias" : "fx", "");
             }
@@ -156,7 +161,7 @@ public partial class SelectionInspector : UserControl
                 EntityList.ItemsSource = session.Document.Entities.Select((item, index) =>
                     new ComboBoxItem
                     {
-                        Content = $"{index}: {item.ClassName}" + (item.Properties.TryGetValue("targetname", out string? name) ? $" · {name}" : ""),
+                        Content = EntityListLabel(item, index),
                         Tag = item
                     }).ToArray();
                 _listedDocument = session.Document;
@@ -167,8 +172,7 @@ public partial class SelectionInspector : UserControl
                 for (int index = 0; index < entityItems.Length; index++)
                     if (entityItems[index].Tag is MapEntity listed)
                     {
-                        entityItems[index].Content = $"{index}: {listed.ClassName}" +
-                            (listed.Properties.TryGetValue("targetname", out string? name) ? $" · {name}" : "");
+                        entityItems[index].Content = EntityListLabel(listed, index);
                         entityItems[index].IsEnabled = ReferenceEquals(listed, session.Document.World) ||
                             session.Visibility.CanSelect(session.Document, listed);
                     }
@@ -190,6 +194,10 @@ public partial class SelectionInspector : UserControl
         }
         finally { _updating = false; }
     }
+
+    private static string EntityListLabel(MapEntity entity, int index) =>
+        $"{index}: {(entity.ClassName == "fx_origin" ? Describe(entity) : entity.ClassName)}" +
+        (entity.Properties.TryGetValue("targetname", out string? name) ? $" · {name}" : "");
 
     private static string SelectionSummary(EditorSelection selection)
     {

@@ -20,20 +20,29 @@
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
-            <StackPanel Grid.Column="1" Spacing="7">
+            <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+              <StackPanel Spacing="7">
                 <TextBlock Text="Asset" Classes="panelTitle" />
-                <TextBlock x:Name="AssetName" Text="Select an asset" TextWrapping="Wrap" FontFamily="Menlo,Consolas,monospace"
-                           FontSize="11" />
-                <TextBlock x:Name="AssetDetail" Classes="caption" TextWrapping="Wrap" />
                 <Button x:Name="PreviewButton" Content="Preview" Classes="panelAction" IsEnabled="False"
                         ToolTip.Tip="Inspect this asset before placing it in the map." />
+                <TextBlock x:Name="AssetName" Text="Select an asset" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                           FontFamily="Menlo,Consolas,monospace" FontSize="11" />
+                <TextBlock x:Name="AssetDetail" Classes="caption" TextWrapping="Wrap" />
                 <TextBlock x:Name="PreviewStateText" Classes="caption" Text="Select an asset to preview."
                            TextWrapping="Wrap" />
+                <Button x:Name="UseOnSelectedSoundButton" Content="Use on selected sound" Classes="panelAction"
+                        IsVisible="False" IsEnabled="False"
+                        ToolTip.Tip="Change the one selected sound marker to this supported loop." />
                 <Button x:Name="PlaceButton" Content="Place in view" Classes="panelAction" IsEnabled="False"
                         ToolTip.Tip="Click a grid or camera surface to place the marker. Shift repeats; Esc cancels." />
-            </StackPanel>
+              </StackPanel>
+            </ScrollViewer>
         </Grid>
-        <TextBlock x:Name="ResultText" Grid.Row="3" Classes="caption" Text="Use the same raw library as Build PS3 map."
-                   TextTrimming="CharacterEllipsis" />
+        <StackPanel Grid.Row="3" Spacing="5">
+            <TextBlock x:Name="MapPreviewStateText" Classes="caption" IsVisible="False"
+                       Text="Map sounds off · use Sounds above the camera." TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="ResultText" Classes="caption" Text="Use the same raw library as Build PS3 map."
+                       TextTrimming="CharacterEllipsis" />
+        </StackPanel>
     </Grid>
 </UserControl>

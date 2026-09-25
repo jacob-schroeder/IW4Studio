@@ -17,11 +17,28 @@
                         <ToggleButton x:Name="FogToggle" Grid.Column="2" Classes="viewportAction" Content="Fog" Width="42" Margin="0,0,5,0"
                                       IsCheckedChanged="FogPanel_Changed" ToolTip.Tip="Preview camera fog; not saved in the map or compiled."
                                       AutomationProperties.Name="Fog preview controls" />
-                        <ToggleButton x:Name="MapFxToggle" Grid.Column="3" Classes="viewportAction" Content="FX" Width="36" Margin="0,0,5,0"
-                                      IsCheckedChanged="MapFx_Changed" ToolTip.Tip="Show placed supported effects in the camera. This preview does not edit the map."
-                                      AutomationProperties.Name="Preview placed FX" />
+                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="3" Margin="0,0,5,0">
+                            <ToggleButton x:Name="MapFxToggle" Classes="viewportAction" Content="FX" Width="36"
+                                          IsCheckedChanged="MapFx_Changed" ToolTip.Tip="Show placed supported effects in the camera. This preview does not edit the map."
+                                          AutomationProperties.Name="Preview placed FX" />
+                            <StackPanel x:Name="MapFxTransport" Orientation="Horizontal" Spacing="3" IsVisible="False">
+                                <Button x:Name="MapFxPauseButton" Classes="viewportAction" Width="28" IsEnabled="False"
+                                        Click="MapFxPause_Click" ToolTip.Tip="Pause placed FX preview"
+                                        AutomationProperties.Name="Pause placed FX preview">
+                                    <Grid>
+                                        <icons:MaterialIcon x:Name="MapFxPauseIcon" Kind="PauseCircleOutline" Width="16" Height="16" />
+                                        <icons:MaterialIcon x:Name="MapFxResumeIcon" Kind="PlayCircleOutline" Width="16" Height="16" IsVisible="False" />
+                                    </Grid>
+                                </Button>
+                                <Button x:Name="MapFxRestartButton" Classes="viewportAction" Width="28" IsEnabled="False"
+                                        Click="MapFxRestart_Click" ToolTip.Tip="Restart placed FX preview"
+                                        AutomationProperties.Name="Restart placed FX preview">
+                                    <icons:MaterialIcon Kind="Restart" Width="16" Height="16" />
+                                </Button>
+                            </StackPanel>
+                        </StackPanel>
                         <ToggleButton x:Name="MapSoundsToggle" Grid.Column="4" Classes="viewportAction" Content="Sounds" Width="65" Margin="0,0,5,0"
-                                      IsCheckedChanged="MapSounds_Changed" ToolTip.Tip="Hear the nearest placed loaded sound while viewing the map. Volume follows its alias distance and falloff curve; one sound plays at a time on macOS."
+                                      IsCheckedChanged="MapSounds_Changed" ToolTip.Tip="Hear nearby placed sounds together. Volume follows camera distance; stereo position follows camera direction. Listen temporarily pauses map audio. Supported loaded sounds on macOS."
                                       AutomationProperties.Name="Preview placed sounds" />
                         <ToggleButton x:Name="FlyCamera" Grid.Column="5" Classes="viewportAction" Content="Fly" Width="42" Margin="0,0,5,0"
                                       IsCheckedChanged="FlyCamera_Changed" ToolTip.Tip="Fly through the map: WASD to move, Q/E down/up, right-drag to look, Shift for speed. Escape returns to orbit."

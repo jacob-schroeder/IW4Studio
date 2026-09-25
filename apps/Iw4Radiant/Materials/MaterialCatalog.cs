@@ -13,16 +13,9 @@ internal static class MaterialCatalog
     private static readonly string[] ImageExtensions = [".dds", ".png", ".jpg", ".jpeg", ".bmp"];
     private const MaterialSamplerState ImagePreviewSampler = MaterialSamplerState.FilterLinear | MaterialSamplerState.MipMapLinear;
 
-    internal static (Dictionary<string, MaterialSource> Materials, int Unsupported) Read(string root)
+    internal static (Dictionary<string, MaterialSource> Materials, int Unsupported) Read(string root, bool includeUnavailable = false)
     {
-        root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
-        if (!Directory.Exists(root))
-            throw new DirectoryNotFoundException($"Asset folder '{root}' does not exist.");
-        string selectedName = Path.GetFileName(root);
-        if (Directory.GetParent(root) is { } parent &&
-            ((selectedName.Equals("images", StringComparison.OrdinalIgnoreCase) && Directory.Exists(Path.Combine(parent.FullName, "materials"))) ||
-             (selectedName.Equals("materials", StringComparison.OrdinalIgnoreCase) && Directory.Exists(Path.Combine(parent.FullName, "images")))))
-            root = parent.FullName;
+        root = NormalizeRoot(root);
 
         string? materialRoot = Directory.Exists(Path.Combine(root, "materials")) ? Path.Combine(root, "materials") :
             Path.GetFileName(root).Equals("materials", StringComparison.OrdinalIgnoreCase) ? root : null;
@@ -61,10 +54,18 @@ internal static class MaterialCatalog
                 MaterialSamplerState samplerState, MaterialSurfaceState surface, MaterialGameFlags gameFlags,
                 MaterialSurfaceTypeBits surfaceTypeBits, string techniqueSet) material;
             try { material = ReadMaterial(path); }
-            catch (NotSupportedException) { unsupported++; continue; }
+            catch (Exception exception) when (exception is NotSupportedException ||
+                includeUnavailable && exception is IOException or InvalidDataException or JsonException)
+            {
+                unsupported++;
+                if (includeUnavailable)
+                    materials[name] = new MaterialSource(name, "", false, ImagePreviewSampler)
+                        { PreviewDefinitionAvailable = false };
+                continue;
+            }
             var (colorMap, isSky, water, waterColor, envMapParms, samplerState, surface, gameFlags, surfaceTypeBits, techniqueSet) = material;
             string? image = colorMap is null ? null : ResolveImage(colorMap);
-            if (image is not null || isSky || water is not null)
+            if (image is not null || isSky || water is not null || includeUnavailable)
                 materials[name] = new MaterialSource(name, image ?? "", isSky, samplerState)
                 {
                     Water = water, WaterColor = waterColor, EnvMapParms = envMapParms, Surface = surface, GameFlags = gameFlags,
@@ -85,6 +86,20 @@ internal static class MaterialCatalog
             string name = Path.GetRelativePath(imageRoot, fullPath).Replace('\\', '/');
             return images.GetValueOrDefault(name);
         }
+    }
+
+    internal static string NormalizeRoot(string root)
+    {
+        root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        if (!Directory.Exists(root))
+            throw new DirectoryNotFoundException($"Asset folder '{root}' does not exist.");
+        string selectedName = Path.GetFileName(root);
+        if (Directory.GetParent(root) is { } parent &&
+            ((selectedName.Equals("images", StringComparison.OrdinalIgnoreCase) && Directory.Exists(Path.Combine(parent.FullName, "materials"))) ||
+             selectedName.Equals("materials", StringComparison.OrdinalIgnoreCase)))
+            root = parent.FullName;
+
+        return root;
     }
 
     internal static MaterialSource? ReadOne(string root, string name)

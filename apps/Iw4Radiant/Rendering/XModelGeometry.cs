@@ -57,9 +57,11 @@ internal static class XModelGeometry
     }
 
     internal static IEnumerable<(string Material, SceneVertex A, SceneVertex B, SceneVertex C)> GetLocalTriangles(
-        XModelSource source)
+        XModelSource source) => GetLocalTriangles(source.Document);
+
+    internal static IEnumerable<(string Material, SceneVertex A, SceneVertex B, SceneVertex C)> GetLocalTriangles(
+        XModelExportDocument document)
     {
-        XModelExportDocument document = source.Document;
         foreach (var triangle in document.Triangles)
             yield return (document.Materials[triangle.MaterialIndex].Name,
                 // XMODEL_EXPORT uses clockwise-front winding; Radiant expects counter-clockwise.

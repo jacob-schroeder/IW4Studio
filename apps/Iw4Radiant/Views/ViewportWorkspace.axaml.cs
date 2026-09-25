@@ -92,7 +92,24 @@ public partial class ViewportWorkspace : UserControl
     internal event Action? LayoutChanged;
     internal event Action? BrowserTabChanged;
     internal event Action<bool>? MapFxPreviewChanged;
+    internal event Action? MapFxPauseRequested;
+    internal event Action? MapFxRestartRequested;
     internal event Action<bool>? MapSoundsPreviewChanged;
+
+    internal void SetMapFxPlaybackState(bool active, bool paused, bool finished = false)
+    {
+        MapFxTransport.IsVisible = MapFxEnabled;
+        MapFxPauseButton.IsEnabled = MapFxEnabled && active && !finished;
+        MapFxRestartButton.IsEnabled = MapFxEnabled && active;
+        ToolTip.SetTip(MapFxRestartButton, finished ? "Replay placed FX" : "Restart placed FX preview");
+        Avalonia.Automation.AutomationProperties.SetName(MapFxRestartButton,
+            finished ? "Replay placed FX" : "Restart placed FX preview");
+        MapFxPauseIcon.IsVisible = !paused;
+        MapFxResumeIcon.IsVisible = paused;
+        ToolTip.SetTip(MapFxPauseButton, paused ? "Resume placed FX preview" : "Pause placed FX preview");
+        Avalonia.Automation.AutomationProperties.SetName(MapFxPauseButton,
+            paused ? "Resume placed FX preview" : "Pause placed FX preview");
+    }
 
     internal void SetCompiledPreview(CompiledBspPreview? preview)
     {
@@ -160,6 +177,7 @@ public partial class ViewportWorkspace : UserControl
     internal void DisableMapPreviews()
     {
         MapFxToggle.IsChecked = false;
+        SetMapFxPlaybackState(false, false);
         MapSoundsToggle.IsChecked = false;
     }
 
@@ -385,7 +403,20 @@ public partial class ViewportWorkspace : UserControl
     private void MapFx_Changed(object? sender, RoutedEventArgs e)
     {
         if (CameraView is null || _dialogs?.BlocksInput == true) return;
+        SetMapFxPlaybackState(false, false);
         MapFxPreviewChanged?.Invoke(MapFxEnabled);
+    }
+
+    private void MapFxPause_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs?.BlocksInput == true || !MapFxEnabled || !MapFxPauseButton.IsEnabled) return;
+        MapFxPauseRequested?.Invoke();
+    }
+
+    private void MapFxRestart_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs?.BlocksInput == true || !MapFxEnabled || !MapFxRestartButton.IsEnabled) return;
+        MapFxRestartRequested?.Invoke();
     }
 
     private void MapSounds_Changed(object? sender, RoutedEventArgs e)

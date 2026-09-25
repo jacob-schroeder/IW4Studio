@@ -73,7 +73,7 @@ internal static class MapBuildPipeline
             IReadOnlyList<(string Name, string Path)> emitterRawFiles = emitters?.WriteTo(staging) ?? [];
             if (emitters is not null)
             {
-                progress.Report($"Exported {emitters.FxNames.Length} FX references and {emitters.SoundNames.Length} sound aliases to map scripts. PS3 playback awaits validation.");
+                progress.Report($"Exported {emitters.FxNames.Length} FX references and {emitters.SoundNames.Length} sound aliases to map scripts.");
             }
             progress.Report("Compiling source assets and included startup assets; linking the PS3 fastfile…");
             await RunLinkerAsync(linkerPath, bspPath, assetName, fastFilePath,

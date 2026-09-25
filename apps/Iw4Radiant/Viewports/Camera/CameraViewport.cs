@@ -18,6 +18,8 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     private readonly CameraNavigation _navigation = new();
     private readonly CameraFlyMovement _flyMovement;
     private readonly SceneRenderer _renderer = new();
+    private int _lastFxPlaybackState;
+    private bool _lastMapFxFinished;
     private CameraTransformGesture? _transform;
     private IPointer? _dragPointer;
     private MouseButton _dragButton;
@@ -147,40 +149,101 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
         }
     }
     internal string? RendererError => _renderer.Error;
-    internal Vector3 PreviewFocus
-    {
-        get
-        {
-            Vector3 eye = _navigation.Eye;
-            Vector3 target = _navigation.Target;
-            float distance = Vector3.Distance(eye, target);
-            return Vector3.Lerp(eye, target, MathF.Min(0.5f, 96f / distance));
-        }
-    }
+    internal bool HasRenderingError => _renderer.HasRenderingError;
     internal bool HasActiveFxPreview => _renderer.HasActiveFxPreview;
     internal bool HasActiveMapFxPreview => _renderer.HasActiveMapFxPreview;
+    internal bool IsFxPreviewPaused => _renderer.IsFxPreviewPaused;
+    internal bool IsFxPreviewFinished => _renderer.IsFxPreviewFinished;
+    internal bool IsFxPreviewLooping => _renderer.IsFxPreviewLooping;
+    internal bool IsFxPreviewRepeating => _renderer.IsFxPreviewRepeating;
+    internal bool IsMapFxPreviewPaused => _renderer.IsMapFxPreviewPaused;
+    internal bool IsMapFxPreviewFinished => _renderer.IsMapFxPreviewFinished;
     internal string? FxPreviewNotice => _renderer.FxPreviewNotice;
+    internal (Vector3 Min, Vector3 Max)? FxPreviewBounds => _renderer.FxPreviewBounds;
     internal string? MapFxPreviewNotice => _renderer.MapFxPreviewNotice;
     internal Vector3 Eye => _navigation.Eye;
+    internal Vector3 Right => _navigation.Right;
     internal string? SetMapFxPreview(string? sourceDirectory,
-        IReadOnlyList<(string Name, Vector3 Origin, Matrix4x4 Orientation)> emitters)
+        IReadOnlyList<(MapEntity Owner, string Name, Vector3 Origin, Matrix4x4 Orientation)> emitters)
     {
+        bool wasActive = HasActiveMapFxPreview;
+        string? previousNotice = MapFxPreviewNotice;
         string? notice = _renderer.SetMapFxPreview(sourceDirectory, emitters);
+        NotifyMapFxPreviewStatusChanged(wasActive, previousNotice);
         RequestNextFrameRendering();
         return notice;
     }
     internal string? StartFxPreview(string sourceDirectory, string assetName, Vector3 origin, Matrix4x4 orientation)
     {
+        bool wasActive = HasActiveFxPreview;
+        string? previousNotice = FxPreviewNotice;
         string? notice = _renderer.SetFxPreview(sourceDirectory, assetName, origin, orientation);
+        NotifyFxPreviewStatusChanged(wasActive, previousNotice);
         RequestNextFrameRendering();
         return notice;
     }
     internal void StopFxPreview()
     {
+        bool wasActive = HasActiveFxPreview;
+        string? previousNotice = FxPreviewNotice;
         _renderer.StopFxPreview();
+        NotifyFxPreviewStatusChanged(wasActive, previousNotice);
         RequestNextFrameRendering();
     }
+    internal void SetFxPreviewPaused(bool paused)
+    {
+        _renderer.SetFxPreviewPaused(paused);
+        RequestNextFrameRendering();
+    }
+    internal void RestartFxPreview()
+    {
+        _renderer.RestartFxPreview();
+        RequestNextFrameRendering();
+    }
+    internal void SetFxPreviewRepeat(bool repeat)
+    {
+        _renderer.SetFxPreviewRepeat(repeat);
+        RequestNextFrameRendering();
+    }
+    internal void SetMapFxPreviewPaused(bool paused)
+    {
+        _renderer.SetMapFxPreviewPaused(paused);
+        RequestNextFrameRendering();
+    }
+    internal void RestartMapFxPreview()
+    {
+        _renderer.RestartMapFxPreview();
+        RequestNextFrameRendering();
+    }
+    internal void UpdateMapFxPreviewTransforms()
+    {
+        _renderer.UpdateMapFxPreviewTransforms();
+        RequestNextFrameRendering();
+    }
+    private void NotifyFxPreviewStatusChanged(bool wasActive, string? previousNotice)
+    {
+        int state = (IsFxPreviewPaused ? 1 : 0) | (IsFxPreviewFinished ? 2 : 0) |
+            (IsFxPreviewLooping ? 4 : 0) | (IsFxPreviewRepeating ? 8 : 0);
+        bool playbackChanged = state != _lastFxPlaybackState;
+        _lastFxPlaybackState = state;
+        if (wasActive != HasActiveFxPreview ||
+            playbackChanged ||
+            !string.Equals(previousNotice, FxPreviewNotice, StringComparison.Ordinal))
+            FxPreviewStatusChanged?.Invoke();
+    }
+    private void NotifyMapFxPreviewStatusChanged(bool wasActive, string? previousNotice)
+    {
+        bool finished = IsMapFxPreviewFinished;
+        bool playbackChanged = finished != _lastMapFxFinished;
+        _lastMapFxFinished = finished;
+        if (wasActive != HasActiveMapFxPreview ||
+            playbackChanged ||
+            !string.Equals(previousNotice, MapFxPreviewNotice, StringComparison.Ordinal))
+            MapFxPreviewStatusChanged?.Invoke();
+    }
     internal event EventHandler? RendererStatusChanged;
+    internal event Action? FxPreviewStatusChanged;
+    internal event Action? MapFxPreviewStatusChanged;
     internal event Action<string>? InteractionStatusChanged;
     internal event Action? NavigationModeChanged;
     internal event Action? NavigationChanged;
@@ -200,6 +263,13 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     {
         FinishGesture();
         _navigation.FrameBounds((point, point), Aspect);
+        NavigationChanged?.Invoke();
+        RequestNextFrameRendering();
+    }
+    internal void FrameBounds(Vector3 min, Vector3 max)
+    {
+        FinishGesture();
+        _navigation.FrameBounds((min, max), Aspect);
         NavigationChanged?.Invoke();
         RequestNextFrameRendering();
     }
@@ -316,11 +386,18 @@ public sealed class CameraViewport : OpenGlControlBase, ICustomHitTest
     protected override void OnOpenGlRender(GlInterface glInterface, int framebuffer)
     {
         if (_session is not { } session) return;
+        bool fxWasActive = HasActiveFxPreview, mapFxWasActive = HasActiveMapFxPreview;
+        bool fxWasPlaying = _renderer.HasPlayingFxPreview || _renderer.HasPlayingMapFxPreview;
+        string? previousFxNotice = FxPreviewNotice, previousMapFxNotice = MapFxPreviewNotice;
         double scaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
         var size = new PixelSize(Math.Max(1, (int)(Bounds.Width * scaling)), Math.Max(1, (int)(Bounds.Height * scaling)));
         _renderer.Render(size, framebuffer, _navigation.ViewProjection((float)size.Width / size.Height), _navigation.Eye,
             session, ResolveMaterial, CompiledPreview is null && PreviewLighting, FilmAdjustment, FogAdjustment);
-        if (_renderer.HasVisibleAnimatedWater || _renderer.HasActiveFxPreview || _renderer.HasActiveMapFxPreview)
+        NotifyFxPreviewStatusChanged(fxWasActive, previousFxNotice);
+        NotifyMapFxPreviewStatusChanged(mapFxWasActive, previousMapFxNotice);
+        // Render one final frame when an effect finishes so its last particles disappear.
+        if (_renderer.HasVisibleAnimatedWater || fxWasPlaying ||
+            _renderer.HasPlayingFxPreview || _renderer.HasPlayingMapFxPreview)
             RequestNextFrameRendering();
     }
 

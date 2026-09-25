@@ -71,6 +71,11 @@ internal static class MapEmitterScriptAuthoring
         mapFx.Append("\tmaps\\createfx\\").Append(mapName).Append("_fx::main();\r\n}\r\n");
 
         var createFx = new StringBuilder("#include common_scripts\\utility;\r\n#include common_scripts\\_createfx;\r\nmain()\r\n{\r\n");
+        // Both the map FX entry point and custom scripts can call this file.
+        // Register this map's placements once; distinct authored markers remain distinct.
+        string initialized = "level.iw4radiant_" + mapName + "_emitters_loaded";
+        createFx.Append("\tif ( isdefined( ").Append(initialized).Append(" ) )\r\n\t\treturn;\r\n")
+            .Append('\t').Append(initialized).Append(" = true;\r\n\r\n");
         foreach (var effect in effects)
         {
             createFx.Append("\tent = createOneshotEffect( \"").Append(effect.Name).Append("\" );\r\n")
