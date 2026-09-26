@@ -12,11 +12,13 @@ public partial class MainWindow
         try
         {
             MapFactionSettings before = MapFactionAuthoring.Read(_session.Document.World.Properties);
-            var window = new FactionsWindow(before, FindBootstrapAssets());
+            var window = new FactionsWindow(before, FindBootstrapAssets(), _session.FilePath,
+                _buildLinkerPath ?? FindBuildLinker());
             MapFactionSettings? selected = await _dialogs.ShowModalAsync(() => window.ShowDialog<MapFactionSettings?>(this));
             if (selected is null || selected == before) return;
             _session.Edit(() => MapFactionAuthoring.Write(_session.Document.World.Properties, selected));
-            SetStatus("Faction defaults updated. Save the map and rebuild to use them in game.");
+            Workspace.Camera.RefreshWalkPlayerAppearance();
+            SetStatus("Faction choices and appearances updated. Save the map and rebuild to use them in game.");
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
         {

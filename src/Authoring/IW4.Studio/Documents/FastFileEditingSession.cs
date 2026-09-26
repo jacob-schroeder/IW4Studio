@@ -761,8 +761,8 @@ public sealed class FastFileEditingSession : IDisposable
     }
 
     /// <summary>
-    /// Captures active full providers owned by the selected target that
-    /// are not represented by serialized target rows.
+    /// Captures resolved target references and active full providers owned by
+    /// the selected target that are not represented by serialized target rows.
     /// </summary>
     public IReadOnlyList<BaseAsset> CaptureCurrentTargetProviders(
         IEnumerable<XAssetType> assetTypes)
@@ -772,16 +772,23 @@ public sealed class FastFileEditingSession : IDisposable
         lock (_gate)
         {
             ThrowIfDisposedCore();
-            BaseAsset[] providers = Workspace.AssetCatalog.DependencyEntries
+            IEnumerable<BaseAsset> resolvedReferences = Document.Rows
+                .Where(entry =>
+                    entry.Origin == WorkspaceAssetOrigin.TargetResolvedReference &&
+                    entry.ContentSource == WorkspaceAssetContentSource.ResolvedProvider &&
+                    requested.Contains(entry.AssetType))
+                .Select(entry => entry.Definition)
+                .OfType<BaseAsset>();
+            IEnumerable<BaseAsset> targetProviders = Workspace.AssetCatalog.DependencyEntries
                 .Where(entry =>
                     entry.Origin == WorkspaceAssetOrigin.DependencyOnly &&
                     entry.Access == WorkspaceAssetAccess.ReadOnly &&
                     entry.ContentSource == WorkspaceAssetContentSource.ResolvedProvider &&
                     entry.ProviderZone?.IsTarget == true &&
-                    requested.Contains(entry.AssetType) &&
-                    entry.Definition is not null)
-                .Select(entry => entry.Definition!)
-                .ToArray();
+                    requested.Contains(entry.AssetType))
+                .Select(entry => entry.Definition)
+                .OfType<BaseAsset>();
+            BaseAsset[] providers = resolvedReferences.Concat(targetProviders).ToArray();
             return Array.AsReadOnly(providers);
         }
     }

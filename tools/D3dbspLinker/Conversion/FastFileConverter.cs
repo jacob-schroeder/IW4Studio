@@ -144,7 +144,8 @@ internal static partial class FastFileConverter
         string? outdoorImageName,
         IReadOnlyList<float> outdoorLookupMatrix,
         IReadOnlySet<string> staticScriptModelNames,
-        string? bootstrapDirectory = null)
+        string? bootstrapDirectory = null,
+        string? characterAssetsDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(dependencyFastFiles);
         ArgumentNullException.ThrowIfNull(providerFastFiles);
@@ -276,6 +277,26 @@ internal static partial class FastFileConverter
             entity.GetValueOrDefault("classname") == "worldspawn");
         MapFactionSettings factions = MapFactionAuthoring.Read(worldProperties ??
             new Dictionary<string, string>(StringComparer.Ordinal));
+        var characterSources = new List<(MaterialSourceCompiler Materials, ModelSourceCompiler Models)>();
+        var characterModels = new List<XModelAsset>();
+        foreach (FactionAppearance appearance in new[] { factions.AlliesAssaultA, factions.AxisAssaultA }
+                     .OfType<FactionAppearance>().Where(appearance => appearance.CustomAssetFolder is not null)
+                     .DistinctBy(appearance => appearance.CustomAssetFolder))
+        {
+            if (bootstrapDirectory is null || characterAssetsDirectory is null)
+                throw new InvalidDataException("Custom faction models require a disk build with --character-assets pointing to the map's characters folder.");
+            string root = Path.Combine(characterAssetsDirectory, appearance.CustomAssetFolder ??
+                throw new InvalidDataException("The custom faction appearance has no asset folder."));
+            var materials = new MaterialSourceCompiler(root, bootstrapDirectory);
+            var models = new ModelSourceCompiler(root, materials, bootstrapDirectory);
+            XModelAsset body = models.LoadModel(appearance.Body);
+            CharacterModelBudget.ValidateBody(body);
+            XModelAsset hands = models.LoadModel(appearance.ViewHands);
+            CharacterModelBudget.ValidateHands(hands);
+            characterModels.Add(body);
+            characterModels.Add(hands);
+            characterSources.Add((materials, models));
+        }
         IReadOnlyDictionary<string, WaterMaterialDefinition> waterDefinitions = worldProperties is null
             ? new Dictionary<string, WaterMaterialDefinition>(StringComparer.Ordinal)
             : WaterMaterialAuthoring.ReadDefinitions(worldProperties);
@@ -540,12 +561,21 @@ internal static partial class FastFileConverter
             foreach (var pair in materialSources.ImageStreamPayloads)
                 imageParts[AssetKey.FromDefinition(pair.Key)] = pair.Value;
         }
+        foreach (var source in characterSources)
+        {
+            foreach (GfxImageAsset image in source.Materials.Assets.OfType<GfxImageAsset>())
+                imageParts.Remove(AssetKey.FromDefinition(image));
+            foreach (var pair in source.Materials.ImageStreamPayloads)
+                imageParts[AssetKey.FromDefinition(pair.Key)] = pair.Value;
+        }
         NamedImageFilePackage? imagePackage = imageParts.Count == 0 ? null : ImageFilePackager.Package(
             imageParts, bootstrap?.LanguageMask ?? RequireTemplate().InitialLinkRequest.LanguageMask);
         LinkAssetProviderSource DiskProvider(BaseAsset asset) => new LinkAssetProviderSource(asset,
             imageStreamReferences: asset is GfxImageAsset image && image.StreamData.Any(part => part.HasStreamingData)
                 ? imagePackage?.References.GetValueOrDefault(AssetKey.FromDefinition(asset)) : null).AsAuthoredDetached();
-        HashSet<AssetKey> rawSourceKeys = materialSources?.Assets.Select(AssetKey.FromDefinition).ToHashSet() ?? [];
+        HashSet<AssetKey> rawSourceKeys = (materialSources?.Assets ?? [])
+            .Concat(characterSources.SelectMany(source => source.Materials.Assets))
+            .Select(AssetKey.FromDefinition).ToHashSet();
 
         LinkAssetPool baseAssets = template?.InitialLinkRequest.Assets ?? new LinkAssetPool([]);
         if (bootstrapModels is not null && bootstrapMaterials is not null)
@@ -605,7 +635,9 @@ internal static partial class FastFileConverter
         }
         if (materialSources is not null)
         {
-            BaseAsset[] sourceDefinitions = materialSources.Assets.Concat(modelSources?.Assets ?? []).ToArray();
+            BaseAsset[] sourceDefinitions = materialSources.Assets.Concat(modelSources?.Assets ?? [])
+                .Concat(characterSources.SelectMany(source => source.Materials.Assets.Concat(source.Models.Assets)))
+                .DistinctBy(AssetKey.FromDefinition).ToArray();
             baseAssets = baseAssets.WithHighestPrecedenceProviders(sourceDefinitions
                 .Select(DiskProvider));
             existingKeys.UnionWith(sourceDefinitions.Select(AssetKey.FromDefinition));
@@ -732,6 +764,8 @@ internal static partial class FastFileConverter
             additionalXModelGraph.Models.Count + additionalMaterials.Length +
             additionalFx.Length + nestedDiskFx.Length + additionalSounds.Length + 1);
         roots.AddRange(fastFileMapRoots.Select(CreateOwnedRoot));
+        foreach (XModelAsset model in characterModels)
+            roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:faction:xmodel:{model.Name}", model));
         if (bootstrapMaterials is not null)
             foreach (string name in Ps3MapBootstrap.FactionMaterials)
                 roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:bootstrap:material:{name}", bootstrapMaterials.LoadMaterial(name)));
@@ -920,6 +954,12 @@ internal static partial class FastFileConverter
         MapFactionSettings factions)
     {
         string scriptName = assetName[..^".d3dbsp".Length] + ".gsc";
+        bool authoredAssault = factions.AlliesAssaultA is not null || factions.AxisAssaultA is not null;
+        var appearancePrecache = new StringBuilder();
+        if (factions.AlliesAssaultA is { } alliesPrecache)
+            AppendRangersAssaultPrecache(appearancePrecache, alliesPrecache);
+        if (factions.AxisAssaultA is { } axisPrecache)
+            AppendRangersAssaultPrecache(appearancePrecache, axisPrecache);
         // These factions own the player-model closure selected below.
         string script =
             "main()\r\n" +
@@ -930,8 +970,26 @@ internal static partial class FastFileConverter
             $"\tgame[\"axis\"] = \"{factions.Axis}\";\r\n" +
             "\tgame[\"attackers\"] = \"allies\";\r\n" +
             "\tgame[\"defenders\"] = \"axis\";\r\n" +
+            appearancePrecache.ToString() +
+            (authoredAssault ? "\tlevel.iw4radiant_originalOnStartGameType = level.onStartGameType;\r\n\tlevel.onStartGameType = ::iw4radiant_onStartGameType;\r\n" : "") +
             (waterScript is null ? "" : "\t" + WaterVolumeScript.Startup(waterScript) + "\r\n") +
             "}\r\n";
+        if (authoredAssault)
+        {
+            var additions = new StringBuilder();
+            additions.Append("\r\niw4radiant_onStartGameType()\r\n{\r\n");
+            if (factions.AlliesAssaultA is not null)
+                additions.Append("\tif ( game[\"allies\"] == \"us_army\" )\r\n\t\tgame[\"allies_model\"][\"ASSAULT\"] = ::iw4radiant_allies_assault;\r\n");
+            if (factions.AxisAssaultA is not null)
+                additions.Append("\tif ( game[\"axis\"] == \"us_army\" )\r\n\t\tgame[\"axis_model\"][\"ASSAULT\"] = ::iw4radiant_axis_assault;\r\n");
+            additions.Append("\t[[level.iw4radiant_originalOnStartGameType]]();\r\n");
+            additions.Append("}\r\n");
+            if (factions.AlliesAssaultA is { } alliesAppearance)
+                AppendRangersAssaultCallback(additions, "allies", alliesAppearance);
+            if (factions.AxisAssaultA is { } axisAppearance)
+                AppendRangersAssaultCallback(additions, "axis", axisAppearance);
+            script += additions.ToString();
+        }
         byte[] content = Encoding.ASCII.GetBytes(script);
         return new RawFileAsset
         {
@@ -940,6 +998,37 @@ internal static partial class FastFileConverter
             Len = content.Length,
             Buffer = [.. content, 0]
         };
+    }
+
+    private static void AppendRangersAssaultPrecache(StringBuilder script, FactionAppearance appearance)
+    {
+        script.Append("\tprecacheModel(\"").Append(appearance.Body).Append("\");\r\n");
+        if (appearance.Head is { } head)
+            script.Append("\tprecacheModel(\"").Append(head).Append("\");\r\n");
+        else if (!appearance.HeadIncluded)
+            script.Append("\tcodescripts\\character::precacheModelArray(xmodelalias\\alias_us_army_heads::main());\r\n");
+        script.Append("\tprecacheModel(\"").Append(appearance.ViewHands).Append("\");\r\n");
+    }
+
+    private static void AppendRangersAssaultCallback(StringBuilder script, string team, FactionAppearance appearance)
+    {
+        script.Append("\r\niw4radiant_").Append(team).Append("_assault()\r\n{\r\n")
+            .Append("\tswitch( codescripts\\character::get_random_character(3) )\r\n\t{\r\n")
+            .Append("\tcase 0:\r\n")
+            .Append("\t\tself setModel(\"").Append(appearance.Body).Append("\");\r\n");
+        if (appearance.Head is { } head)
+            script.Append("\t\tiw4radiant_heads = [];\r\n")
+                .Append("\t\tiw4radiant_heads[0] = \"").Append(head).Append("\";\r\n")
+                .Append("\t\tcodescripts\\character::attachHead(\"iw4radiant_").Append(team)
+                .Append("_assault_head\", iw4radiant_heads);\r\n");
+        else if (!appearance.HeadIncluded)
+            script.Append("\t\tcodescripts\\character::attachHead(\"alias_us_army_heads\", xmodelalias\\alias_us_army_heads::main());\r\n");
+        script.Append("\t\tself setViewmodel(\"").Append(appearance.ViewHands).Append("\");\r\n")
+            .Append("\t\tself.voice = \"american\";\r\n")
+            .Append("\t\tbreak;\r\n")
+            .Append("\tcase 1:\r\n\t\tcharacter\\mp_character_us_army_assault_b::main();\r\n\t\tbreak;\r\n")
+            .Append("\tcase 2:\r\n\t\tcharacter\\mp_character_us_army_assault_c::main();\r\n\t\tbreak;\r\n")
+            .Append("\t}\r\n}\r\n");
     }
 
     private static RawFileAsset CreateMapMarker(string assetName) => new()

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using IW4.Formats.SourceFormat.Character;
 using Iw4Radiant.Rendering;
 
 namespace Iw4Radiant.Viewports.Camera;
@@ -12,13 +13,14 @@ public sealed partial class CameraViewport
     private float _walkPlayerMotionAmount;
     private bool _walkPlayerRunning;
     private string? _walkPlayerError;
+    private string _walkPlayerFaction = "Rangers";
 
     internal Func<string?>? ResolvePlayerAssets { get; set; }
     internal string? WalkPlayerError => _walkPlayerError;
     internal string WalkPlayerStatus => !ShowWalkPlayer ? "Player hidden" :
         _walkPlayerLoading ? "Loading player…" :
         _walkPlayerError is not null || _renderer.WalkPlayerNotice is not null
-            ? "Player unavailable · see Console" : "Rangers · Beretta";
+            ? "Player unavailable · see Console" : $"{_walkPlayerFaction} · Beretta";
 
     internal bool ShowWalkPlayer
     {
@@ -44,7 +46,19 @@ public sealed partial class CameraViewport
         {
             string root = ResolvePlayerAssets?.Invoke() ??
                 throw new DirectoryNotFoundException("The bundled player assets could not be found. Restore the bootstrap folder beside IW4Radiant.");
-            WalkPlayerPreview preview = await Task.Run(() => WalkPlayerPreview.Load(root));
+            if (_session is not { } session)
+                throw new InvalidOperationException("Open a map before loading the Walk player.");
+            MapFactionSettings settings = MapFactionAuthoring.Read(session.Document.World.Properties);
+            bool rangers = settings.Allies == MapFactionAuthoring.UsArmy;
+            FactionAppearance? appearance = rangers ? RangersAssaultAppearance.Resolve(settings, "allies") : null;
+            _walkPlayerFaction = !rangers ? "Spetsnaz" : appearance?.CustomAssetFolder is null ? "Rangers" : "Rangers custom";
+            string hands = rangers
+                ? appearance?.ViewHands ?? RangersAssaultAppearance.StockA.ViewHands
+                : "viewhands_russian_airborne";
+            string? customRoot = appearance?.CustomAssetFolder is not { } folder ? null :
+                Path.Combine(MapFactionAuthoring.GetCharacterAssetsDirectory(session.FilePath ??
+                    throw new InvalidOperationException("Save the map before previewing imported character hands.")), folder);
+            WalkPlayerPreview preview = await Task.Run(() => WalkPlayerPreview.Load(root, hands, customRoot));
             if (revision != _walkPlayerRevision || !WalkMode) return;
             _walkPlayerPreview = preview;
             _walkPlayerSeconds = 0;
@@ -79,5 +93,14 @@ public sealed partial class CameraViewport
         _walkPlayerMotionAmount = 0;
         _walkPlayerRunning = false;
         _renderer.SetWalkPlayer(null);
+    }
+
+    internal void RefreshWalkPlayerAppearance()
+    {
+        if (!WalkMode) return;
+        ClearWalkPlayer();
+        if (ShowWalkPlayer) _ = LoadWalkPlayerAsync();
+        NavigationModeChanged?.Invoke();
+        RequestNextFrameRendering();
     }
 }

@@ -45,12 +45,13 @@ using IW4.Game.Assets.XAnim;
 using IW4.Game.Assets.XModel;
 using IW4.Formats.XModel;
 using IW4.Game.Zone;
+using IW4.Runtime.Assets.Sound;
 using IW4.Studio.Desktop.Rendering;
 using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Workbench.Composition;
 
-internal static class SourceAssetDumpOperation
+internal static partial class SourceAssetDumpOperation
 {
     internal static IReadOnlySet<XAssetType> SupportedAssetTypes { get; } =
         new HashSet<XAssetType>
@@ -88,7 +89,7 @@ internal static class SourceAssetDumpOperation
         FastFileWorkspace workspace,
         AppliedAssetDefinitionsCapture capture,
         IReadOnlyList<BaseAsset> targetProviders,
-        int supportedRowCount,
+        int unavailableSupportedAssetCount,
         int unsupportedRowCount,
         CancellationToken cancellationToken)
     {
@@ -96,19 +97,24 @@ internal static class SourceAssetDumpOperation
         ArgumentNullException.ThrowIfNull(workspace);
         ArgumentNullException.ThrowIfNull(capture);
         ArgumentNullException.ThrowIfNull(targetProviders);
-        ArgumentOutOfRangeException.ThrowIfNegative(supportedRowCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(unavailableSupportedAssetCount);
         ArgumentOutOfRangeException.ThrowIfNegative(unsupportedRowCount);
 
         AppliedAssetDefinition[] definitions = capture.Definitions
             .Where(value => SupportedAssetTypes.Contains(
                 value.Definition.SerializedAssetType))
             .ToArray();
-        BaseAsset[] assets = definitions
+        BaseAsset[] roots = definitions
             .OrderBy(value => value.RowIdentity.SerializedIndex)
             .Select(value => value.Definition)
             .Concat(targetProviders.Where(asset => SupportedAssetTypes.Contains(
                 asset.SerializedAssetType)))
             .ToArray();
+        var failures = new List<SourceAssetDumpFailure>();
+        BaseAsset[] assets = CollectAssets(roots, workspace, cancellationToken, failures);
+        var ownedDefinitions = new HashSet<BaseAsset>(
+            definitions.Select(value => value.Definition),
+            ReferenceEqualityComparer.Instance);
         MenuFileAsset[] menuFiles = assets
             .OfType<MenuFileAsset>()
             .ToArray();
@@ -132,7 +138,6 @@ internal static class SourceAssetDumpOperation
 
         var imagePayloads = new WorkspaceGfxImagePayloadResolver(workspace);
         var weaponExchange = new WeaponExchange();
-        var failures = new List<SourceAssetDumpFailure>();
         int dumpedAssetCount = 0;
         int dumpedFileCount = 0;
         if (localizeEntries.Length != 0)
@@ -214,7 +219,8 @@ internal static class SourceAssetDumpOperation
                     SoundAliasListAsset sound => DumpSoundAlias(
                         sourceDirectory,
                         sound,
-                        workspace),
+                        workspace,
+                        ownedDefinitions.Contains(sound)),
                     SndCurve curve => new SndCurveExchange().Unlink(
                         sourceDirectory,
                         curve),
@@ -329,7 +335,7 @@ internal static class SourceAssetDumpOperation
             capture.Revision,
             dumpedAssetCount,
             dumpedFileCount,
-            Math.Max(0, supportedRowCount - definitions.Length),
+            unavailableSupportedAssetCount,
             unsupportedRowCount,
             Array.AsReadOnly(failures.ToArray()));
     }
@@ -363,13 +369,34 @@ internal static class SourceAssetDumpOperation
     private static IReadOnlyList<string> DumpSoundAlias(
         string sourceDirectory,
         SoundAliasListAsset sound,
-        FastFileWorkspace workspace)
+        FastFileWorkspace workspace,
+        bool isTargetOwned)
     {
-        // Source dumps capture current target rows, which may be detached from
-        // the runtime provider objects used by workspace preview resolution.
-        var resolver = workspace.LoadedZones
-            .First(zone => zone.IsTarget)
-            .LoadResult.SoundPayloadResolver;
+        // Applied target definitions may be detached, while dependencies must
+        // read streamed bytes from their own provider zone's packages.
+        ISoundPayloadResolver resolver;
+        if (isTargetOwned)
+        {
+            resolver = workspace.LoadedZones
+                .First(zone => zone.IsTarget)
+                .LoadResult.SoundPayloadResolver;
+        }
+        else if (!workspace.IsBlank &&
+                 sound.RuntimeAddress?.AssetPoolAddress is { } address &&
+                 workspace.LoadedZone.Context.AssetPool.TryGetSlot(address, out var slot) &&
+                 slot is { AssetType: XAssetType.Sound } &&
+                 !slot.ActiveProvider.IsReferencePlaceholder &&
+                 (ReferenceEquals(slot.CanonicalAsset, sound) ||
+                  ReferenceEquals(slot.ActiveProvider.Asset, sound)) &&
+                 workspace.LoadedZones.FirstOrDefault(zone =>
+                     zone.LoadResult.Context.ZoneOwner == slot.ActiveProvider.Owner) is { } providerZone)
+        {
+            resolver = providerZone.LoadResult.SoundPayloadResolver;
+        }
+        else if (!workspace.TryGetSoundPayloadResolver(sound, out resolver, out string reason))
+        {
+            throw new InvalidDataException(reason);
+        }
         return new SoundAliasListExchange().Unlink(
             sourceDirectory,
             sound,

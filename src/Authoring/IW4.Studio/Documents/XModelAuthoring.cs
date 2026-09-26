@@ -11,9 +11,9 @@ public sealed class XModelDraft
     private readonly List<XModelLodDraft> _lodAssembly;
     private readonly List<XModelCollSurf> _collisionSurfaces;
 
-    internal XModelDraft(XModelAsset value)
+    internal XModelDraft(XModelAsset value, string? authoredName = null)
     {
-        Model = CopyRoot(value);
+        Model = CopyRoot(value, authoredName: authoredName);
         _lodAssembly = CreateAssembly(Model);
         _collisionSurfaces = CopyCollSurfs(Model.CollSurfs).ToList();
         CollisionLod = Model.CollLod;
@@ -30,6 +30,7 @@ public sealed class XModelDraft
         PhysPreset = value.PhysPreset;
         PhysCollmap = value.PhysCollmap;
         RebuildVisualBounds = value.RebuildVisualBounds;
+        RebuildWeightedBoneBounds = value.RebuildWeightedBoneBounds;
     }
 
     public XModelAsset Model { get; }
@@ -39,6 +40,7 @@ public sealed class XModelDraft
     public PhysPresetAsset? PhysPreset { get; private set; }
     public PhysCollmapAsset? PhysCollmap { get; private set; }
     public bool RebuildVisualBounds { get; private set; }
+    internal bool RebuildWeightedBoneBounds { get; private set; }
     public bool HasStagedAssemblyChanges => !AssemblyEquals(CreateAssembly(Model), Model.CollLod, _lodAssembly, CollisionLod) || !CollSurfsEqual(Model.CollSurfs, _collisionSurfaces) || !ReferenceEquals(Model.PhysPreset, PhysPreset) || !ReferenceEquals(Model.PhysCollmap, PhysCollmap);
 
     internal XModelDraft Clone() => new(this);
@@ -49,6 +51,12 @@ public sealed class XModelDraft
         PhysPreset,
         PhysCollmap,
         useAuthoredPhysicsReferences: true);
+
+    internal void RebuildCharacterVisualBounds()
+    {
+        RebuildVisualBounds = true;
+        RebuildWeightedBoneBounds = true;
+    }
 
     public void AppendImportedLod(XModelExportDocument document, string? source)
     {
@@ -277,7 +285,8 @@ public sealed class XModelDraft
         IReadOnlyList<XModelCollSurf>? collisionSurfaces = null,
         PhysPresetAsset? physPreset = null,
         PhysCollmapAsset? physCollmap = null,
-        bool useAuthoredPhysicsReferences = false)
+        bool useAuthoredPhysicsReferences = false,
+        string? authoredName = null)
     {
         ArgumentNullException.ThrowIfNull(value);
         return new XModelAsset
@@ -285,7 +294,7 @@ public sealed class XModelDraft
             Offset = value.Offset,
             RuntimeAddress = value.RuntimeAddress,
             NamePointer = value.NamePointer,
-            Name = value.Name,
+            Name = authoredName ?? value.Name,
             NumBones = value.NumBones,
             NumRootBones = value.NumRootBones,
             NumSurfs = value.NumSurfs,

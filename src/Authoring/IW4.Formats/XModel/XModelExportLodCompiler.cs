@@ -151,7 +151,7 @@ public static class XModelExportLodCompiler
             if (!Finite(cross) || cross.LengthSquared() <= 0.0000000001f) { errors.Add($"{prefix} triangle {triangleIndex}: has non-finite or degenerate positions."); continue; }
             Vector2 duv1 = second.Uv - first.Uv, duv2 = third.Uv - first.Uv;
             float determinant = duv1.X * duv2.Y - duv1.Y * duv2.X;
-            if (!float.IsFinite(determinant) || MathF.Abs(determinant) < 0.0000001f) { errors.Add($"{prefix} triangle {triangleIndex}: has UV-degenerate mapping."); continue; }
+            if (HasUvDegenerateMapping(first.Uv, second.Uv, third.Uv)) { errors.Add($"{prefix} triangle {triangleIndex}: has UV-degenerate mapping."); continue; }
             Vector3 tangent = ((second.Position - first.Position) * duv2.Y - (third.Position - first.Position) * duv1.Y) / determinant;
             Vector3 binormal = ((third.Position - first.Position) * duv1.X - (second.Position - first.Position) * duv2.X) / determinant;
             if (!Append(first, tangent, binormal, corners) || !Append(second, tangent, binormal, corners) || !Append(third, tangent, binormal, corners))
@@ -203,7 +203,11 @@ public static class XModelExportLodCompiler
             }
         }
         ushort[] indices = cornerToUnique.Select(value => checked((ushort)uniqueToOrdered[value])).ToArray();
-        surface = new XSurface { DeformedRaw = rigid ? (byte)0 : (byte)1, StreamFlags = XSurfaceStreamFlags.None, VertCount = checked((ushort)ordered.Length), TriCount = checked((ushort)triangles.Count), TriIndices = Array.AsReadOnly(indices), VertexInfo = new XSurfaceVertexInfo { Blend0 = counts[0], Blend1 = counts[1], Blend2 = counts[2], Blend3 = counts[3], VertsBlend = Array.AsReadOnly(blend.ToArray()) }, Verts0 = Array.AsReadOnly(verts0), Verts1 = Array.AsReadOnly(verts1), VertListCount = rigid ? 1 : 0, VertList = rigid ? [new XRigidVertList { BoneOffset = checked((ushort)(ordered[0].Weights[0].BoneIndex * DObjSkelMatSize)), VertCount = checked((ushort)ordered.Length), TriOffset = 0, TriCount = checked((ushort)triangles.Count) }] : [], PartBits = Array.AsReadOnly(bits) };
+        // Match stock PS3 deformed surfaces: both vertex streams reside in main memory.
+        XSurfaceStreamFlags streamFlags = rigid
+            ? XSurfaceStreamFlags.None
+            : XSurfaceStreamFlags.Verts0InLarge | XSurfaceStreamFlags.Verts1InLarge;
+        surface = new XSurface { DeformedRaw = rigid ? (byte)0 : (byte)1, StreamFlags = streamFlags, VertCount = checked((ushort)ordered.Length), TriCount = checked((ushort)triangles.Count), TriIndices = Array.AsReadOnly(indices), VertexInfo = new XSurfaceVertexInfo { Blend0 = counts[0], Blend1 = counts[1], Blend2 = counts[2], Blend3 = counts[3], VertsBlend = Array.AsReadOnly(blend.ToArray()) }, Verts0 = Array.AsReadOnly(verts0), Verts1 = Array.AsReadOnly(verts1), VertListCount = rigid ? 1 : 0, VertList = rigid ? [new XRigidVertList { BoneOffset = checked((ushort)(ordered[0].Weights[0].BoneIndex * DObjSkelMatSize)), VertCount = checked((ushort)ordered.Length), TriOffset = 0, TriCount = checked((ushort)triangles.Count) }] : [], PartBits = Array.AsReadOnly(bits) };
         blockers = [];
         return true;
     }
@@ -244,6 +248,12 @@ public static class XModelExportLodCompiler
     private static bool Finite(Vector2 v) => float.IsFinite(v.X) && float.IsFinite(v.Y);
     private static bool Finite(Vector3 v) => float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
     private static bool Finite(Vector4 v) => float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z) && float.IsFinite(v.W);
+    internal static bool HasUvDegenerateMapping(Vector2 first, Vector2 second, Vector2 third)
+    {
+        Vector2 duv1 = second - first, duv2 = third - first;
+        float determinant = duv1.X * duv2.Y - duv1.Y * duv2.X;
+        return !float.IsFinite(determinant) || MathF.Abs(determinant) < 0.0000001f;
+    }
     private static string Signature(CompiledCorner value) => string.Join("|", new[]
     {
         value.Position.X.ToString("R", System.Globalization.CultureInfo.InvariantCulture), value.Position.Y.ToString("R", System.Globalization.CultureInfo.InvariantCulture), value.Position.Z.ToString("R", System.Globalization.CultureInfo.InvariantCulture),

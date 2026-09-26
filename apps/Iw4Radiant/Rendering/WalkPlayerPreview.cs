@@ -6,10 +6,9 @@ using Iw4Radiant.Materials;
 
 namespace Iw4Radiant.Rendering;
 
-/// <summary>Prepared, in-place Rangers hands and Beretta viewmodel for Walk.</summary>
+/// <summary>Prepared, in-place faction hands and Beretta viewmodel for Walk.</summary>
 internal sealed class WalkPlayerPreview
 {
-    private const string HandModelName = "viewhands_us_army";
     private const string WeaponName = "beretta_mp";
     private readonly XAnimPlaybackClip _clip;
     private readonly XAnimPreviewScene _scene;
@@ -59,17 +58,18 @@ internal sealed class WalkPlayerPreview
     internal (int Width, int Height, byte[] Pixels,
         IW4.Formats.SourceFormat.Material.MaterialSurfaceState Surface) Texture(string material) => _textures[material];
 
-    internal static WalkPlayerPreview Load(string bootstrapRoot)
+    internal static WalkPlayerPreview Load(string bootstrapRoot, string handModelName, string? customRoot = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(bootstrapRoot);
+        ArgumentException.ThrowIfNullOrWhiteSpace(handModelName);
         string root = Path.GetFullPath(bootstrapRoot);
         var (gunName, idleName, runName, hiddenTags) = ReadWeapon(Path.Combine(root, "weapons", WeaponName));
-        var assets = new NativeModelPreviewAssets(root);
-        XModelSource hands = assets.LoadSource(HandModelName);
+        var assets = new NativeModelPreviewAssets(root, customRoot);
+        XModelSource hands = assets.LoadSource(handModelName);
         XModelSource gun = assets.LoadSource(gunName);
         var components = new XAnimPreviewModelComponent[]
         {
-            new(assets.LoadModel(HandModelName).Model),
+            new(assets.LoadModel(handModelName).Model),
             new(assets.LoadModel(gunName).Model, "tag_weapon")
         };
         XAnimPlaybackClip clip = new XAnimExchange().Read(root, idleName);

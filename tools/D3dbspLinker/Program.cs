@@ -25,6 +25,8 @@ static int Run(string[] args)
                 ToFastFile(d3dbsp, Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3"), assetName, output, options, diskBuild: true),
             ["export-bootstrap", string input, string library, string output] => ExportBootstrap(input, library, output),
             ["export-assets", string input, string library, string output, .. string[] names] => ExportAssets(input, library, output, names),
+            ["import-character", string body, string hands, string bootstrap, string output, string prefix] =>
+                CharacterImportCommand.Import(body, hands, bootstrap, output, prefix),
             ["rewrite", string input, string output] => Rewrite(input, output),
             _ => Usage()
         };
@@ -113,6 +115,7 @@ static int ToFastFile(
     var additionalSoundNames = new List<string>();
     var distinctSoundNames = new HashSet<string>(StringComparer.Ordinal);
     string? assetLibraryDirectory = null;
+    string? characterAssetsDirectory = null;
     var rawFilePaths = new Dictionary<string, string>(StringComparer.Ordinal);
     for (int index = 0; index < optionsAndDependencies.Count; index++)
     {
@@ -143,6 +146,14 @@ static int ToFastFile(
             if (useSourceMaterials)
                 throw new ArgumentException("The --source-materials option may be supplied only once.");
             useSourceMaterials = true;
+            continue;
+        }
+        if (string.Equals(value, "--character-assets", StringComparison.Ordinal))
+        {
+            if (!diskBuild || characterAssetsDirectory is not null)
+                throw new ArgumentException("The --character-assets option is accepted once by build only.");
+            characterAssetsDirectory = ReadRequiredOptionValue(
+                optionsAndDependencies, ref index, "--character-assets", "a map character asset directory");
             continue;
         }
         if (string.Equals(value, "--stock-bootstrap", StringComparison.Ordinal))
@@ -333,7 +344,8 @@ static int ToFastFile(
         outdoorImageName,
         outdoorLookupMatrix ?? [],
         staticScriptModelNames,
-        bootstrapDirectory: diskBuild ? template : null);
+        bootstrapDirectory: diskBuild ? template : null,
+        characterAssetsDirectory: characterAssetsDirectory);
     return 0;
 }
 
@@ -422,7 +434,8 @@ static int Rewrite(string input, string output)
 static int Usage()
 {
     Console.Error.WriteLine("usage:");
-    Console.Error.WriteLine("  D3dbspLinker build <input.d3dbsp> <map-asset-name> <output.ff> --asset-library <raw-root> [--compiled-lighting] [asset options]");
+    Console.Error.WriteLine("  D3dbspLinker build <input.d3dbsp> <map-asset-name> <output.ff> --asset-library <raw-root> [--character-assets <map-characters-root>] [--compiled-lighting] [asset options]");
+    Console.Error.WriteLine("  D3dbspLinker import-character <body.glb> <hands.glb> <bootstrap-root> <new-output-root> <unique-model-prefix>");
     Console.Error.WriteLine("  D3dbspLinker export-assets <official.ff> <exported-raw-root> <new-output-directory> [--xmodel <name>] [--material <name>] [--fx <name>] [--weapon <name>] [--xanim <name>] [--dependencies <official.ff>]  (offline extraction)");
     Console.Error.WriteLine("  D3dbspLinker export-bootstrap <official-map.ff> <exported-raw-root> <new-output-directory>  (offline extraction)");
     Console.Error.WriteLine("  D3dbspLinker inspect <input.d3dbsp>");

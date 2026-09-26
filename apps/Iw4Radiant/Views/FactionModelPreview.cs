@@ -8,43 +8,102 @@ namespace Iw4Radiant.Views;
 /// <summary>Static bind-pose previews from the native PS3 bootstrap source bundle.</summary>
 internal sealed class FactionModelPreview
 {
+    internal sealed record Frame(Bitmap Bitmap, IReadOnlyList<int> AvailableLods, int Lod,
+        int Triangles, int Vertices);
+
     private readonly NativeModelPreviewAssets _assets;
     private readonly XModelPreviewRenderer _renderer;
+    private readonly string _bootstrapRoot;
+    private readonly Dictionary<string, (NativeModelPreviewAssets Assets, XModelPreviewRenderer Renderer)> _custom =
+        new(StringComparer.Ordinal);
     private readonly object _renderGate = new();
-    private (string Body, string Head)? _appearanceNames;
+    private (string? Root, string Body, string Head, int BodyLod, int HeadLod)? _appearanceNames;
     private XModelSource? _appearance;
+    private (string? Root, string Body, string Head)? _framingNames;
+    private XModelSource? _framingAppearance;
 
     internal FactionModelPreview(string bootstrapRoot)
     {
+        _bootstrapRoot = bootstrapRoot;
         _assets = new NativeModelPreviewAssets(bootstrapRoot);
         _renderer = new XModelPreviewRenderer(_assets.ResolveTexture);
     }
 
-    internal Bitmap Render(string bodyName, string? headName, int size,
-        float yaw = -45, float pitch = 25, float zoom = 1, Vector2 pan = default)
+    private (NativeModelPreviewAssets Assets, XModelPreviewRenderer Renderer) AssetSet(string? customRoot)
+    {
+        if (customRoot is null) return (_assets, _renderer);
+        if (_custom.TryGetValue(customRoot, out var cached)) return cached;
+        var assets = new NativeModelPreviewAssets(_bootstrapRoot, customRoot);
+        cached = (assets, new XModelPreviewRenderer(assets.ResolveTexture));
+        _custom.Add(customRoot, cached);
+        return cached;
+    }
+
+    internal Frame Render(string bodyName, string? headName, int size,
+        float yaw = -45, float pitch = 25, float zoom = 1, Vector2 pan = default,
+        string? customRoot = null, int lod = 0)
     {
         lock (_renderGate)
         {
-            XModelSource body = _assets.LoadSource(bodyName);
+            var (assets, renderer) = AssetSet(customRoot);
+            IReadOnlyList<int> available = assets.AvailableLods(bodyName);
+            if (available.Count == 0)
+                throw new InvalidDataException($"Native XModel '{bodyName}' has no previewable LOD geometry.");
+            int framingLod = available.Contains(0) ? 0 : available[0];
+            lod = available.Contains(lod) ? lod : framingLod;
+            XModelSource body = assets.LoadSource(bodyName, lod);
             XModelSource source = body;
+            XModelSource framingSource = lod == framingLod ? body : assets.LoadSource(bodyName, framingLod);
             if (!string.IsNullOrWhiteSpace(headName))
             {
-                if (_appearanceNames != (bodyName, headName) || _appearance is null)
+                IReadOnlyList<int> headLods = assets.AvailableLods(headName);
+                if (headLods.Count == 0)
+                    throw new InvalidDataException($"Native XModel '{headName}' has no previewable LOD geometry.");
+                int headLod = headLods.Where(index => index <= lod).DefaultIfEmpty(headLods[0]).Max();
+                if (_appearanceNames != (customRoot, bodyName, headName, lod, headLod) || _appearance is null)
                 {
-                    _appearance = Combine(body, _assets.LoadSource(headName));
-                    _appearanceNames = (bodyName, headName);
+                    _appearance = Combine(body, assets.LoadSource(headName, headLod));
+                    _appearanceNames = (customRoot, bodyName, headName, lod, headLod);
                 }
                 source = _appearance;
+                if (_framingNames != (customRoot, bodyName, headName) || _framingAppearance is null)
+                {
+                    int framingHeadLod = headLods.Where(index => index <= framingLod)
+                        .DefaultIfEmpty(headLods[0]).Max();
+                    _framingAppearance = lod == framingLod && headLod == framingHeadLod
+                        ? source
+                        : Combine(framingSource, assets.LoadSource(headName, framingHeadLod));
+                    _framingNames = (customRoot, bodyName, headName);
+                }
+                framingSource = _framingAppearance;
             }
-            return _renderer.Render(source, size, yaw, pitch, zoom, pan);
+            return RenderFrame(renderer, source, framingSource, available, lod, size, yaw, pitch, zoom, pan);
         }
     }
 
-    internal Bitmap RenderHands(string handsName, int size,
-        float yaw = -45, float pitch = 25, float zoom = 1, Vector2 pan = default)
+    internal Frame RenderHands(string handsName, int size,
+        float yaw = -45, float pitch = 25, float zoom = 1, Vector2 pan = default,
+        string? customRoot = null, int lod = 0)
     {
         lock (_renderGate)
-            return _renderer.Render(_assets.LoadSource(handsName), size, yaw, pitch, zoom, pan);
+        {
+            var (assets, renderer) = AssetSet(customRoot);
+            IReadOnlyList<int> available = assets.AvailableLods(handsName);
+            if (available.Count == 0)
+                throw new InvalidDataException($"Native XModel '{handsName}' has no previewable LOD geometry.");
+            int framingLod = available.Contains(0) ? 0 : available[0];
+            lod = available.Contains(lod) ? lod : framingLod;
+            return RenderFrame(renderer, assets.LoadSource(handsName, lod), assets.LoadSource(handsName, framingLod), available, lod,
+                size, yaw, pitch, zoom, pan);
+        }
+    }
+
+    private static Frame RenderFrame(XModelPreviewRenderer renderer, XModelSource source, XModelSource framingSource,
+        IReadOnlyList<int> available, int lod, int size, float yaw, float pitch, float zoom, Vector2 pan)
+    {
+        XModelExportDocument document = source.Document;
+        return new Frame(renderer.Render(source, size, yaw, pitch, zoom, pan, framingSource), available, lod,
+            document.Triangles.Count, document.Vertices.Count);
     }
 
     private static XModelSource Combine(XModelSource body, XModelSource head)

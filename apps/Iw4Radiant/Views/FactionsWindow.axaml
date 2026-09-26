@@ -1,13 +1,22 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:character="using:IW4.Formats.SourceFormat.Character"
         x:Class="Iw4Radiant.Views.FactionsWindow" x:CompileBindings="False"
-        Title="Factions" Width="1040" Height="760" MinWidth="880" MinHeight="640"
+        Title="Factions" Width="1080" Height="880" MinWidth="900" MinHeight="740"
         WindowStartupLocation="CenterOwner">
     <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="24" RowSpacing="18">
-        <StackPanel Spacing="5">
-            <TextBlock Text="Factions" FontSize="26" FontWeight="SemiBold" />
-            <TextBlock Text="Choose the default teams for this map." Opacity="0.7" />
-        </StackPanel>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="18">
+            <StackPanel Spacing="5">
+                <TextBlock Text="Factions" FontSize="26" FontWeight="SemiBold" />
+                <TextBlock Text="Choose the default teams for this map." Opacity="0.7" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="5" MaxWidth="350">
+                <Button x:Name="SaveBlenderKit" Content="Save Blender kit…" Click="SaveBlenderKit_Click"
+                        HorizontalAlignment="Right" IsVisible="False"
+                        ToolTip.Tip="Body and viewhands rigs, plus a simple robot example." />
+                <TextBlock x:Name="BlenderKitStatus" FontSize="11" TextWrapping="Wrap" Opacity="0.7" />
+            </StackPanel>
+        </Grid>
         <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12">
             <Border x:Name="AlliesCard" BorderThickness="1" CornerRadius="8" Padding="14">
                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
@@ -42,11 +51,11 @@
                 </ListBox>
             </Grid>
             <Border Grid.Column="1" Background="#191B1F" CornerRadius="8" Padding="16">
-                <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="10">
+                <Grid RowDefinitions="Auto,*,Auto,Auto,Auto,Auto" RowSpacing="10">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                         <StackPanel Spacing="3">
                             <TextBlock x:Name="PreviewTitle" FontSize="18" FontWeight="SemiBold" />
-                            <TextBlock Text="Appearance preview · default pose" Opacity="0.55" FontSize="11" />
+                            <TextBlock x:Name="PreviewSubtitle" Text="Appearance preview · default pose" Opacity="0.55" FontSize="11" />
                         </StackPanel>
                         <Button Grid.Column="1" Content="Reset view" Click="ResetView_Click" />
                     </Grid>
@@ -65,10 +74,61 @@
                                   SelectionChanged="Head_Changed" AutomationProperties.Name="Preview head" />
                         <ComboBox x:Name="HandModels" Grid.Column="1" HorizontalAlignment="Stretch" IsVisible="False"
                                   SelectionChanged="Head_Changed" AutomationProperties.Name="Preview hands" />
+                        <TextBlock x:Name="ReplacementPartPreview" Grid.Column="1" IsVisible="False"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                         <CheckBox x:Name="HandsPreview" Grid.Column="2" Content="View hands"
                                   IsCheckedChanged="Hands_Changed" />
                     </Grid>
-                    <TextBlock Grid.Row="3" Text="Right-drag orbit · middle-drag or Shift+right-drag pan · scroll zoom · End frame. Appearance varies by class and environment."
+                    <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,*" ColumnSpacing="10">
+                        <TextBlock Text="Preview detail" VerticalAlignment="Center" Opacity="0.7" />
+                        <ComboBox x:Name="PreviewLod" Grid.Column="1" MinWidth="80"
+                                  SelectionChanged="PreviewLod_Changed" AutomationProperties.Name="Preview detail level" />
+                        <TextBlock x:Name="PreviewGeometry" Grid.Column="2" VerticalAlignment="Center"
+                                   HorizontalAlignment="Right" Opacity="0.7" FontSize="11" />
+                    </Grid>
+                    <Border Grid.Row="4" MaxHeight="190" BorderBrush="#505861" BorderThickness="1" CornerRadius="6" Padding="12">
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Replace appearance" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="ReplacementStatus" TextWrapping="Wrap" Opacity="0.7" FontSize="11" />
+                                </StackPanel>
+                                <Button x:Name="ReplaceAppearance" Grid.Column="1" Content="Replace appearance"
+                                        Click="ReplaceAppearance_Click" />
+                                <Button x:Name="RestoreStock" Grid.Column="2" Content="Restore stock"
+                                        Click="RestoreStock_Click" IsVisible="False" />
+                            </Grid>
+                            <Grid x:Name="ReplacementEditor" ColumnDefinitions="*,*,*" ColumnSpacing="8" IsVisible="False">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Text="Body" FontSize="11" Opacity="0.8" />
+                                    <ComboBox x:Name="ReplacementBody" SelectionChanged="Replacement_Changed"
+                                              AutomationProperties.Name="Replacement body" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="3">
+                                    <TextBlock Text="Head" FontSize="11" Opacity="0.8" />
+                                    <ComboBox x:Name="ReplacementHead" SelectionChanged="Replacement_Changed"
+                                              AutomationProperties.Name="Replacement head" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Spacing="3">
+                                    <TextBlock Text="View hands" FontSize="11" Opacity="0.8" />
+                                    <ComboBox x:Name="ReplacementHands" SelectionChanged="Replacement_Changed"
+                                              AutomationProperties.Name="Replacement view hands" />
+                                </StackPanel>
+                            </Grid>
+                            <StackPanel x:Name="BlenderImportPanel" Spacing="5" IsVisible="False">
+                                <Button x:Name="ImportBlender" Content="Import Blender model…"
+                                        HorizontalAlignment="Left" Click="ImportBlender_Click" />
+                                <SelectableTextBlock x:Name="ImportStatus" TextWrapping="Wrap" FontSize="11" />
+                                <TextBlock Text="Export the body (head included) and matching hands as two GLBs from the Blender kit. Import optimizes both for PS3 and creates body distance LODs. Your originals stay unchanged. Color-only materials are supported for now."
+                                           TextWrapping="Wrap" FontSize="11" Opacity="0.7" />
+                                <TextBlock Text="{x:Static character:CharacterModelBudget.Summary}"
+                                           TextWrapping="Wrap" FontSize="11" Opacity="0.8" />
+                            </StackPanel>
+                        </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                    <TextBlock Grid.Row="5" Text="Right-drag orbit · middle-drag or Shift+right-drag pan · scroll zoom · End frame. Appearance varies by class and environment."
                                TextWrapping="Wrap" Opacity="0.6" FontSize="11" />
                 </Grid>
             </Border>
@@ -76,12 +136,12 @@
         <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="16">
             <StackPanel VerticalAlignment="Center" Spacing="3">
                 <TextBlock x:Name="Summary" TextWrapping="Wrap" />
-                <TextBlock Text="Apply saves team choices to the map. Browsing a model only changes this preview."
+                <TextBlock Text="Apply saves team choices and replacements. Walk previews Allies · Assault · 1. Other models are preview-only."
                            TextWrapping="Wrap" FontSize="11" Opacity="0.6" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                <Button Content="Cancel" MinWidth="80" Click="Cancel_Click" />
-                <Button Content="Apply" MinWidth="88" Classes="primary" Click="Apply_Click" />
+                <Button x:Name="CancelAction" Content="Cancel" MinWidth="80" Click="Cancel_Click" />
+                <Button x:Name="ApplyAction" Content="Apply" MinWidth="88" Classes="primary" Click="Apply_Click" />
             </StackPanel>
         </Grid>
     </Grid>

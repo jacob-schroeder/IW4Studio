@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using IW4.Formats.SourceFormat.Character;
 using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;
 
@@ -77,7 +78,7 @@ internal static class MapBuildPipeline
             }
             progress.Report("Compiling source assets and included startup assets; linking the PS3 fastfile…");
             await RunLinkerAsync(linkerPath, bspPath, assetName, fastFilePath,
-                emitters, emitterAssetDirectory, emitterRawFiles, progress, cancellationToken);
+                emitters, emitterAssetDirectory, emitterRawFiles, sourcePath, progress, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(fastFilePath) || new FileInfo(fastFilePath).Length == 0)
                 throw new InvalidDataException("D3dbspLinker completed without producing a fastfile.");
@@ -96,6 +97,7 @@ internal static class MapBuildPipeline
         string assetName, string fastFilePath,
         MapEmitterScripts? emitters, string emitterAssetDirectory,
         IReadOnlyList<(string Name, string Path)> emitterRawFiles,
+        string sourcePath,
         IProgress<string> progress,
         CancellationToken cancellationToken)
     {
@@ -109,7 +111,8 @@ internal static class MapBuildPipeline
         };
         if (managed) start.ArgumentList.Add(linkerPath);
         foreach (string value in new[] { "build", bspPath, assetName, fastFilePath, "--compiled-lighting" }) start.ArgumentList.Add(value);
-        foreach (string model in IW4.Formats.D3dbsp.D3dbspFile.Read(bspPath).GetEntities()
+        var entities = IW4.Formats.D3dbsp.D3dbspFile.Read(bspPath).GetEntities();
+        foreach (string model in entities
                      .Where(entity => entity.GetValueOrDefault("classname") is "script_model" or "misc_turret")
                      .Select(entity => entity["model"]).Distinct(StringComparer.Ordinal))
         {
@@ -118,6 +121,13 @@ internal static class MapBuildPipeline
         }
         start.ArgumentList.Add("--asset-library");
         start.ArgumentList.Add(Path.GetFullPath(emitterAssetDirectory));
+        MapFactionSettings factions = MapFactionAuthoring.Read(
+            entities.First(entity => entity.GetValueOrDefault("classname") == "worldspawn"));
+        if (factions.AlliesAssaultA?.CustomAssetFolder is not null || factions.AxisAssaultA?.CustomAssetFolder is not null)
+        {
+            start.ArgumentList.Add("--character-assets");
+            start.ArgumentList.Add(MapFactionAuthoring.GetCharacterAssetsDirectory(sourcePath));
+        }
         if (emitters is not null)
         {
             foreach (string name in emitters.FxNames)

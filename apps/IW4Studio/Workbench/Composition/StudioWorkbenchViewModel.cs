@@ -654,18 +654,21 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 SourceAssetDumpOperation.SupportedAssetTypes.Contains(
                     row.AssetType));
             int unsupportedRowCount = rows.Length - supportedRowCount;
+            int unavailableSupportedAssetCount = rows.Count(row =>
+                SourceAssetDumpOperation.SupportedAssetTypes.Contains(row.AssetType) &&
+                !row.HasDefinition);
             AppliedAssetDefinitionsCapture capture = session.CaptureCurrentTargetAssets(
                 SourceAssetDumpOperation.SupportedAssetTypes);
             IReadOnlyList<BaseAsset> targetProviders =
                 session.CaptureCurrentTargetProviders(
                     SourceAssetDumpOperation.SupportedAssetTypes);
             int supportedAssetCount = checked(
-                supportedRowCount + targetProviders.Count);
+                capture.Definitions.Count + targetProviders.Count);
 
             ConsoleOutput.Append(
                 ConsoleOutputLevel.Information,
                 "Source Dump",
-                $"Dumping {supportedAssetCount:N0} supported target assets from " +
+                $"Dumping {supportedAssetCount:N0} supported assets and their dependencies from " +
                 $"revision {capture.Revision:N0} to '{sourceDirectory}'.");
 
             CancellationToken cancellationToken = session.CancellationToken;
@@ -675,7 +678,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     Workspace,
                     capture,
                     targetProviders,
-                    supportedRowCount,
+                    unavailableSupportedAssetCount,
                     unsupportedRowCount,
                     cancellationToken),
                 cancellationToken);
@@ -696,7 +699,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     ConsoleOutputLevel.Warning,
                     "Source Dump",
                     $"Skipped {result.UnavailableSupportedAssetCount:N0} supported target " +
-                    "rows without owned source definitions to dump (for example, external references).");
+                    "assets because their definitions are unavailable. Open the fastfile with its required dependencies and dump again.");
             }
             if (result.UnsupportedAssetCount != 0)
             {
@@ -707,6 +710,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     "formats are not implemented yet.");
             }
 
+            bool incomplete = result.Failures.Count != 0 ||
+                result.UnavailableSupportedAssetCount != 0;
             ConsoleOutput.Append(
                 result.Failures.Count != 0
                     ? ConsoleOutputLevel.Error
@@ -714,6 +719,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                         ? ConsoleOutputLevel.Warning
                         : ConsoleOutputLevel.Information,
                 "Source Dump",
+                (incomplete ? "Source dump incomplete. " : "Source dump complete for supported assets. ") +
                 $"Dumped {result.DumpedAssetCount:N0} assets to " +
                 $"{result.DumpedFileCount:N0} files from revision {result.Revision:N0}; " +
                 $"{result.Failures.Count:N0} failed.");

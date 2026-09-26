@@ -378,9 +378,7 @@ public static class XModelImportedMaterialCompiler
             Height = checked((ushort)height),
             Depth = 1,
             MemoryLocation = GfxImageMemoryLocation.Local,
-            RenderTargetPitch = useWeaponCamoStorage
-                ? checked((uint)width * 4u)
-                : 0,
+            RenderTargetPitch = checked((uint)width * 4u),
             MapType = MapType.TwoDimensional,
             TextureSemantic = TextureSemantic.ColorMap,
             Category = ImageCategory.LoadFromFile,
@@ -390,7 +388,8 @@ public static class XModelImportedMaterialCompiler
             BaseHeight = checked((ushort)height),
             BaseDepth = 1,
             BaseLevelCount = 1,
-            Cached = useWeaponCamoStorage ? GfxImageCached.No : GfxImageCached.Auto,
+            // Inline fastfile pixels are zone-owned, as in ImageSourceCompiler.
+            Cached = GfxImageCached.No,
             PayloadByteCount = payload.Length,
             PayloadBytes = payload,
             Name = name
@@ -439,6 +438,7 @@ public static class XModelImportedMaterialCompiler
             Height = checked((ushort)height),
             Depth = 1,
             MemoryLocation = GfxImageMemoryLocation.Local,
+            RenderTargetPitch = checked((uint)width * 4u),
             MapType = MapType.TwoDimensional,
             TextureSemantic = TextureSemantic.NormalMap,
             Category = ImageCategory.LoadFromFile,
@@ -448,7 +448,7 @@ public static class XModelImportedMaterialCompiler
             BaseHeight = checked((ushort)height),
             BaseDepth = 1,
             BaseLevelCount = 1,
-            Cached = GfxImageCached.Auto,
+            Cached = GfxImageCached.No,
             PayloadByteCount = payload.Length,
             PayloadBytes = payload,
             Name = name

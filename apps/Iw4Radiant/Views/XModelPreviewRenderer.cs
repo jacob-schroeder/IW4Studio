@@ -25,7 +25,7 @@ internal sealed class XModelPreviewRenderer
         _resolveNativeTexture = resolveNativeTexture;
 
     internal unsafe Bitmap Render(XModelSource source, int size, float yaw = -45, float pitch = 25, float zoom = 1,
-        Vector2 pan = default)
+        Vector2 pan = default, XModelSource? framingSource = null)
     {
         XModelExportDocument document = source.Document;
         var textures = document.Materials.Select(material => Texture(material.Name)).ToArray();
@@ -37,7 +37,11 @@ internal sealed class XModelPreviewRenderer
         Vector3 min = new(float.PositiveInfinity), max = new(float.NegativeInfinity);
         Vector3[] vertices = document.Vertices.Select(vertex => new Vector3(Vector3.Dot(vertex.Position, right),
             Vector3.Dot(vertex.Position, up), Vector3.Dot(vertex.Position, eye))).ToArray();
-        foreach (Vector3 vertex in vertices) { min = Vector3.Min(min, vertex); max = Vector3.Max(max, vertex); }
+        IEnumerable<Vector3> framingVertices = framingSource is null || ReferenceEquals(framingSource, source)
+            ? vertices
+            : framingSource.Document.Vertices.Select(vertex => new Vector3(Vector3.Dot(vertex.Position, right),
+                Vector3.Dot(vertex.Position, up), Vector3.Dot(vertex.Position, eye)));
+        foreach (Vector3 vertex in framingVertices) { min = Vector3.Min(min, vertex); max = Vector3.Max(max, vertex); }
         Vector3 center = (min + max) * 0.5f;
         float scale = (size - 12) / Math.Max(0.001f, Math.Max(max.X - min.X, max.Y - min.Y)) * zoom;
         for (int index = 0; index < vertices.Length; index++)

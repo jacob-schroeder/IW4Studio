@@ -134,9 +134,12 @@ public static class XModelAssemblyCompiler
         float rootBoneRadius = draft.RebuildVisualBounds
             ? RootBoneRadiusFromImportedGeometry(draft.LodAssembly, baseline.BaseMat.ElementAtOrDefault(0))
             : radius;
-        IReadOnlyList<XBoneInfo> boneInfo = draft.RebuildVisualBounds
-            ? RebuildRootBoneInfo(baseline.BoneInfo, rootBoneBounds, rootBoneRadius)
-            : baseline.BoneInfo;
+        IReadOnlyList<XBoneInfo> boneInfo = draft.RebuildWeightedBoneBounds
+            ? RebuildWeightedBoneInfo(
+                baseline.BoneInfo, baseline.BaseMat, draft.LodAssembly, rootBoneBounds, rootBoneRadius)
+            : draft.RebuildVisualBounds
+                ? RebuildRootBoneInfo(baseline.BoneInfo, rootBoneBounds, rootBoneRadius)
+                : baseline.BoneInfo;
         XModelAsset candidate = CopyWithAssembly(baseline, lods, materials, invHigh, safeSurfaceCount, safeActiveCount, maxLoaded, draft.CollisionLod, draft.CollisionSurfaces, draft.PhysPreset, draft.PhysCollmap, visualBounds, radius, boneInfo);
         return new XModelAssemblyCompileResult(
             candidate,
@@ -370,6 +373,48 @@ public static class XModelAssemblyCompiler
             result[0] = new XBoneInfo(
                 new Bounds { MidPoint = bounds.MidPoint, HalfSize = bounds.HalfSize },
                 radius * radius);
+        return result;
+    }
+
+    private static IReadOnlyList<XBoneInfo> RebuildWeightedBoneInfo(
+        IReadOnlyList<XBoneInfo> source,
+        IReadOnlyList<DObjAnimMat> bindPoses,
+        IReadOnlyList<XModelLodDraft> lods,
+        Bounds rootBounds,
+        float rootRadius)
+    {
+        XBoneInfo[] result = RebuildRootBoneInfo(source, rootBounds, rootRadius).ToArray();
+        var minimum = new Vector3[result.Length];
+        var maximum = new Vector3[result.Length];
+        var radiusSquared = new float[result.Length];
+        var seen = new bool[result.Length];
+        foreach (XModelLodDraft lod in lods.Where(lod => lod.ImportedDocument is not null))
+        foreach (XModelExportVertex vertex in lod.ImportedDocument!.Vertices)
+        foreach (XModelExportBoneWeight weight in vertex.Weights.Where(weight => weight.Weight > 0f))
+        {
+            int index = weight.BoneIndex;
+            if (index <= 0 || index >= result.Length || index >= bindPoses.Count)
+                continue;
+            Vector3 local = ToBoneLocal(vertex.Position, bindPoses[index]);
+            minimum[index] = seen[index] ? Vector3.Min(minimum[index], local) : local;
+            maximum[index] = seen[index] ? Vector3.Max(maximum[index], local) : local;
+            radiusSquared[index] = MathF.Max(radiusSquared[index], local.LengthSquared());
+            seen[index] = true;
+        }
+        for (int index = 1; index < result.Length; index++)
+        {
+            if (!seen[index])
+                continue;
+            Vector3 midpoint = (minimum[index] + maximum[index]) * 0.5f;
+            Vector3 halfSize = (maximum[index] - minimum[index]) * 0.5f;
+            result[index] = new XBoneInfo(
+                new Bounds
+                {
+                    MidPoint = new Vec3 { X = midpoint.X, Y = midpoint.Y, Z = midpoint.Z },
+                    HalfSize = new Vec3 { X = halfSize.X, Y = halfSize.Y, Z = halfSize.Z }
+                },
+                radiusSquared[index]);
+        }
         return result;
     }
 }
