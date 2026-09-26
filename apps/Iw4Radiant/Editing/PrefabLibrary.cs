@@ -129,6 +129,8 @@ internal sealed class PrefabLibrary
         return _previews.GetValueOrDefault(instance).Error;
     }
 
+    internal void DiscardPreview(MapEntity instance) => _previews.Remove(instance);
+
     internal string GetSourcePath(MapEntity instance, string? mapPath)
     {
         if (!IsPrefab(instance)) throw new ArgumentException("Select a prefab instance.");

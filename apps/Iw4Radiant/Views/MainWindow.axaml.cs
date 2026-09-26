@@ -69,6 +69,7 @@ public partial class MainWindow : Window
         Workspace.Camera.InteractionStatusChanged += SetStatus;
         Workspace.Camera.RendererStatusChanged += OnCompiledPreviewRendererStatus;
         Workspace.Camera.BrushKindRequested += ApplyBrushKind;
+        Workspace.Camera.CreateModelPlayerClipRequested += async () => await CreateModelPlayerClipAsync();
         Workspace.Camera.ResolveMaterial = ResolveMaterial;
         _session.Changed += (_, _) =>
         {
@@ -86,8 +87,8 @@ public partial class MainWindow : Window
         RefreshLayoutControls();
         RefreshEditor();
         SetStatus("Browse an asset folder and choose a material, then draw a brush or terrain in a grid view.");
-        Closed += (_, _) => { Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); Workspace.Models.ReleaseImages(); };
-        Deactivated += (_, _) => Workspace.Camera.FinishGesture(cancel: true);
+        Closed += (_, _) => { Workspace.Camera.StopPhysicsPlacement(); Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); Workspace.Models.ReleaseImages(); };
+        Deactivated += (_, _) => { Workspace.Camera.PausePhysicsPlacement(); Workspace.Camera.FinishGesture(cancel: true); };
         AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
     }
 
@@ -105,6 +106,7 @@ public partial class MainWindow : Window
         UndoMenu.IsEnabled = UndoToolbar.IsEnabled = _session.CanUndo;
         RedoMenu.IsEnabled = RedoToolbar.IsEnabled = _session.CanRedo;
         ApplyPlayerClipMenu.IsEnabled = PlayerClipEditing.CanApply(_session);
+        CreateModelPlayerClipMenu.IsEnabled = PlayerClipEditing.CanGenerateFromModels(_session);
         (ToggleButton Button, EditorTool Tool)[] tools =
             [(TerrainTool, EditorTool.Terrain), (SculptTool, EditorTool.Sculpt),
              (FaceTool, EditorTool.Face), (VertexTool, EditorTool.Vertex), (ClipTool, EditorTool.Clip)];
@@ -152,6 +154,7 @@ public partial class MainWindow : Window
     private void SetStatus(string message) => StatusText.Text = message;
     private void FinishGestures()
     {
+        Workspace.Camera.StopPhysicsPlacement();
         Workspace.Camera.StopWalk();
         foreach (var view in Workspace.GridViews) view.CompleteGesture();
         Workspace.Camera.FinishGesture();
@@ -392,7 +395,7 @@ public partial class MainWindow : Window
         "Classic toolbar: Modify mirrors flip/rotate, texture projection, CSG and patch commands. CT/PT select through the map; Touching/Inside use Base and Depth as a finite selection volume. Axis locks constrain movement. Cubic clipping, alpha preview and quick category visibility affect only the editor view.\n" +
         "Space duplicates; Delete removes; Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z redoes.\n\n" +
         "Models and prefabs: open Create or the asset browser tabs. Choose Place, then click a camera surface or grid; Shift repeats and Escape cancels. Models support surface alignment, Drop, Find and Replace. Prefabs use native .map files with Edit source, Reload, Make unique and Explode.\n" +
-        "Player collision: Create → Player clip draws an invisible brush or converts selected whole world brushes. Shape a separate volume around a model; magenta outlines mark clip brushes. Model collision alone does not block players. Choose a material thumbnail to resume ordinary brush creation.\n" +
+        "Player collision: select model props and use right-click → Create player clip from models, or Create → Player clip, to fit editable outer hulls in one undoable edit. Dense hulls are simplified automatically. Hulls fill holes and concave gaps; review the result. The same Create menu still draws custom clip brushes or converts selected world brushes. Magenta outlines mark clip volumes. Choose a material thumbnail to resume ordinary brush creation.\n" +
         "Geometry: Create opens native patches, bevels, caps, cylinders, arches and stairs; select a curve to refine or edit its control points.\n" +
         "Organization: use Layers for native layer/group authoring, hide/freeze/isolate and restore. Hidden objects are excluded from viewports; frozen objects cannot be selected or edited.\n" +
         "Terrain detail: fill or brush-paint vertex color and alpha, add a blend overlay with an available alpha material, or project a native mesh decal from a selected brush face.\n" +
@@ -407,6 +410,30 @@ public partial class MainWindow : Window
     private void OnEditorKeyDown(object? sender, KeyEventArgs e)
     {
         if (_dialogs.BlocksInput || e.Handled) return;
+        if (Workspace.Camera.PhysicsPlacementActive)
+        {
+            if (Workspace.Camera.PhysicsContextMenuOpen) return;
+            if (e.Key == Key.Escape)
+            {
+                Workspace.Camera.StopPhysicsPlacement();
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.Tab || e.Source is Control placementControl &&
+                IsButtonInput(placementControl) && (e.Key is Key.Space or Key.Enter)) return;
+            if (e.Source is Control input && IsTextEntry(input))
+            {
+                Workspace.Camera.StopPhysicsPlacement();
+                return;
+            }
+            if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0)
+            {
+                if (Workspace.Camera.HandleNavigationKeyDown(e)) return;
+                e.Handled = true;
+                return;
+            }
+            Workspace.Camera.StopPhysicsPlacement();
+        }
         if (Workspace.Camera.WalkMode)
         {
             if (Workspace.Camera.HandleNavigationKeyDown(e)) return;

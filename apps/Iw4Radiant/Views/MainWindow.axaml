@@ -104,6 +104,8 @@
                 <MenuItem Header="_Bridge between surfaces…" Click="Bridge_Click" />
                 <MenuItem Header="_Gameplay entities…" Click="Gameplay_Click" />
                 <MenuItem Header="Player clip">
+                    <MenuItem x:Name="CreateModelPlayerClipMenu" Header="Create player clip from models" Click="CreateModelPlayerClip_Click"
+                              ToolTip.Tip="Fit an editable outer hull to each selected model, simplifying dense shapes. Holes and concave spaces are filled; adjust the brushes as needed." />
                     <MenuItem Header="Draw player-clip brush" Click="DrawPlayerClip_Click"
                               ToolTip.Tip="Draw an invisible volume that blocks players. Shape it around a model in the grid views." />
                     <MenuItem x:Name="ApplyPlayerClipMenu" Header="Make selected brushes player clip" Click="ApplyPlayerClip_Click"
@@ -316,7 +318,7 @@
                         <TextBlock Text="COMPILED .d3dbsp PREVIEW · READ ONLY" FontWeight="Bold" Foreground="#DBECFF" />
                         <TextBlock x:Name="CompiledPreviewState" TextWrapping="Wrap" Foreground="#FFDBA8" />
                         <TextBlock x:Name="CompiledPreviewAssets" TextWrapping="Wrap" Foreground="#FFC2A5" />
-                        <TextBlock Text="BSP render triangles, vertex colors and available local material images. Static models, sky cubemaps, baked lightmaps, reflection probes and PS3 runtime shaders are not shown."
+                        <TextBlock Text="BSP surfaces with Radiant-encoded baked lighting, placed local XModels, local sky cubemaps and baked reflections on supported wc_water surfaces, including animated Radiant-authored ocean. Compiled model lighting, other material reflections and PS3 runtime shaders are not shown."
                                    TextWrapping="Wrap" Foreground="#BACBDC" FontSize="11" />
                     </StackPanel>
                     <Button Grid.Column="1" Content="Return to source map" Click="ReturnToSource_Click"

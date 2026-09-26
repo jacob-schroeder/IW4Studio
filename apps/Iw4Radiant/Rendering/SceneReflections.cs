@@ -5,7 +5,7 @@ using Silk.NET.OpenGL;
 
 namespace Iw4Radiant.Rendering;
 
-// Cached editor captures at authored probe origins, rendered only after a scene change.
+// Cached editor captures or compiled BSP probe cubemaps, owned by the GL context.
 internal sealed class SceneReflections
 {
     private readonly List<uint> _textures = [];
@@ -111,6 +111,71 @@ internal sealed class SceneReflections
         finally
         {
             gl.BindVertexArray(0);
+            gl.ActiveTexture(TextureUnit.Texture0);
+        }
+    }
+
+    internal unsafe void UploadCompiled(GL gl, IReadOnlyList<IReadOnlyList<byte[]>?> probes)
+    {
+        Reload(gl);
+        _textures.Add(0); // The native default probe is not a reflected-water source.
+        if (probes.Count <= 1)
+        {
+            Notice = "The compiled BSP has no authored reflection probe for water.";
+            return;
+        }
+        try
+        {
+            gl.ActiveTexture(TextureUnit.Texture5);
+            gl.BindBuffer(BufferTargetARB.PixelUnpackBuffer, 0);
+            gl.PixelStore(PixelStoreParameter.UnpackRowLength, 0);
+            gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+            for (int index = 1; index < probes.Count; index++)
+            {
+                IReadOnlyList<byte[]> mips = probes[index] ??
+                    throw new InvalidDataException($"Compiled reflection probe {index} has no image.");
+                if (mips.Count != GfxReflectionProbeCodec.ReflectionProbeMipCount)
+                    throw new InvalidDataException($"Compiled reflection probe {index} has an incomplete mip chain.");
+                uint cube = gl.GenTexture();
+                _textures.Add(cube);
+                gl.BindTexture(TextureTarget.TextureCubeMap, cube);
+                for (int mip = 0; mip < mips.Count; mip++)
+                {
+                    int edge = Math.Max(1, GfxReflectionProbeCodec.ReflectionProbeEdgeLength >> mip);
+                    int faceBytes = checked(edge * edge * 4);
+                    byte[] pixels = mips[mip];
+                    if (pixels.Length != GfxReflectionProbeCodec.ReflectionProbeFaceCount * faceBytes)
+                        throw new InvalidDataException($"Compiled reflection probe {index} mip {mip} has an invalid size.");
+                    fixed (byte* pointer = pixels)
+                        for (int face = 0; face < GfxReflectionProbeCodec.ReflectionProbeFaceCount; face++)
+                            gl.TexImage2D((TextureTarget)((int)TextureTarget.TextureCubeMapPositiveX + face), mip,
+                                InternalFormat.Rgba8, (uint)edge, (uint)edge, 0, PixelFormat.Rgba,
+                                PixelType.UnsignedByte, pointer + face * faceBytes);
+                }
+                gl.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureMinFilter,
+                    (int)TextureMinFilter.LinearMipmapLinear);
+                gl.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureMagFilter,
+                    (int)TextureMagFilter.Linear);
+                gl.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureWrapS,
+                    (int)TextureWrapMode.ClampToEdge);
+                gl.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureWrapT,
+                    (int)TextureWrapMode.ClampToEdge);
+                gl.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureWrapR,
+                    (int)TextureWrapMode.ClampToEdge);
+                gl.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureMaxLevel,
+                    GfxReflectionProbeCodec.ReflectionProbeMipCount - 1);
+            }
+        }
+        catch (Exception exception) when (SceneRenderer.IsRenderException(exception) ||
+                                          exception is InvalidDataException)
+        {
+            Reload(gl);
+            Notice = $"Compiled water reflection probes unavailable: {exception.Message}";
+        }
+        finally
+        {
+            gl.ActiveTexture(TextureUnit.Texture5);
+            gl.BindTexture(TextureTarget.TextureCubeMap, 0);
             gl.ActiveTexture(TextureUnit.Texture0);
         }
     }

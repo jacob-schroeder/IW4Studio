@@ -6,16 +6,53 @@ namespace Iw4Radiant.Viewports.Camera;
 
 internal static class CameraObjectMenu
 {
-    internal static ContextMenu Open(Control viewport, EditorSession session,
+    internal static ContextMenu Open(CameraViewport viewport, EditorSession session,
         IReadOnlyList<(object Item, string Label)> hits, BrushFaceSelection? target,
-        Action<BrushKind> classify, Action<string> status)
+        Action<BrushKind> classify, Action createModelPlayerClip, Action<string> status)
     {
         MapDocument document = session.Document;
         var menu = new ContextMenu();
+        bool openedForPlacement = viewport.PhysicsPlacementActive;
         var entries = new List<(object Item, MenuItem Menu)>();
         var kinds = new MenuItem { Header = "Brush type" };
+        var playerClip = new MenuItem { Header = "Create player clip from models" };
+        ToolTip.SetTip(playerClip, "Fit an editable outer hull to each selected model, simplifying dense shapes. Holes and concave spaces are filled; adjust the brushes as needed.");
+        playerClip.Click += (_, _) => { if (IsCurrent()) createModelPlayerClip(); };
         var selectAll = new MenuItem { Header = "Select all hit objects", StaysOpenOnClick = true };
         var deselectAll = new MenuItem { Header = "Deselect all hit objects", StaysOpenOnClick = true };
+        var physics = new MenuItem { Header = "Physics" };
+        var drop = new MenuItem();
+        var selectionHint = new MenuItem
+        {
+            Header = "Select model props or prefabs, or one model with its player clips", IsEnabled = false
+        };
+        var reset = new MenuItem { Header = "Reset" };
+        var keep = new MenuItem { Header = "Keep placement" };
+        var cancel = new MenuItem { Header = "Cancel" };
+        physics.Items.Add(drop);
+        physics.Items.Add(selectionHint);
+        physics.Items.Add(reset);
+        physics.Items.Add(keep);
+        physics.Items.Add(cancel);
+        drop.Click += async (_, _) =>
+        {
+            if (!IsCurrent()) return;
+            if (!viewport.PhysicsPlacementActive) await viewport.StartPhysicsPlacementAsync();
+            else if (viewport.PhysicsPlacementRunning) viewport.PausePhysicsPlacement();
+            else viewport.ResumePhysicsPlacement();
+        };
+        reset.Click += (_, _) => { if (IsCurrent()) viewport.ResetPhysicsPlacement(); };
+        keep.Click += (_, _) => { if (IsCurrent()) viewport.ApplyPhysicsPlacement(); };
+        cancel.Click += (_, _) => { if (IsCurrent()) viewport.StopPhysicsPlacement(); };
+        viewport.PhysicsPlacementChanged += RefreshPhysics;
+        menu.Closed += (_, _) => viewport.PhysicsPlacementChanged -= RefreshPhysics;
+        if (openedForPlacement)
+        {
+            menu.Items.Add(physics);
+            RefreshPhysics();
+            menu.Open(viewport);
+            return menu;
+        }
         if (session.Selection.Count == 1 && session.Selection.Active is MapBrush selected &&
             target is { } face && !ReferenceEquals(selected, face.Brush))
         {
@@ -84,11 +121,15 @@ internal static class CameraObjectMenu
             kinds.Items.Add(entry);
         }
         menu.Items.Add(kinds);
+        menu.Items.Add(playerClip);
+        menu.Items.Add(new Separator());
+        menu.Items.Add(physics);
         Refresh();
         menu.Open(viewport);
         return menu;
 
-        bool IsCurrent() => ReferenceEquals(document, session.Document);
+        bool IsCurrent() => ReferenceEquals(viewport.Session, session) &&
+            ReferenceEquals(document, session.Document);
 
         void Refresh()
         {
@@ -101,6 +142,39 @@ internal static class CameraObjectMenu
             deselectAll.IsEnabled = entries.Any(entry => entry.Menu.IsEnabled && entry.Menu.IsChecked);
             kinds.IsEnabled = IsCurrent() && session.Selection.Items.Select(EditorSelection.Owner).OfType<MapBrush>()
                 .Any(brush => session.Visibility.CanSelect(document, brush));
+            playerClip.IsVisible = playerClip.IsEnabled = IsCurrent() && PlayerClipEditing.CanGenerateFromModels(session);
+            RefreshPhysics();
+        }
+
+        void RefreshPhysics()
+        {
+            bool active = viewport.PhysicsPlacementActive;
+            if (openedForPlacement && (!active || !IsCurrent()))
+            {
+                menu.Close();
+                return;
+            }
+            bool canStart = CanStartPhysics();
+            physics.IsEnabled = IsCurrent();
+            drop.Header = active && viewport.PhysicsPlacementRunning ? "Pause" :
+                active && viewport.PhysicsPlacementHasStarted ? "Resume" : "Drop";
+            drop.IsEnabled = physics.IsEnabled && (active
+                ? !viewport.PhysicsPlacementPreparing && !viewport.PhysicsPlacementNeedsReset &&
+                  !viewport.PhysicsPlacementSettled
+                : canStart);
+            selectionHint.IsVisible = !active && !canStart;
+            reset.IsVisible = keep.IsVisible = cancel.IsVisible = active;
+            reset.IsEnabled = IsCurrent() && active && !viewport.PhysicsPlacementPreparing &&
+                (viewport.PhysicsPlacementHasStarted || viewport.PhysicsPlacementNeedsReset);
+            keep.IsEnabled = IsCurrent() && active && viewport.PhysicsPlacementHasChanges &&
+                !viewport.PhysicsPlacementNeedsReset;
+            cancel.IsEnabled = IsCurrent() && active;
+        }
+
+        bool CanStartPhysics()
+        {
+            if (session.HasPlacement || viewport.FoliagePaintingEnabled) return false;
+            return CameraPrefabPlacementSimulation.CanStart(session);
         }
     }
 }

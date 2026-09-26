@@ -1,4 +1,5 @@
 using IW4.Formats.Codecs.D3dbsp;
+using IW4.Game.Assets.ComWorld;
 using System.Buffers.Binary;
 using System.Numerics;
 
@@ -36,6 +37,22 @@ public sealed class D3dbspFile
         D3dbspMapEntsCodec.DecodeStaticModelNames(
             GetRequiredData(D3dbspLumpType.Entities), staticScriptModelNames);
 
+    public IReadOnlyList<(string Name, Matrix4x4 Transform)> GetRenderStaticModels()
+    {
+        var models = D3dbspMapEntsCodec.DecodeStaticModels(
+            GetRequiredData(D3dbspLumpType.Entities), defaultSunPrimaryLightIndex: 0);
+        return Array.AsReadOnly(models.Select(model =>
+        {
+            var axis = model.Axis;
+            float scale = model.Scale;
+            return (model.ModelName, new Matrix4x4(
+                scale * axis[0].X, scale * axis[0].Y, scale * axis[0].Z, 0,
+                scale * axis[1].X, scale * axis[1].Y, scale * axis[1].Z, 0,
+                scale * axis[2].X, scale * axis[2].Y, scale * axis[2].Z, 0,
+                model.Origin.X, model.Origin.Y, model.Origin.Z, 1));
+        }).ToArray());
+    }
+
     public IReadOnlyList<string> GetNamedEntityModelNames() =>
         D3dbspMapEntsCodec.DecodeNamedEntityModelNames(
             GetRequiredData(D3dbspLumpType.Entities));
@@ -43,8 +60,17 @@ public sealed class D3dbspFile
     public IReadOnlyList<string> GetRenderMaterialNames() =>
         D3dbspGfxCodec.DecodeRenderMaterialNames(this);
 
-    public IReadOnlyList<(string Material, IReadOnlyList<(Vector3 Position, Vector3 Normal, Vector2 Uv, Vector4 Color)> Vertices)>
+    public IReadOnlyList<(string Material, byte LightmapIndex, byte PrimaryLightIndex, byte ReflectionProbeIndex, IReadOnlyList<(Vector3 Position, Vector3 Normal, Vector2 Uv, Vector2 LightmapUv, Vector4 Color)> Vertices)>
         GetRenderTriangles() => D3dbspGfxCodec.DecodeRenderTriangles(this);
+
+    public IReadOnlyList<IReadOnlyList<byte[]>?> GetRenderReflectionProbeRgbaMips() =>
+        D3dbspImageCodec.DecodeRenderReflectionProbeRgbaMips(GetOptionalData(D3dbspLumpType.ReflectionProbes));
+
+    public IReadOnlyList<(byte[] Primary, byte[] UpperRgba, byte[] LowerRgba)> GetRenderLightmapPlanes() =>
+        D3dbspImageCodec.DecodeRenderLightmapPlanes(GetOptionalData(D3dbspLumpType.LightBytes));
+
+    public IReadOnlyList<ComPrimaryLight> GetRenderPrimaryLights() =>
+        D3dbspPrimaryLightCodec.Decode(GetOptionalData(D3dbspLumpType.PrimaryLights));
 
     public static D3dbspFile Create(
         IReadOnlyList<(D3dbspLumpType Type, byte[] Data)> lumps)

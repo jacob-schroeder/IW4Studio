@@ -47,7 +47,7 @@ internal static class D3dbspGfxCodec
         return Array.AsReadOnly(names.OrderBy(name => name, StringComparer.Ordinal).ToArray());
     }
 
-    public static IReadOnlyList<(string Material, IReadOnlyList<(Vector3 Position, Vector3 Normal, Vector2 Uv, Vector4 Color)> Vertices)>
+    public static IReadOnlyList<(string Material, byte LightmapIndex, byte PrimaryLightIndex, byte ReflectionProbeIndex, IReadOnlyList<(Vector3 Position, Vector3 Normal, Vector2 Uv, Vector2 LightmapUv, Vector4 Color)> Vertices)>
         DecodeRenderTriangles(D3dbspFile file)
     {
         ArgumentNullException.ThrowIfNull(file);
@@ -62,11 +62,14 @@ internal static class D3dbspGfxCodec
         int surfaceCount = GetRenderSurfaceCount(surfaces);
         int vertexCount = GetElementCount(vertices, DiskVertexSize, "render vertex");
         int indexCount = GetElementCount(indices, sizeof(ushort), "render index");
-        var result = new (string Material, IReadOnlyList<(Vector3 Position, Vector3 Normal, Vector2 Uv, Vector4 Color)> Vertices)[surfaceCount];
+        var result = new (string Material, byte LightmapIndex, byte PrimaryLightIndex, byte ReflectionProbeIndex, IReadOnlyList<(Vector3 Position, Vector3 Normal, Vector2 Uv, Vector2 LightmapUv, Vector4 Color)> Vertices)[surfaceCount];
         for (int surfaceIndex = 0; surfaceIndex < surfaceCount; surfaceIndex++)
         {
             ReadOnlySpan<byte> row = surfaces.Slice(surfaceIndex * DiskTriangleSoupSize, DiskTriangleSoupSize);
             int materialIndex = ReadTriangleMaterialIndex(row, surfaceIndex, materials.Count);
+            byte lightmapIndex = row[2];
+            byte reflectionProbeIndex = row[3];
+            byte primaryLightIndex = row[4];
             uint firstVertexRaw = BinaryPrimitives.ReadUInt32LittleEndian(row[12..]);
             if (firstVertexRaw > int.MaxValue)
                 throw new InvalidDataException($"Render surface {surfaceIndex} has an invalid first vertex.");
@@ -78,7 +81,7 @@ internal static class D3dbspGfxCodec
                 throw new InvalidDataException($"Render surface {surfaceIndex} has invalid index count {localIndexCount}.");
             ValidateSlice(firstVertex, localVertexCount, vertexCount, $"Render surface {surfaceIndex} vertex");
             ValidateSlice(firstIndex, localIndexCount, indexCount, $"Render surface {surfaceIndex} index");
-            var triangles = new (Vector3 Position, Vector3 Normal, Vector2 Uv, Vector4 Color)[localIndexCount];
+            var triangles = new (Vector3 Position, Vector3 Normal, Vector2 Uv, Vector2 LightmapUv, Vector4 Color)[localIndexCount];
             for (int index = 0; index < localIndexCount; index++)
             {
                 int localVertex = BinaryPrimitives.ReadUInt16LittleEndian(indices.Slice((firstIndex + index) * 2, 2));
@@ -90,10 +93,12 @@ internal static class D3dbspGfxCodec
                 triangles[index] = (new Vector3(position.X, position.Y, position.Z),
                     new Vector3(normal.X, normal.Y, normal.Z),
                     new Vector2(ReadSingle(source, 28), ReadSingle(source, 32)),
+                    new Vector2(ReadSingle(source, 36), ReadSingle(source, 40)),
                     new Vector4(source[26] / 255f, source[25] / 255f, source[24] / 255f, source[27] / 255f));
             }
             result[surfaceIndex] = (materials[materialIndex].Name ??
-                throw new InvalidDataException($"Collision material row {materialIndex} has no name."), Array.AsReadOnly(triangles));
+                throw new InvalidDataException($"Collision material row {materialIndex} has no name."),
+                lightmapIndex, primaryLightIndex, reflectionProbeIndex, Array.AsReadOnly(triangles));
         }
         return Array.AsReadOnly(result);
     }

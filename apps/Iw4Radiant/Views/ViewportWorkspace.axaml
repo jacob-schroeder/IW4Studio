@@ -11,13 +11,17 @@
                 <Border Classes="panelHeader">
                     <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="7,0,2,0">
                         <TextBlock Text="Camera" VerticalAlignment="Center" />
-                        <ToggleButton x:Name="FilmToggle" Grid.Column="1" Classes="viewportAction" Content="Film" Width="44" Margin="0,0,5,0"
-                                      IsCheckedChanged="FilmPanel_Changed" ToolTip.Tip="Adjust the camera image only; preview changes are not saved or baked."
-                                      AutomationProperties.Name="Film preview controls" />
-                        <ToggleButton x:Name="FogToggle" Grid.Column="2" Classes="viewportAction" Content="Fog" Width="42" Margin="0,0,5,0"
-                                      IsCheckedChanged="FogPanel_Changed" ToolTip.Tip="Preview camera fog; not saved in the map or compiled."
-                                      AutomationProperties.Name="Fog preview controls" />
-                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="3" Margin="0,0,5,0">
+                        <ToggleButton x:Name="FilmToggle" Grid.Column="1" Classes="viewportAction" Margin="0,0,3,0"
+                                      IsCheckedChanged="FilmPanel_Changed" ToolTip.Tip="Film preview controls · Adjust the camera image only; changes are not saved or baked."
+                                      AutomationProperties.Name="Film preview controls">
+                            <icons:MaterialIcon Kind="Filmstrip" Width="16" Height="16" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="FogToggle" Grid.Column="2" Classes="viewportAction" Margin="0,0,3,0"
+                                      IsCheckedChanged="FogPanel_Changed" ToolTip.Tip="Fog preview controls · Camera fog is not saved in the map or compiled."
+                                      AutomationProperties.Name="Fog preview controls">
+                            <icons:MaterialIcon Kind="WeatherFog" Width="16" Height="16" />
+                        </ToggleButton>
+                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="3" Margin="0,0,3,0">
                             <ToggleButton x:Name="MapFxToggle" Classes="viewportAction" Content="FX" Width="36"
                                           IsCheckedChanged="MapFx_Changed" ToolTip.Tip="Show placed supported effects in the camera. This preview does not edit the map."
                                           AutomationProperties.Name="Preview placed FX" />
@@ -37,9 +41,11 @@
                                 </Button>
                             </StackPanel>
                         </StackPanel>
-                        <ToggleButton x:Name="MapSoundsToggle" Grid.Column="4" Classes="viewportAction" Content="Sounds" Width="65" Margin="0,0,5,0"
-                                      IsCheckedChanged="MapSounds_Changed" ToolTip.Tip="Hear nearby placed sounds together. Volume follows camera distance; stereo position follows camera direction. Listen temporarily pauses map audio. Supported loaded sounds on macOS."
-                                      AutomationProperties.Name="Preview placed sounds" />
+                        <ToggleButton x:Name="MapSoundsToggle" Grid.Column="4" Classes="viewportAction" Margin="0,0,3,0"
+                                      IsCheckedChanged="MapSounds_Changed" ToolTip.Tip="Preview placed sounds · Hear nearby sounds by camera distance and direction. Listen temporarily pauses map audio. Supported loaded sounds on macOS."
+                                      AutomationProperties.Name="Preview placed sounds">
+                            <icons:MaterialIcon Kind="VolumeHigh" Width="16" Height="16" />
+                        </ToggleButton>
                         <ToggleButton x:Name="FlyCamera" Grid.Column="5" Classes="viewportAction" Content="Fly" Width="42" Margin="0,0,5,0"
                                       IsCheckedChanged="FlyCamera_Changed" ToolTip.Tip="Fly through the map: WASD to move, Q/E down/up, right-drag to look, Shift for speed. Escape returns to orbit."
                                       AutomationProperties.Name="Fly camera" />
@@ -75,6 +81,29 @@
                                           AutomationProperties.Name="Show player during Walk" />
                             <TextBlock x:Name="WalkPlayerStatus" Text="Rangers · Beretta" FontSize="11" Foreground="#BEC7D2"
                                        VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="PhysicsPlacementControls" IsVisible="False" Background="#F21B1D21" Padding="12" Margin="12"
+                            BorderBrush="#515B69" BorderThickness="1" MaxWidth="420"
+                            VerticalAlignment="Bottom" HorizontalAlignment="Right" CornerRadius="5">
+                        <StackPanel Spacing="7">
+                            <TextBlock Text="Physics placement" FontWeight="SemiBold" />
+                            <TextBlock x:Name="PhysicsPlacementStatus" FontSize="12" Foreground="#BEC7D2" TextWrapping="Wrap" />
+                            <WrapPanel Orientation="Horizontal">
+                                <Button x:Name="PhysicsDrop" Classes="compact panelAction" Content="Drop" MinWidth="72" Margin="0,0,6,4"
+                                        Click="PhysicsDrop_Click" />
+                                <Button x:Name="PhysicsReset" Classes="compact panelAction" Content="Reset" MinWidth="64" Margin="0,0,6,4"
+                                        Click="PhysicsReset_Click" ToolTip.Tip="Return to the starting positions and try again."
+                                        AutomationProperties.Name="Reset physics placement" />
+                                <Button x:Name="PhysicsApply" Classes="compact panelAction" Content="Keep placement" MinWidth="112" Margin="0,0,6,4"
+                                        FontWeight="SemiBold" Click="PhysicsApply_Click" ToolTip.Tip="Keep these positions as one undoable edit."
+                                        AutomationProperties.Name="Keep physics placement" />
+                                <Button Classes="compact panelAction" Content="Cancel" MinWidth="64" Margin="0,0,0,4"
+                                        Click="PhysicsCancel_Click" ToolTip.Tip="Discard the preview. Escape also cancels."
+                                        AutomationProperties.Name="Cancel physics placement" />
+                            </WrapPanel>
+                            <TextBlock Text="Preview only. Keep placement accepts these positions as one undoable edit. Cancel restores the starting positions."
+                                       FontSize="11" Foreground="#BEC7D2" TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
                     <Border x:Name="FilmPreviewPanel" IsVisible="False" Background="#F225282D" BorderBrush="#515B69"

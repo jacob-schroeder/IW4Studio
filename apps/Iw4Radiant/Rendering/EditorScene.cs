@@ -13,14 +13,36 @@ internal sealed class EditorScene(EditorSession session)
     private readonly Dictionary<MapEntity, MapEntity> _expandedEntities = [];
     private readonly Dictionary<string, MapEntity[]> _targets = new(StringComparer.Ordinal);
     private MapDocument? _document;
+    private IReadOnlyDictionary<MapEntity, MapEntity>? _physicsPlacementPreview;
+    private IReadOnlyDictionary<MapBrush, MapEntity>? _physicsPlacementClips;
     private EditorSelection _selection = new();
     internal Func<string, XModelSource?>? ResolveModel { get; set; }
     internal Func<string, MaterialSource?>? ResolveMaterial { get; set; }
     internal string? Notice { get; private set; }
     internal long ModelPreviewRevision { get; private set; }
     internal MapDocument Document { get { EnsureCurrent(); return _document ?? throw new InvalidOperationException("Scene is unavailable."); } }
+    internal IReadOnlyDictionary<MapEntity, MapEntity>? PhysicsPlacementPreview => _physicsPlacementPreview;
     internal EditorSelection Selection { get { EnsureCurrent(); return _selection; } }
     internal void Invalidate() => _document = null;
+    internal void SetPhysicsPlacementPreview(IReadOnlyDictionary<MapEntity, MapEntity>? poses,
+        IReadOnlyDictionary<MapBrush, MapEntity>? clips = null)
+    {
+        if (!ReferenceEquals(_physicsPlacementPreview, poses) && _physicsPlacementPreview is { } previous)
+            foreach (MapEntity pose in previous.Values.Where(PrefabLibrary.IsPrefab))
+                session.Prefabs.DiscardPreview(pose);
+        _physicsPlacementPreview = poses;
+        _physicsPlacementClips = poses is null ? null : clips;
+        ModelPreviewRevision++;
+        Invalidate();
+    }
+
+    internal MapEntity? PhysicsPlacementOwner(object item)
+    {
+        if (item is MapBrush brush && _physicsPlacementClips?.TryGetValue(brush, out MapEntity? model) == true)
+            return model;
+        return Owner(item) is MapEntity entity && _physicsPlacementPreview?.ContainsKey(entity) == true
+            ? entity : null;
+    }
 
     internal bool UpdatePointEntities(IEnumerable<MapEntity> sources, out bool modelsChanged)
     {
@@ -80,13 +102,15 @@ internal sealed class EditorScene(EditorSession session)
         if (item is not MapEntity entity) return SelectionGeometry.Bounds(item);
         if (entity.ClassName == "misc_prefab")
         {
-            MapDocument? preview = session.Prefabs.GetPreview(entity, session.FilePath);
+            MapEntity pose = _physicsPlacementPreview?.GetValueOrDefault(entity) ?? entity;
+            MapDocument? preview = session.Prefabs.GetPreview(pose, session.FilePath);
             return preview is null ? null : Bounds(preview.Brushes.Cast<object>().Concat(preview.Terrains)
                 .Concat(preview.Entities.Where(PointEntityGeometry.IsPointEntity)));
         }
         if (XModelGeometry.IsModel(entity))
             return ResolveModel?.Invoke(entity.Properties["model"]) is { } model
-                ? XModelGeometry.Bounds(entity, model) : EditorSession.EntityBounds(entity);
+                ? XModelGeometry.Bounds(_physicsPlacementPreview?.GetValueOrDefault(entity) ?? entity, model)
+                : EditorSession.EntityBounds(entity);
         return EditorSession.EntityBounds(entity);
     }
 
@@ -111,11 +135,18 @@ internal sealed class EditorScene(EditorSession session)
             if (source.ClassName != "worldspawn" && !session.Visibility.IsVisible(session.Document, source)) continue;
             if (source.ClassName == "misc_prefab")
             {
-                if (session.Prefabs.GetPreview(source, session.FilePath) is { } preview)
-                    foreach (MapEntity child in preview.Entities) Add(child, source);
-                else if (session.Prefabs.Error(source, session.FilePath) is { } error) notices.Add(error);
+                MapEntity pose = _physicsPlacementPreview?.GetValueOrDefault(source) ?? source;
+                if (session.Prefabs.GetPreview(pose, session.FilePath) is { } preview)
+                {
+                    MapEntity[] originals = ReferenceEquals(pose, source) ? preview.Entities.ToArray() :
+                        (session.Prefabs.GetPreview(source, session.FilePath) ??
+                         throw new InvalidOperationException("The original prefab preview is unavailable.")).Entities.ToArray();
+                    foreach ((MapEntity child, MapEntity original) in preview.Entities.Zip(originals))
+                        Add(child, source, original);
+                }
+                else if (session.Prefabs.Error(pose, session.FilePath) is { } error) notices.Add(error);
             }
-            else Add(source, null);
+            else Add(source, null, source, _physicsPlacementPreview?.GetValueOrDefault(source));
         }
         foreach (var group in visible.Entities.Where(entity => entity.Properties.ContainsKey("targetname"))
                      .GroupBy(entity => entity.Properties["targetname"], StringComparer.Ordinal))
@@ -123,12 +154,13 @@ internal sealed class EditorScene(EditorSession session)
         _document = visible;
         Notice = notices.Count == 0 ? null : string.Join('\n', notices.Distinct());
 
-        void Add(MapEntity source, MapEntity? instance)
+        void Add(MapEntity source, MapEntity? instance, MapEntity original, MapEntity? display = null)
         {
-            if (XModelGeometry.IsModel(source) && ResolveModel?.Invoke(source.Properties["model"]) is null)
-                notices.Add($"Model unavailable: {source.Properties["model"]}");
+            MapEntity shown = display ?? source;
+            if (XModelGeometry.IsModel(shown) && ResolveModel?.Invoke(shown.Properties["model"]) is null)
+                notices.Add($"Model unavailable: {shown.Properties["model"]}");
             var entity = new MapEntity();
-            foreach (var pair in source.Properties) entity.Properties.Add(pair.Key, pair.Value);
+            foreach (var pair in shown.Properties) entity.Properties.Add(pair.Key, pair.Value);
             entity.Directives.AddRange(source.Directives);
             entity.PreservedPrimitives.AddRange(source.PreservedPrimitives);
             foreach (MapBrush brush in source.Brushes)
@@ -155,8 +187,8 @@ internal sealed class EditorScene(EditorSession session)
                 visible.Entities.Add(entity);
                 if (instance is not null)
                 {
-                    _prefabEntities[entity] = (instance, source);
-                    _expandedEntities[source] = entity;
+                    _prefabEntities[entity] = (instance, original);
+                    _expandedEntities[original] = entity;
                 }
                 MapOwner(entity, instance ?? source, false);
             }

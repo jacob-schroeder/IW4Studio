@@ -427,6 +427,8 @@ public partial class MainWindow
 
     private MaterialSource? ResolveMaterial(string name)
     {
+        if (_previewBspPath is not null && WaterMaterialAuthoring.IsAuthoredMaterialName(name))
+            return _compiledWaterMaterials.GetValueOrDefault(name);
         if (!WaterMaterialAuthoring.IsAuthoredMaterialName(name))
             return Workspace.Materials.ResolveMaterial(name) ?? Workspace.Models.ResolveMaterial(name) ?? ResolveEmitterMaterial(name);
         if (_waterDefinitionsDirty)
@@ -459,10 +461,17 @@ public partial class MainWindow
                 ? null
                 : Workspace.Materials.ResolveMaterial(name) ?? Workspace.Models.ResolveMaterial(name);
         if (_authoredWaterMaterials.TryGetValue(name, out MaterialSource? authored)) return authored;
+        authored = CreateAuthoredWaterMaterial(definition);
+        if (authored is not null) _authoredWaterMaterials.Add(name, authored);
+        return authored;
+    }
+
+    private MaterialSource? CreateAuthoredWaterMaterial(WaterMaterialDefinition definition)
+    {
         MaterialSource? source = Workspace.Materials.ResolveMaterial(definition.SourceMaterial) ??
             Workspace.Models.ResolveMaterial(definition.SourceMaterial);
         if (source?.Water is not { } water) return null;
-        authored = new MaterialSource(definition.Name, source.ImagePath, source.IsSky, source.SamplerState)
+        return new MaterialSource(definition.Name, source.ImagePath, source.IsSky, source.SamplerState)
         {
             TechniqueSet = source.TechniqueSet,
             Water = WaterMaterialAuthoring.CreateWater(water, definition),
@@ -475,14 +484,13 @@ public partial class MainWindow
             GameFlags = source.GameFlags,
             SurfaceTypeBits = source.SurfaceTypeBits
         };
-        _authoredWaterMaterials.Add(name, authored);
-        return authored;
     }
 
     private void RefreshAssets()
     {
         _authoredWaterMaterials.Clear();
         _waterDefinitionsDirty = true;
+        RefreshCompiledPreviewMaterials();
         if (_session.HasPlacement) _session.CancelPlacement();
         else _session.Refresh();
         Workspace.Camera.ReloadTextures();

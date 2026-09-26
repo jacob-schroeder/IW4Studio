@@ -6,6 +6,7 @@ using Avalonia.OpenGL;
 using IW4.Formats.SourceFormat.Material;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.GfxMap;
+using IW4.Game.Codecs.GfxMap;
 using Iw4Radiant.Compilation;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
@@ -30,6 +31,9 @@ internal sealed class SceneRenderer
 {
     private GL? _gl;
     private uint _program, _vertexArray, _vertexBuffer;
+    private uint _compiledLightmapUvBuffer;
+    private uint[] _compiledDiffuseTextures = [];
+    private uint[] _compiledSunVisibilityTextures = [];
     private uint _fxVertexArray, _fxVertexBuffer;
     private uint _framebuffer, _colorTexture, _depthBuffer, _filmProgram, _filmVertexArray;
     private int _filmSizeLocation, _filmBrightnessLocation, _filmContrastLocation, _filmDesaturationLocation,
@@ -40,10 +44,18 @@ internal sealed class SceneRenderer
         _ignoreVertexColorLocation, _waterPreviewLocation, _eyeLocation, _linearCaptureLocation, _hasWaterReflectionLocation,
         _cubicClipLocation, _cubicClipCenterLocation, _cubicClipDistanceLocation, _modelLocation, _normalTransformLocation,
         _fogEnabledLocation, _fogColorLocation, _fogStartLocation, _fogDensityLocation;
+    private int _compiledLightmapModeLocation, _compiledSunDirectionLocation, _compiledSunColorLocation;
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _batches = [];
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _surfaceBatches = [];
+    private readonly List<(MapEntity? Owner, string Material, int Start, int Count, int WireStart, int WireCount)> _drawBatches = [];
+    private readonly List<(MapEntity Owner, int Start, int Count)> _physicsOutlines = [];
+    private readonly Dictionary<MapEntity, (Vector3 Min, Vector3 Max)> _physicsBounds = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<MapEntity> _physicsVisible = new(ReferenceEqualityComparer.Instance);
+    private IReadOnlyDictionary<MapEntity, Matrix4x4>? _physicsTransforms;
     private readonly Dictionary<string, MaterialSurfaceState> _surfaceStates = new(StringComparer.Ordinal);
     private readonly List<(string Material, int Start, Vector3 Center)> _transparentTriangles = [];
+    private readonly List<(MapEntity Owner, string Material, int Start, Vector3 Center)> _physicsTransparentTriangles = [];
+    private readonly List<(MapEntity? Owner, string Material, int Start, Vector3 Center)> _sortedTransparentTriangles = [];
     private readonly SceneMaterialTextures _materialTextures = new();
     private readonly SceneLighting _lighting = new();
     private readonly SceneShadows _shadows = new();
@@ -67,6 +79,7 @@ internal sealed class SceneRenderer
     private readonly List<GfxReflectionProbe> _probeOrigins = [];
     private readonly Dictionary<int, byte> _waterProbes = [];
     private readonly Dictionary<string, List<(int Start, int Count)>> _waterDrawRanges = new(StringComparer.Ordinal);
+    private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _compiledWaterDrawBatches = [];
     private bool _reflectionsDirty = true, _reflectionLighting;
     private (Vector3 Min, Vector3 Max)? _surfaceBounds;
     private int _glyphStart, _glyphCount, _gridStart, _gridCount, _highlightStart, _highlightCount,
@@ -78,6 +91,8 @@ internal sealed class SceneRenderer
     private Vector3 _movePreviewOrigin, _movePreviewApplied;
     private bool _movePreviewDirty;
     private readonly Dictionary<XModelSource, PreviewModelMesh> _previewMeshes = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<string, string> _compiledModelFailures = new(StringComparer.Ordinal);
+    private string? _compiledWaterNotice;
     private IReadOnlyList<(MapEntity Entity, XModelSource Model)> _foliagePreview = [];
     private bool _previewMeshesDirty;
     private CompiledBspPreview? _compiledPreview;
@@ -89,7 +104,12 @@ internal sealed class SceneRenderer
     internal CompiledBspPreview? CompiledPreview
     {
         get => _compiledPreview;
-        set { _compiledPreview = value; _sceneDirty = _texturesDirty = true; }
+        set
+        {
+            _compiledPreview = value;
+            _compiledModelFailures.Clear();
+            _sceneDirty = _texturesDirty = _previewMeshesDirty = true;
+        }
     }
     internal LeakPath? LeakPath { get; set; }
     internal int LeakPointIndex { get; set; }
@@ -117,6 +137,11 @@ internal sealed class SceneRenderer
     internal event EventHandler? StatusChanged;
 
     internal void RefreshScene() => _sceneDirty = true;
+    internal void SetPhysicsPlacementTransforms(IReadOnlyDictionary<MapEntity, Matrix4x4>? transforms)
+    {
+        _physicsTransforms = transforms;
+        _sceneDirty = true;
+    }
     internal void SetWalkPlayer(WalkPlayerPreview? preview)
     {
         if (ReferenceEquals(_walkPlayer, preview)) return;
@@ -129,6 +154,7 @@ internal sealed class SceneRenderer
     internal void ReloadTextures()
     {
         _texturesDirty = _sceneDirty = true;
+        _compiledModelFailures.Clear();
         _fxMaterials.Clear();
     }
     internal string? SetFxPreview(string? sourceDirectory, string? assetName, Vector3 origin, Matrix4x4 orientation)
@@ -310,6 +336,9 @@ internal sealed class SceneRenderer
             _modelLocation = _gl.GetUniformLocation(_program, "uModel");
             _normalTransformLocation = _gl.GetUniformLocation(_program, "uNormalTransform");
             _texturedLocation = _gl.GetUniformLocation(_program, "uTextured");
+            _compiledLightmapModeLocation = _gl.GetUniformLocation(_program, "uCompiledLightmapMode");
+            _compiledSunDirectionLocation = _gl.GetUniformLocation(_program, "uCompiledSunDirection");
+            _compiledSunColorLocation = _gl.GetUniformLocation(_program, "uCompiledSunColorLinear");
             _litLocation = _gl.GetUniformLocation(_program, "uLit");
             _alphaTestLocation = _gl.GetUniformLocation(_program, "uAlphaTest");
             _premultiplyAlphaLocation = _gl.GetUniformLocation(_program, "uPremultiplyAlpha");
@@ -336,6 +365,9 @@ internal sealed class SceneRenderer
             _gl.UniformMatrix4(_modelLocation, 1, false, (float*)&identity);
             _gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&identity);
             _gl.Uniform1(_gl.GetUniformLocation(_program, "uTexture"), 0);
+            _gl.Uniform1(_gl.GetUniformLocation(_program, "uCompiledDiffuseLightmap"), 7);
+            _gl.Uniform1(_gl.GetUniformLocation(_program, "uCompiledSunVisibility"), 8);
+            _compiledLightmapUvBuffer = _gl.GenBuffer();
             _lineTexture = _gl.GenTexture();
             _gl.ActiveTexture(TextureUnit.Texture0);
             _gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
@@ -408,7 +440,8 @@ internal sealed class SceneRenderer
                 else UploadScene(gl, session, resolveMaterial);
             }
             if (_movePreviewDirty) UpdatePointEntityMove(gl);
-            if (previewLighting && _shadowsDirty && !session.DeferPreviewLighting)
+            if (_compiledPreview is null && previewLighting && _shadowsDirty &&
+                (!session.DeferPreviewLighting || _physicsTransforms is not null))
             {
                 _shadows.Update(gl, _lighting.Lights, _vertexArray, _surfaceBatches, resolveMaterial, _materialTextures);
                 _sunlight.Update(gl, document.World, _surfaceBounds, _vertexArray, _surfaceBatches,
@@ -423,7 +456,7 @@ internal sealed class SceneRenderer
             HasVisibleAnimatedWater = visibleWater.Count != 0;
             _water.Update(gl, _reflectionsDirty && !session.DeferPreviewLighting ? _waterMaterials : visibleWater,
                 resolveMaterial);
-            if (HasAnimatedWater && !session.DeferPreviewLighting &&
+            if (_compiledPreview is null && HasAnimatedWater && !session.DeferPreviewLighting &&
                 (_reflectionsDirty || _reflectionLighting != previewLighting))
             {
                 _reflections.Capture(gl, _probeOrigins, (matrix, origin) =>
@@ -448,18 +481,25 @@ internal sealed class SceneRenderer
             Matrix4x4 identity = Matrix4x4.Identity;
             gl.UniformMatrix4(_modelLocation, 1, false, (float*)&identity);
             gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&identity);
+            UpdatePhysicsVisibility(viewProjection);
             gl.Uniform1(_cubicClipLocation, _compiledPreview is null && session.CubicClipEnabled ? 1 : 0);
             gl.Uniform3(_cubicClipCenterLocation, eye.X, eye.Y, eye.Z);
             gl.Uniform1(_cubicClipDistanceLocation, session.CubicClipDistance);
             gl.Uniform3(_eyeLocation, eye.X, eye.Y, eye.Z);
             gl.Uniform1(_linearCaptureLocation, 0);
+            gl.Uniform1(_compiledLightmapModeLocation, 0);
+            Vector3 compiledSunDirection = _compiledPreview?.SunDirection ?? Vector3.Zero;
+            Vector3 compiledSunColor = _compiledPreview?.SunColorLinear ?? Vector3.Zero;
+            gl.Uniform3(_compiledSunDirectionLocation, compiledSunDirection.X, compiledSunDirection.Y,
+                compiledSunDirection.Z);
+            gl.Uniform3(_compiledSunColorLocation, compiledSunColor.X, compiledSunColor.Y, compiledSunColor.Z);
             gl.Uniform1(_fogEnabledLocation, 0);
             gl.Uniform3(_fogColorLocation, fogPreview.Color.X, fogPreview.Color.Y, fogPreview.Color.Z);
             gl.Uniform1(_fogStartLocation, fogPreview.StartDistance);
             gl.Uniform1(_fogDensityLocation, MathF.Log(2) / fogPreview.HalfDistance);
             _lighting.Bind(gl, _shadows.IsAvailable);
             _shadows.Bind(gl);
-            _sunlight.Bind(gl);
+            _sunlight.Bind(gl, enabled: _compiledPreview is null);
             gl.BindVertexArray(_vertexArray);
             gl.ActiveTexture(TextureUnit.Texture0);
             gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
@@ -478,6 +518,7 @@ internal sealed class SceneRenderer
             RenderSurfaces(gl, resolveMaterial, previewLighting, session.AlphaPreviewEnabled, eye, transparent: false);
             if (_compiledPreview is null)
                 RenderFoliagePreview(gl, resolveMaterial, previewLighting, session.AlphaPreviewEnabled, eye, transparent: false);
+            else RenderCompiledModels(gl, resolveMaterial, session.AlphaPreviewEnabled, eye, transparent: false);
             gl.Uniform1(_fogEnabledLocation, 0);
             _skies.Render(gl, viewProjection, eye, _vertexArray, _batches, resolveMaterial);
             gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
@@ -488,6 +529,7 @@ internal sealed class SceneRenderer
             RenderSurfaces(gl, resolveMaterial, previewLighting, session.AlphaPreviewEnabled, eye, transparent: true);
             if (_compiledPreview is null)
                 RenderFoliagePreview(gl, resolveMaterial, previewLighting, session.AlphaPreviewEnabled, eye, transparent: true);
+            else RenderCompiledModels(gl, resolveMaterial, session.AlphaPreviewEnabled, eye, transparent: true);
             gl.Uniform1(_fogEnabledLocation, 0);
             RenderFxPreview(gl, resolveMaterial, eye);
             RenderMapFxPreview(gl, resolveMaterial, eye, viewProjection);
@@ -497,6 +539,13 @@ internal sealed class SceneRenderer
             gl.Uniform1(_litLocation, 0);
             gl.Uniform1(_texturedLocation, 0);
             gl.DrawArrays(PrimitiveType.Lines, _outlineStart, (uint)_outlineCount);
+            foreach (var outline in _physicsOutlines)
+            {
+                if (!_physicsVisible.Contains(outline.Owner)) continue;
+                SetPhysicsModel(gl, outline.Owner);
+                gl.DrawArrays(PrimitiveType.Lines, outline.Start, (uint)outline.Count);
+            }
+            if (_physicsOutlines.Count != 0) SetPhysicsModel(gl, null);
             gl.Disable(EnableCap.DepthTest);
             gl.DrawArrays(PrimitiveType.Lines, _axesStart, (uint)_axesCount);
             gl.Uniform1(_cubicClipLocation, 0);
@@ -514,6 +563,11 @@ internal sealed class SceneRenderer
             }
             gl.BindVertexArray(0);
             gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture8);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture7);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture0);
             gl.UseProgram(0);
             if (filmPreview.IsNeutral)
             {
@@ -525,7 +579,11 @@ internal sealed class SceneRenderer
             else
                 DrawFilmPreview(gl, size, framebuffer, filmPreview);
             string?[] notices = _compiledPreview is not null
-                ? [_fxPreviewNotice, _mapFxPreviewNotice, _materialTextures.Error, _walkPlayerNotice]
+                ? [_fxPreviewNotice, _mapFxPreviewNotice, _materialTextures.Error, _skies.Notice,
+                    _water.Notice, _reflections.Notice, _compiledWaterNotice,
+                    _compiledModelFailures.Count == 0 ? null : "Compiled models unavailable: " +
+                        string.Join("; ", _compiledModelFailures.Select(item => $"{item.Key}: {item.Value}")),
+                    _walkPlayerNotice]
                 : [session.Scene.Notice, _fxPreviewNotice, _mapFxPreviewNotice, _materialTextures.Error,
                     _skies.Notice, _water.Notice,
                     HasAnimatedWater ? _reflections.Notice : null,
@@ -549,6 +607,10 @@ internal sealed class SceneRenderer
             gl.Disable(EnableCap.DepthTest);
             gl.BindVertexArray(0);
             gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+            gl.ActiveTexture(TextureUnit.Texture8);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture7);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture5);
             gl.BindTexture(TextureTarget.TextureCubeMap, 0);
             gl.ActiveTexture(TextureUnit.Texture4);
@@ -819,33 +881,70 @@ internal sealed class SceneRenderer
                 EditorSession.EntityOrigin(item.Entity), eye)) : _foliagePreview;
         foreach (var (entity, model) in instances)
         {
-            if (!_previewMeshes.TryGetValue(model, out PreviewModelMesh? mesh))
+            RenderPreviewModel(gl, model, XModelGeometry.Transform(entity), resolveMaterial,
+                previewLighting, previewAlpha, transparent);
+        }
+        RestoreModelDrawState(gl);
+    }
+
+    private void RenderCompiledModels(GL gl, Func<string, MaterialSource?>? resolveMaterial,
+        bool previewAlpha, Vector3 eye, bool transparent)
+    {
+        if (_compiledPreview is not { } preview || preview.Models.Count == 0) return;
+        gl.Uniform1(_waterPreviewLocation, 0);
+        IEnumerable<(string Name, Matrix4x4 Transform, XModelSource Source)> instances = transparent
+            ? preview.Models.OrderByDescending(item => Vector3.DistanceSquared(
+                new Vector3(item.Transform.M41, item.Transform.M42, item.Transform.M43), eye))
+            : preview.Models;
+        foreach (var instance in instances)
+        {
+            if (_compiledModelFailures.ContainsKey(instance.Name)) continue;
+            try
             {
-                mesh = PreviewModelMesh.Create(gl, model);
-                _previewMeshes.Add(model, mesh);
+                RenderPreviewModel(gl, instance.Source, instance.Transform, resolveMaterial,
+                    false, previewAlpha, transparent);
             }
-            Matrix4x4 transform = XModelGeometry.Transform(entity);
-            if (!Matrix4x4.Invert(transform, out Matrix4x4 inverse)) continue;
-            Matrix4x4 normalTransform = Matrix4x4.Transpose(inverse);
-            gl.UniformMatrix4(_modelLocation, 1, false, (float*)&transform);
-            gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&normalTransform);
-            gl.BindVertexArray(mesh.VertexArray);
-            foreach (var batch in mesh.Batches)
+            catch (Exception exception) when (IsRenderException(exception) ||
+                                              exception is IndexOutOfRangeException or KeyNotFoundException)
             {
-                MaterialSource? source = resolveMaterial?.Invoke(batch.Material);
-                MaterialSurfaceState state = source?.Surface ?? MaterialSurfaceState.Opaque;
-                bool drawTransparent = previewAlpha && (state.IsBlended || !state.DepthWrite);
-                if (drawTransparent != transparent) continue;
-                uint texture = _materialTextures.GetTexture(gl, batch.Material, resolveMaterial);
-                if (texture == 0) continue;
-                SceneMaterialDrawing.Apply(gl, previewAlpha ? state : OpaquePreview(state), _alphaTestLocation,
-                    _premultiplyAlphaLocation, _ignoreVertexColorLocation);
-                gl.BindTexture(TextureTarget.Texture2D, texture);
-                gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
-                gl.Uniform1(_texturedLocation, 1);
-                gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
+                _compiledModelFailures.TryAdd(instance.Name, exception.Message);
             }
         }
+        RestoreModelDrawState(gl);
+    }
+
+    private unsafe void RenderPreviewModel(GL gl, XModelSource model, Matrix4x4 transform,
+        Func<string, MaterialSource?>? resolveMaterial, bool previewLighting, bool previewAlpha, bool transparent)
+    {
+        if (!_previewMeshes.TryGetValue(model, out PreviewModelMesh? mesh))
+        {
+            mesh = PreviewModelMesh.Create(gl, model);
+            _previewMeshes.Add(model, mesh);
+        }
+        if (!Matrix4x4.Invert(transform, out Matrix4x4 inverse)) return;
+        Matrix4x4 normalTransform = Matrix4x4.Transpose(inverse);
+        gl.UniformMatrix4(_modelLocation, 1, false, (float*)&transform);
+        gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&normalTransform);
+        gl.BindVertexArray(mesh.VertexArray);
+        foreach (var batch in mesh.Batches)
+        {
+            MaterialSource? source = resolveMaterial?.Invoke(batch.Material);
+            MaterialSurfaceState state = source?.Surface ?? MaterialSurfaceState.Opaque;
+            bool drawTransparent = previewAlpha && (state.IsBlended || !state.DepthWrite);
+            if (drawTransparent != transparent) continue;
+            uint texture = _materialTextures.GetTexture(gl, batch.Material, resolveMaterial);
+            if (texture == 0) continue;
+            SceneMaterialDrawing.Apply(gl, previewAlpha ? state : OpaquePreview(state), _alphaTestLocation,
+                _premultiplyAlphaLocation, _ignoreVertexColorLocation);
+            gl.BindTexture(TextureTarget.Texture2D, texture);
+            gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
+            gl.Uniform1(_texturedLocation, 1);
+            gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
+        }
+    }
+
+    private unsafe void RestoreModelDrawState(GL gl)
+    {
         Matrix4x4 identity = Matrix4x4.Identity;
         gl.UniformMatrix4(_modelLocation, 1, false, (float*)&identity);
         gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&identity);
@@ -857,6 +956,8 @@ internal sealed class SceneRenderer
     {
         if (!_previewMeshesDirty) return;
         var used = _foliagePreview.Select(item => item.Model).ToHashSet(ReferenceEqualityComparer.Instance);
+        if (_compiledPreview is { } compiled)
+            used.UnionWith(compiled.Models.Select(item => item.Source));
         foreach (XModelSource model in _previewMeshes.Keys.Where(model => !used.Contains(model)).ToArray())
         {
             _previewMeshes[model].Delete(gl);
@@ -865,21 +966,66 @@ internal sealed class SceneRenderer
         _previewMeshesDirty = false;
     }
 
+    private unsafe void SetPhysicsModel(GL gl, MapEntity? owner)
+    {
+        Matrix4x4 model = owner is not null && _physicsTransforms?.TryGetValue(owner, out Matrix4x4 pose) == true
+            ? pose : Matrix4x4.Identity;
+        Matrix4x4 normal = Matrix4x4.Invert(model, out Matrix4x4 inverse)
+            ? Matrix4x4.Transpose(inverse) : Matrix4x4.Identity;
+        gl.UniformMatrix4(_modelLocation, 1, false, (float*)&model);
+        gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&normal);
+    }
+
+    private void UpdatePhysicsVisibility(Matrix4x4 viewProjection)
+    {
+        _physicsVisible.Clear();
+        if (_physicsTransforms is not { } transforms) return;
+        foreach (var (owner, bounds) in _physicsBounds)
+            if (transforms.TryGetValue(owner, out Matrix4x4 pose) &&
+                IntersectsClip(TransformBounds(bounds, pose), viewProjection))
+                _physicsVisible.Add(owner);
+    }
+
+    internal static (Vector3 Min, Vector3 Max) TransformBounds((Vector3 Min, Vector3 Max) bounds, Matrix4x4 pose)
+    {
+        Vector3 min = new(float.PositiveInfinity), max = new(float.NegativeInfinity);
+        for (int corner = 0; corner < 8; corner++)
+        {
+            Vector3 point = new((corner & 1) == 0 ? bounds.Min.X : bounds.Max.X,
+                (corner & 2) == 0 ? bounds.Min.Y : bounds.Max.Y,
+                (corner & 4) == 0 ? bounds.Min.Z : bounds.Max.Z);
+            point = Vector3.Transform(point, pose);
+            min = Vector3.Min(min, point);
+            max = Vector3.Max(max, point);
+        }
+        return (min, max);
+    }
+
     private void RenderSurfaces(GL gl, Func<string, MaterialSource?>? resolveMaterial, bool previewLighting,
         bool previewAlpha, Vector3 eye, bool transparent, bool capture = false)
     {
         var textures = new Dictionary<string, uint>(StringComparer.Ordinal);
-        foreach (var batch in _surfaceBatches)
+        MapEntity? drawnOwner = null;
+        void UseOwner(MapEntity? owner)
         {
+            if (_physicsTransforms is null || ReferenceEquals(drawnOwner, owner)) return;
+            SetPhysicsModel(gl, owner);
+            drawnOwner = owner;
+        }
+        foreach (var batch in _drawBatches)
+        {
+            if (batch.Owner is { } owner && (capture || !_physicsVisible.Contains(owner))) continue;
             MaterialSurfaceState state = _surfaceStates[batch.Material];
+            MaterialSource? source = resolveMaterial?.Invoke(batch.Material);
+            bool water = source?.IsWater == true &&
+                (_compiledPreview is null || IsSupportedCompiledWater(source));
             bool drawTransparent = previewAlpha && (state.IsBlended || !state.DepthWrite);
             if (drawTransparent != transparent) continue;
-            MaterialSource? source = resolveMaterial?.Invoke(batch.Material);
-            bool water = _compiledPreview is null && source?.IsWater == true;
             if (capture && water) continue;
             uint texture = water ? (_water.IsAvailable(batch.Material) ? _lineTexture : 0) : _materialTextures.GetTexture(gl, batch.Material, resolveMaterial);
             if (texture == 0)
             {
+                UseOwner(batch.Owner);
                 ResetSurfaceState(gl);
                 gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
                 gl.Uniform1(_litLocation, 0);
@@ -889,18 +1035,21 @@ internal sealed class SceneRenderer
             }
             if (transparent)
             {
-                textures.Add(batch.Material, texture);
+                textures.TryAdd(batch.Material, texture);
                 continue;
             }
             SceneMaterialDrawing.Apply(gl, previewAlpha ? state : OpaquePreview(state),
                 _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation);
             if (_compiledPreview is not null) gl.Uniform1(_ignoreVertexColorLocation, 0);
+            BindCompiledLightmap(gl, _compiledPreview?.LightingAt(batch.Start) ??
+                (CompiledBspPreview.NoLightmap, false));
             gl.BindTexture(TextureTarget.Texture2D, texture);
             gl.Uniform1(_waterPreviewLocation, water ? 1 : 0);
             if (water) _water.Bind(gl, batch.Material);
-            gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
+            gl.Uniform1(_litLocation, _compiledPreview is null && previewLighting ? 1 : 0);
             gl.Uniform1(_texturedLocation, 1);
-            if (water)
+            UseOwner(batch.Owner);
+            if (water && _compiledPreview is null)
             {
                 foreach (var range in _waterDrawRanges[batch.Material])
                 {
@@ -908,36 +1057,65 @@ internal sealed class SceneRenderer
                     gl.DrawArrays(PrimitiveType.Triangles, range.Start, (uint)range.Count);
                 }
             }
-            else gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
+            else
+            {
+                if (water) BindWaterReflection(gl, batch.Start);
+                gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
+            }
         }
         if (transparent)
         {
             string? material = null;
             bool waterDrawn = false;
-            // Respect material sort keys, then order individual translucent triangles back to front.
-            foreach (var triangle in _transparentTriangles.OrderBy(triangle => _surfaceStates[triangle.Material].SortKey)
-                         .ThenByDescending(triangle => Vector3.DistanceSquared(eye, triangle.Center)))
+            MapEntity? activeOwner = null;
+            UseOwner(null);
+            _sortedTransparentTriangles.Clear();
+            foreach (var triangle in _transparentTriangles)
+                _sortedTransparentTriangles.Add((null, triangle.Material, triangle.Start, triangle.Center));
+            if (!capture && _physicsTransforms is { } transforms)
+                foreach (var triangle in _physicsTransparentTriangles)
+                    if (_physicsVisible.Contains(triangle.Owner) && transforms.TryGetValue(triangle.Owner, out Matrix4x4 matrix))
+                        _sortedTransparentTriangles.Add((triangle.Owner, triangle.Material, triangle.Start,
+                            Vector3.Transform(triangle.Center, matrix)));
+            _sortedTransparentTriangles.Sort((a, b) =>
             {
-                if (!waterDrawn && _surfaceStates[triangle.Material].SortKey >= (int)WaterMaterialAuthoring.SurfaceSortKey)
+                int materialOrder = _surfaceStates[a.Material].SortKey.CompareTo(_surfaceStates[b.Material].SortKey);
+                return materialOrder != 0 ? materialOrder :
+                    Vector3.DistanceSquared(eye, b.Center).CompareTo(Vector3.DistanceSquared(eye, a.Center));
+            });
+            // Respect material sort keys, then order individual translucent triangles back to front.
+            foreach (var triangle in _sortedTransparentTriangles)
+            {
+                if (!waterDrawn &&
+                    _surfaceStates[triangle.Material].SortKey >= (int)WaterMaterialAuthoring.SurfaceSortKey)
                 {
                     DrawWater();
                     material = null;
                 }
                 if (!textures.TryGetValue(triangle.Material, out uint texture)) continue;
+                if (!ReferenceEquals(activeOwner, triangle.Owner))
+                {
+                    UseOwner(triangle.Owner);
+                    activeOwner = triangle.Owner;
+                }
                 if (material != triangle.Material)
                 {
                     MaterialSource? source = resolveMaterial?.Invoke(triangle.Material);
-                    bool water = _compiledPreview is null && source?.IsWater == true;
+                    bool water = source?.IsWater == true &&
+                        (_compiledPreview is null || IsSupportedCompiledWater(source));
                     SceneMaterialDrawing.Apply(gl, _surfaceStates[triangle.Material], _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation);
                     if (_compiledPreview is not null) gl.Uniform1(_ignoreVertexColorLocation, 0);
                     gl.BindTexture(TextureTarget.Texture2D, texture);
                     gl.Uniform1(_waterPreviewLocation, water ? 1 : 0);
                     if (water) _water.Bind(gl, triangle.Material);
-                    gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
+                    gl.Uniform1(_litLocation, _compiledPreview is null && previewLighting ? 1 : 0);
                     gl.Uniform1(_texturedLocation, 1);
                     material = triangle.Material;
                 }
-                if (_waterProbes.ContainsKey(triangle.Start)) BindWaterReflection(gl, triangle.Start);
+                BindCompiledLightmap(gl, _compiledPreview?.LightingAt(triangle.Start) ??
+                    (CompiledBspPreview.NoLightmap, false));
+                if ((_compiledPreview is not null && _waterMaterials.Contains(triangle.Material)) ||
+                    _waterProbes.ContainsKey(triangle.Start)) BindWaterReflection(gl, triangle.Start);
                 gl.DrawArrays(PrimitiveType.Triangles, triangle.Start, 3);
             }
             if (!waterDrawn) DrawWater();
@@ -945,33 +1123,78 @@ internal sealed class SceneRenderer
             void DrawWater()
             {
                 waterDrawn = true;
+                UseOwner(null);
+                activeOwner = null;
                 // Depth-writing water needs no per-frame CPU triangle sort.
                 // Draw cached material/probe ranges after opaque ground and before decals/transparency.
-                foreach (var batch in _surfaceBatches)
+                foreach (var batch in _compiledPreview is null ? _surfaceBatches : _compiledWaterDrawBatches)
                 {
                     if (!_waterMaterials.Contains(batch.Material) || !textures.TryGetValue(batch.Material, out uint texture)) continue;
                     SceneMaterialDrawing.Apply(gl, _surfaceStates[batch.Material],
                         _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation);
+                    if (_compiledPreview is not null) gl.Uniform1(_ignoreVertexColorLocation, 0);
                     gl.BindTexture(TextureTarget.Texture2D, texture);
                     gl.Uniform1(_waterPreviewLocation, 1);
                     _water.Bind(gl, batch.Material);
-                    gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
+                    gl.Uniform1(_litLocation, _compiledPreview is null && previewLighting ? 1 : 0);
                     gl.Uniform1(_texturedLocation, 1);
-                    foreach (var range in _waterDrawRanges[batch.Material])
+                    if (_compiledPreview is not null)
                     {
-                        BindWaterReflection(gl, range.Start);
-                        gl.DrawArrays(PrimitiveType.Triangles, range.Start, (uint)range.Count);
+                        BindCompiledLightmap(gl, _compiledPreview.LightingAt(batch.Start));
+                        BindWaterReflection(gl, batch.Start);
+                        gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
+                    }
+                    else
+                    {
+                        foreach (var range in _waterDrawRanges[batch.Material])
+                        {
+                            BindWaterReflection(gl, range.Start);
+                            gl.DrawArrays(PrimitiveType.Triangles, range.Start, (uint)range.Count);
+                        }
                     }
                 }
             }
         }
+        UseOwner(null);
+        BindCompiledLightmap(gl, (CompiledBspPreview.NoLightmap, false));
         ResetSurfaceState(gl);
+    }
+
+    private void BindCompiledLightmap(GL gl, (int Index, bool HasDirectSun) lighting)
+    {
+        if (_compiledPreview is null)
+        {
+            gl.Uniform1(_compiledLightmapModeLocation, 0);
+            return;
+        }
+        int index = lighting.Index;
+        uint texture = index >= 0 && index < _compiledDiffuseTextures.Length
+            ? _compiledDiffuseTextures[index] : 0;
+        uint sunVisibility = lighting.HasDirectSun && index >= 0 && index < _compiledSunVisibilityTextures.Length
+            ? _compiledSunVisibilityTextures[index] : 0;
+        gl.Uniform1(_compiledLightmapModeLocation, index == CompiledBspPreview.NoLightmap
+            ? 0 : texture == 0 ? 2 : sunVisibility != 0 ? 3 : 1);
+        gl.ActiveTexture(TextureUnit.Texture7);
+        gl.BindTexture(TextureTarget.Texture2D, texture);
+        gl.ActiveTexture(TextureUnit.Texture8);
+        gl.BindTexture(TextureTarget.Texture2D, sunVisibility);
+        gl.ActiveTexture(TextureUnit.Texture0);
     }
 
     private void BindWaterReflection(GL gl, int start)
     {
-        bool available = _reflections.Bind(gl, _waterProbes.GetValueOrDefault(start));
+        int probe = _compiledPreview?.ReflectionProbeAt(start) ?? _waterProbes.GetValueOrDefault(start);
+        bool available = _reflections.Bind(gl, probe);
         gl.Uniform1(_hasWaterReflectionLocation, available ? 1 : 0);
+    }
+
+    private bool IsSupportedCompiledWater(MaterialSource source)
+    {
+        if (!source.IsWater || source.TechniqueSet != "wc_water") return false;
+        if (source.Ocean is null) return true;
+        return _compiledPreview is { } preview &&
+            preview.WaterDefinitions.TryGetValue(source.Name, out WaterMaterialDefinition? definition) &&
+            definition.Ocean == source.Ocean;
     }
 
     private void RenderFaceHighlights(GL gl)
@@ -1040,6 +1263,7 @@ internal sealed class SceneRenderer
         gl.Uniform1(_alphaTestLocation, 0);
         gl.Uniform1(_premultiplyAlphaLocation, 0);
         gl.Uniform1(_waterPreviewLocation, 0);
+        gl.Uniform1(_compiledLightmapModeLocation, 0);
         gl.Disable(EnableCap.PolygonOffsetFill);
     }
 
@@ -1093,6 +1317,8 @@ internal sealed class SceneRenderer
 
     private unsafe void UploadScene(GL gl, EditorSession session, Func<string, MaterialSource?>? resolveMaterial)
     {
+        _compiledWaterNotice = null;
+        ClearCompiledLightmaps(gl);
         var scene = new SceneGeometry(session.Scene, session.TransformMode, session.Tool, resolveMaterial,
             LeakPath, LeakPointIndex, _fxPreview is not null || _mapFxPreviews.Count != 0);
         _movePreviewVertices = scene.Vertices;
@@ -1107,10 +1333,19 @@ internal sealed class SceneRenderer
         _batches.AddRange(scene.Batches);
         _surfaceBatches.Clear();
         _surfaceBatches.AddRange(scene.Batches.Where(batch => resolveMaterial?.Invoke(batch.Material)?.IsSky != true));
+        _drawBatches.Clear();
+        _drawBatches.AddRange(_surfaceBatches.Select(batch => ((MapEntity?)null, batch.Material,
+            batch.Start, batch.Count, batch.WireStart, batch.WireCount)));
+        _drawBatches.AddRange(scene.PhysicsBatches.Select(batch => ((MapEntity?)batch.Owner, batch.Material,
+            batch.Start, batch.Count, batch.WireStart, batch.WireCount)));
+        _physicsOutlines.Clear();
+        _physicsOutlines.AddRange(scene.PhysicsOutlines);
+        _physicsBounds.Clear();
+        foreach (var (owner, bounds) in scene.PhysicsBounds) _physicsBounds.Add(owner, bounds);
         _surfaceStates.Clear();
         HasAnimatedWater = false;
         _waterMaterials.Clear();
-        foreach (var batch in _surfaceBatches)
+        foreach (var batch in _drawBatches)
         {
             MaterialSource? source = resolveMaterial?.Invoke(batch.Material);
             MaterialSurfaceState state = source?.Surface ?? MaterialSurfaceState.Opaque;
@@ -1122,7 +1357,7 @@ internal sealed class SceneRenderer
                     Source = GfxBlend.SourceAlpha, Destination = GfxBlend.InverseSourceAlpha, DepthWrite = true,
                     CullFace = GfxCullFace.None, AlphaTest = null, SortKey = (int)WaterMaterialAuthoring.SurfaceSortKey };
             }
-            _surfaceStates.Add(batch.Material, state);
+            _surfaceStates.TryAdd(batch.Material, state);
         }
         _water.RemoveUnused(gl, _waterMaterials);
         _water.SetVolumes(session.Scene.Document.World.Brushes.Where(brush =>
@@ -1139,6 +1374,7 @@ internal sealed class SceneRenderer
                 _probeOrigins.Add(new GfxReflectionProbe(origin.X, origin.Y, origin.Z));
         _waterProbes.Clear();
         _waterDrawRanges.Clear();
+        _compiledWaterDrawBatches.Clear();
         _glyphStart = scene.GlyphStart;
         _glyphCount = scene.GlyphCount;
         _gridStart = scene.GridStart;
@@ -1151,17 +1387,23 @@ internal sealed class SceneRenderer
         _axesCount = scene.AxesCount;
         _leakPathStart = scene.LeakPathStart;
         _leakPathCount = scene.LeakPathCount;
-        _materialTextures.RemoveUnused(gl, _surfaceBatches.Select(batch => batch.Material));
+        _materialTextures.RemoveUnused(gl, _drawBatches.Select(batch => batch.Material));
         _skies.RemoveUnused(gl, scene.Batches.Where(batch => resolveMaterial?.Invoke(batch.Material)?.IsSky == true)
             .Select(batch => batch.Material));
         gl.BindVertexArray(_vertexArray);
         gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vertexBuffer);
         SceneVertex[] data = scene.Vertices;
         _transparentTriangles.Clear();
+        _physicsTransparentTriangles.Clear();
         foreach (var batch in _surfaceBatches)
             if (!_waterMaterials.Contains(batch.Material) && _surfaceStates[batch.Material] is { } state && (state.IsBlended || !state.DepthWrite))
                 for (int index = batch.Start; index < batch.Start + batch.Count; index += 3)
                     _transparentTriangles.Add((batch.Material, index,
+                        data[index].Position / 3 + data[index + 1].Position / 3 + data[index + 2].Position / 3));
+        foreach (var batch in scene.PhysicsBatches)
+            if (_surfaceStates[batch.Material] is { } state && (state.IsBlended || !state.DepthWrite))
+                for (int index = batch.Start; index < batch.Start + batch.Count; index += 3)
+                    _physicsTransparentTriangles.Add((batch.Owner, batch.Material, index,
                         data[index].Position / 3 + data[index + 1].Position / 3 + data[index + 2].Position / 3));
         foreach (var batch in _surfaceBatches)
             if (_waterMaterials.Contains(batch.Material))
@@ -1212,6 +1454,7 @@ internal sealed class SceneRenderer
         gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)12);
         gl.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)24);
         gl.VertexAttribPointer(3, 4, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)32);
+        gl.DisableVertexAttribArray(4);
         gl.BindVertexArray(0);
         _sceneDirty = false;
         _shadowsDirty = _reflectionsDirty = true;
@@ -1243,29 +1486,86 @@ internal sealed class SceneRenderer
     private unsafe void UploadCompiledScene(GL gl, CompiledBspPreview preview,
         Func<string, MaterialSource?>? resolveMaterial)
     {
+        UploadCompiledLightmaps(gl, preview);
         _movePreviewVertices = [];
         _movePreviewRanges.Clear();
         _movePreviewSource = null;
         _movePreviewDirty = false;
         _batches.Clear();
+        _batches.AddRange(preview.Batches);
         _surfaceBatches.Clear();
-        _surfaceBatches.AddRange(preview.Batches);
+        _surfaceBatches.AddRange(preview.Batches.Where(batch =>
+            resolveMaterial?.Invoke(batch.Material)?.IsSky != true));
+        _drawBatches.Clear();
+        _drawBatches.AddRange(_surfaceBatches.Select(batch => ((MapEntity?)null, batch.Material,
+            batch.Start, batch.Count, batch.WireStart, batch.WireCount)));
+        _physicsOutlines.Clear();
+        _physicsBounds.Clear();
+        _physicsVisible.Clear();
+        _physicsTransparentTriangles.Clear();
         _surfaceStates.Clear();
-        foreach (var batch in _surfaceBatches)
-            _surfaceStates.TryAdd(batch.Material,
-                resolveMaterial?.Invoke(batch.Material)?.Surface ?? MaterialSurfaceState.Opaque);
-        _materialTextures.RemoveUnused(gl, _surfaceBatches.Select(batch => batch.Material));
-        _skies.RemoveUnused(gl, []);
         _waterMaterials.Clear();
+        var unsupportedWater = new HashSet<string>(StringComparer.Ordinal);
+        int missingProbeBatches = 0;
+        foreach (var batch in _surfaceBatches)
+        {
+            MaterialSource? source = resolveMaterial?.Invoke(batch.Material);
+            _surfaceStates.TryAdd(batch.Material,
+                source?.Surface ?? MaterialSurfaceState.Opaque);
+            if (source?.IsWater != true) continue;
+            if (!IsSupportedCompiledWater(source)) { unsupportedWater.Add(batch.Material); continue; }
+            if (!_waterMaterials.Contains(batch.Material, StringComparer.Ordinal))
+                _waterMaterials.Add(batch.Material);
+            byte probe = preview.ReflectionProbeAt(batch.Start);
+            if (probe == 0 || probe >= preview.ReflectionProbeRgbaMips.Count)
+                missingProbeBatches++;
+        }
+        _compiledWaterNotice = string.Join(" ", new[]
+        {
+            unsupportedWater.Count == 0 ? null :
+                $"Unsupported compiled water materials: {string.Join(", ", unsupportedWater)}. Showing material fallback.",
+            missingProbeBatches == 0 ? null :
+                $"{missingProbeBatches} compiled water batches have no authored baked reflection probe; showing water tint.",
+            _waterMaterials.Count == 0 || preview.ReflectionProbeDataError is null ? null :
+                $"Compiled reflection-probe data: {preview.ReflectionProbeDataError}"
+        }.OfType<string>());
+        if (_compiledWaterNotice.Length == 0) _compiledWaterNotice = null;
+        _materialTextures.RemoveUnused(gl, _surfaceBatches.Select(batch => batch.Material));
+        _skies.RemoveUnused(gl, preview.Batches.Where(batch =>
+            resolveMaterial?.Invoke(batch.Material)?.IsSky == true).Select(batch => batch.Material));
         _waterMaterialBounds.Clear();
+        foreach (var batch in _surfaceBatches)
+        {
+            if (!_waterMaterials.Contains(batch.Material)) continue;
+            float height = resolveMaterial?.Invoke(batch.Material)?.Ocean?.Height ?? 0;
+            for (int index = batch.Start; index < batch.Start + batch.Count; index++)
+            {
+                SceneVertex vertex = preview.Vertices[index];
+                Vector3 extent = new(height * vertex.Color.X);
+                Vector3 minimum = vertex.Position - extent, maximum = vertex.Position + extent;
+                _waterMaterialBounds[batch.Material] = _waterMaterialBounds.TryGetValue(batch.Material, out var current)
+                    ? (Vector3.Min(current.Min, minimum), Vector3.Max(current.Max, maximum))
+                    : (minimum, maximum);
+            }
+        }
         _water.RemoveUnused(gl, _waterMaterials);
         _water.SetVolumes([]);
+        if (_waterMaterials.Count == 0) _reflections.Reload(gl);
+        else _reflections.UploadCompiled(gl, preview.ReflectionProbeRgbaMips);
         _probeOrigins.Clear();
         _waterProbes.Clear();
         _waterDrawRanges.Clear();
+        _compiledWaterDrawBatches.Clear();
+        var batchedWaterMaterials = _waterMaterials.Where(name =>
+            preview.WaterDefinitions.ContainsKey(name) &&
+            _surfaceStates[name] is { IsBlended: true, DepthWrite: true } state &&
+            state.SortKey == (int)WaterMaterialAuthoring.SurfaceSortKey).ToHashSet(StringComparer.Ordinal);
+        _compiledWaterDrawBatches.AddRange(_surfaceBatches.Where(batch =>
+            batchedWaterMaterials.Contains(batch.Material)));
         _transparentTriangles.Clear();
         foreach (var batch in _surfaceBatches)
-            if (_surfaceStates[batch.Material] is { } state && (state.IsBlended || !state.DepthWrite))
+            if (!batchedWaterMaterials.Contains(batch.Material) &&
+                _surfaceStates[batch.Material] is { } state && (state.IsBlended || !state.DepthWrite))
                 for (int index = batch.Start; index < batch.Start + batch.Count; index += 3)
                     _transparentTriangles.Add((batch.Material, index,
                         (preview.Vertices[index].Position + preview.Vertices[index + 1].Position +
@@ -1273,7 +1573,8 @@ internal sealed class SceneRenderer
         _glyphStart = _glyphCount = _gridStart = _gridCount = _highlightStart = _highlightCount =
             _outlineStart = _outlineCount = _axesStart = _axesCount = _leakPathStart = _leakPathCount = 0;
         _surfaceBounds = preview.Bounds;
-        HasAnimatedWater = HasVisibleAnimatedWater = false;
+        HasAnimatedWater = _waterMaterials.Count != 0;
+        HasVisibleAnimatedWater = false;
         gl.BindVertexArray(_vertexArray);
         gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vertexBuffer);
         SceneVertex[] data = preview.Vertices;
@@ -1285,15 +1586,81 @@ internal sealed class SceneRenderer
         gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)12);
         gl.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)24);
         gl.VertexAttribPointer(3, 4, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)32);
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, _compiledLightmapUvBuffer);
+        Vector2[] lightmapUvs = preview.LightmapUvs;
+        fixed (Vector2* pointer = lightmapUvs)
+            gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(lightmapUvs.Length * sizeof(Vector2)), pointer,
+                BufferUsageARB.StaticDraw);
+        gl.EnableVertexAttribArray(4);
+        gl.VertexAttribPointer(4, 2, VertexAttribPointerType.Float, false, (uint)sizeof(Vector2), (void*)0);
         gl.BindVertexArray(0);
         _sceneDirty = false;
-        _shadowsDirty = _reflectionsDirty = true;
+        _shadowsDirty = true;
+        _reflectionsDirty = false;
+    }
+
+    private unsafe void UploadCompiledLightmaps(GL gl, CompiledBspPreview preview)
+    {
+        ClearCompiledLightmaps(gl);
+        _compiledDiffuseTextures = new uint[preview.DiffuseLightmaps.Count];
+        _compiledSunVisibilityTextures = new uint[preview.SunVisibilityLightmaps.Count];
+        for (int index = 0; index < _compiledDiffuseTextures.Length; index++)
+        {
+            byte[]? pixels = preview.DiffuseLightmaps[index];
+            if (pixels is null) continue;
+            uint texture = gl.GenTexture();
+            _compiledDiffuseTextures[index] = texture;
+            gl.ActiveTexture(TextureUnit.Texture7);
+            gl.BindTexture(TextureTarget.Texture2D, texture);
+            gl.BindBuffer(BufferTargetARB.PixelUnpackBuffer, 0);
+            gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+            gl.PixelStore(PixelStoreParameter.UnpackRowLength, 0);
+            fixed (byte* pointer = pixels)
+                gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba8,
+                    GfxLightmapCodec.SecondaryWidth, GfxLightmapCodec.SecondaryPlaneHeight, 0,
+                    Silk.NET.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, pointer);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            byte[]? primary = preview.SunVisibilityLightmaps[index];
+            if (primary is null || preview.SunDataError is not null) continue;
+            uint sunTexture = gl.GenTexture();
+            _compiledSunVisibilityTextures[index] = sunTexture;
+            gl.ActiveTexture(TextureUnit.Texture8);
+            gl.BindTexture(TextureTarget.Texture2D, sunTexture);
+            gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+            fixed (byte* pointer = primary)
+                gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.R8,
+                    GfxLightmapCodec.PrimaryWidth, GfxLightmapCodec.PrimaryHeight, 0,
+                    Silk.NET.OpenGL.PixelFormat.Red, PixelType.UnsignedByte, pointer);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        }
+        gl.ActiveTexture(TextureUnit.Texture8);
+        gl.BindTexture(TextureTarget.Texture2D, 0);
+        gl.ActiveTexture(TextureUnit.Texture7);
+        gl.BindTexture(TextureTarget.Texture2D, 0);
+        gl.ActiveTexture(TextureUnit.Texture0);
+    }
+
+    private void ClearCompiledLightmaps(GL gl)
+    {
+        foreach (uint texture in _compiledDiffuseTextures)
+            if (texture != 0) gl.DeleteTexture(texture);
+        foreach (uint texture in _compiledSunVisibilityTextures)
+            if (texture != 0) gl.DeleteTexture(texture);
+        _compiledDiffuseTextures = [];
+        _compiledSunVisibilityTextures = [];
     }
 
     internal void ReleaseResources()
     {
         if (_gl is { } gl)
         {
+            ClearCompiledLightmaps(gl);
             _materialTextures.Clear(gl);
             _lighting.Clear(gl);
             _shadows.Clear(gl);
@@ -1306,6 +1673,7 @@ internal sealed class SceneRenderer
             if (_fxVertexBuffer != 0) gl.DeleteBuffer(_fxVertexBuffer);
             if (_fxVertexArray != 0) gl.DeleteVertexArray(_fxVertexArray);
             if (_vertexBuffer != 0) gl.DeleteBuffer(_vertexBuffer);
+            if (_compiledLightmapUvBuffer != 0) gl.DeleteBuffer(_compiledLightmapUvBuffer);
             if (_vertexArray != 0) gl.DeleteVertexArray(_vertexArray);
             if (_program != 0) gl.DeleteProgram(_program);
             if (_filmProgram != 0) gl.DeleteProgram(_filmProgram);
@@ -1325,6 +1693,9 @@ internal sealed class SceneRenderer
         _program = _vertexArray = _vertexBuffer = _framebuffer = _colorTexture = _depthBuffer = _lineTexture =
             _filmProgram = _filmVertexArray = 0;
         _fxVertexArray = _fxVertexBuffer = 0;
+        _compiledLightmapUvBuffer = 0;
+        _compiledDiffuseTextures = [];
+        _compiledSunVisibilityTextures = [];
         _materialTextures.ForgetHandles();
         _lighting.ForgetHandle();
         _shadows.ForgetHandles();
@@ -1336,17 +1707,26 @@ internal sealed class SceneRenderer
         _waterMaterialBounds.Clear();
         _waterProbes.Clear();
         _waterDrawRanges.Clear();
+        _compiledWaterDrawBatches.Clear();
         _probeOrigins.Clear();
         _reflectionsDirty = true;
         _batches.Clear();
         _surfaceBatches.Clear();
+        _drawBatches.Clear();
+        _physicsOutlines.Clear();
+        _physicsBounds.Clear();
+        _physicsVisible.Clear();
         _surfaceStates.Clear();
         _transparentTriangles.Clear();
+        _physicsTransparentTriangles.Clear();
+        _sortedTransparentTriangles.Clear();
         _movePreviewVertices = [];
         _movePreviewRanges.Clear();
         _movePreviewSource = null;
         _movePreviewDirty = false;
         _previewMeshes.Clear();
+        _compiledModelFailures.Clear();
+        _compiledWaterNotice = null;
         _walkPlayerGl = null;
         _uploadedWalkPlayer = null;
         _walkPlayerFailed = false;

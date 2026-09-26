@@ -3,6 +3,7 @@ in vec2 vOceanSlope;
 in vec3 vPosition;
 in vec2 vTexCoord;
 in vec4 vColor;
+in vec2 vLightmapTexCoord;
 in vec4 vOceanSurface;
 
 #include "material-alpha.glsl"
@@ -10,6 +11,11 @@ in vec4 vOceanSurface;
 #include "ocean-surface.hlsl"
 
 uniform sampler2D uTexture;
+uniform sampler2D uCompiledDiffuseLightmap;
+uniform sampler2D uCompiledSunVisibility;
+uniform int uCompiledLightmapMode;
+uniform vec3 uCompiledSunDirection;
+uniform vec3 uCompiledSunColorLinear;
 uniform bool uTextured;
 uniform bool uLit;
 uniform bool uPremultiplyAlpha;
@@ -252,6 +258,17 @@ void main()
         }
         color *= illumination;
     }
+    if (uCompiledLightmapMode == 3)
+    {
+        vec3 diffuse = texture(uCompiledDiffuseLightmap, vLightmapTexCoord).rgb;
+        float visibility = texture(uCompiledSunVisibility, vLightmapTexCoord).r;
+        float incidence = max(dot(normalize(vNormal), uCompiledSunDirection), 0.0);
+        color *= sqrt(diffuse * diffuse + uCompiledSunColorLinear * (incidence * visibility));
+    }
+    else if (uCompiledLightmapMode == 1)
+        color *= texture(uCompiledDiffuseLightmap, vLightmapTexCoord).rgb;
+    else if (uCompiledLightmapMode == 2)
+        color = mix(color, vec3(1.0, 0.0, 1.0), 0.35);
     color = previewFog(color);
     fragmentColor = vec4(uPremultiplyAlpha ? color * surface.a : color, surface.a);
 }

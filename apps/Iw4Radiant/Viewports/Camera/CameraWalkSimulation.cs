@@ -10,6 +10,7 @@ namespace Iw4Radiant.Viewports.Camera;
 internal sealed class CameraWalkSimulation : IDisposable
 {
     private static readonly Lazy<bool> FoundationReady = new(() => Foundation.Init());
+    internal static bool FoundationAvailable => FoundationReady.Value;
     private static readonly ObjectLayer StaticLayer = 0;
     private static readonly ObjectLayer PlayerLayer = 1;
     private readonly ObjectLayerPairFilterTable _pairFilter;

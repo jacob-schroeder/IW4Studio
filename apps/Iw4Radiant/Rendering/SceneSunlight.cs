@@ -104,9 +104,9 @@ internal sealed class SceneSunlight
         }
     }
 
-    internal unsafe void Bind(GL gl)
+    internal unsafe void Bind(GL gl, bool enabled = true)
     {
-        gl.Uniform1(_enabledLocation, IsAvailable ? 1 : 0);
+        gl.Uniform1(_enabledLocation, enabled && IsAvailable ? 1 : 0);
         gl.Uniform3(_directionLocation, _direction.X, _direction.Y, _direction.Z);
         gl.Uniform3(_colorLocation, _color.X, _color.Y, _color.Z);
         Matrix4x4 projection = _viewProjection;

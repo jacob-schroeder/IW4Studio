@@ -24,6 +24,9 @@ internal sealed class SceneGeometry
     internal int LeakPathStart { get; }
     internal int LeakPathCount { get; }
     internal List<(int Start, int Count)> MovePreviewRanges { get; } = [];
+    internal List<(MapEntity Owner, string Material, int Start, int Count, int WireStart, int WireCount)> PhysicsBatches { get; } = [];
+    internal List<(MapEntity Owner, int Start, int Count)> PhysicsOutlines { get; } = [];
+    internal Dictionary<MapEntity, (Vector3 Min, Vector3 Max)> PhysicsBounds { get; } = new(ReferenceEqualityComparer.Instance);
 
     internal SceneGeometry(EditorScene editor, TransformMode transformMode, EditorTool tool,
         Func<string, MaterialSource?>? resolveMaterial, LeakPath? leakPath, int leakPointIndex,
@@ -41,11 +44,15 @@ internal sealed class SceneGeometry
             foreach (MapTerrain terrain in entity.Terrains) selectedObjects.Add(terrain);
         }
         var selectedFaces = selection.Items.OfType<BrushFaceSelection>().Select(face => face.Face).ToHashSet();
-        bool movePreview = selection.Count > 0 && selection.Items.All(item =>
+        IReadOnlyDictionary<MapEntity, MapEntity>? physicsPoses = editor.PhysicsPlacementPreview;
+        bool movePreview = physicsPoses is null && selection.Count > 0 && selection.Items.All(item =>
             item is MapEntity entity && (entity.ClassName == "fx_origin" || XModelGeometry.IsModel(entity)));
         var modelPreviewRanges = new List<(string Material, int TriangleStart, int TriangleCount, int WireStart, int WireCount)>();
         var outlinePreviewRanges = new List<(int Start, int Count)>();
         var materials = new Dictionary<string, (List<SceneVertex> Triangles, List<SceneVertex> Lines, List<(int Start, int Count, Vector3 Center)> Surfaces)>(StringComparer.Ordinal);
+        var physicsMaterials = new Dictionary<MapEntity, Dictionary<string, (List<SceneVertex> Triangles, List<SceneVertex> Lines,
+            List<(int Start, int Count, Vector3 Center)> Surfaces)>>(ReferenceEqualityComparer.Instance);
+        var physicsOutlines = new Dictionary<MapEntity, List<SceneVertex>>(ReferenceEqualityComparer.Instance);
         var highlights = new List<SceneVertex>();
         var outlines = new List<SceneVertex>();
         var highlight = new Vector3(1, 0.65f, 0.18f);
@@ -55,22 +62,25 @@ internal sealed class SceneGeometry
         foreach (var brush in document.Brushes)
         foreach (var polygon in brush.GetPolygons())
         {
+            MapEntity? physicsOwner = editor.PhysicsPlacementOwner(brush);
+            List<SceneVertex> ownerOutlines = physicsOwner is null ? outlines : GetPhysicsOutlines(physicsOwner);
             bool faceSelected = selectedFaces.Contains(polygon.Face);
             bool selected = selectedObjects.Contains(brush) || faceSelected;
             MaterialSource? source = resolveMaterial?.Invoke(polygon.Face.Material);
-            if (faceSelected) AddHighlight(polygon);
+            if (faceSelected && physicsOwner is null) AddHighlight(polygon);
             if (ClipBrushMaterial.IsPlayerClip(polygon.Face.Material) || CaulkMaterial.IsCaulk(polygon.Face.Material) ||
                 !OceanSurfaceGeometry.IsVisibleSurface(polygon, source?.IsWater == true))
             {
                 for (int index = 0; index < polygon.Vertices.Length; index++)
-                    AddLine(outlines, polygon.Vertices[index], polygon.Vertices[(index + 1) % polygon.Vertices.Length],
+                    AddLine(ownerOutlines, polygon.Vertices[index], polygon.Vertices[(index + 1) % polygon.Vertices.Length],
                         selected ? highlight : CaulkMaterial.IsCaulk(polygon.Face.Material) ? caulkColor :
                             source?.IsWater == true ? wireColor : clipColor);
                 continue;
             }
-            var geometry = GetMaterialGeometry(polygon.Face.Material);
+            var geometry = GetMaterialGeometry(polygon.Face.Material, physicsOwner);
             int start = geometry.Triangles.Count;
             AddPolygon(polygon, geometry.Triangles, Vector3.One, selected ? highlight : null, geometry.Lines,
+                ownerOutlines,
                 source?.Ocean, source?.IsWater == true && staticBrushes.Contains(brush) ? shore.Contacts(polygon) : null);
             geometry.Surfaces.Add((start, geometry.Triangles.Count - start,
                 polygon.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / polygon.Vertices.Length));
@@ -111,19 +121,21 @@ internal sealed class SceneGeometry
         foreach (MapEntity entity in document.Entities.Where(XModelGeometry.IsModel))
             if (editor.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
             {
+                MapEntity? physicsOwner = editor.PhysicsPlacementOwner(entity);
+                List<SceneVertex> ownerOutlines = physicsOwner is null ? outlines : GetPhysicsOutlines(physicsOwner);
                 bool moving = movePreview && selectedObjects.Contains(entity);
                 var starts = new Dictionary<string, (int Triangles, int Lines)>(StringComparer.Ordinal);
-                int outlineStart = outlines.Count;
+                int outlineStart = ownerOutlines.Count;
                 foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
                 {
-                    var geometry = GetMaterialGeometry(triangle.Material);
+                    var geometry = GetMaterialGeometry(triangle.Material, physicsOwner);
                     if (moving) starts.TryAdd(triangle.Material, (geometry.Triangles.Count, geometry.Lines.Count));
                     geometry.Triangles.AddRange([triangle.A, triangle.B, triangle.C]);
                     foreach (var edge in new[] { (triangle.A.Position, triangle.B.Position),
                                  (triangle.B.Position, triangle.C.Position), (triangle.C.Position, triangle.A.Position) })
                     {
                         AddLine(geometry.Lines, edge.Item1, edge.Item2, wireColor);
-                        if (selectedObjects.Contains(entity)) AddLine(outlines, edge.Item1, edge.Item2, highlight);
+                        if (selectedObjects.Contains(entity)) AddLine(ownerOutlines, edge.Item1, edge.Item2, highlight);
                     }
                 }
                 if (moving)
@@ -134,7 +146,7 @@ internal sealed class SceneGeometry
                         modelPreviewRanges.Add((material, start.Triangles, geometry.Triangles.Count - start.Triangles,
                             start.Lines, geometry.Lines.Count - start.Lines));
                     }
-                    AddOutlinePreviewRange(outlineStart, outlines.Count - outlineStart);
+                    AddOutlinePreviewRange(outlineStart, ownerOutlines.Count - outlineStart);
                 }
             }
         var all = new List<SceneVertex>();
@@ -153,6 +165,18 @@ internal sealed class SceneGeometry
                 AddMovePreviewRange(start + range.TriangleStart, range.TriangleCount);
                 AddMovePreviewRange(wireStart + range.WireStart, range.WireCount);
             }
+        }
+        foreach (var owner in physicsMaterials)
+        foreach (var material in owner.Value)
+        {
+            int start = all.Count;
+            all.AddRange(material.Value.Triangles);
+            int wireStart = all.Count;
+            all.AddRange(material.Value.Lines);
+            PhysicsBatches.Add((owner.Key, material.Key, start, material.Value.Triangles.Count,
+                wireStart, material.Value.Lines.Count));
+            IncludePhysicsBounds(owner.Key, material.Value.Triangles);
+            IncludePhysicsBounds(owner.Key, material.Value.Lines);
         }
         GlyphStart = all.Count;
         foreach (var entity in document.Entities.Where(entity => PointEntityGeometry.IsPointEntity(entity) &&
@@ -209,6 +233,13 @@ internal sealed class SceneGeometry
         OutlineCount = all.Count - OutlineStart;
         foreach (var range in outlinePreviewRanges)
             AddMovePreviewRange(OutlineStart + range.Start, range.Count);
+        foreach (var owner in physicsOutlines)
+        {
+            int start = all.Count;
+            all.AddRange(owner.Value);
+            PhysicsOutlines.Add((owner.Key, start, owner.Value.Count));
+            IncludePhysicsBounds(owner.Key, owner.Value);
+        }
         AxesStart = all.Count;
         MapEntity? selectedVehicle = selection.Items.OfType<MapEntity>().FirstOrDefault(VehiclePathPreview.IsNode);
         AddEntityConnections(all, document, selection, editor, selectedVehicle is not null);
@@ -230,7 +261,7 @@ internal sealed class SceneGeometry
                 AddLine(all, point - Vector3.UnitZ * radius, point + Vector3.UnitZ * radius, color);
             }
         int gizmoStart = all.Count;
-        if (tool is EditorTool.Select or EditorTool.Vertex && selection.Count > 0 &&
+        if (physicsPoses is null && tool is (EditorTool.Select or EditorTool.Vertex) && selection.Count > 0 &&
             selection.Items.All(SelectionGeometry.CanTransform) && editor.Bounds(selection.Items) is { } selectionBounds)
             foreach (var line in TransformGizmoGeometry.GetLines(selectionBounds, transformMode))
                 AddLine(all, line.A, line.B, line.Color);
@@ -262,7 +293,7 @@ internal sealed class SceneGeometry
         }
 
         void AddPolygon(MapPolygon polygon, List<SceneVertex> vertices, Vector3 color, Vector3? outlineColor,
-            List<SceneVertex>? wireframe = null, OceanWaveSettings? ocean = null,
+            List<SceneVertex>? wireframe = null, List<SceneVertex>? ownerOutline = null, OceanWaveSettings? ocean = null,
             IReadOnlyList<(Vector3 A, Vector3 B)>? contacts = null)
         {
             Vector3 normal = polygon.Face.Normal;
@@ -278,7 +309,7 @@ internal sealed class SceneGeometry
             {
                 Vector3 a = polygon.Vertices[i], b = polygon.Vertices[(i + 1) % polygon.Vertices.Length];
                 if (outlineColor is { } lineColor)
-                    AddLine(outlines, a, b, lineColor);
+                    AddLine(ownerOutline ?? outlines, a, b, lineColor);
                 if (wireframe is not null)
                     AddLine(wireframe, a, b, wireColor);
             }
@@ -306,10 +337,32 @@ internal sealed class SceneGeometry
             void Add(Vector3 position) => highlights.Add(new SceneVertex(position, normal, Vector2.Zero, color));
         }
 
-        (List<SceneVertex> Triangles, List<SceneVertex> Lines, List<(int Start, int Count, Vector3 Center)> Surfaces) GetMaterialGeometry(string material)
+        List<SceneVertex> GetPhysicsOutlines(MapEntity owner)
         {
-            if (!materials.TryGetValue(material, out var geometry))
-                materials.Add(material, geometry = ([], [], []));
+            if (!physicsOutlines.TryGetValue(owner, out var vertices))
+                physicsOutlines.Add(owner, vertices = []);
+            return vertices;
+        }
+
+        void IncludePhysicsBounds(MapEntity owner, List<SceneVertex> vertices)
+        {
+            foreach (SceneVertex vertex in vertices)
+                PhysicsBounds[owner] = PhysicsBounds.TryGetValue(owner, out var bounds)
+                    ? (Vector3.Min(bounds.Min, vertex.Position), Vector3.Max(bounds.Max, vertex.Position))
+                    : (vertex.Position, vertex.Position);
+        }
+
+        (List<SceneVertex> Triangles, List<SceneVertex> Lines, List<(int Start, int Count, Vector3 Center)> Surfaces) GetMaterialGeometry(
+            string material, MapEntity? physicsOwner = null)
+        {
+            var target = materials;
+            if (physicsOwner is not null)
+            {
+                if (!physicsMaterials.TryGetValue(physicsOwner, out target))
+                    physicsMaterials.Add(physicsOwner, target = new(StringComparer.Ordinal));
+            }
+            if (!target.TryGetValue(material, out var geometry))
+                target.Add(material, geometry = ([], [], []));
             return geometry;
         }
 

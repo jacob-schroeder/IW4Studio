@@ -211,6 +211,25 @@ internal static class D3dbspImageCodec
         return Array.AsReadOnly(lightmaps);
     }
 
+    public static IReadOnlyList<(byte[] Primary, byte[] UpperRgba, byte[] LowerRgba)> DecodeRenderLightmapPlanes(ReadOnlySpan<byte> data)
+    {
+        if (data.Length % LightmapByteCount != 0 || data.Length / LightmapByteCount > 31)
+            throw new InvalidDataException("The LightBytes lump does not contain valid v22 lightmap tiles.");
+
+        var planes = new (byte[] Primary, byte[] UpperRgba, byte[] LowerRgba)[data.Length / LightmapByteCount];
+        for (int index = 0; index < planes.Length; index++)
+        {
+            ReadOnlySpan<byte> row = data.Slice(index * LightmapByteCount, LightmapByteCount);
+            byte[] upper = row[..LightmapSecondaryPlaneByteCount].ToArray();
+            byte[] lower = row.Slice(LightmapSecondaryPlaneByteCount, LightmapSecondaryPlaneByteCount).ToArray();
+            byte[] primary = row[LightmapSecondaryByteCount..].ToArray();
+            GfxImageChannelCodec.BgraToRgba(upper);
+            GfxImageChannelCodec.BgraToRgba(lower);
+            planes[index] = (primary, upper, lower);
+        }
+        return Array.AsReadOnly(planes);
+    }
+
     public static byte[] EncodeReflectionProbes(
         IReadOnlyList<GfxImageAsset?> images,
         IReadOnlyList<GfxReflectionProbe> origins)
@@ -265,20 +284,9 @@ internal static class D3dbspImageCodec
     public static (
         IReadOnlyList<GfxImageAsset?> Images,
         IReadOnlyList<GfxReflectionProbe> Origins) DecodeReflectionProbes(
-            ReadOnlySpan<byte> data)
+        ReadOnlySpan<byte> data)
     {
-        if (data.Length % ReflectionProbeDiskRowByteCount != 0)
-        {
-            throw new InvalidDataException(
-                $"The ReflectionProbes lump length {data.Length} is not divisible by {ReflectionProbeDiskRowByteCount}.");
-        }
-
-        int authoredCount = data.Length / ReflectionProbeDiskRowByteCount;
-        if (authoredCount >= byte.MaxValue)
-        {
-            throw new InvalidDataException(
-                $"The ReflectionProbes lump contains {authoredCount} authored probes; IW4 supports at most {byte.MaxValue - 1} plus the default probe.");
-        }
+        int authoredCount = GetReflectionProbeAuthoredCount(data);
 
         var images = new GfxImageAsset?[authoredCount + 1];
         var origins = new GfxReflectionProbe[authoredCount + 1];
@@ -302,6 +310,63 @@ internal static class D3dbspImageCodec
         }
 
         return (Array.AsReadOnly(images), Array.AsReadOnly(origins));
+    }
+
+    public static IReadOnlyList<IReadOnlyList<byte[]>?> DecodeRenderReflectionProbeRgbaMips(
+        ReadOnlySpan<byte> data)
+    {
+        int authoredCount = GetReflectionProbeAuthoredCount(data);
+        var result = new IReadOnlyList<byte[]>?[authoredCount + 1];
+        for (int authoredIndex = 0; authoredIndex < authoredCount; authoredIndex++)
+        {
+            ReadOnlySpan<byte> pixels = data.Slice(
+                authoredIndex * ReflectionProbeDiskRowByteCount + 12 + ReflectionProbeColorCorrectionNameByteCount,
+                ReflectionProbeDiskPixelByteCount);
+            ReadOnlySpan<byte> origin = data.Slice(authoredIndex * ReflectionProbeDiskRowByteCount, 12);
+            for (int component = 0; component < 3; component++)
+                ReadFiniteSingle(origin, component * 4, authoredIndex + 1);
+            var mips = new byte[ReflectionProbeMipCount][];
+            for (int mip = 0; mip < ReflectionProbeMipCount; mip++)
+            {
+                int edge = Math.Max(1, ReflectionProbeEdgeLength >> mip);
+                int faceBytes = checked(edge * edge * 4);
+                var rgba = new byte[ReflectionProbeFaceCount * faceBytes];
+                for (int face = 0; face < ReflectionProbeFaceCount; face++)
+                {
+                    Span<byte> faceRgba = rgba.AsSpan(face * faceBytes, faceBytes);
+                    pixels.Slice(ReflectionProbeDiskMipOffset(face, mip), faceBytes).CopyTo(faceRgba);
+                    GfxImageChannelCodec.BgraToRgba(faceRgba);
+                }
+                mips[mip] = rgba;
+            }
+            result[authoredIndex + 1] = Array.AsReadOnly(mips);
+        }
+        return Array.AsReadOnly(result);
+    }
+
+    private static int GetReflectionProbeAuthoredCount(ReadOnlySpan<byte> data)
+    {
+        if (data.Length % ReflectionProbeDiskRowByteCount != 0)
+            throw new InvalidDataException(
+                $"The ReflectionProbes lump length {data.Length} is not divisible by {ReflectionProbeDiskRowByteCount}.");
+        int authoredCount = data.Length / ReflectionProbeDiskRowByteCount;
+        if (authoredCount >= byte.MaxValue)
+            throw new InvalidDataException(
+                $"The ReflectionProbes lump contains {authoredCount} authored probes; IW4 supports at most {byte.MaxValue - 1} plus the default probe.");
+        return authoredCount;
+    }
+
+    private static int ReflectionProbeDiskMipOffset(int face, int mip)
+    {
+        if (mip == 0) return checked(face * ReflectionProbeTopMipByteCount);
+        int offset = checked(ReflectionProbeFaceCount * ReflectionProbeTopMipByteCount +
+            face * (ReflectionProbeFacePixelByteCount - ReflectionProbeTopMipByteCount));
+        for (int earlierMip = 1; earlierMip < mip; earlierMip++)
+        {
+            int edge = System.Math.Max(1, ReflectionProbeEdgeLength >> earlierMip);
+            offset = checked(offset + edge * edge * 4);
+        }
+        return offset;
     }
 
     private static void ValidateTwoDimensionalImage(
@@ -423,9 +488,6 @@ internal static class D3dbspImageCodec
         for (int face = 0; face < ReflectionProbeFaceCount; face++)
         {
             int runtimeMipOffset = checked(face * ReflectionProbeFaceStride);
-            int tailOffset = checked(
-                ReflectionProbeFaceCount * ReflectionProbeTopMipByteCount +
-                face * (ReflectionProbeFacePixelByteCount - ReflectionProbeTopMipByteCount));
             for (int mip = 0; mip < ReflectionProbeMipCount; mip++)
             {
                 int edge = System.Math.Max(1, ReflectionProbeEdgeLength >> mip);
@@ -438,13 +500,9 @@ internal static class D3dbspImageCodec
                     : GfxImagePixelLayout.DeswizzleMorton2D(runtimeMip, edge, edge, bytesPerPixel: 4);
                 GfxImagePixelLayout.ReverseFourBytePixelOrder(linear);
 
-                int diskOffset = mip == 0
-                    ? checked(face * ReflectionProbeTopMipByteCount)
-                    : tailOffset;
+                int diskOffset = ReflectionProbeDiskMipOffset(face, mip);
                 linear.CopyTo(destination[diskOffset..]);
                 runtimeMipOffset = checked(runtimeMipOffset + mipByteCount);
-                if (mip != 0)
-                    tailOffset = checked(tailOffset + mipByteCount);
             }
         }
     }
@@ -459,16 +517,11 @@ internal static class D3dbspImageCodec
         for (int face = 0; face < ReflectionProbeFaceCount; face++)
         {
             int runtimeMipOffset = checked(face * ReflectionProbeFaceStride);
-            int tailOffset = checked(
-                ReflectionProbeFaceCount * ReflectionProbeTopMipByteCount +
-                face * (ReflectionProbeFacePixelByteCount - ReflectionProbeTopMipByteCount));
             for (int mip = 0; mip < ReflectionProbeMipCount; mip++)
             {
                 int edge = System.Math.Max(1, ReflectionProbeEdgeLength >> mip);
                 int mipByteCount = checked(edge * edge * 4);
-                int diskOffset = mip == 0
-                    ? checked(face * ReflectionProbeTopMipByteCount)
-                    : tailOffset;
+                int diskOffset = ReflectionProbeDiskMipOffset(face, mip);
                 byte[] linear = source.Slice(diskOffset, mipByteCount).ToArray();
                 GfxImagePixelLayout.ReverseFourBytePixelOrder(linear);
                 byte[] runtimeMip = GfxImagePixelLayout.SwizzleMorton2D(
@@ -478,8 +531,6 @@ internal static class D3dbspImageCodec
                     bytesPerPixel: 4);
                 runtimeMip.CopyTo(payload, runtimeMipOffset);
                 runtimeMipOffset = checked(runtimeMipOffset + mipByteCount);
-                if (mip != 0)
-                    tailOffset = checked(tailOffset + mipByteCount);
             }
         }
 

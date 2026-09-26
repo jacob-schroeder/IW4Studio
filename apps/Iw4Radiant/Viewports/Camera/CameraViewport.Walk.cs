@@ -26,6 +26,7 @@ public sealed partial class CameraViewport
     internal void StartWalk()
     {
         if (WalkMode || _session is not { } session || CompiledPreview is not null || CanWalk?.Invoke() == false) return;
+        StopPhysicsPlacement();
         if (session.HasPlacement || FoliagePaintingEnabled)
         {
             InteractionStatusChanged?.Invoke("Finish asset placement or stop Painter before entering Walk.");

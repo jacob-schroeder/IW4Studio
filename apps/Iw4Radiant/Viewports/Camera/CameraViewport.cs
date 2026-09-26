@@ -30,6 +30,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     private readonly HashSet<object> _painted = new(ReferenceEqualityComparer.Instance);
     private bool? _paintSelecting;
     private ContextMenu? _objectMenu;
+    internal bool PhysicsContextMenuOpen => PhysicsPlacementActive && _objectMenu?.IsOpen == true;
     private bool _previewLighting = true;
     private FilmPreview _filmPreview = FilmPreview.Neutral;
     private FogPreview _fogPreview = FogPreview.Disabled;
@@ -46,6 +47,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         ClipToBounds = true;
         _flyMovement = new CameraFlyMovement(this, _navigation);
         _walkMovement = new CameraWalkMovement(this, _navigation);
+        _placementTimer.Tick += OnPhysicsPlacementTick;
         _renderer.StatusChanged += (_, _) => RendererStatusChanged?.Invoke(this, EventArgs.Empty);
         PointerPressed += OnPointerPressed;
         PointerMoved += OnPointerMoved;
@@ -58,7 +60,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         GotFocus += (_, _) => _walkMovement.Start();
         LostFocus += (_, _) => FinishGesture(cancel: true);
         SizeChanged += (_, _) => { FinishGesture(cancel: true); RequestNextFrameRendering(); };
-        DetachedFromVisualTree += (_, _) => { StopWalk(); FinishGesture(cancel: true); _objectMenu?.Close(); };
+        DetachedFromVisualTree += (_, _) => { StopPhysicsPlacement(); StopWalk(); FinishGesture(cancel: true); _objectMenu?.Close(); };
         DragDrop.SetAllowDrop(this, true);
         DragDrop.AddDragOverHandler(this, OnModelDragOver);
         DragDrop.AddDropHandler(this, OnModelDrop);
@@ -70,6 +72,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         set
         {
             if (ReferenceEquals(_session, value)) return;
+            StopPhysicsPlacement();
             StopWalk();
             FinishGesture(cancel: true);
             _objectMenu?.Close();
@@ -82,6 +85,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
 
     private void OnPointEntityPreviewChanged(bool modelsChanged)
     {
+        StopPhysicsPlacement();
         StopWalk();
         if (_session is { } session && session.DeferPreviewLighting && session.TransformMode == TransformMode.Move &&
             session.Selection.Count > 0 && session.Selection.Items.All(item => item is MapEntity entity &&
@@ -103,6 +107,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         get => _renderer.CompiledPreview;
         set
         {
+            StopPhysicsPlacement();
             StopWalk();
             FinishGesture(cancel: true);
             _objectMenu?.Close();
@@ -254,6 +259,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     internal event Action? NavigationModeChanged;
     internal event Action? NavigationChanged;
     internal event Action<BrushKind>? BrushKindRequested;
+    internal event Action? CreateModelPlayerClipRequested;
     internal event Action<IReadOnlyList<Point>?>? FoliageBrushChanged;
     internal bool HasPointerGesture => _dragPointer is not null;
     internal LeakPath? LeakPath
@@ -312,6 +318,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     internal void RefreshScene()
     {
         // A walk world is a source snapshot. Never continue against stale collision.
+        StopPhysicsPlacement();
         StopWalk();
         if (_transform is { IsCurrent: false }) FinishGesture(cancel: true);
         _renderer.RefreshScene();
@@ -320,6 +327,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
 
     internal void ReloadTextures()
     {
+        StopPhysicsPlacement();
         StopWalk();
         _renderer.ReloadTextures();
         RequestNextFrameRendering();
@@ -330,7 +338,14 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         StopWalk();
         FinishGesture();
         if (CompiledPreview is { } preview) _navigation.FrameBounds(preview.Bounds, Aspect);
-        else if (_session is { } session) _navigation.FrameBounds(session.Scene.VisibleBounds, Aspect);
+        else if (_session is { } session)
+        {
+            var bounds = session.Scene.VisibleBounds;
+            if (PhysicsPlacementSelectionBounds() is { } placed)
+                bounds = bounds is { } world
+                    ? (Vector3.Min(world.Min, placed.Min), Vector3.Max(world.Max, placed.Max)) : placed;
+            _navigation.FrameBounds(bounds, Aspect);
+        }
         NavigationChanged?.Invoke();
         RequestNextFrameRendering();
     }
@@ -339,7 +354,8 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     {
         StopWalk();
         FinishGesture();
-        if (_session is { } session) _navigation.FrameBounds(session.SelectionBounds ?? session.Scene.VisibleBounds, Aspect);
+        if (_session is { } session) _navigation.FrameBounds(
+            PhysicsPlacementSelectionBounds() ?? session.SelectionBounds ?? session.Scene.VisibleBounds, Aspect);
         NavigationChanged?.Invoke();
         RequestNextFrameRendering();
     }
@@ -389,12 +405,14 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     protected override void OnOpenGlInit(GlInterface gl) => _renderer.Initialize(gl);
     protected override void OnOpenGlDeinit(GlInterface gl)
     {
+        StopPhysicsPlacement();
         StopWalk();
         FinishGesture(cancel: true);
         _renderer.ReleaseResources();
     }
     protected override void OnOpenGlLost()
     {
+        StopPhysicsPlacement();
         StopWalk();
         FinishGesture(cancel: true);
         _renderer.ContextLost();
@@ -426,6 +444,11 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         Focus(NavigationMethod.Pointer, e.KeyModifiers);
         var properties = e.GetCurrentPoint(this).Properties;
         Point point = e.GetPosition(this);
+        if (PhysicsPlacementActive && properties.PointerUpdateKind == PointerUpdateKind.LeftButtonPressed)
+        {
+            e.Handled = true;
+            return;
+        }
         if (WalkMode)
         {
             _walkMovement.Start();
@@ -554,18 +577,24 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         {
             Point point = e.GetPosition(this);
             Avalonia.Vector fromPress = point - _pressPoint;
-            bool showMenu = !WalkMode && _dragButton == MouseButton.Right && !_navigationMoved && fromPress.SquaredLength < 16;
+            bool showMenu = !WalkMode && _dragButton == MouseButton.Right &&
+                !_navigationMoved && fromPress.SquaredLength < 16;
             if (_paintingFoliage) ContinueFoliageStroke(point);
             else if (_transform is { } transform) UpdateTransform(transform, point);
             else if (_dragButton == MouseButton.Left) UpdateSelectionPaint(point);
             FinishPointerGesture();
             if (showMenu && CompiledPreview is null && _session is { } session)
             {
-                _objectMenu = CameraObjectMenu.Open(this, session,
-                    CameraPicking.PickAll(session, _navigation, point, Bounds.Size, EditorTool.Select),
+                bool placementActive = PhysicsPlacementActive;
+                IReadOnlyList<(object Item, string Label)> hits = placementActive ? [] :
+                    CameraPicking.PickAll(session, _navigation, point, Bounds.Size, EditorTool.Select);
+                BrushFaceSelection? face = placementActive ? null :
                     CameraPicking.PickAll(session, _navigation, point, Bounds.Size, EditorTool.Face)
-                        .FirstOrDefault().Item as BrushFaceSelection,
+                        .FirstOrDefault().Item as BrushFaceSelection;
+                _objectMenu = CameraObjectMenu.Open(this, session,
+                    hits, face,
                     kind => BrushKindRequested?.Invoke(kind),
+                    () => CreateModelPlayerClipRequested?.Invoke(),
                     message => InteractionStatusChanged?.Invoke(message));
             }
         }
@@ -821,7 +850,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
 
     private void OnModelDragOver(object? sender, DragEventArgs e)
     {
-        if (WalkMode || CompiledPreview is not null) { e.DragEffects = DragDropEffects.None; e.Handled = true; return; }
+        if (WalkMode || PhysicsPlacementActive || CompiledPreview is not null) { e.DragEffects = DragDropEffects.None; e.Handled = true; return; }
         try
         {
             e.DragEffects = CanAcceptModelDrop?.Invoke() != false && XModelDrag.TryRead(e.DataTransfer, out _, out _) &&
@@ -840,7 +869,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     {
         e.Handled = true;
         e.DragEffects = DragDropEffects.None;
-        if (WalkMode || CompiledPreview is not null) return;
+        if (WalkMode || PhysicsPlacementActive || CompiledPreview is not null) return;
         try
         {
             if (CanAcceptModelDrop?.Invoke() == false || _session is not { } session ||

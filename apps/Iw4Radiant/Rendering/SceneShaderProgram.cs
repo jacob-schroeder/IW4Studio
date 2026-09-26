@@ -18,6 +18,7 @@ internal static class SceneShaderProgram
             gl.BindAttribLocation(program, 1, "aNormal");
             gl.BindAttribLocation(program, 2, "aTexCoord");
             gl.BindAttribLocation(program, 3, "aColor");
+            gl.BindAttribLocation(program, 4, "aLightmapTexCoord");
             gl.LinkProgram(program);
             gl.GetProgram(program, ProgramPropertyARB.LinkStatus, out int linked);
             if (linked == 0)

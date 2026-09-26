@@ -5,6 +5,7 @@ in vec3 aPosition;
 in vec3 aNormal;
 in vec2 aTexCoord;
 in vec4 aColor;
+in vec2 aLightmapTexCoord;
 
 uniform mat4 uViewProjection;
 uniform mat4 uModel;
@@ -19,6 +20,7 @@ out vec3 vNormal;
 out vec3 vPosition;
 out vec2 vTexCoord;
 out vec4 vColor;
+out vec2 vLightmapTexCoord;
 out vec2 vOceanSlope;
 out vec4 vOceanSurface;
 
@@ -27,6 +29,7 @@ void main()
     vec3 position = (uModel * vec4(aPosition, 1.0)).xyz;
     vOceanSlope = vec2(0.0);
     vColor = aColor;
+    vLightmapTexCoord = aLightmapTexCoord;
     float rise = 0.0;
     if (uWaterPreview && uOceanShape.w > 0.0)
     {

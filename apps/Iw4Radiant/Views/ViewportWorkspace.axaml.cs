@@ -52,6 +52,7 @@ public partial class ViewportWorkspace : UserControl
             if (error is not null && !CameraView.WalkMode) ShowConsole();
         };
         CameraView.NavigationModeChanged += RefreshCameraControls;
+        CameraView.PhysicsPlacementChanged += RefreshCameraControls;
         CameraView.FoliageBrushChanged += CameraFoliageBrush.SetBrush;
         AssetBrowserTabs.SelectionChanged += (_, args) =>
         {
@@ -234,7 +235,7 @@ public partial class ViewportWorkspace : UserControl
 
     private void Activate(Control view)
     {
-        if (!ReferenceEquals(view, CameraView)) CameraView.StopWalk();
+        if (!ReferenceEquals(view, CameraView)) { CameraView.StopPhysicsPlacement(); CameraView.StopWalk(); }
         _activeView = view;
         if (view is OrthoViewport grid) _activeGrid = grid;
         foreach (var entry in _views) entry.Panel.Classes.Set("activeViewport", ReferenceEquals(entry.View, view));
@@ -426,6 +427,25 @@ public partial class ViewportWorkspace : UserControl
         if (_dialogs?.BlocksInput != true) CameraView.ResetWalk();
     }
 
+    private void PhysicsDrop_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs?.BlocksInput == true) return;
+        if (CameraView.PhysicsPlacementRunning) CameraView.PausePhysicsPlacement();
+        else CameraView.ResumePhysicsPlacement();
+    }
+
+    private void PhysicsReset_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs?.BlocksInput != true) CameraView.ResetPhysicsPlacement();
+    }
+
+    private void PhysicsApply_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs?.BlocksInput != true) CameraView.ApplyPhysicsPlacement();
+    }
+
+    private void PhysicsCancel_Click(object? sender, RoutedEventArgs e) => CameraView.StopPhysicsPlacement();
+
     private void ShowWalkPlayer_Changed(object? sender, RoutedEventArgs e)
     {
         if (_updatingCameraControls || CameraView is null || _dialogs?.BlocksInput == true) return;
@@ -466,6 +486,22 @@ public partial class ViewportWorkspace : UserControl
             FlyCamera.IsChecked = CameraView.FlyMode;
             WalkCamera.IsChecked = CameraView.WalkMode;
             WalkCamera.IsEnabled = !_compiledPreviewVisible;
+            PhysicsPlacementControls.IsVisible = CameraView.PhysicsPlacementActive;
+            PhysicsDrop.Content = CameraView.PhysicsPlacementRunning ? "Pause" :
+                CameraView.PhysicsPlacementHasStarted ? "Resume" : "Drop";
+            PhysicsDrop.IsEnabled = CameraView.PhysicsPlacementActive && !CameraView.PhysicsPlacementNeedsReset &&
+                !CameraView.PhysicsPlacementSettled && !CameraView.PhysicsPlacementPreparing;
+            PhysicsReset.IsEnabled = !CameraView.PhysicsPlacementPreparing &&
+                (CameraView.PhysicsPlacementHasStarted || CameraView.PhysicsPlacementNeedsReset);
+            PhysicsApply.IsEnabled = CameraView.PhysicsPlacementActive && CameraView.PhysicsPlacementHasChanges &&
+                !CameraView.PhysicsPlacementNeedsReset;
+            string placementState = CameraView.PhysicsPlacementNeedsReset ? "Reset to try again, or Cancel" :
+                CameraView.PhysicsPlacementSettled ? "Settled — choose Keep placement, or Reset to try again" :
+                CameraView.PhysicsPlacementRunning ? "Dropping — pause whenever you like" :
+                CameraView.PhysicsPlacementHasStarted ? "Paused — resume or choose Keep placement" : "Ready to drop";
+            int objectCount = CameraView.PhysicsPlacementObjectCount;
+            PhysicsPlacementStatus.Text = CameraView.PhysicsPlacementPreparing ? "Preparing collision… You can cancel at any time." :
+                $"{objectCount} {(objectCount == 1 ? "object" : "objects")} · {placementState}";
             ResetWalkCamera.IsVisible = CameraView.WalkMode;
             WalkPlayerControls.IsVisible = CameraView.WalkMode;
             ShowWalkPlayer.IsChecked = CameraView.ShowWalkPlayer;
@@ -478,6 +514,8 @@ public partial class ViewportWorkspace : UserControl
             "No swimming, crouch/prone, mantle, ladders or moving entities.\nWASD move · Hold Shift run · Space jump · Right-drag look · R reset · Esc exit.");
         CameraControlsHint.Text = _compiledPreviewVisible
             ? "Read-only BSP · Right-drag orbit · Middle-drag pan · Scroll zoom · Fly for WASD"
+            : CameraView.PhysicsPlacementActive
+            ? "Physics placement · Right-drag orbit · Middle-drag pan · Scroll zoom\nRight-click for physics controls · Escape cancels the preview"
             : CameraView.WalkMode
             ? (CameraView.WalkNeedsReset ? "Walk paused · Reset to recover or Esc to exit" :
                CameraView.WalkPaused ? "Walk paused · Click camera to resume · Reset to recover" : "Walk · WASD move · Hold Shift run · Space jump · Right-drag look") +
