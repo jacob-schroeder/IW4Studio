@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Iw4Radiant.Views.MapBuildWindow"
-        Title="Build PS3 map" Width="760" Height="830"
+        Title="Build PS3 FF" Width="760" Height="830"
         MinWidth="640" MinHeight="740" WindowStartupLocation="CenterOwner">
     <Grid Margin="20" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="14">
         <StackPanel Spacing="6">

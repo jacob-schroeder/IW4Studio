@@ -6,7 +6,7 @@ namespace Iw4Radiant.Compilation.Lighting;
 
 internal static class BrushLightGridCompiler
 {
-    internal static GfxLightGrid BakeLightGrid(BrushLightingScene scene)
+    internal static GfxLightGrid BakeLightGrid(BrushLightingScene scene, IProgress<string>? progress = null)
     {
         var mins = new ushort[3];
         var maxs = new ushort[3];
@@ -23,17 +23,35 @@ internal static class BrushLightGridCompiler
         // Use a long for the product: imported bounds can overflow a 32-bit count before the
         // native dense representation's ushort.MaxValue sample cap is checked.
         long entryCount = (long)(maxs[0] - mins[0] + 1) * (maxs[1] - mins[1] + 1) * (maxs[2] - mins[2] + 1);
+        progress?.Report(entryCount > ushort.MaxValue
+            ? "Light grid: preparing oversized-map fallback."
+            : $"Light grid: 0/{entryCount} entries completed.");
         Vector3 sceneCenter = (scene.Minimum + scene.Maximum) * 0.5f;
+        // Reuse scratch for every sample; only unique encoded colors need heap storage.
+        Span<Vector3> irradiance = stackalloc Vector3[GfxLightGridCodec.SampleDirections.Count];
+        Span<byte> rgb = stackalloc byte[GfxLightGridColors.SerializedSize];
+        scene.DiffuseIrradianceDirections(sceneCenter, irradiance);
+        Encode(irradiance, rgb);
+        var centerColor = new GfxLightGridColors(rgb.ToArray());
         if (entryCount > ushort.MaxValue)
-            return CreateFallbackLightGrid(scene, sceneCenter);
+        {
+            progress?.Report("Light grid complete: oversized map uses the scene-center fallback; no grid entries baked.");
+            return CreateFallbackLightGrid(centerColor);
+        }
         var entries = new List<GfxLightGridEntry>(checked((int)entryCount));
+        var black = new byte[GfxLightGridColors.SerializedSize];
         var colors = new List<GfxLightGridColors>
         {
-            new(new byte[GfxLightGridColors.SerializedSize]),
-            Encode(scene.DiffuseIrradianceDirections(sceneCenter))
+            new(black),
+            centerColor
         };
         var colorIndices = new Dictionary<string, ushort>(StringComparer.Ordinal);
-        for (ushort index = 0; index < colors.Count; index++) colorIndices[Convert.ToHexString(colors[index].RgbBytes.ToArray())] = index;
+        colorIndices[Convert.ToHexString(black)] = 0;
+        colorIndices[Convert.ToHexString(rgb)] = 1;
+        var colorLookup = colorIndices.GetAlternateLookup<ReadOnlySpan<char>>();
+        Span<char> key = stackalloc char[GfxLightGridColors.SerializedSize * 2];
+        long completedEntries = 0;
+        int lastBucket = 0;
         for (int x = mins[0]; x <= maxs[0]; x++)
         for (int y = mins[1]; y <= maxs[1]; y++)
         for (int z = mins[2]; z <= maxs[2]; z++)
@@ -45,25 +63,40 @@ internal static class BrushLightGridCompiler
             if (scene.IsInsideSolid(point))
             {
                 entries.Add(new GfxLightGridEntry(0, 0, 1));
+                ReportEntryProgress();
                 continue;
             }
-            GfxLightGridColors sample = Encode(scene.DiffuseIrradianceDirections(point));
-            string key = Convert.ToHexString(sample.RgbBytes.ToArray());
-            if (!colorIndices.TryGetValue(key, out ushort colorIndex))
+            scene.DiffuseIrradianceDirections(point, irradiance);
+            Encode(irradiance, rgb);
+            Convert.TryToHexString(rgb, key, out _);
+            if (!colorLookup.TryGetValue(key, out ushort colorIndex))
             {
                 colorIndex = checked((ushort)colors.Count);
-                colors.Add(sample);
-                colorIndices.Add(key, colorIndex);
+                colors.Add(new GfxLightGridColors(rgb.ToArray()));
+                colorIndices.Add(new string(key), colorIndex);
             }
             entries.Add(new GfxLightGridEntry(colorIndex, scene.SunVisibility(point, Vector3.Zero) > 0 ? (byte)1 : (byte)0, 0));
+            ReportEntryProgress();
         }
         // Canonical BSP export omits the final linker-generated row. Keep that
         // row separate from the authored Colors[1] used by native fallback sampling.
         colors.Add(GfxLightGridCodec.CreateDefault());
-        return GfxLightGridCodec.CreateDenseGrid(mins, maxs, entries, colors, 1);
+        GfxLightGrid grid = GfxLightGridCodec.CreateDenseGrid(mins, maxs, entries, colors, 1);
+        progress?.Report($"Light grid complete: {completedEntries}/{entryCount} entries.");
+        return grid;
+
+        void ReportEntryProgress()
+        {
+            completedEntries++;
+            if (progress is null) return;
+            int bucket = (int)(completedEntries * 20 / entryCount);
+            if (bucket <= lastBucket || bucket >= 20) return;
+            lastBucket = bucket;
+            progress.Report($"Light grid: {completedEntries}/{entryCount} entries completed ({completedEntries * 100 / entryCount}%).");
+        }
     }
 
-    private static GfxLightGrid CreateFallbackLightGrid(BrushLightingScene scene, Vector3 sceneCenter)
+    private static GfxLightGrid CreateFallbackLightGrid(GfxLightGridColors centerColor)
     {
         // Oversized maps use the canonical zero-entry/no-bake grid. Native model/static lighting
         // then falls back to the scene-center/default colors while surface lightmaps stay baked.
@@ -83,16 +116,15 @@ internal static class BrushLightGridCompiler
             Colors =
             [
                 new GfxLightGridColors(new byte[GfxLightGridColors.SerializedSize]),
-                Encode(scene.DiffuseIrradianceDirections(sceneCenter)),
+                centerColor,
                 GfxLightGridCodec.CreateDefault()
             ]
         };
     }
 
-    private static GfxLightGridColors Encode(IReadOnlyList<Vector3> irradiance)
+    private static void Encode(ReadOnlySpan<Vector3> irradiance, Span<byte> bytes)
     {
-        var bytes = new byte[GfxLightGridColors.SerializedSize];
-        for (int sample = 0; sample < irradiance.Count; sample++)
+        for (int sample = 0; sample < irradiance.Length; sample++)
         for (int channel = 0; channel < 3; channel++)
         {
             float value = irradiance[sample][channel];
@@ -101,6 +133,5 @@ internal static class BrushLightGridCompiler
             // Native light-probe RGB decodes as (2 * byte / 255)^2.
             bytes[sample * 3 + channel] = (byte)Math.Clamp((int)MathF.Round(127.5f * MathF.Sqrt(value)), 0, 255);
         }
-        return new GfxLightGridColors(bytes);
     }
 }

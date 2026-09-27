@@ -121,11 +121,11 @@
                 <MenuItem Header="Add player _start" Click="Player_Click" />
             </MenuItem>
             <MenuItem Header="_Build">
-                <MenuItem Header="Build .d3dbsp…" Click="BuildD3dbsp_Click" />
-                <MenuItem Header="Build PS3 map…" Click="Build_Click" />
+                <MenuItem Header="Build .d3dbsp" Click="BuildD3dbsp_Click" />
+                <MenuItem Header="Build .ff" Click="Build_Click" />
                 <Separator />
                 <MenuItem Header="Preview last built .d3dbsp" Click="PreviewLastBsp_Click" />
-                <MenuItem Header="Open .d3dbsp preview…" Click="OpenBspPreview_Click" />
+                <MenuItem Header="Open .d3dbsp preview" Click="OpenBspPreview_Click" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_Controls and prototype scope" Click="Help_Click" />

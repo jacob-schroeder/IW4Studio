@@ -10,20 +10,22 @@ internal static class MapBuildPipeline
 {
     internal static Task BuildBspAsync(MapDocument document, string outputPath,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
-        CancellationToken cancellationToken, string? sourcePath) => Task.Run(() =>
+        CancellationToken cancellationToken, string? sourcePath, IProgress<string>? progress = null) => Task.Run(() =>
     {
         string destination = Path.GetFullPath(outputPath);
         string directory = Path.GetDirectoryName(destination) ?? throw new InvalidDataException("Choose a folder for the compiled map.");
         if (!Directory.Exists(directory)) throw new DirectoryNotFoundException("The selected output folder no longer exists.");
         string assetName = $"maps/mp/{Path.GetFileNameWithoutExtension(destination)}.d3dbsp";
         cancellationToken.ThrowIfCancellationRequested();
+        progress?.Report("Checking brushes, meshes and entities…");
         MapCompiler.ValidateNavigableSource(document);
-        var bsp = MapCompiler.Compile(document, assetName, materials, models, cancellationToken, sourcePath);
+        var bsp = MapCompiler.Compile(document, assetName, materials, models, cancellationToken, sourcePath, progress);
         string temporary = Path.Combine(directory,
             $".{Path.GetFileName(destination)}.{Guid.NewGuid():N}.tmp");
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report("Writing compiled BSP…");
             bsp.Write(temporary);
             cancellationToken.ThrowIfCancellationRequested();
             File.Move(temporary, destination, overwrite: true);
@@ -58,18 +60,21 @@ internal static class MapBuildPipeline
         Directory.CreateDirectory(staging);
         try
         {
-            progress.Report("Compiling geometry and collision; baking sunlight, local lights and reflections…");
+            progress.Report("Preparing build files…");
             string bspPath = Path.Combine(staging, mapName + ".d3dbsp");
             string fastFilePath = Path.Combine(staging, mapName + ".ff");
             await Task.Run(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                progress.Report("Checking brushes, meshes and entities…");
                 MapCompiler.ValidateNavigableSource(document);
                 string savedSource = Path.Combine(staging, mapName + ".map");
                 MapFile.Write(document, savedSource);
-                var bsp = MapCompiler.Compile(MapFile.Read(savedSource), assetName, materials, models, cancellationToken, sourcePath);
+                var bsp = MapCompiler.Compile(MapFile.Read(savedSource), assetName, materials, models, cancellationToken, sourcePath, progress);
                 cancellationToken.ThrowIfCancellationRequested();
+                progress.Report("Writing compiled BSP…");
                 bsp.Write(bspPath);
+                progress.Report("Compiled BSP written.");
             }, cancellationToken);
             IReadOnlyList<(string Name, string Path)> emitterRawFiles = emitters?.WriteTo(staging) ?? [];
             if (emitters is not null)
@@ -82,6 +87,7 @@ internal static class MapBuildPipeline
             cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(fastFilePath) || new FileInfo(fastFilePath).Length == 0)
                 throw new InvalidDataException("D3dbspLinker completed without producing a fastfile.");
+            progress.Report("Finalizing build output…");
             Directory.Move(staging, destination);
             string packagedImages = File.Exists(Path.Combine(destination, mapName + ".pak")) ? $", {mapName}.pak" : "";
             progress.Report($"Built {mapName}.map, {mapName}.d3dbsp, {mapName}.ff{packagedImages} in {destination}");

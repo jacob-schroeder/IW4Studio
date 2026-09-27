@@ -8,11 +8,15 @@ namespace Iw4Radiant.Compilation.Lighting;
 internal static class BrushReflectionCompiler
 {
     internal static (IReadOnlyList<GfxImageAsset> Images, IReadOnlyList<GfxReflectionProbe> Origins)
-        CaptureProbes(BrushLightingScene scene, IReadOnlyList<Vector3> origins)
+        CaptureProbes(BrushLightingScene scene, IReadOnlyList<Vector3> origins, IProgress<string>? progress = null)
     {
         // The canonical v22 cell reserves 67 bytes for authored probe indices.
         if (origins.Count is < 1 or > 67)
             throw new NotSupportedException("The compiled lighting profile requires between 1 and 67 authored reflection probes.");
+        int totalMipLevels = origins.Count * GfxReflectionProbeCodec.ReflectionProbeMipCount;
+        int completedMipLevels = 0;
+        int lastBucket = 0;
+        progress?.Report($"Reflection probes: 0/{totalMipLevels} probe mip levels completed.");
         var images = new List<GfxImageAsset> { GfxReflectionProbeCodec.CreateDefaultImage() };
         var outputOrigins = new List<GfxReflectionProbe> { new(0, 0, 0) };
         const int size = GfxReflectionProbeCodec.ReflectionProbeEdgeLength;
@@ -62,6 +66,7 @@ internal static class BrushReflectionCompiler
                 }
             });
             var mips = new List<ReadOnlyMemory<byte>> { pixels };
+            ReportMipProgress();
             for (int mip = 1; mip < GfxReflectionProbeCodec.ReflectionProbeMipCount; mip++)
             {
                 scene.CancellationToken.ThrowIfCancellationRequested();
@@ -133,10 +138,22 @@ internal static class BrushReflectionCompiler
                         for (int face = 0; face < faceCount; face++) filtered[face * 4 + channel] = (byte)average;
                     }
                 mips.Add(filtered);
+                ReportMipProgress();
             }
             images.Add(GfxReflectionProbeCodec.CreateImage(images.Count, mips));
             outputOrigins.Add(new GfxReflectionProbe(origin.X, origin.Y, origin.Z));
         }
+        progress?.Report($"Reflection probes complete: {origins.Count}/{origins.Count} probes, {completedMipLevels}/{totalMipLevels} mip levels.");
         return (images, outputOrigins);
+
+        void ReportMipProgress()
+        {
+            completedMipLevels++;
+            if (progress is null) return;
+            int bucket = completedMipLevels * 20 / totalMipLevels;
+            if (bucket <= lastBucket || bucket >= 20) return;
+            lastBucket = bucket;
+            progress.Report($"Reflection probes: {completedMipLevels}/{totalMipLevels} probe mip levels completed ({completedMipLevels * 100 / totalMipLevels}%).");
+        }
     }
 }

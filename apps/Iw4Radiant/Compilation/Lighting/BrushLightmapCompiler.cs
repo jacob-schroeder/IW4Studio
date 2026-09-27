@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Numerics;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Codecs.GfxMap;
+using IW4.Render.WebGpu;
 using Iw4Radiant.MapSource;
 
 namespace Iw4Radiant.Compilation.Lighting;
@@ -14,13 +15,24 @@ internal static class BrushLightmapCompiler
     // v22 has 31 baked arrays; index 31 is reserved for unlightmapped sky/water faces.
     private const int LightmapLimit = 31;
 
+    // Narrow faces need more rows to fill a ray batch. Keep the existing eight-row
+    // minimum for wide faces and bound scratch space to about one sun batch (16 rays/luxel).
+    // Diffuse work retains its own ray-capacity splitting and overlaps CPU shading.
+    private static int GpuBandHeight(int width, int height)
+        => Math.Min(height, Math.Max(8, WebGpuRayTraversal.MaximumRayCount / 16 / width));
+
     internal static (IReadOnlyList<GfxLightmapArray> Lightmaps, Vector2[][] FaceUvs, byte[] FaceLightmapIndices)
-        BakeLightmaps(BrushLightingScene scene)
+        BakeLightmaps(BrushLightingScene scene, IProgress<string>? progress = null)
     {
         var lightmaps = new List<GfxLightmapArray>();
+        var rawPages = new List<(byte[] Primary, byte[] Secondary)>();
+        var faceLayouts = new List<FaceLayout>();
         var faceUvs = new Vector2[scene.Polygons.Count][];
         var faceIndices = new byte[scene.Polygons.Count];
-        float[] luxelSizes = ChooseLuxelSizes(scene);
+        float[] luxelSizes = ChooseLuxelSizes(scene, out long totalLuxels);
+        progress?.Report($"Direct lighting: 0/{totalLuxels} luxels completed.");
+        long directLuxels = 0;
+        int directBucket = 0;
         byte[] primary = new byte[GfxLightmapCodec.PrimaryWidth * GfxLightmapCodec.PrimaryHeight];
         byte[] secondary = new byte[GfxLightmapCodec.SecondaryWidth * GfxLightmapCodec.SecondaryHeight * 4];
         var parallelOptions = new ParallelOptions
@@ -63,17 +75,28 @@ internal static class BrushLightmapCompiler
                 secondary = new byte[secondary.Length];
                 cursorX = cursorY = rowHeight = 0;
             }
-            faceIndices[faceIndex] = checked((byte)lightmaps.Count);
+            faceIndices[faceIndex] = checked((byte)rawPages.Count);
+            var layout = new FaceLayout(rawPages.Count, cursorX, cursorY, width, height,
+                polygon, anchor, uAxis, vAxis, minimum, luxelSize);
+            faceLayouts.Add(layout);
+            // The cache starts at the padded tile origin, using this compiler's border width.
+            bool recordDirect = scene.BeginDirectFace(faceIndex, anchor, uAxis, vAxis,
+                minimum - new Vector2(Border * luxelSize),
+                luxelSize, width, height);
             for (int vertex = 0; vertex < coordinates.Length; vertex++)
                 faceUvs[faceIndex][vertex] = new Vector2(
                     (cursorX + Border + (coordinates[vertex].X - minimum.X) / luxelSize + 0.5f) / GfxLightmapCodec.SecondaryWidth,
                     (cursorY + Border + (coordinates[vertex].Y - minimum.Y) / luxelSize + 0.5f) / GfxLightmapCodec.SecondaryPlaneHeight);
 
             if (traversal is null)
+            {
                 Parallel.For(0, height, parallelOptions, y => BakeRow(y, null, null, 0));
+                directLuxels += (long)width * height;
+                ReportProgress(progress, "Direct lighting", "luxels", directLuxels, totalLuxels, ref directBucket);
+            }
             else
             {
-                const int bandHeight = 8;
+                int bandHeight = GpuBandHeight(width, height);
                 int capacity = width * Math.Min(bandHeight, height) * 4;
                 int sunCapacity = capacity * 4;
                 var points = ArrayPool<Vector3>.Shared.Rent(capacity);
@@ -115,6 +138,8 @@ internal static class BrushLightmapCompiler
                             traversal, parallelOptions);
                         Parallel.For(firstRow, lastRow, parallelOptions,
                             y => BakeRow(y, irradiances, sunVisibility, firstRow));
+                        directLuxels += (long)(lastRow - firstRow) * width;
+                        ReportProgress(progress, "Direct lighting", "luxels", directLuxels, totalLuxels, ref directBucket);
                     }
                 }
                 finally
@@ -158,6 +183,7 @@ internal static class BrushLightmapCompiler
                     secondary[upper + 1] = EncodeIrradiance(irradiance.Y);
                     secondary[upper + 2] = EncodeIrradiance(irradiance.Z);
                     secondary[upper + 3] = secondary[lower + 3] = 128;
+                    float totalSunVisibility = 0;
                     for (int py = 0; py < 2; py++)
                     for (int px = 0; px < 2; px++)
                     {
@@ -174,43 +200,146 @@ internal static class BrushLightmapCompiler
                                 visibility += scene.SunVisibility(sample, normal);
                             }
                         }
+                        totalSunVisibility += visibility;
                         int offset = ((cursorY + y) * 2 + py) * GfxLightmapCodec.PrimaryWidth + (cursorX + x) * 2 + px;
                         primary[offset] = (byte)Math.Clamp(MathF.Round(visibility * 0.25f * 255), 0, 255);
                     }
+                    if (recordDirect && BrushLightingScene.IsDirectCacheLuxel(x, y, width, height))
+                        scene.RecordDirectLuxel(faceIndex, x, y, irradiance, totalSunVisibility / 16);
                 }
             }
 
-            Vector3 Position(float x, float y)
+            Vector3 Position(float x, float y) => layout.Position(x, y);
+        }
+        progress?.Report($"Direct lighting complete: {directLuxels}/{totalLuxels} luxels.");
+        Flush();
+        scene.FreezeDirectFaces();
+        progress?.Report($"Bounced lighting: 0/{totalLuxels} luxels completed.");
+        long bouncedLuxels = 0;
+        int bounceBucket = 0;
+        foreach (FaceLayout layout in faceLayouts)
+        {
+            scene.CancellationToken.ThrowIfCancellationRequested();
+            byte[] page = rawPages[layout.Page].Secondary;
+            if (traversal is null)
             {
-                Vector3 point = anchor + uAxis * (minimum.X + (x - Border) * luxelSize) +
-                    vAxis * (minimum.Y + (y - Border) * luxelSize);
-                bool inside = true;
-                Vector3 closest = point;
-                float closestDistance = float.PositiveInfinity;
-                for (int edge = 0; edge < polygon.Vertices.Length; edge++)
+                Parallel.For(0, layout.Height, parallelOptions, y =>
                 {
-                    Vector3 a = polygon.Vertices[edge], b = polygon.Vertices[(edge + 1) % polygon.Vertices.Length];
-                    Vector3 segment = b - a;
-                    if (Vector3.Dot(Vector3.Cross(segment, point - a), normal) < 0) inside = false;
-                    Vector3 candidate = a + segment * Math.Clamp(Vector3.Dot(point - a, segment) / segment.LengthSquared(), 0, 1);
-                    float distance = Vector3.DistanceSquared(candidate, point);
-                    if (distance < closestDistance) { closestDistance = distance; closest = candidate; }
+                    for (int x = 0; x < layout.Width; x++)
+                    {
+                        Vector3 point = layout.Position(x, y);
+                        AddIndirect(layout, x, y,
+                            scene.IndirectIrradiance(point, layout.Polygon.Sample(point).Normal), page);
+                    }
+                });
+                bouncedLuxels += (long)layout.Width * layout.Height;
+                ReportProgress(progress, "Bounced lighting", "luxels", bouncedLuxels, totalLuxels, ref bounceBucket);
+            }
+            else
+            {
+                int bandHeight = GpuBandHeight(layout.Width, layout.Height);
+                int capacity = layout.Width * Math.Min(bandHeight, layout.Height);
+                var points = ArrayPool<Vector3>.Shared.Rent(capacity);
+                var normals = ArrayPool<Vector3>.Shared.Rent(capacity);
+                var irradiances = ArrayPool<Vector3>.Shared.Rent(capacity);
+                try
+                {
+                    for (int firstRow = 0; firstRow < layout.Height; firstRow += bandHeight)
+                    {
+                        int lastRow = Math.Min(firstRow + bandHeight, layout.Height);
+                        Parallel.For(firstRow, lastRow, parallelOptions, y =>
+                        {
+                            for (int x = 0; x < layout.Width; x++)
+                            {
+                                int index = (y - firstRow) * layout.Width + x;
+                                Vector3 point = layout.Position(x, y);
+                                points[index] = point;
+                                normals[index] = layout.Polygon.Sample(point).Normal;
+                            }
+                        });
+                        scene.BakeDiffuseSamples(points, normals, irradiances,
+                            (lastRow - firstRow) * layout.Width, traversal, parallelOptions, indirectOnly: true);
+                        Parallel.For(firstRow, lastRow, parallelOptions, y =>
+                        {
+                            for (int x = 0; x < layout.Width; x++)
+                                AddIndirect(layout, x, y,
+                                    irradiances[(y - firstRow) * layout.Width + x], page);
+                        });
+                        bouncedLuxels += (long)(lastRow - firstRow) * layout.Width;
+                        ReportProgress(progress, "Bounced lighting", "luxels", bouncedLuxels, totalLuxels, ref bounceBucket);
+                    }
                 }
-                return inside ? point : closest;
+                finally
+                {
+                    ArrayPool<Vector3>.Shared.Return(irradiances);
+                    ArrayPool<Vector3>.Shared.Return(normals);
+                    ArrayPool<Vector3>.Shared.Return(points);
+                }
             }
         }
-        Flush();
+        progress?.Report($"Bounced lighting complete: {bouncedLuxels}/{totalLuxels} luxels.");
+        progress?.Report($"Lightmap packing: 0/{rawPages.Count} pages completed.");
+        int packingBucket = 0;
+        for (int page = 0; page < rawPages.Count; page++)
+        {
+            scene.CancellationToken.ThrowIfCancellationRequested();
+            var (rawPrimary, rawSecondary) = rawPages[page];
+            lightmaps.Add(GfxLightmapCodec.Create(page, rawPrimary, rawSecondary));
+            rawPages[page] = ([], []);
+            ReportProgress(progress, "Lightmap packing", "pages", page + 1, rawPages.Count, ref packingBucket);
+        }
+        progress?.Report($"Lightmap packing complete: {rawPages.Count}/{rawPages.Count} pages.");
         return (lightmaps, faceUvs, faceIndices);
 
         void Flush()
         {
-            if (lightmaps.Count >= LightmapLimit)
+            if (rawPages.Count >= LightmapLimit)
                 throw new NotSupportedException("The baked world exceeds the 31-lightmap v22 limit.");
-            lightmaps.Add(GfxLightmapCodec.Create(lightmaps.Count, primary, secondary));
+            rawPages.Add((primary, secondary));
         }
     }
 
-    private static float[] ChooseLuxelSizes(BrushLightingScene scene)
+    private static void AddIndirect(FaceLayout layout, int x, int y, Vector3 bounce, byte[] secondary)
+    {
+        if (bounce == Vector3.Zero) return;
+        int upper = ((layout.AtlasY + y) * GfxLightmapCodec.SecondaryWidth + layout.AtlasX + x) * 4;
+        // The direct term has already been quantized into native sqrt encoding.
+        // Decode its current linear value, add one bounce, then encode once.
+        secondary[upper] = EncodeIrradiance(DecodeIrradiance(secondary[upper]) + bounce.X);
+        secondary[upper + 1] = EncodeIrradiance(DecodeIrradiance(secondary[upper + 1]) + bounce.Y);
+        secondary[upper + 2] = EncodeIrradiance(DecodeIrradiance(secondary[upper + 2]) + bounce.Z);
+    }
+
+    private static float DecodeIrradiance(byte value)
+    {
+        float linear = value / 255f;
+        return linear * linear;
+    }
+
+    private sealed record FaceLayout(int Page, int AtlasX, int AtlasY, int Width, int Height,
+        MapRenderSurface Polygon, Vector3 Anchor, Vector3 UAxis, Vector3 VAxis, Vector2 Minimum, float LuxelSize)
+    {
+        internal Vector3 Position(float x, float y)
+        {
+            Vector3 point = Anchor + UAxis * (Minimum.X + (x - Border) * LuxelSize) +
+                VAxis * (Minimum.Y + (y - Border) * LuxelSize);
+            bool inside = true;
+            Vector3 closest = point;
+            float closestDistance = float.PositiveInfinity;
+            for (int edge = 0; edge < Polygon.Vertices.Length; edge++)
+            {
+                Vector3 a = Polygon.Vertices[edge], b = Polygon.Vertices[(edge + 1) % Polygon.Vertices.Length];
+                Vector3 segment = b - a;
+                if (Vector3.Dot(Vector3.Cross(segment, point - a), Polygon.Normal) < 0) inside = false;
+                Vector3 candidate = a + segment * Math.Clamp(Vector3.Dot(point - a, segment) / segment.LengthSquared(), 0, 1);
+                float distance = Vector3.DistanceSquared(candidate, point);
+                if (distance < closestDistance) { closestDistance = distance; closest = candidate; }
+            }
+            return inside ? point : closest;
+        }
+    }
+
+    private static float[] ChooseLuxelSizes(BrushLightingScene scene, out long totalLuxels)
     {
         // Keep authored terrain density and the automatic 4-unit brush baseline where possible.
         // Oversized individual faces are locally coarsened by AtlasCount; only then do automatic
@@ -268,7 +397,24 @@ internal static class BrushLightmapCompiler
 
         var result = new float[scene.Polygons.Count];
         _ = AtlasCount(scene, spans, brushUpper, authoredScale, result);
+        totalLuxels = 0;
+        for (int faceIndex = 0; faceIndex < result.Length; faceIndex++)
+        {
+            if (scene.IsSky(faceIndex) || scene.IsWater(faceIndex)) continue;
+            totalLuxels += (long)TileLength(spans[faceIndex].X, result[faceIndex]) *
+                TileLength(spans[faceIndex].Y, result[faceIndex]);
+        }
         return result;
+    }
+
+    private static void ReportProgress(IProgress<string>? progress, string stage, string unit,
+        long completed, long total, ref int lastBucket)
+    {
+        if (progress is null || total == 0) return;
+        int bucket = (int)(completed * 20 / total);
+        if (bucket <= lastBucket || bucket >= 20) return;
+        lastBucket = bucket;
+        progress.Report($"{stage}: {completed}/{total} {unit} completed ({completed * 100 / total}%).");
     }
 
     private static float MaximumScale(BrushLightingScene scene, Vector2[] spans, bool authored)

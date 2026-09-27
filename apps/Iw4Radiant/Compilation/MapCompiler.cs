@@ -73,16 +73,17 @@ internal static class MapCompiler
     }
 
     internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; native all-face water volumes and GPU ocean tops; solid terrain, painted overlays, decals, cutouts and static glass with native materials, skies and static models. " +
-        "Bakes point and targeted spot lights, sky ambient and reflections; requires authored sunlight and a reflection probe. " +
-        "Native multiplayer points, script entities, brush/trigger models, groups and unambiguous prefabs. Full map builds write FX and sound source markers to scripts; standalone BSP output omits them. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; stage volumes, primary local lights, breakable glass and bounced lighting are not compiled yet.";
+        "Bakes point and targeted spot lights, sky ambient, one diffuse bounce from opaque world surfaces and reflections; requires authored sunlight and a reflection probe. " +
+        "Native multiplayer points, script entities, brush/trigger models, groups and unambiguous prefabs. Full map builds write FX and sound source markers to scripts; standalone BSP output omits them. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; stage volumes, primary local lights and breakable glass are not compiled yet.";
 
     internal static IEnumerable<MapEntity> BrushEntities(MapDocument document) =>
         document.Entities.Where(entity => entity != document.World && entity.Brushes.Count > 0);
 
     internal static D3dbspFile Compile(MapDocument document, string assetName,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
-        CancellationToken cancellationToken = default, string? sourcePath = null)
+        CancellationToken cancellationToken = default, string? sourcePath = null, IProgress<string>? progress = null)
     {
+        progress?.Report("Preparing prefabs and materials…");
         document = PrefabLibrary.ExpandForCompilation(document, sourcePath);
         foreach (MapEntity group in document.Entities.Where(entity => entity.ClassName == "func_group").ToArray())
         {
@@ -146,13 +147,16 @@ internal static class MapCompiler
                 Contents = item.Contents,
                 SurfaceFlags = baseMaterialsByName[item.Material].SurfaceFlags
             }).ToArray();
+        progress?.Report("Compiling entities and brush collision…");
         MapEntsAsset entities = CompileEntities(document, assetName);
         ClipMapAsset collision = BrushCollisionCompiler.Compile(document, assetName, clipMaterials,
             baseMaterialsByName, entities);
+        progress?.Report("Compiling terrain collision…");
         collision = TerrainCollisionCompiler.Append(collision,
             document.World.Terrains.Where(terrain => !TerrainContents.ReadNonColliding(terrain)).ToArray());
         var sun = BrushRenderCompiler.CompileSun(document, assetName);
-        var graphics = BrushRenderCompiler.Compile(document, assetName, collision, sun, materials, models, probeOrigins, cancellationToken);
+        var graphics = BrushRenderCompiler.Compile(document, assetName, collision, sun, materials, models, probeOrigins, cancellationToken, progress);
+        progress?.Report("Assembling compiled map and model placements…");
         return MapStaticModelCompiler.Append(document, D3dbspUnlinker.Unlink([
             collision, sun, graphics, entities,
             new GameWorldMpAsset { Name = assetName, GlassData = new GGlassData() },

@@ -12,10 +12,11 @@ using Iw4Radiant.Rendering;
 
 namespace Iw4Radiant.Compilation.Lighting;
 
-/// <summary>CPU sampling of authored world surfaces and sky images for the direct-light bake.</summary>
+/// <summary>CPU sampling of authored world surfaces and sky images for the lighting bake.</summary>
 internal sealed class BrushLightingScene
 {
     private const int SkySampleCount = 48;
+    private const int BounceLuxelStep = 4;
     private const float RayOffset = 0.0625f;
     private readonly MaterialSource[] _materials;
     private readonly ImageSourceMipLevel[] _images;
@@ -29,6 +30,42 @@ internal sealed class BrushLightingScene
     private readonly ShadowModel[] _shadowModels;
     private readonly LightingRayHierarchy _worldRays;
     private readonly Comparison<(int Face, float Distance, float Opacity, Vector4 Texel)> _coincidentHitComparison;
+    private readonly DirectFace?[] _directFaces;
+    private bool _directFacesFrozen;
+
+    private readonly record struct DirectSample(Vector3 Irradiance, float SunVisibility);
+
+    private sealed class DirectFace(Vector3 anchor, Vector3 uAxis, Vector3 vAxis, Vector2 minimum,
+        float luxelSize, int width, int height)
+    {
+        private readonly int _sampleWidth = (width - 2) / BounceLuxelStep + 2;
+        private readonly int _sampleHeight = (height - 2) / BounceLuxelStep + 2;
+        private readonly DirectSample[] _samples = new DirectSample[
+            ((width - 2) / BounceLuxelStep + 2) * ((height - 2) / BounceLuxelStep + 2)];
+
+        internal void Set(int x, int y, Vector3 irradiance, float visibility)
+            => _samples[((y == height - 1 ? _sampleHeight - 1 : y / BounceLuxelStep) * _sampleWidth) +
+                (x == width - 1 ? _sampleWidth - 1 : x / BounceLuxelStep)] = new(irradiance, visibility);
+
+        internal DirectSample Sample(Vector3 point)
+        {
+            float x = Math.Clamp((Vector3.Dot(point - anchor, uAxis) - minimum.X) / luxelSize, 0, width - 1);
+            float y = Math.Clamp((Vector3.Dot(point - anchor, vAxis) - minimum.Y) / luxelSize, 0, height - 1);
+            int x0 = Math.Min((int)x / BounceLuxelStep, _sampleWidth - 2);
+            int y0 = Math.Min((int)y / BounceLuxelStep, _sampleHeight - 2);
+            int x1 = Math.Min((x0 + 1) * BounceLuxelStep, width - 1);
+            int y1 = Math.Min((y0 + 1) * BounceLuxelStep, height - 1);
+            float tx = Math.Clamp((x - x0 * BounceLuxelStep) / (x1 - x0 * BounceLuxelStep), 0, 1);
+            float ty = Math.Clamp((y - y0 * BounceLuxelStep) / (y1 - y0 * BounceLuxelStep), 0, 1);
+            DirectSample a = Lerp(_samples[y0 * _sampleWidth + x0], _samples[y0 * _sampleWidth + x0 + 1], tx);
+            DirectSample b = Lerp(_samples[(y0 + 1) * _sampleWidth + x0], _samples[(y0 + 1) * _sampleWidth + x0 + 1], tx);
+            return Lerp(a, b, ty);
+        }
+
+        private static DirectSample Lerp(DirectSample a, DirectSample b, float amount) =>
+            new(Vector3.Lerp(a.Irradiance, b.Irradiance, amount),
+                a.SunVisibility + (b.SunVisibility - a.SunVisibility) * amount);
+    }
 
     private sealed record ShadowModel(Vector3 Minimum, Vector3 Maximum,
         (MapRenderSurface Surface, MaterialSource Material, ImageSourceMipLevel? Image)[] Triangles,
@@ -64,6 +101,7 @@ internal sealed class BrushLightingScene
         }
         _localLights = localLights.ToArray();
         _materials = new MaterialSource[polygons.Count];
+        _directFaces = new DirectFace?[polygons.Count];
         _coincidentHitComparison = (a, b) =>
         {
             int material = _materials[b.Face].Surface.SortKey.CompareTo(_materials[a.Face].Surface.SortKey);
@@ -214,6 +252,30 @@ internal sealed class BrushLightingScene
     internal bool IsSky(int face) => _materials[face].IsSky;
     internal bool IsWater(int face) => _materials[face].IsWater;
 
+    internal bool BeginDirectFace(int face, Vector3 anchor, Vector3 uAxis, Vector3 vAxis,
+        Vector2 minimum, float luxelSize, int width, int height)
+    {
+        MaterialSource material = _materials[face];
+        if (material.IsSky || material.IsWater || material.Surface.IsBlended ||
+            material.Surface.AlphaTest is not null || material.Surface.TechniqueType != IW4.Game.Assets.TechniqueSet.MaterialTechniqueType.Lit)
+            return false;
+        _directFaces[face] = new DirectFace(anchor, uAxis, vAxis, minimum, luxelSize, width, height);
+        return true;
+    }
+
+    internal static bool IsDirectCacheLuxel(int x, int y, int width, int height) =>
+        (x % BounceLuxelStep == 0 || x == width - 1) &&
+        (y % BounceLuxelStep == 0 || y == height - 1);
+
+    internal void RecordDirectLuxel(int face, int x, int y, Vector3 irradiance, float sunVisibility)
+    {
+        DirectFace directFace = _directFaces[face] ??
+            throw new InvalidOperationException("The face has no direct bounce field.");
+        directFace.Set(x, y, irradiance, sunVisibility);
+    }
+
+    internal void FreezeDirectFaces() => _directFacesFrozen = true;
+
     internal bool IsInsideSolid(Vector3 point, float inset = RayOffset)
     {
         foreach (var brush in _solidBrushes)
@@ -249,12 +311,15 @@ internal sealed class BrushLightingScene
     }
 
     internal Vector3 DiffuseIrradiance(Vector3 point, Vector3 normal)
-        => SampleDiffuseIrradiance(point, normal, default);
+        => SampleDiffuseIrradiance(point, normal, default, indirectOnly: false);
+
+    internal Vector3 IndirectIrradiance(Vector3 point, Vector3 normal)
+        => SampleDiffuseIrradiance(point, normal, default, indirectOnly: true);
 
     internal WebGpuRayTraversal? CreateGpuTraversal() => _worldRays.CreateGpuTraversal(CancellationToken);
 
     internal void BakeDiffuseSamples(Vector3[] points, Vector3[] normals, Vector3[] irradiance, int count,
-        WebGpuRayTraversal traversal, ParallelOptions parallelOptions)
+        WebGpuRayTraversal traversal, ParallelOptions parallelOptions, bool indirectOnly = false)
     {
         var offsets = ArrayPool<int>.Shared.Rent(count + 1);
         var masks = ArrayPool<ulong>.Shared.Rent(count);
@@ -306,7 +371,7 @@ internal sealed class BrushLightingScene
                     irradiance[index] = SampleDiffuseIrradiance(points[index], normals[index], ready
                         ? candidates.AsSpan(firstRay * WebGpuRayTraversal.ResultStride,
                             activeCount * WebGpuRayTraversal.ResultStride)
-                        : default);
+                        : default, indirectOnly);
                 });
                 first = nextFirst;
                 last = nextLast;
@@ -383,7 +448,8 @@ internal sealed class BrushLightingScene
         }
     }
 
-    private Vector3 SampleDiffuseIrradiance(Vector3 point, Vector3 normal, ReadOnlySpan<int> skyCandidates)
+    private Vector3 SampleDiffuseIrradiance(Vector3 point, Vector3 normal, ReadOnlySpan<int> skyCandidates,
+        bool indirectOnly)
     {
         Vector3 sum = Vector3.Zero;
         float totalWeight = 0;
@@ -402,8 +468,9 @@ internal sealed class BrushLightingScene
                 {
                     int offset = activeDirection * WebGpuRayTraversal.ResultStride;
                     int count = skyCandidates.IsEmpty ? -1 : skyCandidates[offset];
-                    Vector3 radiance = count < 0 ? SkyRadiance(origin, direction) : count == 0 ? Vector3.Zero :
-                        SkyRadiance(origin, direction, candidates: skyCandidates.Slice(offset + 1, count));
+                    Vector3 radiance = count < 0 ? DiffuseRayRadiance(origin, direction, indirectOnly) :
+                        count == 0 ? Vector3.Zero : DiffuseRayRadiance(origin, direction, indirectOnly,
+                            candidates: skyCandidates.Slice(offset + 1, count));
                     sum += radiance * cosine;
                 }
                 activeDirection++;
@@ -413,24 +480,28 @@ internal sealed class BrushLightingScene
         // Normalize spherical quadrature so a constant visible environment
         // preserves its radiance exactly; blocked directions still contribute weight.
         sum /= totalWeight;
-        foreach (var (light, color) in _localLights)
-        {
-            Vector3 radiance = LocalRadiance(point, origin, light, color, out Vector3 direction);
-            sum += radiance * MathF.Max(0, Vector3.Dot(normal, direction));
-        }
+        if (!indirectOnly)
+            foreach (var (light, color) in _localLights)
+            {
+                Vector3 radiance = LocalRadiance(point, origin, light, color, out Vector3 direction);
+                sum += radiance * MathF.Max(0, Vector3.Dot(normal, direction));
+            }
         return sum;
     }
 
-    internal Vector3[] DiffuseIrradianceDirections(Vector3 point)
+    internal void DiffuseIrradianceDirections(Vector3 point, Span<Vector3> result)
     {
         CancellationToken.ThrowIfCancellationRequested();
-        var result = new Vector3[GfxLightGridCodec.SampleDirections.Count];
+        if (result.Length != _lightGridNormals.Length)
+            throw new ArgumentException("The light-grid sample requires one value per direction.", nameof(result));
+        result.Clear();
         HashSet<int>? containingModels = ContainingModels(point);
         bool insideSolid = IsInsideSolid(point, 0);
         for (int directionIndex = 0; directionIndex < _skyDirections.Length; directionIndex++)
         {
             Vector3 direction = _skyDirections[directionIndex];
-            Vector3 radiance = insideSolid ? Vector3.Zero : SkyRadiance(point, direction, containingModels);
+            Vector3 radiance = insideSolid ? Vector3.Zero : DiffuseRayRadiance(point, direction,
+                indirectOnly: false, containingModels: containingModels);
             for (int sample = 0; sample < result.Length; sample++)
             {
                 float weight = _lightGridSkyWeights[directionIndex * result.Length + sample];
@@ -444,7 +515,6 @@ internal sealed class BrushLightingScene
             for (int sample = 0; sample < result.Length; sample++)
                 result[sample] += radiance * MathF.Max(0, Vector3.Dot(_lightGridNormals[sample], direction));
         }
-        return result;
     }
 
     private Vector3 LocalRadiance(Vector3 point, Vector3 shadowOrigin, MapLight light, Vector3 color,
@@ -525,6 +595,55 @@ internal sealed class BrushLightingScene
                 if (IsSky(hit.Face)) return ReadSky(hit.Face, direction) * transmission;
                 transmission *= 1 - hit.Opacity;
                 if (transmission <= 0) break;
+            }
+            return Vector3.Zero;
+        }
+        finally
+        {
+            ArrayPool<(int Face, float Distance, float Opacity, Vector4 Texel)>.Shared.Return(hits);
+        }
+    }
+
+    private Vector3 DiffuseRayRadiance(Vector3 origin, Vector3 direction, bool indirectOnly,
+        HashSet<int>? containingModels = null, ReadOnlySpan<int> candidates = default)
+    {
+        // Direct sampling runs before the field is frozen. The later receivers
+        // inspect one ordered world-hit stream for both sky and one diffuse bounce.
+        if (!_directFacesFrozen)
+            return indirectOnly ? Vector3.Zero : SkyRadiance(origin, direction, containingModels, candidates);
+
+        float transmission = 1;
+        var (hits, count) = TraceCandidates(origin, direction, sampleColor: true, candidates);
+        try
+        {
+            for (int index = 0; index < count; index++)
+            {
+                var hit = hits[index];
+                if (IsSky(hit.Face))
+                    return indirectOnly || ModelOccludes(origin, direction, double.PositiveInfinity, containingModels)
+                        ? Vector3.Zero : ReadSky(hit.Face, direction) * transmission;
+                if (_directFaces[hit.Face] is { } directFace)
+                {
+                    MapRenderSurface surface = Polygons[hit.Face];
+                    // The direct field was baked on the face's authored side.
+                    // A reverse-side hit still blocks the ray but cannot emit it.
+                    if (Vector3.Dot(surface.Normal, direction) >= 0) return Vector3.Zero;
+                    if (ModelOccludes(origin, direction, hit.Distance, containingModels)) return Vector3.Zero;
+                    Vector3 point = origin + direction * hit.Distance;
+                    var attributes = surface.Sample(point);
+                    Vector3 normal = attributes.Normal;
+                    if (Vector3.Dot(normal, surface.Normal) <= 0) return Vector3.Zero;
+                    Vector3 color = Vector3.Clamp(new Vector3(hit.Texel.X, hit.Texel.Y, hit.Texel.Z) *
+                        new Vector3(attributes.Color.X, attributes.Color.Y, attributes.Color.Z), Vector3.Zero, Vector3.One);
+                    DirectSample direct = directFace.Sample(point);
+                    Vector3 lighting = direct.Irradiance + _sunColor *
+                        (MathF.Max(0, Vector3.Dot(normal, SunDirection)) * direct.SunVisibility);
+                    return color * color * lighting * transmission;
+                }
+                // Alpha-tested holes never enter this stream; blended surfaces
+                // transmit according to the same opacity and hit order as sky.
+                transmission *= 1 - hit.Opacity;
+                if (transmission <= 0) return Vector3.Zero;
             }
             return Vector3.Zero;
         }

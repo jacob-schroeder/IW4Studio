@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using System.Diagnostics;
 using Iw4Radiant.Compilation;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
@@ -17,6 +18,7 @@ public partial class MapBuildWindow : Window
     private readonly IReadOnlyDictionary<string, XModelSource>? _models;
     private readonly Func<SelectionPath, bool>? _navigate;
     private CancellationTokenSource? _buildCancellation;
+    private readonly Stopwatch _buildClock = new();
     private SelectionPath? _errorLocation;
 
     public MapBuildWindow()
@@ -124,6 +126,7 @@ public partial class MapBuildWindow : Window
         CloseButton.Content = "Cancel build";
         BuildStatus.Text = "Building…";
         ProgressOutput.Text = "";
+        _buildClock.Restart();
         ErrorLocation.IsVisible = false;
         ShowErrorButton.IsEnabled = true;
         _errorLocation = null;
@@ -132,8 +135,7 @@ public partial class MapBuildWindow : Window
             var progress = new Progress<string>(AppendProgress);
             if (_bspPath is { } bspPath)
             {
-                AppendProgress("Compiling geometry and collision; baking sunlight, local lights and reflections…");
-                await MapBuildPipeline.BuildBspAsync(_document, bspPath, _materials, _models, cancellation.Token, _sourcePath);
+                await MapBuildPipeline.BuildBspAsync(_document, bspPath, _materials, _models, cancellation.Token, _sourcePath, progress);
                 CompletedBspPath = bspPath;
             }
             else if (_sourcePath is { } sourcePath)
@@ -175,6 +177,7 @@ public partial class MapBuildWindow : Window
         }
         finally
         {
+            _buildClock.Stop();
             _buildCancellation = null;
             BuildInputs.IsEnabled = BuildButton.IsEnabled = CompletedDirectory is null && CompletedBspPath is null;
             CloseButton.IsEnabled = true;
@@ -191,7 +194,8 @@ public partial class MapBuildWindow : Window
 
     private void AppendProgress(string message)
     {
-        ProgressOutput.Text += message + Environment.NewLine;
+        TimeSpan elapsed = _buildClock.Elapsed;
+        ProgressOutput.Text += $"[{(int)elapsed.TotalMinutes:00}:{elapsed.Seconds:00}] {message}" + Environment.NewLine;
         ProgressOutput.CaretIndex = ProgressOutput.Text.Length;
     }
 

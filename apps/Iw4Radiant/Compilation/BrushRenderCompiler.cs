@@ -46,17 +46,20 @@ internal static class BrushRenderCompiler
         MapDocument document, string assetName, ClipMapAsset clip, ComWorldAsset com,
         IReadOnlyDictionary<string, MaterialSource> materialSources, IReadOnlyDictionary<string, XModelSource> models,
         IReadOnlyList<Vector3> probeOrigins,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, IProgress<string>? progress = null)
     {
+        progress?.Report("Compiling render surfaces…");
         MapRenderSurface[] polygons = MapSurfaceCompiler.Compile(document, materialSources);
         Matrix4x4[] modelTransforms = [Matrix4x4.Identity, .. MapCompiler.BrushEntities(document).Select(entity =>
             Matrix4x4.CreateTranslation(-EditorSession.EntityOrigin(entity)) * Matrix4x4.Transpose(EntityOrientation.Rotation(entity)))];
         if (polygons.Length == 0)
             throw new InvalidDataException("Compilation requires at least one renderable brush face or mesh triangle.");
+        progress?.Report("Preparing lighting and shadow geometry…");
         var lightingScene = new BrushLightingScene(document, polygons, materialSources, models, cancellationToken);
-        var (lightmaps, faceUvs, faceLightmapIndices) = BrushLightmapCompiler.BakeLightmaps(lightingScene);
-        GfxLightGrid lightGrid = BrushLightGridCompiler.BakeLightGrid(lightingScene);
-        var (probeImages, probes) = BrushReflectionCompiler.CaptureProbes(lightingScene, probeOrigins);
+        var (lightmaps, faceUvs, faceLightmapIndices) = BrushLightmapCompiler.BakeLightmaps(lightingScene, progress);
+        GfxLightGrid lightGrid = BrushLightGridCompiler.BakeLightGrid(lightingScene, progress);
+        var (probeImages, probes) = BrushReflectionCompiler.CaptureProbes(lightingScene, probeOrigins, progress);
+        progress?.Report("Assembling rendered geometry…");
         int vertexCount = polygons.Sum(polygon => polygon.Vertices.Length);
         var positions = new byte[checked(vertexCount * WorldVertexCodec.PositionStride)];
         var layers = new byte[checked(vertexCount * WorldVertexCodec.LayerStride)];
