@@ -102,8 +102,6 @@
                                         Click="PhysicsCancel_Click" ToolTip.Tip="Discard the preview. Escape also cancels."
                                         AutomationProperties.Name="Cancel physics placement" />
                             </WrapPanel>
-                            <TextBlock Text="Preview only. Keep placement accepts these positions as one undoable edit. Cancel restores the starting positions."
-                                       FontSize="11" Foreground="#BEC7D2" TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
                     <Border x:Name="FilmPreviewPanel" IsVisible="False" Background="#F225282D" BorderBrush="#515B69"

@@ -63,7 +63,7 @@ public partial class MainWindow : Window
             };
         }
         Workspace.Camera.Session = _session;
-        Workspace.Camera.CanAcceptModelDrop = () => !_dialogs.BlocksInput;
+        Workspace.Camera.CanAcceptAssetDrop = () => !_dialogs.BlocksInput;
         Workspace.Camera.CanWalk = () => !_dialogs.BlocksInput;
         Workspace.Camera.ResolvePlayerAssets = FindBootstrapAssets;
         Workspace.Camera.InteractionStatusChanged += SetStatus;
@@ -87,7 +87,7 @@ public partial class MainWindow : Window
         RefreshLayoutControls();
         RefreshEditor();
         SetStatus("Browse an asset folder and choose a material, then draw a brush or terrain in a grid view.");
-        Closed += (_, _) => { Workspace.Camera.StopPhysicsPlacement(); Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); Workspace.Models.ReleaseImages(); };
+        Closed += (_, _) => { Workspace.Camera.StopPhysicsPlacement(); Workspace.Camera.StopGlassShatter(); Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); Workspace.Models.ReleaseImages(); };
         Deactivated += (_, _) => { Workspace.Camera.PausePhysicsPlacement(); Workspace.Camera.FinishGesture(cancel: true); };
         AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
     }
@@ -155,6 +155,7 @@ public partial class MainWindow : Window
     private void FinishGestures()
     {
         Workspace.Camera.StopPhysicsPlacement();
+        Workspace.Camera.StopGlassShatter();
         Workspace.Camera.StopWalk();
         foreach (var view in Workspace.GridViews) view.CompleteGesture();
         Workspace.Camera.FinishGesture();
@@ -410,12 +411,28 @@ public partial class MainWindow : Window
     private void OnEditorKeyDown(object? sender, KeyEventArgs e)
     {
         if (_dialogs.BlocksInput || e.Handled) return;
+        if (Workspace.Camera.GlassShatterActive)
+        {
+            if (e.Key == Key.Escape)
+            {
+                Workspace.Camera.StopGlassShatter();
+                e.Handled = true;
+                return;
+            }
+            if (Workspace.Camera.PhysicsContextMenuOpen) return;
+            if (e.Key == Key.Tab || e.Source is Control shatterControl &&
+                IsButtonInput(shatterControl) && (e.Key is Key.Space or Key.Enter)) return;
+            if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0 &&
+                Workspace.Camera.HandleNavigationKeyDown(e)) return;
+            Workspace.Camera.StopGlassShatter();
+        }
         if (Workspace.Camera.PhysicsPlacementActive)
         {
             if (Workspace.Camera.PhysicsContextMenuOpen) return;
             if (e.Key == Key.Escape)
             {
                 Workspace.Camera.StopPhysicsPlacement();
+                Workspace.Camera.StopGlassShatter();
                 e.Handled = true;
                 return;
             }
@@ -424,6 +441,7 @@ public partial class MainWindow : Window
             if (e.Source is Control input && IsTextEntry(input))
             {
                 Workspace.Camera.StopPhysicsPlacement();
+                Workspace.Camera.StopGlassShatter();
                 return;
             }
             if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0)
@@ -433,6 +451,7 @@ public partial class MainWindow : Window
                 return;
             }
             Workspace.Camera.StopPhysicsPlacement();
+            Workspace.Camera.StopGlassShatter();
         }
         if (Workspace.Camera.WalkMode)
         {

@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
@@ -7,12 +8,12 @@ namespace Iw4Radiant.Viewports.Camera;
 internal static class CameraObjectMenu
 {
     internal static ContextMenu Open(CameraViewport viewport, EditorSession session,
-        IReadOnlyList<(object Item, string Label)> hits, BrushFaceSelection? target,
+        IReadOnlyList<(object Item, string Label)> hits, BrushFaceSelection? target, Point position,
         Action<BrushKind> classify, Action createModelPlayerClip, Action<string> status)
     {
         MapDocument document = session.Document;
         var menu = new ContextMenu();
-        bool openedForPlacement = viewport.PhysicsPlacementActive;
+        bool openedForSimulation = viewport.PhysicsPlacementActive || viewport.GlassShatterActive;
         var entries = new List<(object Item, MenuItem Menu)>();
         var kinds = new MenuItem { Header = "Brush type" };
         var playerClip = new MenuItem { Header = "Create player clip from models" };
@@ -21,19 +22,20 @@ internal static class CameraObjectMenu
         var selectAll = new MenuItem { Header = "Select all hit objects", StaysOpenOnClick = true };
         var deselectAll = new MenuItem { Header = "Deselect all hit objects", StaysOpenOnClick = true };
         var physics = new MenuItem { Header = "Physics" };
+        var physicsMenuSeparator = new Separator();
         var drop = new MenuItem();
-        var selectionHint = new MenuItem
-        {
-            Header = "Select model props or prefabs, or one model with its player clips", IsEnabled = false
-        };
         var reset = new MenuItem { Header = "Reset" };
         var keep = new MenuItem { Header = "Keep placement" };
         var cancel = new MenuItem { Header = "Cancel" };
+        var shatter = new MenuItem { Header = "Shatter" };
+        ToolTip.SetTip(shatter, "Preview a break at this point on the selected glass. Panes away from this point break at their center.");
+        var shatterStop = new MenuItem { Header = "Restore glass" };
         physics.Items.Add(drop);
-        physics.Items.Add(selectionHint);
         physics.Items.Add(reset);
         physics.Items.Add(keep);
         physics.Items.Add(cancel);
+        physics.Items.Add(shatter);
+        physics.Items.Add(shatterStop);
         drop.Click += async (_, _) =>
         {
             if (!IsCurrent()) return;
@@ -44,9 +46,16 @@ internal static class CameraObjectMenu
         reset.Click += (_, _) => { if (IsCurrent()) viewport.ResetPhysicsPlacement(); };
         keep.Click += (_, _) => { if (IsCurrent()) viewport.ApplyPhysicsPlacement(); };
         cancel.Click += (_, _) => { if (IsCurrent()) viewport.StopPhysicsPlacement(); };
+        shatter.Click += async (_, _) => { if (IsCurrent()) await viewport.StartGlassShatterAsync(position); };
+        shatterStop.Click += (_, _) => { if (IsCurrent()) viewport.StopGlassShatter(); };
         viewport.PhysicsPlacementChanged += RefreshPhysics;
-        menu.Closed += (_, _) => viewport.PhysicsPlacementChanged -= RefreshPhysics;
-        if (openedForPlacement)
+        viewport.GlassShatterChanged += RefreshPhysics;
+        menu.Closed += (_, _) =>
+        {
+            viewport.PhysicsPlacementChanged -= RefreshPhysics;
+            viewport.GlassShatterChanged -= RefreshPhysics;
+        };
+        if (openedForSimulation)
         {
             menu.Items.Add(physics);
             RefreshPhysics();
@@ -113,7 +122,8 @@ internal static class CameraObjectMenu
         foreach (var (label, kind) in new[]
                  {
                      ("Structural", BrushKind.Structural), ("Detail", BrushKind.Detail),
-                     ("Non Collide", BrushKind.NonColliding), ("Weapon Clip", BrushKind.WeaponClip)
+                     ("Non Collide", BrushKind.NonColliding), ("Weapon Clip", BrushKind.WeaponClip),
+                     ("Breakable glass", BrushKind.BreakableGlass)
                  })
         {
             var entry = new MenuItem { Header = label };
@@ -122,7 +132,7 @@ internal static class CameraObjectMenu
         }
         menu.Items.Add(kinds);
         menu.Items.Add(playerClip);
-        menu.Items.Add(new Separator());
+        menu.Items.Add(physicsMenuSeparator);
         menu.Items.Add(physics);
         Refresh();
         menu.Open(viewport);
@@ -149,32 +159,43 @@ internal static class CameraObjectMenu
         void RefreshPhysics()
         {
             bool active = viewport.PhysicsPlacementActive;
-            if (openedForPlacement && (!active || !IsCurrent()))
+            bool glassActive = viewport.GlassShatterActive;
+            if (openedForSimulation && (!active && !glassActive || !IsCurrent()))
             {
                 menu.Close();
                 return;
             }
             bool canStart = CanStartPhysics();
+            bool canShatter = CameraGlassShatterSimulation.CanStart(session);
+            bool showPlacement = active || !glassActive && canStart;
+            bool showShatter = glassActive || !active && canShatter;
+            physics.IsVisible = showPlacement || showShatter;
+            physicsMenuSeparator.IsVisible = physics.IsVisible;
             physics.IsEnabled = IsCurrent();
             drop.Header = active && viewport.PhysicsPlacementRunning ? "Pause" :
                 active && viewport.PhysicsPlacementHasStarted ? "Resume" : "Drop";
-            drop.IsEnabled = physics.IsEnabled && (active
+            drop.IsVisible = showPlacement;
+            drop.IsEnabled = physics.IsEnabled && !glassActive && (active
                 ? !viewport.PhysicsPlacementPreparing && !viewport.PhysicsPlacementNeedsReset &&
                   !viewport.PhysicsPlacementSettled
                 : canStart);
-            selectionHint.IsVisible = !active && !canStart;
             reset.IsVisible = keep.IsVisible = cancel.IsVisible = active;
             reset.IsEnabled = IsCurrent() && active && !viewport.PhysicsPlacementPreparing &&
                 (viewport.PhysicsPlacementHasStarted || viewport.PhysicsPlacementNeedsReset);
             keep.IsEnabled = IsCurrent() && active && viewport.PhysicsPlacementHasChanges &&
                 !viewport.PhysicsPlacementNeedsReset;
             cancel.IsEnabled = IsCurrent() && active;
+            shatter.IsVisible = showShatter;
+            shatter.IsEnabled = IsCurrent() && !active && !viewport.GlassShatterPreparing && canShatter;
+            shatterStop.IsVisible = glassActive;
+            shatterStop.IsEnabled = IsCurrent() && glassActive;
         }
 
         bool CanStartPhysics()
         {
             if (session.HasPlacement || viewport.FoliagePaintingEnabled) return false;
-            return CameraPrefabPlacementSimulation.CanStart(session);
+            return CameraPrefabPlacementSimulation.CanStart(session) &&
+                session.Selection.Items.OfType<MapEntity>().All(entity => entity.ClassName == "misc_model");
         }
     }
 }

@@ -145,6 +145,7 @@ public partial class MainWindow
         foreach (string name in document.Brushes.SelectMany(brush => brush.Faces)
                      .Select(face => face.Material).Concat(document.Terrains.Select(terrain => terrain.Material))
                      .Concat(models.Values.SelectMany(model => model.Document.Materials).Select(material => material.Name))
+                     .Concat(document.Brushes.Where(BrushGlass.IsGlass).SelectMany(BrushGlassCompiler.RequiredMaterialNames))
                      .Distinct(StringComparer.Ordinal))
         {
             if (ClipBrushMaterial.IsPlayerClip(name) || CaulkMaterial.IsCaulk(name)) continue;

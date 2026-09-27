@@ -111,7 +111,7 @@ internal static class MapWriter
             ? Quote(value) : value;
     }
 
-    private static string Quote(string value)
+    internal static string Quote(string value)
     {
         if (value.Contains('\r') || value.Contains('\n') || value.Contains('\0'))
             throw new FormatException("Map strings cannot contain line breaks or null characters.");

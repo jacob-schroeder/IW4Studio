@@ -15,6 +15,8 @@ internal sealed class EditorScene(EditorSession session)
     private MapDocument? _document;
     private IReadOnlyDictionary<MapEntity, MapEntity>? _physicsPlacementPreview;
     private IReadOnlyDictionary<MapBrush, MapEntity>? _physicsPlacementClips;
+    private IReadOnlySet<MapBrush>? _shatterSources;
+    private IReadOnlyDictionary<MapBrush, MapEntity>? _shatterFragments;
     private EditorSelection _selection = new();
     internal Func<string, XModelSource?>? ResolveModel { get; set; }
     internal Func<string, MaterialSource?>? ResolveMaterial { get; set; }
@@ -22,6 +24,10 @@ internal sealed class EditorScene(EditorSession session)
     internal long ModelPreviewRevision { get; private set; }
     internal MapDocument Document { get { EnsureCurrent(); return _document ?? throw new InvalidOperationException("Scene is unavailable."); } }
     internal IReadOnlyDictionary<MapEntity, MapEntity>? PhysicsPlacementPreview => _physicsPlacementPreview;
+    internal IReadOnlyDictionary<MapBrush, MapEntity>? ShatterFragments => _shatterFragments;
+    internal bool IsShatterSource(MapBrush brush) => _shatterSources?.Contains(brush) == true;
+    internal MapEntity? ShatterFragmentOwner(MapBrush brush) =>
+        _shatterFragments?.GetValueOrDefault(brush);
     internal EditorSelection Selection { get { EnsureCurrent(); return _selection; } }
     internal void Invalidate() => _document = null;
     internal void SetPhysicsPlacementPreview(IReadOnlyDictionary<MapEntity, MapEntity>? poses,
@@ -33,6 +39,14 @@ internal sealed class EditorScene(EditorSession session)
         _physicsPlacementPreview = poses;
         _physicsPlacementClips = poses is null ? null : clips;
         ModelPreviewRevision++;
+        Invalidate();
+    }
+
+    internal void SetGlassShatterPreview(IReadOnlySet<MapBrush>? sources,
+        IReadOnlyDictionary<MapBrush, MapEntity>? fragments = null)
+    {
+        _shatterSources = sources;
+        _shatterFragments = sources is null ? null : fragments;
         Invalidate();
     }
 

@@ -33,7 +33,7 @@ internal sealed class FxPreviewWindow : Window
 
         _camera.Session = new EditorSession();
         _camera.ResolveMaterial = resolveMaterial;
-        _camera.CanAcceptModelDrop = () => false;
+        _camera.CanAcceptAssetDrop = () => false;
         _camera.PreviewLighting = false;
         _camera.FxPreviewStatusChanged += QueueStatusUpdate;
         _camera.RendererStatusChanged += (_, _) => QueueStatusUpdate();

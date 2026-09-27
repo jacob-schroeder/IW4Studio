@@ -124,7 +124,8 @@ internal static class OrthographicObjectMenu
         foreach (var (label, kind) in new[]
                  {
                      ("Structural", BrushKind.Structural), ("Detail", BrushKind.Detail),
-                     ("Non Collide", BrushKind.NonColliding), ("Weapon Clip", BrushKind.WeaponClip)
+                     ("Non Collide", BrushKind.NonColliding), ("Weapon Clip", BrushKind.WeaponClip),
+                     ("Breakable glass", BrushKind.BreakableGlass)
                  })
         {
             var item = new MenuItem { Header = label };

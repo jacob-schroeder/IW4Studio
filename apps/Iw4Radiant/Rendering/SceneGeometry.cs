@@ -1,4 +1,5 @@
 using IW4.Formats.SourceFormat.Material;
+using IW4.Game.Assets.Material;
 using System.Numerics;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Editing;
@@ -59,31 +60,36 @@ internal sealed class SceneGeometry
         var clipColor = new Vector3(0.85f, 0.35f, 0.85f);
         var caulkColor = new Vector3(0.45f, 0.68f, 0.72f);
         var wireColor = new Vector3(0.48f, 0.51f, 0.55f);
-        foreach (var brush in document.Brushes)
-        foreach (var polygon in brush.GetPolygons())
+        foreach (var brush in document.Brushes.Concat(editor.ShatterFragments?.Keys ?? []))
         {
-            MapEntity? physicsOwner = editor.PhysicsPlacementOwner(brush);
-            List<SceneVertex> ownerOutlines = physicsOwner is null ? outlines : GetPhysicsOutlines(physicsOwner);
-            bool faceSelected = selectedFaces.Contains(polygon.Face);
-            bool selected = selectedObjects.Contains(brush) || faceSelected;
-            MaterialSource? source = resolveMaterial?.Invoke(polygon.Face.Material);
-            if (faceSelected && physicsOwner is null) AddHighlight(polygon);
-            if (ClipBrushMaterial.IsPlayerClip(polygon.Face.Material) || CaulkMaterial.IsCaulk(polygon.Face.Material) ||
-                !OceanSurfaceGeometry.IsVisibleSurface(polygon, source?.IsWater == true))
+            if (editor.IsShatterSource(brush)) continue;
+            if (BrushGlass.IsGlass(brush) && TryAddGlassPane(brush)) continue;
+            foreach (var polygon in brush.GetPolygons())
             {
-                for (int index = 0; index < polygon.Vertices.Length; index++)
-                    AddLine(ownerOutlines, polygon.Vertices[index], polygon.Vertices[(index + 1) % polygon.Vertices.Length],
-                        selected ? highlight : CaulkMaterial.IsCaulk(polygon.Face.Material) ? caulkColor :
-                            source?.IsWater == true ? wireColor : clipColor);
-                continue;
+                MapEntity? physicsOwner = editor.PhysicsPlacementOwner(brush) ?? editor.ShatterFragmentOwner(brush);
+                List<SceneVertex> ownerOutlines = physicsOwner is null ? outlines : GetPhysicsOutlines(physicsOwner);
+                bool faceSelected = selectedFaces.Contains(polygon.Face);
+                bool selected = editor.ShatterFragmentOwner(brush) is null &&
+                    (selectedObjects.Contains(brush) || faceSelected);
+                MaterialSource? source = resolveMaterial?.Invoke(polygon.Face.Material);
+                if (faceSelected && physicsOwner is null) AddHighlight(polygon);
+                if (ClipBrushMaterial.IsPlayerClip(polygon.Face.Material) || CaulkMaterial.IsCaulk(polygon.Face.Material) ||
+                    !OceanSurfaceGeometry.IsVisibleSurface(polygon, source?.IsWater == true))
+                {
+                    for (int index = 0; index < polygon.Vertices.Length; index++)
+                        AddLine(ownerOutlines, polygon.Vertices[index], polygon.Vertices[(index + 1) % polygon.Vertices.Length],
+                            selected ? highlight : CaulkMaterial.IsCaulk(polygon.Face.Material) ? caulkColor :
+                                source?.IsWater == true ? wireColor : clipColor);
+                    continue;
+                }
+                var geometry = GetMaterialGeometry(polygon.Face.Material, physicsOwner);
+                int start = geometry.Triangles.Count;
+                AddPolygon(polygon, geometry.Triangles, Vector3.One, selected ? highlight : null, geometry.Lines,
+                    ownerOutlines,
+                    source?.Ocean, source?.IsWater == true && staticBrushes.Contains(brush) ? shore.Contacts(polygon) : null);
+                geometry.Surfaces.Add((start, geometry.Triangles.Count - start,
+                    polygon.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / polygon.Vertices.Length));
             }
-            var geometry = GetMaterialGeometry(polygon.Face.Material, physicsOwner);
-            int start = geometry.Triangles.Count;
-            AddPolygon(polygon, geometry.Triangles, Vector3.One, selected ? highlight : null, geometry.Lines,
-                ownerOutlines,
-                source?.Ocean, source?.IsWater == true && staticBrushes.Contains(brush) ? shore.Contacts(polygon) : null);
-            geometry.Surfaces.Add((start, geometry.Triangles.Count - start,
-                polygon.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / polygon.Vertices.Length));
         }
         foreach (var terrain in document.Terrains)
         {
@@ -290,6 +296,57 @@ internal sealed class SceneGeometry
         void AddOutlinePreviewRange(int start, int count)
         {
             if (count > 0) outlinePreviewRanges.Add((start, count));
+        }
+
+        bool TryAddGlassPane(MapBrush brush)
+        {
+            MapPolygon pane;
+            float thickness;
+            try { (pane, thickness) = BrushGlass.ReadPane(brush); }
+            catch (Exception exception) when (exception is ArgumentException or InvalidDataException or NotSupportedException)
+            {
+                // Keep unsupported panes editable with their ordinary brush geometry.
+                return false;
+            }
+
+            MapEntity? owner = editor.PhysicsPlacementOwner(brush);
+            var geometry = GetMaterialGeometry(pane.Face.Material, owner);
+            int start = geometry.Triangles.Count;
+            Vector3 offset = -pane.Face.Normal * (thickness * 0.5f);
+            // Native glass keeps its face UVs on a centered 2D outline, with depth stored separately.
+            AddPolygon(pane, geometry.Triangles, Vector3.One, null);
+            int end = geometry.Triangles.Count;
+            for (int index = start; index < end; index++)
+            {
+                SceneVertex vertex = geometry.Triangles[index];
+                geometry.Triangles[index] = new SceneVertex(vertex.Position + offset, vertex.Normal, vertex.Uv, vertex.Color);
+            }
+            MaterialSurfaceState surface = resolveMaterial?.Invoke(pane.Face.Material)?.Surface ?? MaterialSurfaceState.Opaque;
+            if (surface.CullFace != GfxCullFace.None)
+                for (int index = start; index < end; index += 3)
+                    for (int corner = 2; corner >= 0; corner--)
+                    {
+                        SceneVertex vertex = geometry.Triangles[index + corner];
+                        geometry.Triangles.Add(new SceneVertex(vertex.Position, -vertex.Normal, vertex.Uv, vertex.Color));
+                    }
+            geometry.Surfaces.Add((start, geometry.Triangles.Count - start,
+                pane.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / pane.Vertices.Length + offset));
+            for (int index = 0; index < pane.Vertices.Length; index++)
+                AddLine(geometry.Lines, pane.Vertices[index] + offset,
+                    pane.Vertices[(index + 1) % pane.Vertices.Length] + offset, wireColor);
+
+            // Retain the authored bounds and individual face highlights for brush editing.
+            List<SceneVertex> ownerOutlines = owner is null ? outlines : GetPhysicsOutlines(owner);
+            foreach (MapPolygon polygon in brush.GetPolygons())
+            {
+                bool faceSelected = selectedFaces.Contains(polygon.Face);
+                if (faceSelected && owner is null) AddHighlight(polygon);
+                if (!selectedObjects.Contains(brush) && !faceSelected) continue;
+                for (int index = 0; index < polygon.Vertices.Length; index++)
+                    AddLine(ownerOutlines, polygon.Vertices[index],
+                        polygon.Vertices[(index + 1) % polygon.Vertices.Length], highlight);
+            }
+            return true;
         }
 
         void AddPolygon(MapPolygon polygon, List<SceneVertex> vertices, Vector3 color, Vector3? outlineColor,

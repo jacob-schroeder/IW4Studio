@@ -85,6 +85,31 @@ public static class D3dbspAssetLinker
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray());
 
+    public static (IReadOnlyList<string> Materials, IReadOnlyList<string> PhysPresets)
+        ReadGlassDependencyNames(D3dbspFile file)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        int brushCount = GetElementCount(file.GetRequiredData(D3dbspLumpType.Brushes), 4, "collision brush");
+        int glassCellCount = checked(GetElementCount(file.GetRequiredData(D3dbspLumpType.Cells), 112, "render cell") + 1);
+        FxGlassSystem glass = D3dbspGlassCodec.Decode(
+            file.GetOptionalData(D3dbspLumpType.Glass), brushCount, glassCellCount).Fx;
+        string[] materials = glass.Defs
+            .SelectMany(definition => new[] { definition.Material, definition.MaterialShattered })
+            .OfType<MaterialAsset>()
+            .Select(material => AssetKey.FromDefinition(material).NormalizedName)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        string[] presets = glass.Defs
+            .Select(definition => definition.PhysPreset)
+            .OfType<PhysPresetAsset>()
+            .Select(preset => AssetKey.FromDefinition(preset).NormalizedName)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        return (Array.AsReadOnly(materials), Array.AsReadOnly(presets));
+    }
+
     public static D3dbspLinkResult Link(D3dbspLinkRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -222,6 +247,9 @@ public static class D3dbspAssetLinker
         int brushCount = GetElementCount(diskBrushes, 4, "collision brush");
         if (brushCount > ushort.MaxValue)
             throw new InvalidDataException("The collision brush count exceeds the IW4 ushort range.");
+        int glassCellCount = checked(GetElementCount(file.GetRequiredData(D3dbspLumpType.Cells), 112, "render cell") + 1);
+        (FxGlassSystem glassSystem, GGlassData gameGlass, ushort[] glassBrushIndices) =
+            D3dbspGlassCodec.Decode(file.GetOptionalData(D3dbspLumpType.Glass), brushCount, glassCellCount);
         var brushGraph = D3dbspCollisionCodec.DecodeBrushes(
             diskBrushes,
             file.GetRequiredData(D3dbspLumpType.BrushSides),
@@ -229,7 +257,7 @@ public static class D3dbspAssetLinker
             brushEdges,
             planes,
             clipMaterials,
-            new ushort[brushCount]);
+            glassBrushIndices);
         var leafGraph = D3dbspCollisionCodec.DecodeLeafGraph(
             file.GetRequiredData(D3dbspLumpType.Leafs),
             file.GetRequiredData(D3dbspLumpType.Models),
@@ -364,12 +392,12 @@ public static class D3dbspAssetLinker
         var fxWorld = new FxWorldAsset
         {
             Name = assetName,
-            GlassSystem = new FxGlassSystem()
+            GlassSystem = glassSystem
         };
         var gameWorld = new GameWorldMpAsset
         {
             Name = assetName,
-            GlassData = new GGlassData()
+            GlassData = gameGlass
         };
 
         BaseAsset[] roots =
@@ -405,6 +433,9 @@ public static class D3dbspAssetLinker
                     .OfType<GfxImageAsset>()
                     .Where(image => image.Name is { Length: > 0 } name && name[0] == ',')))
             .Concat(xmodelReferences)
+            .Concat(glassSystem.Defs.SelectMany(definition =>
+                new BaseAsset?[] { definition.Material, definition.MaterialShattered, definition.PhysPreset })
+                .OfType<BaseAsset>())
             .Concat(EnumerateDynamicEntityDependencies(dynamicEntityDefinitions))
             .DistinctBy(asset => (asset.SerializedAssetType, asset.SerializedAssetName))
             .ToArray();

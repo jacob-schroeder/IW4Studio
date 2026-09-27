@@ -159,7 +159,7 @@ public partial class SelectionInspector : UserControl
             {
                 bool isSound = entity.Properties.GetValueOrDefault("is_sound") == "1";
                 FxSoundExpander.Header = isSound ? "Sound" : "FX";
-                FxSoundKind.Text = isSound ? "Sound alias · choose a supported loop in Sounds" : "FX · exact source name";
+                FxSoundKind.Text = isSound ? "Sound alias · choose in Sounds" : "FX · exact source name";
                 FxSoundName.IsReadOnly = isSound;
                 ApplyFxSoundButton.IsVisible = !isSound;
                 BrowseFxSoundButton.Content = isSound ? "Change sound…" : "Browse…";

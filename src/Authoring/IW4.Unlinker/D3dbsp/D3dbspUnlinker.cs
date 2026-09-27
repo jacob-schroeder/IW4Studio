@@ -43,10 +43,23 @@ public static class D3dbspUnlinker
         ValidateCounts(gfx, clip, com, ents);
         ValidateCanonicalCollisionGraph(clip, ents);
         ValidateCanonicalRenderGraph(gfx, clip, com);
-        ValidateEmptyDerivedGraphs(fx, game);
 
         D3dbspTriggerCollisionExport collisionExport =
             D3dbspMapEntsCodec.CreateTriggerCollisionExport(ents, clip);
+        ushort[] glassBrushIndices = collisionExport.Brushes
+            .Select(brush => brush.GlassPieceIndex)
+            .ToArray();
+        GGlassData gameGlass = game.GlassData ??
+            throw new InvalidDataException("The multiplayer GameWorld has no glass-data header.");
+        bool hasGlass = !D3dbspGlassCodec.IsCanonicalEmpty(fx.GlassSystem, gameGlass, glassBrushIndices);
+        if (hasGlass &&
+            (fx.GlassSystem.DefCount != 0 || fx.GlassSystem.PieceLimit != 0 ||
+                fx.GlassSystem.InitPieceCount != 0) &&
+            fx.GlassSystem.CellCount != gfx.Cells.Count + 1)
+            throw new InvalidDataException("FxWorld glass cell count does not match the render world.");
+        byte[]? glass = hasGlass
+            ? D3dbspGlassCodec.Encode(fx.GlassSystem, gameGlass, glassBrushIndices)
+            : null;
         (byte[] brushSides, byte[] brushes) =
             D3dbspCollisionCodec.EncodeBrushGraph(collisionExport);
         (byte[] leafs, byte[] leafBrushes) =
@@ -96,6 +109,8 @@ public static class D3dbspUnlinker
             D3dbspLumpType.BrushEdges,
             D3dbspCollisionCodec.EncodeBrushEdges(collisionExport.BrushEdges));
         lumps.Add((D3dbspLumpType.Brushes, brushes));
+        if (glass is not null)
+            lumps.Add((D3dbspLumpType.Glass, glass));
         lumps.Add((
             D3dbspLumpType.UnlayeredAabbTrees,
             D3dbspGfxCodec.EncodeCanonicalUnlayeredAabbTree(gfx)));
@@ -421,31 +436,6 @@ public static class D3dbspUnlinker
         {
             throw new NotSupportedException(
                 "The render sun-primary-light index is not canonical for the primary-light table.");
-        }
-    }
-
-    private static void ValidateEmptyDerivedGraphs(FxWorldAsset fx, GameWorldMpAsset game)
-    {
-        FxGlassSystem glass = fx.GlassSystem;
-        if (glass.DefCount != 0 || glass.PieceLimit != 0 || glass.PieceWordCount != 0 ||
-            glass.InitPieceCount != 0 || glass.CellCount != 0 || glass.ActivePieceCount != 0 ||
-            glass.GeoDataLimit != 0 || glass.GeoDataCount != 0 || glass.InitGeoDataCount != 0 ||
-            glass.Defs.Count != 0 || glass.PiecePlaces.Count != 0 || glass.PieceStates.Count != 0 ||
-            glass.PieceDynamics.Count != 0 || glass.GeoData.Count != 0 || glass.IsInUse.Count != 0 ||
-            glass.CellBits.Count != 0 || glass.VisData.Count != 0 || glass.LinkOrg.Count != 0 ||
-            glass.HalfThickness.Count != 0 || glass.LightingHandles.Count != 0 ||
-            glass.InitPieceStates.Count != 0 || glass.InitGeoData.Count != 0)
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding does not support FxWorld glass data.");
-        }
-        GGlassData gameGlass = game.GlassData ??
-            throw new InvalidDataException("The multiplayer GameWorld has no glass-data header.");
-        if (gameGlass.PieceCount != 0 || gameGlass.GlassPieces.Count != 0 ||
-            gameGlass.GlassNameCount != 0 || gameGlass.GlassNames.Count != 0)
-        {
-            throw new NotSupportedException(
-                "Strict d3dbsp encoding does not support GameWorld glass data.");
         }
     }
 

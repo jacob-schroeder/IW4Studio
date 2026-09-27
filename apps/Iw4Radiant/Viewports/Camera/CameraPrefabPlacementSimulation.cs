@@ -188,78 +188,12 @@ internal sealed class CameraPrefabPlacementSimulation : IDisposable
 
         var selectedSet = selected.ToHashSet();
         var selectedClipSet = new HashSet<MapBrush>(linkedClips, ReferenceEqualityComparer.Instance);
-        var staticBrushes = new List<Vector3[]>();
-        var terrainVertices = new List<Vector3>();
-        var terrainTriangles = new List<IndexedTriangle>();
-        foreach (MapEntity entity in session.Document.Entities)
-        {
-            if (selectedSet.Contains(entity)) continue;
-            if (entity.ClassName is "worldspawn" or "func_group") AddSurfaces(entity);
-            else if (PrefabLibrary.IsPrefab(entity))
-            {
-                MapDocument preview = session.Prefabs.GetPreview(entity, session.FilePath) ??
-                    throw new ArgumentException(session.Prefabs.Error(entity, session.FilePath) ?? "A prefab collision source is unavailable.");
-                foreach (MapEntity part in preview.Entities.Where(part => part.ClassName is "worldspawn" or "func_group"))
-                    AddSurfaces(part);
-            }
-        }
-        if (staticBrushes.Count == 0 && terrainTriangles.Count == 0)
-            throw new InvalidOperationException("Physics placement needs solid world/group brush or terrain collision.");
-        if (staticBrushes.Count + moving.Count + (terrainTriangles.Count > 0 ? 1 : 0) > 32767)
+        var collision = CameraStaticPhysicsCollision.Prepare(
+            session, resolveMaterial, selectedSet, selectedClipSet, "Physics placement");
+        if (collision.Brushes.Length + moving.Count + (collision.TerrainTriangles.Length > 0 ? 1 : 0) > 32767)
             throw new NotSupportedException("Physics placement supports at most 32767 collision bodies.");
-        return new PreparedWorld(moving.ToArray(), staticBrushes.ToArray(), terrainVertices.ToArray(),
-            terrainTriangles.ToArray());
-
-        void AddSurfaces(MapEntity entity)
-        {
-            if (entity.PreservedPrimitives.Count != 0)
-                throw new NotSupportedException("Physics placement cannot classify preserved map primitives.");
-            foreach (MapBrush brush in entity.Brushes)
-            {
-                if (selectedClipSet.Contains(brush)) continue;
-                BrushGeometry.Validate(brush);
-                BrushKind kind = BrushContents.ReadForCompilation(brush);
-                if (kind is BrushKind.NonColliding or BrushKind.WeaponClip ||
-                    brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material))) continue;
-                bool solid = false, nonsolid = false;
-                foreach (MapFace face in brush.Faces)
-                {
-                    if (ClipBrushMaterial.IsPlayerClip(face.Material)) { nonsolid = true; continue; }
-                    if (CaulkMaterial.IsCaulk(face.Material)) { solid = true; continue; }
-                    MaterialSource material = resolveMaterial(face.Material) ??
-                        throw new InvalidDataException($"Physics placement material '{face.Material}' is unavailable.");
-                    if (material.IsSky || material.IsWater) nonsolid = true; else solid = true;
-                }
-                if (solid && nonsolid)
-                    throw new NotSupportedException("Physics placement cannot classify brushes mixing solid, sky, water or player-clip faces.");
-                if (!solid) continue;
-                Vector3[] points = brush.GetVertices().ToArray();
-                if (points.Length < 4 || points.Any(point => !Finite(point)))
-                    throw new InvalidDataException("Physics placement found an invalid convex world brush.");
-                staticBrushes.Add(points);
-            }
-            foreach (MapTerrain terrain in entity.Terrains)
-            {
-                if (TerrainContents.ReadNonColliding(terrain)) continue;
-                if (ClipBrushMaterial.IsPlayerClip(terrain.Material)) continue;
-                MaterialSource material = resolveMaterial(terrain.Material) ??
-                    throw new InvalidDataException($"Physics placement material '{terrain.Material}' is unavailable.");
-                if (material.IsSky || material.IsWater) continue;
-                MapSurfaceCompiler.ValidateTerrain(terrain);
-                MapTerrain surface = terrain.GetSurface();
-                int first = terrainVertices.Count;
-                terrainVertices.AddRange(surface.Vertices);
-                foreach ((int a, int b, int c) in surface.GetTriangles())
-                {
-                    Vector3 normal = Vector3.Cross(surface.Vertices[b] - surface.Vertices[a],
-                        surface.Vertices[c] - surface.Vertices[a]);
-                    if (normal.LengthSquared() <= 0.00000001f && terrain.IsCurve) continue;
-                    if (!float.IsFinite(normal.LengthSquared()) || normal.LengthSquared() <= 0)
-                        throw new InvalidDataException("Physics placement terrain has a degenerate triangle.");
-                    terrainTriangles.Add(new IndexedTriangle(first + a, first + b, first + c));
-                }
-            }
-        }
+        return new PreparedWorld(moving.ToArray(), collision.Brushes, collision.TerrainVertices,
+            collision.TerrainTriangles);
 
         bool UnsupportedMovingFace(MapFace face)
         {
@@ -407,8 +341,11 @@ internal sealed class CameraPrefabPlacementSimulation : IDisposable
     {
         if (_disposed) throw new ObjectDisposedException(nameof(CameraPrefabPlacementSimulation));
         foreach (PlacedBody body in _placed)
+        {
             _physics.BodyInterface.SetPositionRotationAndVelocity(body.Id, body.InitialOrigin,
                 body.InitialRotation, Vector3.Zero, Vector3.Zero);
+            _physics.BodyInterface.ActivateBody(body.Id);
+        }
         return CapturePoses();
     }
 

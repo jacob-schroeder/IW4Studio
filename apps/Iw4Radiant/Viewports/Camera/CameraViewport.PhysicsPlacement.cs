@@ -56,6 +56,7 @@ public sealed partial class CameraViewport
     internal async Task StartPhysicsPlacementAsync()
     {
         if (PhysicsPlacementActive || _session is not { } session || CompiledPreview is not null || CanWalk?.Invoke() == false) return;
+        StopGlassShatter();
         if (session.HasPlacement || FoliagePaintingEnabled)
         {
             InteractionStatusChanged?.Invoke("Finish asset placement or stop Painter before entering Physics placement.");

@@ -48,6 +48,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         _flyMovement = new CameraFlyMovement(this, _navigation);
         _walkMovement = new CameraWalkMovement(this, _navigation);
         _placementTimer.Tick += OnPhysicsPlacementTick;
+        _shatterTimer.Tick += OnGlassShatterTick;
         _renderer.StatusChanged += (_, _) => RendererStatusChanged?.Invoke(this, EventArgs.Empty);
         PointerPressed += OnPointerPressed;
         PointerMoved += OnPointerMoved;
@@ -60,10 +61,10 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         GotFocus += (_, _) => _walkMovement.Start();
         LostFocus += (_, _) => FinishGesture(cancel: true);
         SizeChanged += (_, _) => { FinishGesture(cancel: true); RequestNextFrameRendering(); };
-        DetachedFromVisualTree += (_, _) => { StopPhysicsPlacement(); StopWalk(); FinishGesture(cancel: true); _objectMenu?.Close(); };
+        DetachedFromVisualTree += (_, _) => { StopPhysicsPlacement(); StopGlassShatter(); StopWalk(); FinishGesture(cancel: true); _objectMenu?.Close(); };
         DragDrop.SetAllowDrop(this, true);
-        DragDrop.AddDragOverHandler(this, OnModelDragOver);
-        DragDrop.AddDropHandler(this, OnModelDrop);
+        DragDrop.AddDragOverHandler(this, OnAssetDragOver);
+        DragDrop.AddDropHandler(this, OnAssetDrop);
     }
 
     internal EditorSession? Session
@@ -73,6 +74,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         {
             if (ReferenceEquals(_session, value)) return;
             StopPhysicsPlacement();
+            StopGlassShatter();
             StopWalk();
             FinishGesture(cancel: true);
             _objectMenu?.Close();
@@ -86,6 +88,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     private void OnPointEntityPreviewChanged(bool modelsChanged)
     {
         StopPhysicsPlacement();
+        StopGlassShatter();
         StopWalk();
         if (_session is { } session && session.DeferPreviewLighting && session.TransformMode == TransformMode.Move &&
             session.Selection.Count > 0 && session.Selection.Items.All(item => item is MapEntity entity &&
@@ -108,6 +111,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         set
         {
             StopPhysicsPlacement();
+            StopGlassShatter();
             StopWalk();
             FinishGesture(cancel: true);
             _objectMenu?.Close();
@@ -139,7 +143,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         }
     }
     internal Func<string, MaterialSource?>? ResolveMaterial { get; set; }
-    internal Func<bool>? CanAcceptModelDrop { get; set; }
+    internal Func<bool>? CanAcceptAssetDrop { get; set; }
     internal IReadOnlyList<FoliagePaletteModel> FoliageModels { get; set; } = [];
     internal float FoliageRadius { get; set; } = 64;
     internal int FoliageDensity { get; set; } = 1;
@@ -319,6 +323,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     {
         // A walk world is a source snapshot. Never continue against stale collision.
         StopPhysicsPlacement();
+        StopGlassShatter();
         StopWalk();
         if (_transform is { IsCurrent: false }) FinishGesture(cancel: true);
         _renderer.RefreshScene();
@@ -328,6 +333,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     internal void ReloadTextures()
     {
         StopPhysicsPlacement();
+        StopGlassShatter();
         StopWalk();
         _renderer.ReloadTextures();
         RequestNextFrameRendering();
@@ -406,6 +412,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     protected override void OnOpenGlDeinit(GlInterface gl)
     {
         StopPhysicsPlacement();
+        StopGlassShatter();
         StopWalk();
         FinishGesture(cancel: true);
         _renderer.ReleaseResources();
@@ -413,6 +420,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     protected override void OnOpenGlLost()
     {
         StopPhysicsPlacement();
+        StopGlassShatter();
         StopWalk();
         FinishGesture(cancel: true);
         _renderer.ContextLost();
@@ -433,7 +441,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         NotifyFxPreviewStatusChanged(fxWasActive, previousFxNotice);
         NotifyMapFxPreviewStatusChanged(mapFxWasActive, previousMapFxNotice);
         // Render one final frame when an effect finishes so its last particles disappear.
-        if (_renderer.HasVisibleAnimatedWater || fxWasPlaying ||
+        if (_renderer.HasPendingTextures || _renderer.HasVisibleAnimatedWater || fxWasPlaying ||
             _renderer.HasPlayingFxPreview || _renderer.HasPlayingMapFxPreview)
             RequestNextFrameRendering();
     }
@@ -592,7 +600,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
                     CameraPicking.PickAll(session, _navigation, point, Bounds.Size, EditorTool.Face)
                         .FirstOrDefault().Item as BrushFaceSelection;
                 _objectMenu = CameraObjectMenu.Open(this, session,
-                    hits, face,
+                    hits, face, point,
                     kind => BrushKindRequested?.Invoke(kind),
                     () => CreateModelPlayerClipRequested?.Invoke(),
                     message => InteractionStatusChanged?.Invoke(message));
@@ -848,12 +856,14 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         return (tangent, Vector3.Normalize(Vector3.Cross(normal, tangent)));
     }
 
-    private void OnModelDragOver(object? sender, DragEventArgs e)
+    private void OnAssetDragOver(object? sender, DragEventArgs e)
     {
-        if (WalkMode || PhysicsPlacementActive || CompiledPreview is not null) { e.DragEffects = DragDropEffects.None; e.Handled = true; return; }
+        if (WalkMode || PhysicsPlacementActive || GlassShatterActive || CompiledPreview is not null) { e.DragEffects = DragDropEffects.None; e.Handled = true; return; }
         try
         {
-            e.DragEffects = CanAcceptModelDrop?.Invoke() != false && XModelDrag.TryRead(e.DataTransfer, out _, out _) &&
+            bool supported = XModelDrag.TryRead(e.DataTransfer, out _, out _) ||
+                FxSoundDrag.TryRead(e.DataTransfer, out _, out _);
+            e.DragEffects = CanAcceptAssetDrop?.Invoke() != false && supported &&
                 TryMapHit(e.GetPosition(this), includeModels: true, out _, out _) ? DragDropEffects.Copy : DragDropEffects.None;
             e.Handled = true;
         }
@@ -865,24 +875,28 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         }
     }
 
-    private void OnModelDrop(object? sender, DragEventArgs e)
+    private void OnAssetDrop(object? sender, DragEventArgs e)
     {
         e.Handled = true;
         e.DragEffects = DragDropEffects.None;
-        if (WalkMode || PhysicsPlacementActive || CompiledPreview is not null) return;
+        if (WalkMode || PhysicsPlacementActive || GlassShatterActive || CompiledPreview is not null) return;
         try
         {
-            if (CanAcceptModelDrop?.Invoke() == false || _session is not { } session ||
-                !XModelDrag.TryRead(e.DataTransfer, out string name, out bool align) ||
-                session.Scene.ResolveModel?.Invoke(name) is not { } model ||
+            if (CanAcceptAssetDrop?.Invoke() == false || _session is not { } session) return;
+            bool modelDrop = XModelDrag.TryRead(e.DataTransfer, out string name, out bool align);
+            bool isSound = false;
+            if (!modelDrop && !FxSoundDrag.TryRead(e.DataTransfer, out name, out isSound)) return;
+            XModelSource? model = modelDrop ? session.Scene.ResolveModel?.Invoke(name) : null;
+            if (modelDrop && model is null ||
                 !TryMapHit(e.GetPosition(this), includeModels: true, out Vector3 hit, out Vector3 normal))
             {
-                InteractionStatusChanged?.Invoke("Drop the model onto an existing visible map surface.");
+                InteractionStatusChanged?.Invoke("Drop the asset onto an existing visible map surface.");
                 return;
             }
             FinishGesture(cancel: true);
             if (session.HasPlacement) session.CancelPlacement();
-            XModelEditing.Place(session, model, hit, align ? normal : null);
+            if (model is not null) XModelEditing.Place(session, model, hit, align ? normal : null);
+            else GameplayEntityEditing.PlaceFxSound(session, name, isSound, hit);
             e.DragEffects = DragDropEffects.Copy;
             InteractionStatusChanged?.Invoke($"Placed {name}.");
         }

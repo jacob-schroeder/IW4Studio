@@ -119,6 +119,7 @@ internal sealed class SceneRenderer
     internal bool HasRenderingError { get; private set; }
     internal bool HasAnimatedWater { get; private set; }
     internal bool HasVisibleAnimatedWater { get; private set; }
+    internal bool HasPendingTextures => _materialTextures.HasPendingTextures;
     internal bool HasActiveFxPreview => _fxPreview is not null;
     internal bool HasPlayingFxPreview => _fxPreview?.IsPlaying == true;
     internal bool IsFxPreviewPaused => _fxPreview?.IsPaused == true;
@@ -439,6 +440,8 @@ internal sealed class SceneRenderer
                 if (_compiledPreview is { } compiled) UploadCompiledScene(gl, compiled, resolveMaterial);
                 else UploadScene(gl, session, resolveMaterial);
             }
+            if (_materialTextures.UploadReady(gl) && !_materialTextures.HasPendingTextures && _compiledPreview is null)
+                _shadowsDirty = _reflectionsDirty = true;
             if (_movePreviewDirty) UpdatePointEntityMove(gl);
             if (_compiledPreview is null && previewLighting && _shadowsDirty &&
                 (!session.DeferPreviewLighting || _physicsTransforms is not null))

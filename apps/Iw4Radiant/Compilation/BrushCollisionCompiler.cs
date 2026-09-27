@@ -50,6 +50,7 @@ internal static class BrushCollisionCompiler
         var contents = new uint[sourceBrushes.Count];
         Vector3 worldMin = new(float.PositiveInfinity), worldMax = new(float.NegativeInfinity);
         uint combinedContents = 0;
+        ushort glassPieceIndex = 0;
         for (int brushIndex = 0; brushIndex < sourceBrushes.Count; brushIndex++)
         {
             MapBrush source = sourceBrushes[brushIndex];
@@ -135,6 +136,8 @@ internal static class BrushCollisionCompiler
             brushes[brushIndex] = new CBrush
             {
                 NumSides = checked((ushort)localSides.Length),
+                // World brush order also defines the native initial-pane table.
+                GlassPieceIndex = BrushGlass.IsGlass(source) ? checked(++glassPieceIndex) : (ushort)0,
                 Sides = localSides,
                 BaseAdjacentSide = localEdges.ToArray(),
                 AxialMaterialNum = axialMaterials,

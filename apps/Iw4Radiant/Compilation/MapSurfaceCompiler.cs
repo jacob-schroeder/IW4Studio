@@ -82,7 +82,7 @@ internal static class MapSurfaceCompiler
         WaterShoreGeometry? shore)
     {
         var surfaces = new List<MapRenderSurface>();
-        foreach (MapPolygon boundary in entity.Brushes.SelectMany(brush => brush.GetPolygons()))
+        foreach (MapPolygon boundary in entity.Brushes.Where(brush => !BrushGlass.IsGlass(brush)).SelectMany(brush => brush.GetPolygons()))
         {
             if (ClipBrushMaterial.IsPlayerClip(boundary.Face.Material) || CaulkMaterial.IsCaulk(boundary.Face.Material)) continue;
             MaterialSource material = materials[boundary.Face.Material];

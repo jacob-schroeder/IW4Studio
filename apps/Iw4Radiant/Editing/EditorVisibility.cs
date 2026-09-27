@@ -54,6 +54,7 @@ internal sealed class EditorVisibility
                 MapBrush brush => BrushContents.Read(brush) switch
                 {
                     BrushKind.Detail => EditorFilter.Detail,
+                    BrushKind.BreakableGlass => EditorFilter.Detail,
                     BrushKind.NonColliding => EditorFilter.NonColliding,
                     BrushKind.WeaponClip => EditorFilter.WeaponClip,
                     _ => EditorFilter.Structural

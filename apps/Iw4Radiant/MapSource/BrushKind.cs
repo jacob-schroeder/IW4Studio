@@ -5,5 +5,6 @@ internal enum BrushKind
     Structural,
     Detail,
     NonColliding,
-    WeaponClip
+    WeaponClip,
+    BreakableGlass
 }

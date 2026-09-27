@@ -1,5 +1,7 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Platform.Storage;
+using Iw4Radiant.Editing;
 
 namespace Iw4Radiant.Views;
 
@@ -19,7 +21,6 @@ public partial class FxSoundBrowser : UserControl
 
     public bool IsSoundBrowser { get; set; }
     internal string? SourceDirectory { get; private set; }
-    internal event Action<string, bool>? PlacementRequested;
     internal event Action<string>? SelectedSoundRequested;
     internal event Action<FxSoundAsset>? PreviewRequested;
     internal event Action? PreviewStopRequested;
@@ -44,9 +45,10 @@ public partial class FxSoundBrowser : UserControl
         AssetDetail.Text = SourceDirectory is null
             ? "Reference preserved. Choose the raw library used to build this map."
             : $"No source file for this reference in {Path.GetFileName(SourceDirectory)}. " +
-              (IsSoundBrowser ? "Choose another library or select a supported loop." : "Choose another library or edit the reference.");
+              (IsSoundBrowser ? "Choose another library or select a sound." : "Choose another library or edit the reference.");
         PreviewButton.IsEnabled = false;
         PreviewStateText.Text = "This reference has no source file in the selected library.";
+        PreviewStateText.IsVisible = true;
         ToolTip.SetTip(PreviewStateText, null);
     }
 
@@ -56,10 +58,15 @@ public partial class FxSoundBrowser : UserControl
         _dialogs = dialogs;
         _finishGestures = finishGestures;
         _setStatus = setStatus;
+        ToolTip.SetTip(AssetList, IsSoundBrowser
+            ? "Drag a sound row onto the camera to place it."
+            : "Drag an FX row onto the camera to place it.");
         ToolTip.SetTip(PreviewButton, IsSoundBrowser
             ? "Hear this sound before placing it in the map."
             : "Open this effect in the preview window before placing it in the map.");
         UseOnSelectedSoundButton.IsVisible = IsSoundBrowser;
+        Grid.SetColumnSpan(PreviewButton, IsSoundBrowser ? 1 : 2);
+        PreviewButton.Classes.Set("compact", IsSoundBrowser);
         MapPreviewStateText.IsVisible = true;
         MapPreviewStateText.Text = IsSoundBrowser
             ? "Map sounds off · use Sounds above the camera."
@@ -67,16 +74,26 @@ public partial class FxSoundBrowser : UserControl
         ChooseSourceButton.Click += async (_, _) => await ChooseSourceAsync(owner);
         SearchBox.TextChanged += (_, _) => FilterAssets();
         AssetList.SelectionChanged += (_, _) => ShowSelected();
-        PlaceButton.Click += (_, _) =>
+        AssetList.AddHandler(PointerPressedEvent, async (_, e) =>
         {
-            if (dialogs.BlocksInput || SelectedAsset() is not { } asset) return;
-            finishGestures();
-            PlacementRequested?.Invoke(asset.Name, asset.IsSound);
-        };
+            if (dialogs.BlocksInput || !e.GetCurrentPoint(AssetList).Properties.IsLeftButtonPressed) return;
+            FxSoundAsset? selected = null;
+            for (Control? current = e.Source as Control; current is not null && !ReferenceEquals(current, AssetList);
+                 current = current.Parent as Control)
+                if (current.DataContext is FxSoundAsset asset) { selected = asset; break; }
+            if (selected is null || selected.IsSound != IsSoundBrowser) return;
+            AssetList.SelectedItem = selected;
+            try
+            {
+                await DragDrop.DoDragDropAsync(e, FxSoundDrag.Create(selected.Name, selected.IsSound), DragDropEffects.Copy);
+            }
+            catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+            { setStatus(exception.Message); }
+        }, handledEventsToo: true);
         UseOnSelectedSoundButton.Click += (_, _) =>
         {
             if (dialogs.BlocksInput || !_canApplyToSelectedSound ||
-                SelectedAsset() is not { IsSound: true, IsKnownLoop: true } asset) return;
+                SelectedAsset() is not { IsSound: true } asset) return;
             finishGestures();
             SelectedSoundRequested?.Invoke(asset.Name);
         };
@@ -158,7 +175,7 @@ public partial class FxSoundBrowser : UserControl
     internal void RefreshSelectedSound(bool canApply)
     {
         _canApplyToSelectedSound = canApply;
-        UseOnSelectedSoundButton.IsEnabled = canApply && SelectedAsset() is { IsSound: true, IsKnownLoop: true };
+        UseOnSelectedSoundButton.IsEnabled = canApply && SelectedAsset() is { IsSound: true };
     }
 
     internal void SetMapPreviewStatus(string message, string? detail)
@@ -175,27 +192,25 @@ public partial class FxSoundBrowser : UserControl
             if (_previewing) PreviewStopRequested?.Invoke();
             _previewing = false;
             _shownAsset = asset;
-            PreviewStateText.Text = asset is null ? "Select an asset to preview." :
-                asset.IsSound ? "Listen before placing." : "Preview in its own window before placing.";
+            PreviewStateText.Text = asset is null ? "Select an asset to preview." : "";
+            PreviewStateText.IsVisible = asset is null;
             ToolTip.SetTip(PreviewStateText, null);
         }
         PreviewButton.IsEnabled = asset is not null && SourceDirectory is not null;
         PreviewButton.Content = IsSoundBrowser && _previewing ? "Stop preview" : IsSoundBrowser ? "Listen" : "Preview FX";
-        PlaceButton.IsEnabled = asset is not null && (!asset.IsSound || asset.IsKnownLoop);
-        UseOnSelectedSoundButton.IsEnabled = _canApplyToSelectedSound && asset is { IsSound: true, IsKnownLoop: true };
+        UseOnSelectedSoundButton.IsEnabled = _canApplyToSelectedSound && asset is { IsSound: true };
         AssetName.Text = asset?.Name ?? "Select an asset";
         ToolTip.SetTip(AssetName, asset?.Name);
         AssetDetail.Text = asset is null ? "Exact asset name appears here." :
             (asset.IsSound ? "Sound" : $"{asset.Category} · FX") +
-            (asset.IsSound ? asset.IsKnownLoop
-                ? " · Used as a loop in PS3 map scripts"
-                : " · Loop use unverified; placement and marker change unavailable" : "");
+            (asset is { IsSound: true, IsKnownLoop: true } ? " · Used as a loop in PS3 map scripts" : "");
     }
 
     internal void SetPreviewState(bool playing, string message, string? detail = null)
     {
         _previewing = playing;
         PreviewStateText.Text = message;
+        PreviewStateText.IsVisible = !string.IsNullOrWhiteSpace(message);
         ToolTip.SetTip(PreviewStateText, detail);
         PreviewButton.Content = IsSoundBrowser && playing ? "Stop preview" : IsSoundBrowser ? "Listen" : "Preview FX";
     }

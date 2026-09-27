@@ -72,9 +72,9 @@ internal static class MapCompiler
             "Free-for-all spawns are required before building.";
     }
 
-    internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; native all-face water volumes and GPU ocean tops; solid terrain, painted overlays, decals, cutouts and static glass with native materials, skies and static models. " +
+    internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; native all-face water volumes and GPU ocean tops; solid terrain, painted overlays, decals, cutouts, static glass and rectangular breakable glass with native materials, skies and static models. " +
         "Bakes point and targeted spot lights, sky ambient, one diffuse bounce from opaque world surfaces and reflections; requires authored sunlight and a reflection probe. " +
-        "Native multiplayer points, script entities, brush/trigger models, groups and unambiguous prefabs. Full map builds write FX and sound source markers to scripts; standalone BSP output omits them. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; stage volumes, primary local lights and breakable glass are not compiled yet.";
+        "Native multiplayer points, script entities, brush/trigger models, groups and unambiguous prefabs. Full map builds write FX and sound source markers to scripts; standalone BSP output omits them. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; stage volumes and primary local lights are not compiled yet.";
 
     internal static IEnumerable<MapEntity> BrushEntities(MapDocument document) =>
         document.Entities.Where(entity => entity != document.World && entity.Brushes.Count > 0);
@@ -97,6 +97,9 @@ internal static class MapCompiler
         }
         Vector3[] probeOrigins = Validate(document, assetName, materials);
         materials = PrepareWaterMaterials(document, materials);
+        var staticMaterialNames = document.Brushes.Where(brush => !BrushGlass.IsGlass(brush))
+            .SelectMany(brush => brush.Faces).Select(face => face.Material)
+            .Concat(document.Terrains.Select(terrain => terrain.Material)).ToHashSet(StringComparer.Ordinal);
         ClipMaterial[] baseMaterials = document.Brushes.SelectMany(brush => brush.Faces)
             .Select(face => face.Material).Concat(document.World.Terrains.Select(terrain => terrain.Material))
             .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
@@ -117,7 +120,8 @@ internal static class MapCompiler
                     material.GameFlags != (MaterialGameFlags.NoMarks | MaterialGameFlags.HasReflection)))
                     throw new NotSupportedException($"Water material '{name}' is outside the proven stock PS3 w_water/wc_water profile.");
                 if (!material.IsSky && (state.TechniqueType != MaterialTechniqueType.Lit ||
-                    !(material.TechniqueSet.StartsWith("w_", StringComparison.Ordinal) || material.TechniqueSet.StartsWith("wc_", StringComparison.Ordinal)) ||
+                    !(material.TechniqueSet.StartsWith("w_", StringComparison.Ordinal) || material.TechniqueSet.StartsWith("wc_", StringComparison.Ordinal) ||
+                        !staticMaterialNames.Contains(name) && material.TechniqueSet.StartsWith("m_", StringComparison.Ordinal)) ||
                     state.IsBlended && !state.SupportsAlpha || !state.IsBlended && !state.DepthWrite ||
                     state.DepthTest is not (GfxDepthTest.Less or GfxDepthTest.LessThanOrEqual) || state.SortKey is < 0 or >= 39))
                     throw new NotSupportedException($"Material '{name}' is outside the native lit world profile. Use an opaque, alpha-tested or standard alpha-blended world material.");
@@ -147,6 +151,8 @@ internal static class MapCompiler
                 Contents = item.Contents,
                 SurfaceFlags = baseMaterialsByName[item.Material].SurfaceFlags
             }).ToArray();
+        progress?.Report("Compiling breakable glass…");
+        FxGlassSystem glass = BrushGlassCompiler.Compile(document, materials, renderCellCount: 1);
         progress?.Report("Compiling entities and brush collision…");
         MapEntsAsset entities = CompileEntities(document, assetName);
         ClipMapAsset collision = BrushCollisionCompiler.Compile(document, assetName, clipMaterials,
@@ -159,8 +165,16 @@ internal static class MapCompiler
         progress?.Report("Assembling compiled map and model placements…");
         return MapStaticModelCompiler.Append(document, D3dbspUnlinker.Unlink([
             collision, sun, graphics, entities,
-            new GameWorldMpAsset { Name = assetName, GlassData = new GGlassData() },
-            new FxWorldAsset { Name = assetName }
+            new GameWorldMpAsset
+            {
+                Name = assetName,
+                GlassData = new GGlassData
+                {
+                    PieceCount = checked((int)glass.InitPieceCount),
+                    GlassPieces = Enumerable.Range(0, checked((int)glass.InitPieceCount)).Select(_ => new GGlassPiece()).ToArray()
+                }
+            },
+            new FxWorldAsset { Name = assetName, GlassSystem = glass }
         ]));
     }
 
@@ -205,6 +219,17 @@ internal static class MapCompiler
         {
             BrushGeometry.Validate(brush);
             BrushKind kind = BrushContents.ReadForCompilation(brush);
+            var glassSettings = BrushGlass.Read(brush);
+            if (kind == BrushKind.BreakableGlass)
+            {
+                if (!document.World.Brushes.Contains(brush))
+                    throw new NotSupportedException("Breakable glass must belong to worldspawn before compilation.");
+                if (glassSettings is null)
+                    throw new InvalidDataException("Configure this pane with Brush type → Breakable glass before building.");
+                _ = BrushGlass.ReadPane(brush);
+            }
+            else if (glassSettings is not null)
+                throw new InvalidDataException("Glass settings require the Breakable glass brush type.");
             ValidateDirectives(brush.Directives, brushContents: true);
             if (brush.Faces.Any(face => ClipBrushMaterial.IsPlayerClip(face.Material)) &&
                 !brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material)))
@@ -367,7 +392,7 @@ internal static class MapCompiler
         {
             var tokens = MapTokenizer.Tokenize(directive);
             if (MapOrganization.IsLayerDirective(directive)) continue;
-            if (brushContents && tokens.Count > 0 && !tokens[0].Quoted && tokens[0].Value == "contents") continue;
+            if (brushContents && tokens.Count > 0 && !tokens[0].Quoted && tokens[0].Value is "contents" or "glass") continue;
             if (brushContents && MapToolFlags.ReadForCompilation(directive)) continue;
             throw new NotSupportedException($"Source directive '{directive}' is not supported by compilation.");
         }

@@ -9,6 +9,7 @@ internal static class BrushContents
     private const int DetailContents = 0x08000000;
     private const int NonCollidingContents = 0x08000004;
     private const int WeaponClipContents = 0x08002080;
+    private const int GlassContents = 0x08000010;
 
     internal static BrushKind Read(MapBrush brush)
     {
@@ -21,6 +22,7 @@ internal static class BrushContents
                 kind = token.Value switch
                 {
                     "weaponClip" => BrushKind.WeaponClip,
+                    "glass" => BrushKind.BreakableGlass,
                     "nonColliding" when kind != BrushKind.WeaponClip => BrushKind.NonColliding,
                     "detail" when kind == BrushKind.Structural => BrushKind.Detail,
                     _ => kind
@@ -31,6 +33,7 @@ internal static class BrushContents
 
     internal static void Set(MapBrush brush, BrushKind kind)
     {
+        if (kind != BrushKind.BreakableGlass) BrushGlass.Clear(brush);
         // Preserve unrelated native contents flags and other brush directives.
         var contents = new List<string>();
         for (int index = brush.Directives.Count - 1; index >= 0; index--)
@@ -38,7 +41,7 @@ internal static class BrushContents
             var tokens = MapTokenizer.Tokenize(brush.Directives[index]);
             if (tokens.Count < 3 || tokens[0].Value != "contents" || tokens[^1].Value != ";") continue;
             contents.InsertRange(0, tokens.Skip(1).SkipLast(1).Select(token => token.Value)
-                .Where(value => value is not ("detail" or "nonColliding" or "weaponClip")));
+                .Where(value => value is not ("detail" or "nonColliding" or "weaponClip" or "glass")));
             brush.Directives.RemoveAt(index);
         }
         if (kind != BrushKind.Structural)
@@ -47,6 +50,7 @@ internal static class BrushContents
                 BrushKind.Detail => "detail",
                 BrushKind.NonColliding => "nonColliding",
                 BrushKind.WeaponClip => "weaponClip",
+                BrushKind.BreakableGlass => "glass",
                 _ => throw new ArgumentOutOfRangeException(nameof(kind))
             });
         if (contents.Count > 0) brush.Directives.Add("contents " + string.Join(' ', contents.Distinct()) + ";");
@@ -70,6 +74,7 @@ internal static class BrushContents
                 "detail" => BrushKind.Detail,
                 "nonColliding" => BrushKind.NonColliding,
                 "weaponClip" => BrushKind.WeaponClip,
+                "glass" => BrushKind.BreakableGlass,
                 _ => throw new NotSupportedException($"Brush contents '{tokens[1].Value}' is not supported by compilation.")
             };
         }
@@ -82,8 +87,9 @@ internal static class BrushContents
         BrushKind.Detail => materialContents | DetailContents,
         BrushKind.NonColliding => NonCollidingContents,
         BrushKind.WeaponClip => WeaponClipContents,
+        BrushKind.BreakableGlass => GlassContents,
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 
-    internal static bool BlocksPlayer(BrushKind kind) => kind is BrushKind.Structural or BrushKind.Detail;
+    internal static bool BlocksPlayer(BrushKind kind) => kind is BrushKind.Structural or BrushKind.Detail or BrushKind.BreakableGlass;
 }

@@ -270,9 +270,14 @@ internal static partial class FastFileConverter
             }
         }
         D3dbspFile sourceBsp = D3dbspFile.Read(inputPath);
+        var glassDependencies = D3dbspAssetLinker.ReadGlassDependencyNames(sourceBsp);
         if (modelSources is not null)
+        {
             foreach (string name in sourceBsp.GetStaticModelNames(staticScriptModelNames))
                 availableXModels.Add(modelSources.LoadModel(name));
+            foreach (string name in glassDependencies.PhysPresets)
+                modelSources.LoadPhysPreset(name);
+        }
         IReadOnlyDictionary<string, string>? worldProperties = sourceBsp.GetEntities().FirstOrDefault(entity =>
             entity.GetValueOrDefault("classname") == "worldspawn");
         MapFactionSettings factions = MapFactionAuthoring.Read(worldProperties ??
@@ -308,6 +313,7 @@ internal static partial class FastFileConverter
         if (materialSources is not null)
         {
             foreach (string name in sourceBsp.GetRenderMaterialNames()
+                         .Concat(glassDependencies.Materials)
                          .Where(name => !WaterMaterialAuthoring.IsAuthoredMaterialName(name))
                          .Concat(authoredWaterNames.Select(name => waterDefinitions.TryGetValue(name, out var definition)
                              ? definition.SourceMaterial
@@ -706,6 +712,16 @@ internal static partial class FastFileConverter
                     "(MapConverter: --bootstrap-fastfile).");
             }
         }
+
+        AssetKey[] missingGlassProviders = glassDependencies.Materials
+            .Select(name => new AssetKey(CanonicalAssetFamily.FromSerializedType(XAssetType.Material), name))
+            .Concat(glassDependencies.PhysPresets.Select(name =>
+                new AssetKey(CanonicalAssetFamily.FromSerializedType(XAssetType.PhysPreset), name)))
+            .Where(key => !existingFullProviderKeys.Contains(key)).ToArray();
+        if (missingGlassProviders.Length != 0)
+            throw new InvalidDataException("Breakable glass requires full material and physics preset providers for: " +
+                string.Join(", ", missingGlassProviders) +
+                ". Supply their native sources in the asset library or an owned provider fastfile.");
 
         SoundAliasListAsset[] additionalSounds = ResolveAdditionalSounds(
             additionalFx,

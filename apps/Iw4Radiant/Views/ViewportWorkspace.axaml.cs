@@ -22,6 +22,7 @@ public partial class ViewportWorkspace : UserControl
     private bool _compiledPreviewVisible;
     private bool _updatingCameraControls;
     private string? _walkError;
+    private string? _glassShatterError;
     private Control? _activeBeforeCompiledPreview;
     private GridLength[] _twoColumns = [new(1, GridUnitType.Star), new(5), new(1.2, GridUnitType.Star)];
     private GridLength[] _fourColumns = [new(1, GridUnitType.Star), new(5), new(1, GridUnitType.Star)];
@@ -50,6 +51,12 @@ public partial class ViewportWorkspace : UserControl
             _walkError = error;
             RefreshConsoleOutput();
             if (error is not null && !CameraView.WalkMode) ShowConsole();
+        };
+        CameraView.GlassShatterErrorChanged += error =>
+        {
+            _glassShatterError = error;
+            RefreshConsoleOutput();
+            if (error is not null) ShowConsole();
         };
         CameraView.NavigationModeChanged += RefreshCameraControls;
         CameraView.PhysicsPlacementChanged += RefreshCameraControls;
@@ -182,7 +189,7 @@ public partial class ViewportWorkspace : UserControl
     private void RefreshConsoleOutput()
     {
         RendererErrorText.Text = string.Join(Environment.NewLine + Environment.NewLine,
-            new[] { CameraView.RendererError, _walkError, CameraView.WalkPlayerError }.Where(message => !string.IsNullOrEmpty(message)));
+            new[] { CameraView.RendererError, _walkError, _glassShatterError, CameraView.WalkPlayerError }.Where(message => !string.IsNullOrEmpty(message)));
         RendererErrorPanel.IsVisible = !string.IsNullOrEmpty(RendererErrorText.Text);
     }
 

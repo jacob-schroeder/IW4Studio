@@ -92,9 +92,15 @@ public partial class MaterialBrowser : UserControl
 
     internal event Action? CatalogChanged;
     internal event Func<string, bool, Task>? FolderLoaded;
+    internal string? LibraryRoot => _libraryRoot;
+    internal MaterialPickerOption[] AvailableMaterialOptions =>
+        _libraryRoot is { } root && Directory.Exists(Path.Combine(root, "materials"))
+            ? _materials.Values.Where(item => item.Material.PreviewDefinitionAvailable)
+                .Select(item => new MaterialPickerOption(item.Name, item.Material, null)).ToArray()
+            : [];
     internal MaterialSource? ResolveMaterial(string name) =>
-        _materials.GetValueOrDefault(name) is { Material.PreviewDefinitionAvailable: true } thumbnail &&
-        (thumbnail.Preview is not null || thumbnail.IsSky) ? thumbnail.Material : null;
+        _materials.GetValueOrDefault(name) is { Material.PreviewDefinitionAvailable: true } thumbnail
+            ? thumbnail.Material : null;
     internal IReadOnlyList<MaterialSource> AvailableSkies => _materials.Values
         .Where(material => material.IsSky && material.Preview is not null)
         .Select(material => material.Material).OrderBy(material => material.Name, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -515,6 +521,9 @@ public partial class MaterialBrowser : UserControl
             ReleaseImages(invalidateLoad: false);
             _libraryRoot = MaterialCatalog.NormalizeRoot(root);
             MaterialSource[] sources = catalog.Values.ToArray();
+            // Definitions are usable while thumbnails load, including by modal material pickers.
+            foreach (MaterialSource source in sources)
+                _materials.Add(source.Name, new MaterialThumbnail(source, null));
             catalogInstalled = true;
             session.Material = "";
             MaterialName.Text = "";
@@ -532,11 +541,20 @@ public partial class MaterialBrowser : UserControl
                     return false;
                 }
                 skippedImages += skipped;
-                foreach (var thumbnail in thumbnails)
+                var updates = thumbnails.ToDictionary(thumbnail => thumbnail.Name, StringComparer.Ordinal);
+                foreach (var thumbnail in thumbnails) _materials[thumbnail.Name] = thumbnail;
+                // A thumbnail does not change the filter or ordering. Replace only its displayed tile.
+                var selected = MaterialList.SelectedItem as MaterialThumbnail;
+                _filtering = true;
+                try
                 {
-                    _materials.Add(thumbnail.Name, thumbnail);
+                    for (int visibleIndex = 0; visibleIndex < _visibleMaterials.Count; visibleIndex++)
+                        if (updates.TryGetValue(_visibleMaterials[visibleIndex].Name, out var thumbnail))
+                            _visibleMaterials[visibleIndex] = thumbnail;
+                    if (selected is not null && updates.TryGetValue(selected.Name, out var replacement))
+                        MaterialList.SelectedItem = replacement;
                 }
-                FilterMaterials();
+                finally { _filtering = false; }
                 index += batch.Length;
             }
             CatalogChanged?.Invoke();

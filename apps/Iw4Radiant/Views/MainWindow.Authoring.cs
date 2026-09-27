@@ -50,8 +50,6 @@ public partial class MainWindow
         foreach (FxSoundBrowser browser in new[] { Workspace.FxBrowser, Workspace.SoundBrowser })
         {
             browser.InitializeActions(this, _dialogs, FinishGestures, SetStatus);
-            browser.PlacementRequested += (name, isSound) => BeginPlacement(name,
-                (position, _) => GameplayEntityEditing.PlaceFxSound(_session, name, isSound, position));
             browser.SelectedSoundRequested += name =>
             {
                 if (_dialogs.BlocksInput) return;

@@ -15,13 +15,14 @@ internal static class MaterialPickerDialog
     private const int PageSize = 96;
 
     internal static async Task<string?> ShowAsync(Window owner, string title,
-        IReadOnlyList<MaterialPickerOption> options, string? initialName)
+        IReadOnlyList<MaterialPickerOption> options, string? initialName, string? initialQuery = null)
     {
         MaterialPickerOption[] all = options.OrderBy(option => option.Name, StringComparer.OrdinalIgnoreCase).ToArray();
-        MaterialPickerOption[] matches = all;
+        MaterialPickerOption[] matches = string.IsNullOrWhiteSpace(initialQuery) ? all : all.Where(option =>
+            option.Name.Contains(initialQuery, StringComparison.OrdinalIgnoreCase)).ToArray();
         MaterialPickerOption? selected = all.FirstOrDefault(option =>
             option.Name.Equals(initialName, StringComparison.Ordinal));
-        int page = selected is null ? 0 : Array.IndexOf(all, selected) / PageSize;
+        int page = selected is null ? 0 : Math.Max(0, Array.IndexOf(matches, selected)) / PageSize;
         bool closed = false;
         CancellationTokenSource? pageCancellation = null;
         CancellationTokenSource? detailCancellation = null;
@@ -30,7 +31,8 @@ internal static class MaterialPickerDialog
         var cards = new List<(MaterialPickerOption Option, Button Button,
             Image Image, TextBlock Placeholder)>();
 
-        var search = new TextBox { PlaceholderText = "Search materials by name", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var search = new TextBox { Text = initialQuery ?? "", PlaceholderText = "Search materials by name",
+            HorizontalAlignment = HorizontalAlignment.Stretch };
         var count = new TextBlock { Foreground = Brush("#AEB6C2"), VerticalAlignment = VerticalAlignment.Center };
         var gallery = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(5) };
         var scroll = new ScrollViewer

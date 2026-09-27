@@ -22,13 +22,13 @@ public sealed class ModelSourceCompiler(string sourceDirectory, MaterialSourceCo
     public XModelAsset LoadModel(string name) => Load(XAssetType.XModel, name, normalized =>
     {
         XModelNativeImport imported = new XModelNativeExchange().Link(
-            SourceRoot($"xmodel_native/{normalized}.json"), normalized, materials.LoadMaterial, LoadPreset, LoadCollmap);
+            SourceRoot($"xmodel_native/{normalized}.json"), normalized, materials.LoadMaterial, LoadPhysPreset, LoadCollmap);
         foreach (XModelSurfsAsset surfaces in imported.ModelSurfs)
             _assets.TryAdd(AssetKey.FromDefinition(surfaces), surfaces);
         return imported.Model;
     });
 
-    private PhysPresetAsset LoadPreset(string name) => Load(XAssetType.PhysPreset, name,
+    public PhysPresetAsset LoadPhysPreset(string name) => Load(XAssetType.PhysPreset, name,
         normalized => new PhysPresetExchange().Link(SourceRoot($"physic/{normalized}.physic.json"), normalized));
 
     private PhysCollmapAsset LoadCollmap(string name) => Load(XAssetType.PhysCollmap, name,
