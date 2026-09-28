@@ -105,6 +105,41 @@ public partial class SelectionInspector : UserControl
             }
             catch (ArgumentException exception) { await dialogs.MessageAsync("FX playback", exception.Message); }
         };
+        ApplySoundSettingsButton.Click += async (_, _) =>
+        {
+            if (dialogs.BlocksInput || session.Selection.Active is not MapEntity entity) return;
+            try
+            {
+                float? volume = ReadSoundNumber(SoundVolume, "Volume", 0, 100) / 100;
+                float? pitch = ReadSoundNumber(SoundPitch, "Pitch", 0.5f, 2);
+                float? inner = ReadSoundNumber(SoundDistanceMin, "Inner hearing range", 0, null);
+                float? outer = ReadSoundNumber(SoundDistanceMax, "Outer hearing range", 0, null);
+                if (inner is not null && outer is not null && outer <= inner)
+                    throw new ArgumentException("Outer hearing range must exceed inner hearing range.");
+                var settings = new SoundEmitterSettings
+                {
+                    HasPlaybackOverride = true,
+                    Looping = SoundPlaybackMode.SelectedIndex != 1,
+                    Volume = volume, Pitch = pitch, DistanceMin = inner, DistanceMax = outer,
+                    Channel = (SoundChannel.SelectedItem as ComboBoxItem)?.Tag is byte channel ? channel : null
+                };
+                finishGestures();
+                GameplayEntityEditing.SetSoundEmitterSettings(session, entity, settings);
+                ShowSoundSettings(SoundEmitterSettings.Read(entity));
+                SoundSettingsError.IsVisible = false;
+            }
+            catch (ArgumentException exception) { await dialogs.MessageAsync("Sound settings", exception.Message); }
+        };
+        ResetSoundSettingsButton.Click += (_, _) =>
+        {
+            if (dialogs.BlocksInput || session.Selection.Active is not MapEntity entity ||
+                entity.ClassName != "fx_origin" || entity.Properties.GetValueOrDefault("is_sound") != "1") return;
+            var settings = new SoundEmitterSettings();
+            finishGestures();
+            GameplayEntityEditing.SetSoundEmitterSettings(session, entity, settings);
+            ShowSoundSettings(SoundEmitterSettings.Read(entity));
+            SoundSettingsError.IsVisible = false;
+        };
         TerrainPaint.InitializeActions(session, dialogs, finishGestures, supportsAlpha, supportsVertexColor);
         Decals.InitializeActions(session, dialogs, finishGestures, supportsAlpha);
         Sunlight.EditSourceRequested += () =>
@@ -165,8 +200,11 @@ public partial class SelectionInspector : UserControl
                 BrowseFxSoundButton.Content = isSound ? "Change sound…" : "Browse…";
                 PreviewFxSoundButton.Content = isSound ? "Listen to selected marker" : "Preview selected marker";
                 FxPlaybackPanel.IsVisible = !isSound;
+                SoundSettingsPanel.IsVisible = isSound;
                 if (entityChanged || !FxSoundName.IsKeyboardFocusWithin)
                     FxSoundName.Text = entity.Properties.GetValueOrDefault(isSound ? "soundalias" : "fx", "");
+                if (isSound && (entityChanged || !SoundSettingsPanel.IsKeyboardFocusWithin))
+                    ShowSoundSettings(entity);
                 if (!isSound && (entityChanged || !FxPlaybackPanel.IsKeyboardFocusWithin))
                 {
                     FxPlaybackMode.SelectedIndex = entity.Properties.GetValueOrDefault("fx_playback") == "script" ? 1 : 0;
@@ -220,6 +258,74 @@ public partial class SelectionInspector : UserControl
         bool script = FxPlaybackMode.SelectedIndex == 1;
         FxStartDelay.IsVisible = FxStartDelayHint.IsVisible = !script;
         FxTriggerKey.IsVisible = FxTriggerHint.IsVisible = script;
+    }
+
+    private void ShowSoundSettings(SoundEmitterSettings settings)
+    {
+        SoundPlaybackMode.SelectedIndex = settings.Looping ? 0 : 1;
+        SoundVolume.Text = SoundNumber(settings.Volume * 100);
+        SoundPitch.Text = SoundNumber(settings.Pitch);
+        SoundDistanceMin.Text = SoundNumber(settings.DistanceMin);
+        SoundDistanceMax.Text = SoundNumber(settings.DistanceMax);
+        var channels = new List<ComboBoxItem>
+        {
+            new() { Content = "Sound default" },
+            new() { Content = "Auto (3)", Tag = (byte)3 },
+            new() { Content = "Voice (24)", Tag = (byte)24 }
+        };
+        if (settings.Channel is { } channel && channel is not (3 or 24))
+            channels.Add(new ComboBoxItem { Content = $"Channel {channel}", Tag = channel });
+        SoundChannel.ItemsSource = channels;
+        SoundChannel.SelectedItem = channels.First(item => Equals(item.Tag, settings.Channel));
+    }
+
+    private void ShowSoundSettings(MapEntity entity)
+    {
+        try
+        {
+            ShowSoundSettings(SoundEmitterSettings.Read(entity));
+            SoundSettingsError.IsVisible = false;
+        }
+        catch (ArgumentException exception)
+        {
+            ShowSoundSettings(new SoundEmitterSettings());
+            SoundPlaybackMode.SelectedIndex = entity.Properties.GetValueOrDefault("sound_playback") switch
+            {
+                "once" => 1, _ => 0
+            };
+            string volumeText = entity.Properties.GetValueOrDefault("sound_volume", "");
+            SoundVolume.Text = float.TryParse(volumeText, NumberStyles.Float, CultureInfo.InvariantCulture, out float volume)
+                ? (volume * 100).ToString("G9", CultureInfo.InvariantCulture) : volumeText;
+            SoundPitch.Text = entity.Properties.GetValueOrDefault("sound_pitch", "");
+            SoundDistanceMin.Text = entity.Properties.GetValueOrDefault("sound_distance_min", "");
+            SoundDistanceMax.Text = entity.Properties.GetValueOrDefault("sound_distance_max", "");
+            string channelText = entity.Properties.GetValueOrDefault("sound_channel", "");
+            if (byte.TryParse(channelText, NumberStyles.Integer, CultureInfo.InvariantCulture, out byte channel) && channel <= 63)
+            {
+                var channels = SoundChannel.ItemsSource?.OfType<ComboBoxItem>().ToList() ?? [];
+                if (channels.All(item => !Equals(item.Tag, channel)))
+                    channels.Add(new ComboBoxItem { Content = $"Channel {channel}", Tag = channel });
+                SoundChannel.ItemsSource = channels;
+                SoundChannel.SelectedItem = channels.First(item => Equals(item.Tag, channel));
+            }
+            SoundSettingsError.Text = exception.Message;
+            SoundSettingsError.IsVisible = true;
+        }
+    }
+
+    private static string SoundNumber(float? value) =>
+        value?.ToString("G9", CultureInfo.InvariantCulture) ?? "";
+
+    private static float? ReadSoundNumber(TextBox field, string label, float minimum, float? maximum)
+    {
+        string text = (field.Text ?? "").Trim();
+        if (text.Length == 0) return null;
+        if (!float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value) ||
+            !float.IsFinite(value) || value < minimum || maximum is { } limit && value > limit)
+            throw new ArgumentException(maximum is { } max
+                ? $"{label} must be a number from {minimum:G9} to {max:G9}."
+                : $"{label} must be a nonnegative number.");
+        return value;
     }
 
     private static string EntityListLabel(MapEntity entity, int index) =>

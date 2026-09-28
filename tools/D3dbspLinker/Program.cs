@@ -114,6 +114,7 @@ static int ToFastFile(
     var distinctFxNames = new HashSet<string>(StringComparer.Ordinal);
     var additionalSoundNames = new List<string>();
     var distinctSoundNames = new HashSet<string>(StringComparer.Ordinal);
+    var soundDefinitionPaths = new Dictionary<string, string>(StringComparer.Ordinal);
     string? assetLibraryDirectory = null;
     string? characterAssetsDirectory = null;
     var rawFilePaths = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -267,17 +268,24 @@ static int ToFastFile(
         }
         if (string.Equals(value, "--sound", StringComparison.Ordinal))
         {
-            string name = ReadRequiredOptionValue(
+            string argument = ReadRequiredOptionValue(
                 optionsAndDependencies,
                 ref index,
                 "--sound",
                 "an exact Sound alias name");
+            int assignment = argument.IndexOf('=');
+            string name = assignment < 0 ? argument : argument[..assignment];
+            if (string.IsNullOrWhiteSpace(name) ||
+                assignment >= 0 && (assignment == argument.Length - 1 || !Path.IsPathFullyQualified(argument[(assignment + 1)..])))
+                throw new ArgumentException("The --sound option expects an alias name or name=absolute-source-json.");
             if (!distinctSoundNames.Add(name))
             {
                 throw new ArgumentException(
                     $"The --sound option names Sound '{name}' more than once.");
             }
             additionalSoundNames.Add(name);
+            if (assignment >= 0)
+                soundDefinitionPaths.Add(name, argument[(assignment + 1)..]);
             continue;
         }
         if (string.Equals(value, "--asset-library", StringComparison.Ordinal))
@@ -315,6 +323,8 @@ static int ToFastFile(
 
     if (diskBuild && (assetLibraryDirectory is null || dependencies.Count != 0 || providerFastFiles.Count != 0 || stockBootstrap))
         throw new ArgumentException("build requires --asset-library and does not accept fastfile inputs or --stock-bootstrap.");
+    if (soundDefinitionPaths.Count != 0 && assetLibraryDirectory is null)
+        throw new ArgumentException("A --sound source JSON requires --asset-library for its audio payloads.");
     if (assetLibraryDirectory is not null)
         useSourceMaterials = true;
     if (useCompiledLighting && (forceFullbright || lightmapImageNames.Count != 0))
@@ -338,6 +348,7 @@ static int ToFastFile(
         additionalMaterialNames,
         additionalFxNames,
         additionalSoundNames,
+        soundDefinitionPaths,
         assetLibraryDirectory,
         rawFilePaths,
         lightmapImageNames,
@@ -445,7 +456,7 @@ static int Usage()
     Console.Error.WriteLine("  D3dbspLinker inspect-pair <input.d3dbsp> <input.ff>");
     Console.Error.WriteLine("  D3dbspLinker to-d3dbsp <input.ff> <output.d3dbsp>");
     Console.Error.WriteLine(
-        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright | --compiled-lighting] [--world-only] [--source-materials] [--stock-bootstrap] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--sound <exact-name>]... [--asset-library <raw-root>] [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
+        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright | --compiled-lighting] [--world-only] [--source-materials] [--stock-bootstrap] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--sound <exact-name[=absolute-source-json]>]... [--asset-library <raw-root>] [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
     Console.Error.WriteLine("  Lighting images compile from --asset-library when supplied; otherwise --provider-fastfile inputs must own them. --lightmap order defines atlas indices. Supplied lighting cannot use --fullbright.");
     Console.Error.WriteLine("  --compiled-lighting preserves the BSP's baked lightmaps and requires at least one lightmap array.");
     Console.Error.WriteLine("  --stock-bootstrap loads the template's native startup dependencies and requires resident images or installed PS3 imagefile1.pak through imagefile4.pak before writing output.");

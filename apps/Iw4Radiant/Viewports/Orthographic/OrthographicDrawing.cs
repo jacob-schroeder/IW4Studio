@@ -107,6 +107,9 @@ internal sealed class OrthographicDrawing
                     context.DrawRectangle(missingModel ? MissingModelFill : selected ? SelectionFill : null,
                         missingModel ? MissingModelPen : markerPen, rect);
                 Point center = _projection.ToScreen(origin);
+                if (selected && isSoundMarker)
+                    foreach (var line in PointEntityGeometry.GetSoundRangeLines(entity))
+                        context.DrawLine(SoundMarkerPen, _projection.ToScreen(line.A), _projection.ToScreen(line.B));
                 context.DrawLine(markerPen, center - new Vector(4, 0), center + new Vector(4, 0));
                 context.DrawLine(markerPen, center - new Vector(0, 4), center + new Vector(0, 4));
                 // FX and sound can share X/Y while differing in height. Keep their labels

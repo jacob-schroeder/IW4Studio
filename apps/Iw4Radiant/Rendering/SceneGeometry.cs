@@ -202,6 +202,9 @@ internal sealed class SceneGeometry
                     AddLine(outlines, line.A, line.B, selectedObjects.Contains(entity) ? highlight : color);
                 continue;
             }
+            if (selectedObjects.Contains(entity))
+                foreach (var line in PointEntityGeometry.GetSoundRangeLines(entity))
+                    AddLine(outlines, line.A, line.B, color);
             foreach (var polygon in PointEntityGeometry.CreateBrush(entity).GetPolygons())
             {
                 if (outlineFxMarkers && entity.ClassName == "fx_origin" &&

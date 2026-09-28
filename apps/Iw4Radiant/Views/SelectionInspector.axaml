@@ -106,6 +106,28 @@
                                                Text="After map FX startup, call maps\mp\&lt;map&gt;_fx::trigger( &quot;key&quot; ); from your script. Each key must be unique, including inside prefabs." />
                                     <Button x:Name="ApplyFxPlaybackButton" Content="Apply playback" Classes="panelAction" />
                                 </StackPanel>
+                                <StackPanel x:Name="SoundSettingsPanel" Spacing="7" IsVisible="False">
+                                    <TextBlock Text="In-game playback" Classes="caption" />
+                                    <TextBlock x:Name="SoundSettingsError" Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
+                                    <ComboBox x:Name="SoundPlaybackMode" SelectedIndex="0">
+                                        <ComboBoxItem Content="Loop" />
+                                        <ComboBoxItem Content="Play once at map start" />
+                                    </ComboBox>
+                                    <TextBlock Text="Volume (%)" Classes="fieldLabel" />
+                                    <TextBox x:Name="SoundVolume" PlaceholderText="Sound default" />
+                                    <TextBlock Text="Pitch (0.5–2×)" Classes="fieldLabel" />
+                                    <TextBox x:Name="SoundPitch" PlaceholderText="Sound default" />
+                                    <TextBlock Text="Inner hearing range (units)" Classes="fieldLabel" />
+                                    <TextBox x:Name="SoundDistanceMin" PlaceholderText="Sound default" />
+                                    <TextBlock Text="Outer hearing range (units)" Classes="fieldLabel" />
+                                    <TextBox x:Name="SoundDistanceMax" PlaceholderText="Sound default" />
+                                    <TextBlock Text="Channel" Classes="fieldLabel" />
+                                    <ComboBox x:Name="SoundChannel" SelectedIndex="0" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                                        <Button x:Name="ApplySoundSettingsButton" Content="Apply sound settings" Classes="panelAction" />
+                                        <Button x:Name="ResetSoundSettingsButton" Grid.Column="1" Content="Reset" />
+                                    </Grid>
+                                </StackPanel>
                             </StackPanel>
                         </Expander>
                         <views:LightInspector x:Name="Lights" />

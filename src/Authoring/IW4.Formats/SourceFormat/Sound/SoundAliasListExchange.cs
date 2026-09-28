@@ -11,7 +11,11 @@ namespace IW4.Formats.SourceFormat.Sound;
 /// </summary>
 public sealed class SoundAliasListExchange
 {
-    public SoundAliasListAsset Link(string sourceDirectory, string assetName)
+    public SoundAliasListAsset Link(
+        string sourceDirectory,
+        string assetName,
+        Func<byte[], StreamedSound>? packageStream = null,
+        string? definitionPath = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceDirectory);
         string name = SourceOutput.NormalizeOwnedAssetName(assetName, "Sound");
@@ -26,7 +30,9 @@ public sealed class SoundAliasListExchange
                 : throw new InvalidDataException("Sound source directory link is invalid.");
         }
 
-        string jsonPath = ResolveSourcePath(root, $"soundaliases/{name}.json");
+        string jsonPath = definitionPath is null
+            ? ResolveSourcePath(root, $"soundaliases/{name}.json")
+            : Path.GetFullPath(definitionPath);
         using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(jsonPath));
         JsonElement json = document.RootElement;
         RequireObject(json, "Sound");
@@ -44,14 +50,18 @@ public sealed class SoundAliasListExchange
         var aliases = new SndAlias[count];
         for (int i = 0; i < aliases.Length; i++)
         {
-            aliases[i] = ReadAlias(rows[i], root, i);
+            aliases[i] = ReadAlias(rows[i], root, i, packageStream);
             if (i != 0 && aliases[i].SoundFileCount != aliases[0].SoundFileCount)
                 throw new InvalidDataException("All Sound aliases must have the same language row count.");
         }
         return new SoundAliasListAsset { AliasName = documentName, Count = count, Aliases = aliases };
     }
 
-    private static SndAlias ReadAlias(JsonElement json, string root, int index)
+    private static SndAlias ReadAlias(
+        JsonElement json,
+        string root,
+        int index,
+        Func<byte[], StreamedSound>? packageStream)
     {
         string path = $"Sound.aliases[{index}]";
         RequireObject(json, path);
@@ -59,13 +69,14 @@ public sealed class SoundAliasListExchange
         int fileCount = Integer(json, "soundFileCount", path);
         if (fileCount < 0 || files.GetArrayLength() != fileCount)
             throw new InvalidDataException($"{path}.soundFileCount does not match its rows.");
+        string? aliasName = String(json, "aliasName", path);
         var soundFiles = new SoundFile[fileCount];
         for (int i = 0; i < fileCount; i++)
-            soundFiles[i] = ReadSoundFile(files[i], root, $"{path}.soundFiles[{i}]", i);
+            soundFiles[i] = ReadSoundFile(files[i], root, $"{path}.soundFiles[{i}]", i, aliasName, packageStream);
 
         return new SndAlias
         {
-            AliasName = String(json, "aliasName", path),
+            AliasName = aliasName,
             Subtitle = String(json, "subtitle", path),
             SecondaryAliasName = String(json, "secondaryAliasName", path),
             ChainAliasName = String(json, "chainAliasName", path),
@@ -187,7 +198,13 @@ public sealed class SoundAliasListExchange
         };
     }
 
-    private static SoundFile ReadSoundFile(JsonElement json, string root, string path, int languageIndex)
+    private static SoundFile ReadSoundFile(
+        JsonElement json,
+        string root,
+        string path,
+        int languageIndex,
+        string? aliasName,
+        Func<byte[], StreamedSound>? packageStream)
     {
         RequireObject(json, path);
         if (Integer(json, "languageIndex", path) != languageIndex)
@@ -195,13 +212,21 @@ public sealed class SoundAliasListExchange
         byte type = Byte(json, "type", path);
         if (!Enum.IsDefined((SndAliasType)type) || type == (byte)SndAliasType.Count)
             throw new InvalidDataException($"{path}.type {type} is unsupported.");
+        byte exists = Byte(json, "exists", path);
+        if (packageStream is not null && type != (byte)SndAliasType.Loaded)
+        {
+            if (type != (byte)SndAliasType.Streamed)
+                throw new InvalidDataException($"{path} alias '{aliasName}' has unsupported sound type {(SndAliasType)type} for sound packaging.");
+            if (exists != 1)
+                throw new InvalidDataException($"{path} alias '{aliasName}' requires exists=1 for sound packaging.");
+        }
         SoundFilePayload payload = type == (byte)SndAliasType.Loaded
             ? ReadLoaded(json, root, path)
-            : ReadStreamed(json, root, path);
+            : ReadStreamed(json, root, path, aliasName, packageStream);
         return new SoundFile
         {
             Type = (SndAliasType)type,
-            Exists = Byte(json, "exists", path),
+            Exists = exists,
             Padding = UShort(json, "padding", path),
             Payload = payload
         };
@@ -236,7 +261,12 @@ public sealed class SoundAliasListExchange
         };
     }
 
-    private static StreamedSound ReadStreamed(JsonElement json, string root, string path)
+    private static StreamedSound ReadStreamed(
+        JsonElement json,
+        string root,
+        string path,
+        string? aliasName,
+        Func<byte[], StreamedSound>? packageStream)
     {
         uint index = UInt(json, "fileIndex", path);
         StreamedSoundSource source = index == 0
@@ -252,6 +282,34 @@ public sealed class SoundAliasListExchange
             };
         string? payloadPath = String(json, "streamPayloadPath", path);
         string status = String(json, "streamPayloadStatus", path) ?? "";
+        if (packageStream is not null)
+        {
+            string context = $"{path} alias '{aliasName}' streamed sidecar '{payloadPath ?? "<none>"}'";
+            if (index == 0)
+                throw new InvalidDataException($"{context} uses an external sound source, which cannot be packaged.");
+            var streamFile = (StreamedSoundFileSource)source;
+            if (streamFile.StreamFileOffset < 0 ||
+                streamFile.StreamFileLength <= 0 ||
+                streamFile.StreamFileLength > SoundFile.MaxInMemoryPayloadBytes)
+                throw new InvalidDataException($"{context} has an invalid stream offset or length.");
+            if (status != "exported" || payloadPath is null)
+                throw new InvalidDataException($"{context} requires an exported streamed payload.");
+            string resolved;
+            try { resolved = ResolveSourcePath(root, payloadPath); }
+            catch (InvalidDataException error)
+            {
+                throw new InvalidDataException($"{context} has an invalid source path: {error.Message}", error);
+            }
+            if (!File.Exists(resolved))
+                throw new FileNotFoundException($"{context} is missing at '{resolved}'.", resolved);
+            long actualLength = new FileInfo(resolved).Length;
+            if (actualLength != streamFile.StreamFileLength)
+                throw new InvalidDataException($"{context} at '{resolved}' has {actualLength} bytes; expected {streamFile.StreamFileLength}.");
+            byte[] bytes = File.ReadAllBytes(resolved);
+            if (bytes.Length != streamFile.StreamFileLength)
+                throw new InvalidDataException($"{context} at '{resolved}' changed length while reading; expected {streamFile.StreamFileLength} bytes.");
+            return packageStream(bytes);
+        }
         if (status == "exported" && payloadPath is not null)
         {
             string resolved = ResolveSourcePath(root, payloadPath);

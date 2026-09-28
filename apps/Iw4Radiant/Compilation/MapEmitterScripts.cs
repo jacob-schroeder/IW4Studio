@@ -8,7 +8,7 @@ namespace Iw4Radiant.Compilation;
 
 internal sealed record MapEmitterScripts(
     string MapFxName, string MapFxSource, string CreateFxName, string CreateFxSource,
-    string[] FxNames, string[] SoundNames)
+    string[] FxNames, string[] SoundNames, MapSoundVariant[] SoundVariants)
 {
     internal IReadOnlyList<(string Name, string Path)> WriteTo(string directory)
     {
@@ -21,6 +21,14 @@ internal sealed record MapEmitterScripts(
         File.WriteAllText(mapFxPath, MapFxSource, new UTF8Encoding(false));
         File.WriteAllText(createFxPath, CreateFxSource, new UTF8Encoding(false));
         return [(MapFxName, mapFxPath), (CreateFxName, createFxPath)];
+    }
+
+    internal IReadOnlyDictionary<string, string> WriteSoundVariants(string directory, string assetLibrary)
+    {
+        var paths = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (MapSoundVariant variant in SoundVariants)
+            paths.Add(variant.Name, MapSoundVariantAuthoring.WriteTo(directory, assetLibrary, variant));
+        return paths;
     }
 }
 
@@ -36,7 +44,8 @@ internal static class MapEmitterScriptAuthoring
             throw new InvalidDataException("A map with FX or sound markers needs a filename containing only letters, numbers, and underscores.");
 
         var effects = new List<(string Name, Vector3 Origin, Vector3 Angles, string? StartDelay, string? TriggerKey)>();
-        var sounds = new List<(string Name, Vector3 Origin, Vector3 Angles)>();
+        var sounds = new List<(string Name, Vector3 Origin, Vector3 Angles, bool Looping)>();
+        var variants = new List<MapSoundVariant>();
         var triggerKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (MapEntity marker in markers)
         {
@@ -62,7 +71,21 @@ internal static class MapEmitterScriptAuthoring
             {
                 if (playback.Length != 0 || startDelay.Length != 0 || triggerKey.Length != 0)
                     throw new InvalidDataException("FX playback settings cannot be used on a sound marker.");
-                sounds.Add((name, origin, angles));
+                SoundEmitterSettings settings = SoundEmitterSettings.Read(marker);
+                if (settings.HasOverrides)
+                {
+                    string sourceName = name;
+                    int suffix = sounds.Count;
+                    do
+                    {
+                        name = $"iw4radiant_{mapName}_sound_{suffix:D4}";
+                        suffix++;
+                    }
+                    while (variants.Any(variant => variant.Name == name) ||
+                           markers.Any(entity => entity.Properties.GetValueOrDefault("soundalias") == name));
+                    variants.Add(new MapSoundVariant(name, sourceName, settings));
+                }
+                sounds.Add((name, origin, angles, settings.Looping));
             }
             else if (playback == "script")
             {
@@ -137,17 +160,42 @@ internal static class MapEmitterScriptAuthoring
                 createFx.Append("\tent.v[ \"delay\" ] = ").Append(effect.StartDelay).Append(";\r\n");
             createFx.Append("\r\n");
         }
-        foreach (var sound in sounds)
+        foreach (var sound in sounds.Where(sound => sound.Looping))
         {
             createFx.Append("\tent = createLoopSound();\r\n")
                 .Append("\tent.v[ \"origin\" ] = ").Append(Vector(sound.Origin)).Append(";\r\n")
                 .Append("\tent.v[ \"angles\" ] = ").Append(Vector(sound.Angles)).Append(";\r\n")
                 .Append("\tent.v[ \"soundalias\" ] = \"").Append(sound.Name).Append("\";\r\n\r\n");
         }
+        if (sounds.Any(sound => !sound.Looping))
+        {
+            createFx.Append("\tlevel thread playStartSounds();\r\n");
+        }
         createFx.Append("}\r\n");
+        if (sounds.Any(sound => !sound.Looping))
+        {
+            createFx.Append("\r\nplayStartSounds()\r\n{\r\n")
+                .Append("\tready = false;\r\n")
+                .Append("\tif ( isdefined( level.players ) )\r\n")
+                .Append("\t{\r\n")
+                .Append("\t\tfor ( i = 0; i < level.players.size; i++ )\r\n")
+                .Append("\t\t{\r\n")
+                .Append("\t\t\tif ( isdefined( level.players[i] ) && isAlive( level.players[i] ) )\r\n")
+                .Append("\t\t\t\tready = true;\r\n")
+                .Append("\t\t}\r\n")
+                .Append("\t}\r\n")
+                .Append("\tif ( !ready )\r\n")
+                .Append("\t\tlevel waittill( \"player_spawned\", player );\r\n\r\n");
+            foreach (var sound in sounds.Where(sound => !sound.Looping))
+            {
+                createFx.Append("\torg = spawn( \"script_origin\", ").Append(Vector(sound.Origin)).Append(" );\r\n")
+                    .Append("\torg PlaySound( \"").Append(sound.Name).Append("\" );\r\n\r\n");
+            }
+            createFx.Append("}\r\n");
+        }
         return new MapEmitterScripts(
             $"maps/mp/{mapName}_fx.gsc", mapFx.ToString(),
-            $"maps/createfx/{mapName}_fx.gsc", createFx.ToString(), fxNames, soundNames);
+            $"maps/createfx/{mapName}_fx.gsc", createFx.ToString(), fxNames, soundNames, variants.ToArray());
     }
 
     private static string Vector(Vector3 value) => string.Format(CultureInfo.InvariantCulture,

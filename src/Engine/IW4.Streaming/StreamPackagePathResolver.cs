@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using IW4.Game.Database.Streaming;
 
 namespace IW4.Streaming;
 
@@ -38,7 +37,7 @@ internal sealed class StreamPackagePathResolver
         }
 
         string packageFileName =
-            fileIndex == DbHeaderImageStreamEntry.NamedFileIndex &&
+            fileIndex == uint.MaxValue &&
             _namedPackageFileName is not null
                 ? _namedPackageFileName
                 : $"{_packageFilePrefix}{fileIndex}.pak";

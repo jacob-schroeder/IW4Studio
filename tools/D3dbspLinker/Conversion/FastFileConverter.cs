@@ -138,6 +138,7 @@ internal static partial class FastFileConverter
         IReadOnlyList<string> additionalMaterialNames,
         IReadOnlyList<string> additionalFxNames,
         IReadOnlyList<string> additionalSoundNames,
+        IReadOnlyDictionary<string, string> soundDefinitionPaths,
         string? assetLibraryDirectory,
         IReadOnlyDictionary<string, string> rawFilePaths,
         IReadOnlyList<(string PrimaryImageName, string SecondaryImageName)> lightmapImageNames,
@@ -153,6 +154,7 @@ internal static partial class FastFileConverter
         ArgumentNullException.ThrowIfNull(additionalMaterialNames);
         ArgumentNullException.ThrowIfNull(additionalFxNames);
         ArgumentNullException.ThrowIfNull(additionalSoundNames);
+        ArgumentNullException.ThrowIfNull(soundDefinitionPaths);
         ArgumentNullException.ThrowIfNull(rawFilePaths);
         ArgumentNullException.ThrowIfNull(lightmapImageNames);
         ArgumentNullException.ThrowIfNull(outdoorLookupMatrix);
@@ -493,15 +495,9 @@ internal static partial class FastFileConverter
             throw new NotSupportedException("Disk map builds do not yet support misc_turret weapon definitions.");
         WeaponAsset[] turretWeapons = turretWeaponNames.Length == 0 ? [] : ResolveOwnedAssetsAcrossFastFiles<WeaponAsset>(RequireTemplate(), templatePath,
             [.. dependencyPaths, .. providerPaths], turretWeaponNames, XAssetType.Weapon, "turret Weapon");
+        var soundPackager = new SoundFilePackager();
         BaseAsset[] rawEmitterAssets = assetLibraryDirectory is null ? [] :
-            LoadRawEmitterAssets(assetLibraryDirectory, additionalFxNames, additionalSoundNames);
-        if (bootstrap is not null)
-        {
-            SoundAliasListAsset? streamed = rawEmitterAssets.OfType<SoundAliasListAsset>()
-                .FirstOrDefault(sound => sound.Aliases.Any(alias => alias.SoundFiles.Any(file => file.Streamed is not null)));
-            if (streamed is not null)
-                throw new NotSupportedException($"Sound '{streamed.AliasName}' uses streamed audio. Disk map builds currently require loaded sounds; streamed package output is not implemented.");
-        }
+            LoadRawEmitterAssets(assetLibraryDirectory, additionalFxNames, additionalSoundNames, soundDefinitionPaths, soundPackager);
         if (modelSources is not null)
             foreach (string name in rawEmitterAssets.OfType<FxEffectDefAsset>().SelectMany(effect => effect.ElemDefs)
                          .SelectMany(element => element.VisualArray.Prepend(element.Visuals))
@@ -879,7 +875,10 @@ internal static partial class FastFileConverter
 
         string imagePackagePath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!,
             DbHeaderImageStreamEntry.GetPackageFileName(DbHeaderImageStreamEntry.NamedFileIndex, outputPath));
+        string soundPackagePath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!,
+            StreamedSound.GetPackageFileName(StreamedSound.NamedFileIndex, outputPath));
         bool wroteImagePackage = false;
+        bool wroteSoundPackage = false;
         try
         {
             if (imagePackage is not null)
@@ -887,17 +886,25 @@ internal static partial class FastFileConverter
                 WriteNewFileAtomically(imagePackagePath, imagePackage.Bytes);
                 wroteImagePackage = true;
             }
+            if (soundPackager.PayloadCount != 0)
+            {
+                WriteNewFileAtomically(soundPackagePath, soundPackager.ToArray());
+                wroteSoundPackage = true;
+            }
             WriteNewFileAtomically(outputPath, packageBytes.Span);
         }
         catch
         {
             if (wroteImagePackage) File.Delete(imagePackagePath);
+            if (wroteSoundPackage) File.Delete(soundPackagePath);
             throw;
         }
 
         Console.WriteLine($"wrote: {outputPath}");
         if (imagePackage is not null)
             Console.WriteLine($"wrote: {imagePackagePath} ({imagePackage.Bytes.Length:N0} bytes; {imageParts.Count} streamed images)");
+        if (wroteSoundPackage)
+            Console.WriteLine($"wrote: {soundPackagePath} ({new FileInfo(soundPackagePath).Length:N0} bytes; {soundPackager.PayloadCount} unique sound streams)");
         Console.WriteLine($"map-asset: {assetName}");
         Console.WriteLine($"owned-map-roots: {fastFileMapRoots.Length}");
         Console.WriteLine($"nested-map-assets: {graph.NestedAssets.Count}");
@@ -1416,7 +1423,9 @@ internal static partial class FastFileConverter
     private static BaseAsset[] LoadRawEmitterAssets(
         string sourceDirectory,
         IReadOnlyList<string> requestedFx,
-        IReadOnlyList<string> requestedSounds)
+        IReadOnlyList<string> requestedSounds,
+        IReadOnlyDictionary<string, string> soundDefinitionPaths,
+        SoundFilePackager soundPackager)
     {
         string root = Path.GetFullPath(sourceDirectory);
         if (!Directory.Exists(root))
@@ -1438,7 +1447,8 @@ internal static partial class FastFileConverter
             BaseAsset asset = requested.Type switch
             {
                 XAssetType.Fx => fxExchange.Link(root, requested.Name),
-                XAssetType.Sound => soundExchange.Link(root, requested.Name),
+                XAssetType.Sound => soundExchange.Link(root, requested.Name, soundPackager.AddPayload,
+                    soundDefinitionPaths.GetValueOrDefault(requested.Name)),
                 _ => throw new InvalidDataException($"Unsupported emitter asset type {requested.Type}.")
             };
             assets.Add(key, asset);

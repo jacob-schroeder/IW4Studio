@@ -1,4 +1,5 @@
 using Avalonia.Threading;
+using Iw4Radiant.MapSource;
 using IW4.Formats.SourceFormat.Sound;
 using IW4.Game.Assets.Sound;
 using IW4.Studio.Desktop.Editors.Sound;
@@ -11,27 +12,32 @@ internal sealed class SoundAliasAudition : IDisposable
     private readonly DispatcherTimer _playbackTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private SoundPreviewPlayer? _player;
     private bool _disposed;
+    private int _generation;
 
     internal SoundAliasAudition() => _playbackTimer.Tick += OnPlaybackTimerTick;
 
     internal event Action? PlaybackEnded;
 
     /// <returns>Null when playback starts, otherwise a message suitable for the browser status line.</returns>
-    internal string? Play(string rawRoot, string exactAliasName)
+    internal async Task<string?> PlayAsync(string rawRoot, string exactAliasName, SoundEmitterSettings? settings = null)
     {
         Stop();
+        int generation = _generation;
         if (_disposed)
             return "Sound preview is closed.";
         if (!SoundPreviewPlayer.IsPlatformSupported)
             return SoundPreviewPlayer.UnavailableReason ?? "Sound preview playback is unavailable.";
 
-        string? loadError = LoadAudio(rawRoot, exactAliasName, out byte[] audio);
-        if (loadError is not null) return loadError;
+        var loaded = await Task.Run(() => LoadPlayback(rawRoot, exactAliasName, settings));
+        if (_disposed || generation != _generation) return null;
+        if (loaded.Error is not null) return loaded.Error;
 
         SoundPreviewPlayer? player = null;
         try
         {
-            player = new SoundPreviewPlayer(audio);
+            player = new SoundPreviewPlayer(loaded.Audio);
+            player.SetVolume(loaded.Profile?.Volume ?? 1);
+            player.SetNumberOfLoops(loaded.Profile?.Looping == true ? -1 : 0);
             player.Play();
             _player = player;
             _playbackTimer.Start();
@@ -48,6 +54,7 @@ internal sealed class SoundAliasAudition : IDisposable
 
     internal void Stop()
     {
+        _generation++;
         _playbackTimer.Stop();
         SoundPreviewPlayer? player = _player;
         _player = null;
@@ -62,10 +69,7 @@ internal sealed class SoundAliasAudition : IDisposable
         _playbackTimer.Tick -= OnPlaybackTimerTick;
     }
 
-    internal static string? LoadAudio(string rawRoot, string exactAliasName, out byte[] audio) =>
-        LoadAudio(rawRoot, exactAliasName, out audio, out _);
-
-    internal static string? LoadAudio(string rawRoot, string exactAliasName, out byte[] audio, out SndAlias? alias)
+    private static string? LoadAudio(string rawRoot, string exactAliasName, out byte[] audio, out SndAlias? alias)
     {
         audio = [];
         alias = null;
@@ -73,7 +77,16 @@ internal sealed class SoundAliasAudition : IDisposable
             return "Choose a sound and an exported raw sound library first.";
         try
         {
-            SoundAliasListAsset asset = new SoundAliasListExchange().Link(rawRoot, exactAliasName);
+            byte[]? firstStream = null;
+            SoundAliasListAsset asset = new SoundAliasListExchange().Link(rawRoot, exactAliasName, bytes =>
+            {
+                firstStream ??= bytes;
+                return new StreamedSound
+                {
+                    FileIndex = StreamedSound.NamedFileIndex,
+                    Source = new StreamedSoundFileSource { StreamFileLength = bytes.Length }
+                };
+            });
             alias = asset.Aliases.FirstOrDefault();
             if (alias is null)
                 return "This alias has no variants to preview.";
@@ -81,10 +94,19 @@ internal sealed class SoundAliasAudition : IDisposable
             SoundFile? file = alias.SoundFiles.FirstOrDefault();
             if (file is null)
                 return "The first alias variant has no sound file to preview.";
-            if (file.Streamed is not null)
-                return "This alias uses streamed audio, which cannot be previewed from the exported loaded payload.";
-            if (file.Loaded?.LoadedSound?.PhysicalData is not { Length: > 0 } data)
-                return "The first alias variant has no exported loaded audio payload.";
+            byte[]? data = file.Streamed is not null ? firstStream : file.Loaded?.LoadedSound?.PhysicalData;
+            if (data is not { Length: > 0 })
+                return "The first alias variant has no exported audio payload.";
+            // Native streamed payloads prefix the MPEG frames with an ID3 metadata block.
+            if (data.Length >= 10 && data.AsSpan(0, 3).SequenceEqual("ID3"u8))
+            {
+                if ((data[6] | data[7] | data[8] | data[9]) >= 128)
+                    return "This sound has an invalid ID3 metadata length.";
+                int offset = 10 + (data[6] << 21) + (data[7] << 14) + (data[8] << 7) + data[9];
+                if (data[3] == 4 && (data[5] & 0x10) != 0) offset += 10;
+                if (offset >= data.Length) return "This sound has no audio after its metadata.";
+                data = data[offset..];
+            }
             if (!IsMpegLayerThree(data))
                 return "This alias uses an audio format that the sound preview does not support.";
             audio = data;
@@ -93,6 +115,23 @@ internal sealed class SoundAliasAudition : IDisposable
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception) || exception is System.Text.Json.JsonException)
         {
             return $"Cannot preview this sound: {exception.Message}";
+        }
+    }
+
+    internal static (byte[] Audio, SoundEmitterPlayback? Profile, string? Error) LoadPlayback(
+        string root, string name, SoundEmitterSettings? settings)
+    {
+        string? error = LoadAudio(root, name, out byte[] audio, out SndAlias? alias);
+        if (error is not null || alias is null) return ([], null, error ?? "This sound has no alias to preview.");
+        try
+        {
+            SoundEmitterPlayback? profile = settings?.Resolve(alias);
+            return (SoundPreviewPitch.Apply(audio, profile?.Pitch ?? 1), profile, null);
+        }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception) ||
+            exception is PlatformNotSupportedException or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        {
+            return ([], null, $"Cannot preview this sound: {exception.Message}");
         }
     }
 

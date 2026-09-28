@@ -1,16 +1,15 @@
 using System.Numerics;
 using Iw4Radiant.MapSource;
-using IW4.Game.Assets.Sound;
 using IW4.Studio.Desktop.Editors.Sound;
 
 namespace Iw4Radiant.Views;
 
-/// <summary>Auditions placed loaded sounds using the camera as the listener.</summary>
+/// <summary>Auditions placed sounds using the camera as the listener.</summary>
 internal sealed class MapSoundPreview : IDisposable
 {
-    private readonly Dictionary<string, SourceSound> _sources = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string Name, SoundEmitterSettings Settings), SourceSound> _sources = [];
     private readonly Dictionary<(MapEntity Owner, int Slot), Voice> _voices = [];
-    private (MapEntity Owner, int Slot, string Name, Vector3 Origin)[] _emitters = [];
+    private Emitter[] _emitters = [];
     private string? _sourceDirectory;
     private Vector3 _listener;
     private Vector3 _right = Vector3.UnitX;
@@ -37,7 +36,7 @@ internal sealed class MapSoundPreview : IDisposable
     }
 
     internal void Configure(string? sourceDirectory,
-        IReadOnlyList<(MapEntity Owner, int Slot, string Name, Vector3 Origin)> emitters)
+        IReadOnlyList<Emitter> emitters)
     {
         if (_disposed || (_sourceDirectory == sourceDirectory && _emitters.SequenceEqual(emitters))) return;
         if (_sourceDirectory != sourceDirectory)
@@ -49,53 +48,37 @@ internal sealed class MapSoundPreview : IDisposable
         _emitters = emitters.ToArray();
         var current = _emitters.ToDictionary(emitter => (emitter.Owner, emitter.Slot));
         foreach (var (key, voice) in _voices.ToArray())
-            if (!current.TryGetValue(key, out var emitter) || emitter.Name != voice.Name)
+            if (!current.TryGetValue(key, out var emitter) || emitter.Name != voice.Name ||
+                emitter.Settings != voice.Settings || emitter.Error is not null)
             {
                 voice.Player?.Dispose();
                 _voices.Remove(key);
             }
-        var names = _emitters.Select(emitter => emitter.Name).ToHashSet(StringComparer.Ordinal);
-        foreach (string name in _sources.Keys.Where(name => !names.Contains(name)).ToArray())
-            _sources.Remove(name);
+        var sources = _emitters.Where(emitter => emitter.Error is null)
+            .Select(emitter => (emitter.Name, emitter.Settings)).ToHashSet();
+        foreach (var key in _sources.Keys.Where(key => !sources.Contains(key)).ToArray())
+            _sources.Remove(key);
         if (sourceDirectory is not null)
-            foreach (string name in names)
-                if (!_sources.ContainsKey(name))
+            foreach (var key in sources)
+                if (!_sources.ContainsKey(key))
                 {
                     var source = new SourceSound();
-                    _sources.Add(name, source);
-                    _ = LoadSourceAsync(sourceDirectory, name, source);
+                    _sources.Add(key, source);
+                    _ = LoadSourceAsync(sourceDirectory, key, source);
                 }
         UpdatePlayback();
     }
 
-    private async Task LoadSourceAsync(string root, string name, SourceSound source)
+    private async Task LoadSourceAsync(string root, (string Name, SoundEmitterSettings Settings) key, SourceSound source)
     {
         // Reading alias graphs and audio stays off navigation and drag callbacks.
         // The entry identity prevents a late load from reviving an old map/library.
-        var loaded = await Task.Run(() =>
-        {
-            string? error = SoundAliasAudition.LoadAudio(root, name, out byte[] audio, out SndAlias? alias);
-            Attenuation profile = default;
-            if (error is null && alias is not null)
-            {
-                if (!float.IsFinite(alias.DistanceMin) || !float.IsFinite(alias.DistanceMax) ||
-                    alias.DistanceMin < 0 || alias.DistanceMax <= alias.DistanceMin ||
-                    !float.IsFinite(alias.VolumeMin) || !float.IsFinite(alias.VolumeMax))
-                    error = "The alias has an invalid volume or hearing range.";
-                else
-                {
-                    // Keep the audition repeatable; native random alias variation is separate.
-                    float volume = Math.Clamp(alias.VolumeMin * 0.5f + alias.VolumeMax * 0.5f, 0f, 1f);
-                    profile = new Attenuation(alias.DistanceMin, alias.DistanceMax, volume, alias.VolumeFalloffCurve);
-                }
-            }
-            return (audio, profile, error);
-        });
-        if (_disposed || !_sources.TryGetValue(name, out SourceSound? current) || !ReferenceEquals(current, source))
+        var loaded = await Task.Run(() => SoundAliasAudition.LoadPlayback(root, key.Name, key.Settings));
+        if (_disposed || !_sources.TryGetValue(key, out SourceSound? current) || !ReferenceEquals(current, source))
             return;
-        source.Audio = loaded.error is null ? loaded.audio : [];
-        source.Profile = loaded.profile;
-        source.Error = loaded.error;
+        source.Audio = loaded.Error is null ? loaded.Audio : [];
+        source.Profile = loaded.Profile;
+        source.Error = loaded.Error;
         source.Loading = false;
         UpdatePlayback();
     }
@@ -128,33 +111,40 @@ internal sealed class MapSoundPreview : IDisposable
         }
 
         int playing = 0;
-        foreach (var (owner, slot, name, origin) in _emitters)
+        foreach (var emitter in _emitters)
         {
-            if (!_sources.TryGetValue(name, out SourceSound? source) || source.Loading || source.Error is not null)
+            if (emitter.Error is not null || !_sources.TryGetValue((emitter.Name, emitter.Settings), out SourceSound? source) ||
+                source.Loading || source.Error is not null || source.Profile is not { } profile)
                 continue;
-            float distance = Vector3.Distance(_listener, origin);
-            float gain = float.IsFinite(distance) ? source.Profile.Gain(distance) : 0;
-            var key = (owner, slot);
+            float distance = Vector3.Distance(_listener, emitter.Origin);
+            float gain = profile.Gain(distance);
+            var key = (emitter.Owner, emitter.Slot);
             _voices.TryGetValue(key, out Voice? voice);
-            if (gain <= 0)
+            if (voice is null) _voices.Add(key, voice = new Voice(emitter.Name, emitter.Settings));
+            if (voice.Error is not null || voice.Completed) continue;
+            if (!profile.Looping && (voice.Player?.HasEnded == true || (voice.Player is null && gain <= 0)))
+            {
+                // A one-shot occurs once when map preview starts. Camera motion must not retrigger it.
+                voice.Completed = true;
+                continue;
+            }
+            if (gain <= 0 && profile.Looping)
             {
                 voice?.Player?.Pause();
                 continue;
             }
-            if (voice is null) _voices.Add(key, voice = new Voice(name));
-            if (voice.Error is not null) continue;
             try
             {
                 if (voice.Player is null)
                 {
                     voice.Player = new SoundPreviewPlayer(source.Audio);
-                    voice.Player.SetNumberOfLoops(-1);
+                    voice.Player.SetNumberOfLoops(profile.Looping ? -1 : 0);
                 }
                 voice.Player.SetVolume(gain);
                 // Editor stereo positioning, not a reconstruction of the game's speaker mixer.
-                voice.Player.SetPan(distance > 0.001f ? Vector3.Dot((origin - _listener) / distance, _right) : 0);
+                voice.Player.SetPan(distance > 0.001f ? Vector3.Dot((emitter.Origin - _listener) / distance, _right) : 0);
                 voice.Player.Play();
-                playing++;
+                if (gain > 0) playing++;
             }
             catch (Exception exception) when (exception is ArgumentException or InvalidDataException or
                                               InvalidOperationException or PlatformNotSupportedException or
@@ -167,18 +157,23 @@ internal sealed class MapSoundPreview : IDisposable
         }
 
         string[] unavailable = _sources.Where(pair => pair.Value.Error is not null)
-            .Select(pair => $"{pair.Key}: {pair.Value.Error}")
+            .Select(pair => $"{pair.Key.Name}: {pair.Value.Error}")
+            .Concat(_emitters.Where(emitter => emitter.Error is not null).Select(emitter => $"{emitter.Name}: {emitter.Error}"))
             .Concat(_voices.Values.Where(voice => voice.Error is not null)
                 .Select(voice => $"{voice.Name}: {voice.Error}")).Distinct(StringComparer.Ordinal).ToArray();
         int loading = _sources.Values.Count(source => source.Loading);
         string message = playing > 0 ? $"Hearing {playing} placed {(playing == 1 ? "sound" : "sounds")} · camera distance and direction."
-            : _emitters.Length == 0 ? "Map sounds on · place a looping sound to hear it."
+            : _emitters.Length == 0 ? "Map sounds on · place a sound to hear it."
             : loading > 0 ? "Preparing placed sounds…"
-            : unavailable.Length == _sources.Count ? "No placed sounds can be previewed."
+            : unavailable.Length > 0 && _sources.Values.All(source => source.Error is not null) ? "No placed sounds can be previewed."
+            : _voices.Values.Any(voice => voice.Completed) ? "One-shot playback finished · toggle map sounds to replay."
             : "Map sounds on · move closer to a sound marker.";
         if (playing > 0 && loading > 0) message += $" Preparing {loading} more.";
         if (unavailable.Length > 0) message += $" {unavailable.Length} unavailable (details on hover).";
-        Publish(message, unavailable.Length == 0 ? null : string.Join('\n', unavailable));
+        string previewScope = _sources.Values.Any(source => source.Profile is { Channel: not (3 or 24) })
+            ? "This channel's spatial behavior is not yet reproduced; preview uses editor distance and stereo positioning."
+            : "Editor distance and stereo preview; game channel mixing and voice priorities are applied in-game.";
+        Publish(message, unavailable.Length == 0 ? previewScope : string.Join('\n', unavailable));
     }
 
     private void Publish(string message, string? detail = null)
@@ -206,41 +201,27 @@ internal sealed class MapSoundPreview : IDisposable
     {
         internal bool Loading = true;
         internal byte[] Audio = [];
-        internal Attenuation Profile;
+        internal SoundEmitterPlayback? Profile;
         internal string? Error;
     }
 
-    private sealed class Voice(string name)
+    private sealed class Voice(string name, SoundEmitterSettings settings)
     {
         internal string Name { get; } = name;
+        internal SoundEmitterSettings Settings { get; } = settings;
         internal SoundPreviewPlayer? Player;
         internal string? Error;
+        internal bool Completed;
     }
 
-    private readonly record struct Attenuation(float MinDistance, float MaxDistance,
-        float BaseVolume, SndCurve? Curve)
+    internal sealed record Emitter(MapEntity Owner, int Slot, string Name, Vector3 Origin,
+        SoundEmitterSettings Settings, string? Error)
     {
-        internal float Gain(float distance)
+        internal static Emitter From(MapEntity owner, int slot, MapEntity entity, Vector3 origin)
         {
-            if (distance <= MinDistance) return BaseVolume;
-            if (distance >= MaxDistance) return 0;
-
-            float fraction = (distance - MinDistance) / (MaxDistance - MinDistance);
-            if (Curve is null || Curve.KnotCount < 2 || Curve.Knots.Count < Curve.KnotCount)
-                return BaseVolume * (1f - fraction);
-
-            for (int index = 1; index < Curve.KnotCount; index++)
-            {
-                SndCurveKnot left = Curve.Knots[index - 1];
-                SndCurveKnot right = Curve.Knots[index];
-                if (fraction > right.X) continue;
-                if (!float.IsFinite(left.X) || !float.IsFinite(right.X) ||
-                    !float.IsFinite(left.Y) || !float.IsFinite(right.Y) || right.X <= left.X)
-                    break;
-                float point = Math.Clamp((fraction - left.X) / (right.X - left.X), 0f, 1f);
-                return BaseVolume * Math.Clamp(left.Y + (right.Y - left.Y) * point, 0f, 1f);
-            }
-            return BaseVolume * (1f - fraction);
+            string name = entity.Properties.GetValueOrDefault("soundalias", "");
+            try { return new Emitter(owner, slot, name, origin, SoundEmitterSettings.Read(entity), null); }
+            catch (ArgumentException exception) { return new Emitter(owner, slot, name, origin, new(), exception.Message); }
         }
     }
 }

@@ -175,6 +175,16 @@ internal static class GameplayEntityEditing
         });
     }
 
+    internal static void SetSoundEmitterSettings(EditorSession session, MapEntity entity, SoundEmitterSettings settings)
+    {
+        if (entity.ClassName != "fx_origin" || entity.Properties.GetValueOrDefault("is_sound") != "1")
+            throw new ArgumentException("Select a sound marker.");
+        settings.Validate();
+        try { if (SoundEmitterSettings.Read(entity) == settings) return; }
+        catch (ArgumentException) { /* Applying valid settings also repairs malformed existing overrides. */ }
+        session.Edit(() => settings.WriteTo(entity));
+    }
+
     internal static MapEntity CreateBrushEntity(EditorSession session, string className)
     {
         if (!RequireType(className).UsesBrushes) throw new ArgumentException("Choose a brush entity type.");

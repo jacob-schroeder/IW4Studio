@@ -24,7 +24,8 @@ public sealed class StreamedSoundResolver : IDisposable
         _packagePaths = new StreamPackagePathResolver(
             fastFilePath,
             "packfile",
-            "sound stream package");
+            "sound stream package",
+            StreamedSound.GetPackageFileName(StreamedSound.NamedFileIndex, fastFilePath));
     }
 
     public bool TryReadPayload(

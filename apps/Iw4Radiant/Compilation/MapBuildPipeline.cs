@@ -63,9 +63,11 @@ internal static class MapBuildPipeline
             progress.Report("Preparing build files…");
             string bspPath = Path.Combine(staging, mapName + ".d3dbsp");
             string fastFilePath = Path.Combine(staging, mapName + ".ff");
+            IReadOnlyDictionary<string, string> soundVariantPaths = new Dictionary<string, string>(StringComparer.Ordinal);
             await Task.Run(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                soundVariantPaths = emitters?.WriteSoundVariants(staging, emitterAssetDirectory) ?? soundVariantPaths;
                 progress.Report("Checking brushes, meshes and entities…");
                 MapCompiler.ValidateNavigableSource(document);
                 string savedSource = Path.Combine(staging, mapName + ".map");
@@ -83,14 +85,16 @@ internal static class MapBuildPipeline
             }
             progress.Report("Compiling source assets and included startup assets; linking the PS3 fastfile…");
             await RunLinkerAsync(linkerPath, bspPath, assetName, fastFilePath,
-                emitters, emitterAssetDirectory, emitterRawFiles, sourcePath, progress, cancellationToken);
+                emitters, emitterAssetDirectory, emitterRawFiles, soundVariantPaths,
+                sourcePath, progress, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(fastFilePath) || new FileInfo(fastFilePath).Length == 0)
                 throw new InvalidDataException("D3dbspLinker completed without producing a fastfile.");
             progress.Report("Finalizing build output…");
             Directory.Move(staging, destination);
             string packagedImages = File.Exists(Path.Combine(destination, mapName + ".pak")) ? $", {mapName}.pak" : "";
-            progress.Report($"Built {mapName}.map, {mapName}.d3dbsp, {mapName}.ff{packagedImages} in {destination}");
+            string packagedSounds = File.Exists(Path.Combine(destination, mapName + "_snd.pak")) ? $", {mapName}_snd.pak" : "";
+            progress.Report($"Built {mapName}.map, {mapName}.d3dbsp, {mapName}.ff{packagedImages}{packagedSounds} in {destination}");
             return destination;
         }
         finally
@@ -103,6 +107,7 @@ internal static class MapBuildPipeline
         string assetName, string fastFilePath,
         MapEmitterScripts? emitters, string emitterAssetDirectory,
         IReadOnlyList<(string Name, string Path)> emitterRawFiles,
+        IReadOnlyDictionary<string, string> soundVariantPaths,
         string sourcePath,
         IProgress<string> progress,
         CancellationToken cancellationToken)
@@ -144,7 +149,8 @@ internal static class MapBuildPipeline
             foreach (string name in emitters.SoundNames)
             {
                 start.ArgumentList.Add("--sound");
-                start.ArgumentList.Add(name);
+                start.ArgumentList.Add(soundVariantPaths.TryGetValue(name, out string? path)
+                    ? $"{name}={path}" : name);
             }
             foreach (var rawFile in emitterRawFiles)
             {

@@ -51,6 +51,36 @@ internal static class PointEntityGeometry
         }
     }
 
+    internal static IEnumerable<(Vector3 A, Vector3 B)> GetSoundRangeLines(MapEntity entity)
+    {
+        if (entity.ClassName != "fx_origin" || entity.Properties.GetValueOrDefault("is_sound") != "1") yield break;
+        SoundEmitterSettings settings;
+        try { settings = SoundEmitterSettings.Read(entity); }
+        catch (ArgumentException) { yield break; }
+        Vector3 origin = EditorSession.EntityOrigin(entity);
+        // Only authored overrides are available to scene geometry; do not invent library defaults.
+        foreach (float? range in new[] { settings.DistanceMin, settings.DistanceMax })
+        {
+            if (range is not > 0) continue;
+            float radius = range.Value;
+            for (int plane = 0; plane < 3; plane++)
+            for (int index = 0; index < 48; index++)
+                yield return (Point(index, plane), Point(index + 1, plane));
+
+            Vector3 Point(int index, int plane)
+            {
+                float angle = index * MathF.Tau / 48;
+                float a = MathF.Cos(angle) * radius, b = MathF.Sin(angle) * radius;
+                return origin + (plane switch
+                {
+                    0 => new Vector3(a, b, 0),
+                    1 => new Vector3(a, 0, b),
+                    _ => new Vector3(0, a, b)
+                });
+            }
+        }
+    }
+
     private static IEnumerable<(Vector3 BottomA, Vector3 BottomB, Vector3 TopA, Vector3 TopB)> RadiusEdges(
         MapEntity entity, (Vector3 Min, Vector3 Max) bounds)
     {

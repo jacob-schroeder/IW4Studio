@@ -22,6 +22,8 @@ public partial class MainWindow
     private string? _previewAssetName;
     private bool _previewIsSound;
     private MapEntity? _previewMarker;
+    private SoundEmitterSettings? _previewSoundSettings;
+    private int _emitterPreviewGeneration;
     private MapDocument? _previewDocument;
     private FxPreviewWindow? _fxPreviewWindow;
     private MapDocument? _mapPreviewDocument;
@@ -215,7 +217,7 @@ public partial class MainWindow
         finally { clearExplicitModelsRestored(); }
     }
 
-    private void StartEmitterPreview(FxSoundAsset asset)
+    private async void StartEmitterPreview(FxSoundAsset asset)
     {
         if (!asset.IsSound && _fxPreviewWindow is { } openPreview && _previewAssetName == asset.Name)
         {
@@ -241,18 +243,29 @@ public partial class MainWindow
 
         if (asset.IsSound)
         {
-            _mapSoundPreview.SetSuspended(true);
-            string? error = _soundAudition.Play(root, asset.Name);
-            if (error is not null)
+            SoundEmitterSettings? settings;
+            try { settings = marker is null ? null : SoundEmitterSettings.Read(marker); }
+            catch (ArgumentException exception)
             {
                 _mapSoundPreview.SetSuspended(false);
-                browser.SetPreviewState(false, error);
+                browser.SetPreviewState(false, exception.Message);
                 return;
             }
+            _mapSoundPreview.SetSuspended(true);
+            int generation = _emitterPreviewGeneration;
             _previewAssetName = asset.Name;
             _previewIsSound = true;
             _previewMarker = marker;
+            _previewSoundSettings = settings;
             _previewDocument = _session.Document;
+            browser.SetPreviewState(true, "Preparing sound…");
+            string? error = await _soundAudition.PlayAsync(root, asset.Name, settings);
+            if (generation != _emitterPreviewGeneration) return;
+            if (error is not null)
+            {
+                StopEmitterPreview(error);
+                return;
+            }
             browser.SetPreviewState(true, $"Listening to {asset.DisplayName}. Stop whenever you like.");
             return;
         }
@@ -293,6 +306,7 @@ public partial class MainWindow
 
     private void StopEmitterPreview(string message, bool suspendMapSounds = false)
     {
+        _emitterPreviewGeneration++;
         _soundAudition.Stop();
         FxPreviewWindow? preview = _fxPreviewWindow;
         _fxPreviewWindow = null;
@@ -300,6 +314,7 @@ public partial class MainWindow
         _previewAssetName = null;
         _previewIsSound = false;
         _previewMarker = null;
+        _previewSoundSettings = null;
         _previewDocument = null;
         Workspace.FxBrowser.SetPreviewState(false, message);
         Workspace.SoundBrowser.SetPreviewState(false, message);
@@ -322,7 +337,16 @@ public partial class MainWindow
         }
         if (marker.Properties.GetValueOrDefault("is_sound") != "1" ||
             marker.Properties.GetValueOrDefault("soundalias") != _previewAssetName)
+        {
             StopEmitterPreview("Sound changed. Preview stopped.");
+            return;
+        }
+        try
+        {
+            if (SoundEmitterSettings.Read(marker) != _previewSoundSettings)
+                StopEmitterPreview("Sound settings changed. Listen again to hear them.");
+        }
+        catch (ArgumentException) { StopEmitterPreview("Correct the sound settings before previewing."); }
     }
 
     private void SuggestEmitterSource(string? assetFolder = null)
@@ -379,7 +403,7 @@ public partial class MainWindow
 
     private void RefreshMapSoundPreview()
     {
-        var emitters = new List<(MapEntity Owner, int Slot, string Name, Vector3 Origin)>();
+        var emitters = new List<MapSoundPreview.Emitter>();
         if (Workspace.MapSoundsEnabled)
         {
             var slots = new Dictionary<MapEntity, int>();
@@ -390,8 +414,7 @@ public partial class MainWindow
                 if (_session.Scene.Owner(entity) is not MapEntity owner) continue;
                 int slot = slots.GetValueOrDefault(owner);
                 slots[owner] = slot + 1;
-                emitters.Add((owner, slot, entity.Properties.GetValueOrDefault("soundalias") ?? "",
-                    EditorSession.EntityOrigin(entity)));
+                emitters.Add(MapSoundPreview.Emitter.From(owner, slot, entity, EditorSession.EntityOrigin(entity)));
             }
         }
         _mapSoundPreview.Configure(Workspace.SoundBrowser.SourceDirectory,
