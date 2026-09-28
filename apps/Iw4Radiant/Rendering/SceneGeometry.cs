@@ -25,6 +25,8 @@ internal sealed class SceneGeometry
     internal int LeakPathStart { get; }
     internal int LeakPathCount { get; }
     internal List<(int Start, int Count)> MovePreviewRanges { get; } = [];
+    internal List<(MapEntity Source, string Material, int Start, int Count, int WireStart, int WireCount)> DestructibleRanges { get; } = [];
+    internal List<(MapEntity Source, int Start, int Count)> DestructibleOutlines { get; } = [];
     internal List<(MapEntity Owner, string Material, int Start, int Count, int WireStart, int WireCount)> PhysicsBatches { get; } = [];
     internal List<(MapEntity Owner, int Start, int Count)> PhysicsOutlines { get; } = [];
     internal Dictionary<MapEntity, (Vector3 Min, Vector3 Max)> PhysicsBounds { get; } = new(ReferenceEqualityComparer.Instance);
@@ -49,6 +51,8 @@ internal sealed class SceneGeometry
         bool movePreview = physicsPoses is null && selection.Count > 0 && selection.Items.All(item =>
             item is MapEntity entity && (entity.ClassName == "fx_origin" || XModelGeometry.IsModel(entity)));
         var modelPreviewRanges = new List<(string Material, int TriangleStart, int TriangleCount, int WireStart, int WireCount)>();
+        var destructibleRanges = new List<(MapEntity Source, string Material, int TriangleStart, int TriangleCount, int WireStart, int WireCount)>();
+        var destructibleOutlines = new List<(MapEntity Source, int Start, int Count)>();
         var outlinePreviewRanges = new List<(int Start, int Count)>();
         var materials = new Dictionary<string, (List<SceneVertex> Triangles, List<SceneVertex> Lines, List<(int Start, int Count, Vector3 Center)> Surfaces)>(StringComparer.Ordinal);
         var physicsMaterials = new Dictionary<MapEntity, Dictionary<string, (List<SceneVertex> Triangles, List<SceneVertex> Lines,
@@ -128,6 +132,8 @@ internal sealed class SceneGeometry
             if (editor.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
             {
                 MapEntity? physicsOwner = editor.PhysicsPlacementOwner(entity);
+                MapEntity? destructibleSource = physicsOwner is null && editor.Owner(entity) is MapEntity source &&
+                    DestructiblePresets.HasDiscoveryName(source) ? source : null;
                 List<SceneVertex> ownerOutlines = physicsOwner is null ? outlines : GetPhysicsOutlines(physicsOwner);
                 bool moving = movePreview && selectedObjects.Contains(entity);
                 var starts = new Dictionary<string, (int Triangles, int Lines)>(StringComparer.Ordinal);
@@ -135,7 +141,8 @@ internal sealed class SceneGeometry
                 foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
                 {
                     var geometry = GetMaterialGeometry(triangle.Material, physicsOwner);
-                    if (moving) starts.TryAdd(triangle.Material, (geometry.Triangles.Count, geometry.Lines.Count));
+                    if (moving || destructibleSource is not null)
+                        starts.TryAdd(triangle.Material, (geometry.Triangles.Count, geometry.Lines.Count));
                     geometry.Triangles.AddRange([triangle.A, triangle.B, triangle.C]);
                     foreach (var edge in new[] { (triangle.A.Position, triangle.B.Position),
                                  (triangle.B.Position, triangle.C.Position), (triangle.C.Position, triangle.A.Position) })
@@ -143,6 +150,16 @@ internal sealed class SceneGeometry
                         AddLine(geometry.Lines, edge.Item1, edge.Item2, wireColor);
                         if (selectedObjects.Contains(entity)) AddLine(ownerOutlines, edge.Item1, edge.Item2, highlight);
                     }
+                }
+                if (destructibleSource is not null)
+                {
+                    foreach (var (material, start) in starts)
+                    {
+                        var geometry = materials[material];
+                        destructibleRanges.Add((destructibleSource, material, start.Triangles,
+                            geometry.Triangles.Count - start.Triangles, start.Lines, geometry.Lines.Count - start.Lines));
+                    }
+                    destructibleOutlines.Add((destructibleSource, outlineStart, ownerOutlines.Count - outlineStart));
                 }
                 if (moving)
                 {
@@ -171,6 +188,9 @@ internal sealed class SceneGeometry
                 AddMovePreviewRange(start + range.TriangleStart, range.TriangleCount);
                 AddMovePreviewRange(wireStart + range.WireStart, range.WireCount);
             }
+            foreach (var range in destructibleRanges.Where(range => range.Material == material.Key))
+                DestructibleRanges.Add((range.Source, material.Key, start + range.TriangleStart,
+                    range.TriangleCount, wireStart + range.WireStart, range.WireCount));
         }
         foreach (var owner in physicsMaterials)
         foreach (var material in owner.Value)
@@ -240,6 +260,8 @@ internal sealed class SceneGeometry
         OutlineStart = all.Count;
         all.AddRange(outlines);
         OutlineCount = all.Count - OutlineStart;
+        foreach (var range in destructibleOutlines)
+            DestructibleOutlines.Add((range.Source, OutlineStart + range.Start, range.Count));
         foreach (var range in outlinePreviewRanges)
             AddMovePreviewRange(OutlineStart + range.Start, range.Count);
         foreach (var owner in physicsOutlines)

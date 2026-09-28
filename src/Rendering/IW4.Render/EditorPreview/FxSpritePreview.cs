@@ -31,12 +31,12 @@ public sealed class FxSpritePreview
         _clock.Start();
     }
 
-    private FxSpritePreview(FxSpritePreview prototype)
+    private FxSpritePreview(FxSpritePreview prototype, Vector3 origin, Matrix4x4 orientation)
     {
         _effect = prototype._effect;
-        _orientation = prototype._orientation;
+        _orientation = orientation;
         _materials = prototype._materials;
-        Origin = prototype.Origin;
+        Origin = origin;
         HasDrawableElements = prototype.HasDrawableElements;
         Notice = prototype.Notice;
         PreviewBounds = prototype.PreviewBounds;
@@ -73,7 +73,10 @@ public sealed class FxSpritePreview
     public IReadOnlyList<string> Materials => _materials;
     public (Vector3 Min, Vector3 Max) PreviewBounds { get; }
 
-    public FxSpritePreview CreateInstance() => new(this);
+    public FxSpritePreview CreateInstance() => new(this, Origin, _orientation);
+
+    public FxSpritePreview CreateInstance(Vector3 origin, Matrix4x4 orientation) =>
+        new(this, origin, orientation);
 
     public void SetPaused(bool paused)
     {

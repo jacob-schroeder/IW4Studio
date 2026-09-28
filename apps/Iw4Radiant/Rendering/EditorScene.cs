@@ -18,6 +18,15 @@ internal sealed class EditorScene(EditorSession session)
     private IReadOnlySet<MapBrush>? _shatterSources;
     private IReadOnlyDictionary<MapBrush, MapEntity>? _shatterFragments;
     private EditorSelection _selection = new();
+    private MapEntity? _destructiblePreviewSource;
+    private MapEntity? _destructiblePreviewEntity;
+    private XModelSource? _destructibleIntactModel;
+    private XModelSource? _destructibleWreckModel;
+    private XModelSource? _destructiblePreviewModel;
+    private MapEntity? _preparedDestructibleSource;
+    private XModelSource? _preparedDestructibleIntact, _preparedDestructibleWreck;
+    private IReadOnlyDictionary<DestructibleWindowState, XModelSource>? _preparedDestructibleWindows;
+    private DestructiblePreviewSettings? _destructiblePreviewSettings;
     internal Func<string, XModelSource?>? ResolveModel { get; set; }
     internal Func<string, MaterialSource?>? ResolveMaterial { get; set; }
     internal string? Notice { get; private set; }
@@ -25,6 +34,20 @@ internal sealed class EditorScene(EditorSession session)
     internal MapDocument Document { get { EnsureCurrent(); return _document ?? throw new InvalidOperationException("Scene is unavailable."); } }
     internal IReadOnlyDictionary<MapEntity, MapEntity>? PhysicsPlacementPreview => _physicsPlacementPreview;
     internal IReadOnlyDictionary<MapBrush, MapEntity>? ShatterFragments => _shatterFragments;
+    internal MapEntity? DestructiblePreviewSource => _destructiblePreviewSource;
+    internal XModelSource? DestructiblePreviewModel => _destructiblePreviewModel;
+    internal XModelSource? DestructibleWreckModel => _destructibleWreckModel;
+    internal MapEntity? DestructiblePreviewEntity
+    {
+        get
+        {
+            EnsureCurrent();
+            return _physicsPlacementPreview is null ? _destructiblePreviewEntity : null;
+        }
+    }
+    internal XModelSource? PreviewModelForEntity(MapEntity entity) =>
+        ReferenceEquals(entity, DestructiblePreviewEntity) && _destructiblePreviewModel is { } preview
+            ? preview : ResolveModel?.Invoke(entity.Properties["model"]);
     internal bool IsShatterSource(MapBrush brush) => _shatterSources?.Contains(brush) == true;
     internal MapEntity? ShatterFragmentOwner(MapBrush brush) =>
         _shatterFragments?.GetValueOrDefault(brush);
@@ -48,6 +71,90 @@ internal sealed class EditorScene(EditorSession session)
         _shatterSources = sources;
         _shatterFragments = sources is null ? null : fragments;
         Invalidate();
+    }
+
+    internal bool SetDestructiblePreview(MapEntity? source, DestructiblePreviewSettings? settings)
+    {
+        if (source is null)
+        {
+            if (settings is not null) throw new ArgumentException("A preview setting requires an entity.", nameof(settings));
+            if (_destructiblePreviewSource is null) return false;
+            _destructiblePreviewSource = null;
+            _destructiblePreviewSettings = null;
+            _destructibleIntactModel = null;
+            _destructibleWreckModel = null;
+            _destructiblePreviewModel = null;
+            _destructiblePreviewEntity = null;
+            ModelPreviewRevision++;
+            return true;
+        }
+        if (settings is null) throw new ArgumentNullException(nameof(settings));
+        if (settings.FrontLeftTireFlat)
+            throw new InvalidDataException("The front-left flat tire animation cannot be shown in the map model preview.");
+        if (!session.Document.Entities.Contains(source) || !DestructiblePresets.HasDiscoveryName(source))
+            throw new InvalidDataException("Choose a placed LAPD police car destructible to preview.");
+        if (ReferenceEquals(source, _destructiblePreviewSource) && _destructiblePreviewSettings is { } previous)
+        {
+            if (settings == previous) return false;
+            bool isWreck = settings.Appearance == DestructibleAppearance.Wreck;
+            if (settings.FrontLeftTireFlat == previous.FrontLeftTireFlat &&
+                isWreck == (previous.Appearance == DestructibleAppearance.Wreck) &&
+                (isWreck || settings.Windshield == previous.Windshield))
+            {
+                _destructiblePreviewSettings = settings;
+                return false;
+            }
+        }
+
+        XModelSource intact = ResolveModel?.Invoke(source.Properties["model"]) ??
+            throw new InvalidDataException("The intact police car model is unavailable.");
+        XModelSource wreck = ResolveModel?.Invoke("vehicle_policecar_lapd_destroy") ??
+            throw new InvalidDataException("The destroyed police car model is unavailable.");
+        XModelSource preview = ReferenceEquals(source, _preparedDestructibleSource) &&
+            ReferenceEquals(intact, _preparedDestructibleIntact) && ReferenceEquals(wreck, _preparedDestructibleWreck) &&
+            _preparedDestructibleWindows is { } windows
+            ? settings.Appearance == DestructibleAppearance.Wreck ? wreck : windows[settings.Windshield]
+            : DestructibleModelPreview.Create(intact, wreck, settings);
+        _destructiblePreviewSource = source;
+        _destructiblePreviewSettings = settings;
+        _destructibleIntactModel = intact;
+        _destructibleWreckModel = wreck;
+        _destructiblePreviewModel = preview;
+        EnsureCurrent();
+        _destructiblePreviewEntity = _document!.Entities.FirstOrDefault(entity =>
+            _owners.TryGetValue(entity, out object? owner) && ReferenceEquals(owner, source));
+        ModelPreviewRevision++;
+        return true;
+    }
+
+    internal void SetPreparedDestructibleModels(MapEntity source, XModelSource intact, XModelSource wreck,
+        IReadOnlyDictionary<DestructibleWindowState, XModelSource> windows)
+    {
+        _preparedDestructibleSource = source;
+        _preparedDestructibleIntact = intact;
+        _preparedDestructibleWreck = wreck;
+        _preparedDestructibleWindows = windows;
+    }
+
+    internal IReadOnlyDictionary<DestructibleWindowState, XModelSource>? GetPreparedDestructibleModels(
+        MapEntity source, XModelSource intact, XModelSource wreck) =>
+        ReferenceEquals(source, _preparedDestructibleSource) &&
+            ReferenceEquals(intact, _preparedDestructibleIntact) && ReferenceEquals(wreck, _preparedDestructibleWreck)
+            ? _preparedDestructibleWindows : null;
+
+    internal void ClearPreparedDestructibleModels()
+    {
+        _preparedDestructibleSource = null;
+        _preparedDestructibleIntact = _preparedDestructibleWreck = null;
+        _preparedDestructibleWindows = null;
+    }
+
+    internal bool TryGetDestructibleTagTransform(string tag, out Matrix4x4 transform)
+    {
+        if (_destructiblePreviewSource is { } source && _destructibleIntactModel is { } intact)
+            return DestructibleModelPreview.TryGetTagTransform(intact, tag, XModelGeometry.Transform(source), out transform);
+        transform = default;
+        return false;
     }
 
     internal MapEntity? PhysicsPlacementOwner(object item)
@@ -139,6 +246,7 @@ internal sealed class EditorScene(EditorSession session)
         _prefabEntities.Clear();
         _expandedEntities.Clear();
         _targets.Clear();
+        _destructiblePreviewEntity = null;
         _selection = new EditorSelection();
         var visible = new MapDocument();
         visible.Header.Clear();
@@ -175,6 +283,8 @@ internal sealed class EditorScene(EditorSession session)
                 notices.Add($"Model unavailable: {shown.Properties["model"]}");
             var entity = new MapEntity();
             foreach (var pair in shown.Properties) entity.Properties.Add(pair.Key, pair.Value);
+            if (ReferenceEquals(original, _destructiblePreviewSource) && instance is null)
+                _destructiblePreviewEntity = entity;
             entity.Directives.AddRange(source.Directives);
             entity.PreservedPrimitives.AddRange(source.PreservedPrimitives);
             foreach (MapBrush brush in source.Brushes)

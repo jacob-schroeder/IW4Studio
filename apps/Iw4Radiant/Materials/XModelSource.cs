@@ -43,7 +43,7 @@ internal sealed class XModelSource
     private static XModelExportDocument Read(string path)
     {
         using var reader = File.OpenText(path);
-        if (!XModelExportReader.TryRead(reader, out var document, out var issues) || document is null)
+        if (!XModelExportReader.TryRead(reader, out var document, out var issues, skipDegenerateTriangles: true) || document is null)
             throw new InvalidDataException($"XModel '{path}': " + string.Join("; ", issues.Take(4)
                 .Select(issue => $"line {issue.Line}: {issue.Message}")));
         if (document.Vertices.Count == 0 || document.Triangles.Count == 0)

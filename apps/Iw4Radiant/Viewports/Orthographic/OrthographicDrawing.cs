@@ -88,7 +88,7 @@ internal sealed class OrthographicDrawing
                 bool missingModel = false;
                 if (XModelGeometry.IsModel(entity))
                 {
-                    if (scene.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
+                    if (scene.PreviewModelForEntity(entity) is { } model)
                     {
                         if (selected) DrawText(context, model.Name, _projection.ToScreen(origin) + new Vector(7, 7), SelectionBrush);
                         continue;
@@ -183,7 +183,7 @@ internal sealed class OrthographicDrawing
             Rect viewport = new(_projection.Size);
             foreach (MapEntity entity in document.Entities.Where(XModelGeometry.IsModel))
             {
-                if (scene.ResolveModel?.Invoke(entity.Properties["model"]) is not { } model) continue;
+                if (scene.PreviewModelForEntity(entity) is not { } model) continue;
                 var bounds = XModelGeometry.Bounds(entity, model);
                 Rect screenBounds = _projection.ScreenBounds(bounds.Min, bounds.Max);
                 if (!viewport.Intersects(screenBounds)) continue;
@@ -214,7 +214,7 @@ internal sealed class OrthographicDrawing
         if (_selectedModelWires is not null) context.DrawGeometry(null, SelectedPen, _selectedModelWires);
         if (transformPreview)
             foreach (MapEntity entity in scene.Selection.Items.OfType<MapEntity>().Where(XModelGeometry.IsModel))
-                if (scene.ResolveModel?.Invoke(entity.Properties["model"]) is { } model)
+                if (scene.PreviewModelForEntity(entity) is { } model)
                 {
                     var bounds = XModelGeometry.Bounds(entity, model);
                     context.DrawRectangle(null, SelectedPen, _projection.ScreenBounds(bounds.Min, bounds.Max));

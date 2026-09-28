@@ -40,7 +40,12 @@ internal sealed class PrefabLibrary
             WaterMaterialAuthoring.MergeDefinitions(result.World.Properties, expanded.World.Properties);
             string[] names = expanded.Entities.Select(entity => entity.Properties.GetValueOrDefault("targetname", ""))
                 .Where(name => name.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
-            if (names.Any(targetNames.Contains))
+            // Stock destructibles deliberately share a script discovery name.
+            // Actual target links must still retain their scoped resolution below.
+            if (names.Any(name => targetNames.Contains(name) &&
+                !expanded.Entities.Concat(result.Entities.Where(entity => !IsPrefab(entity)))
+                    .Where(entity => entity.Properties.GetValueOrDefault("targetname") == name)
+                    .All(DestructiblePresets.HasDiscoveryName)))
                 throw new NotSupportedException("A prefab targetname collides with another instance or the parent map. Native scoped name rewriting is not yet recovered. Make the source targetnames unique or explode the instance and resolve its links before building.");
             var expandedEntities = preview.Entities.Zip(expanded.Entities)
                 .ToDictionary(pair => pair.First, pair => pair.Second);

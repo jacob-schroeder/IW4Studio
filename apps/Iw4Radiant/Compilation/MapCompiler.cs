@@ -294,6 +294,7 @@ internal static class MapCompiler
                 _ = EntityOrientation.Read(entity);
                 continue;
             }
+            DestructiblePresets.Validate(entity.Properties);
             GameplayEntityType? type = GameplayEntityEditing.Types.FirstOrDefault(type => type.Name == entity.ClassName);
             if (type is null)
                 throw new NotSupportedException($"Entity '{entity.ClassName}' is not supported by compilation.");

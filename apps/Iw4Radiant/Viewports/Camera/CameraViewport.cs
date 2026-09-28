@@ -5,6 +5,7 @@ using Avalonia.OpenGL;
 using Avalonia.OpenGL.Controls;
 using Avalonia.Rendering;
 using System.Numerics;
+using IW4.Render.EditorPreview;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;
@@ -79,6 +80,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
             FinishGesture(cancel: true);
             _objectMenu?.Close();
             if (_session is not null) _session.PointEntityPreviewChanged -= OnPointEntityPreviewChanged;
+            _renderer.CancelDestructiblePreparation();
             _session = value;
             if (_session is not null) _session.PointEntityPreviewChanged += OnPointEntityPreviewChanged;
             RefreshScene();
@@ -197,6 +199,16 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         RequestNextFrameRendering();
         return notice;
     }
+    internal string? StartFxPreview(FxSpritePreview prototype, Vector3 origin, Matrix4x4 orientation,
+        bool blend = false)
+    {
+        bool wasActive = HasActiveFxPreview;
+        string? previousNotice = FxPreviewNotice;
+        string? notice = _renderer.SetFxPreview(prototype, origin, orientation, blend);
+        NotifyFxPreviewStatusChanged(wasActive, previousNotice);
+        RequestNextFrameRendering();
+        return notice;
+    }
     internal void StopFxPreview()
     {
         bool wasActive = HasActiveFxPreview;
@@ -258,6 +270,8 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     }
     internal event EventHandler? RendererStatusChanged;
     internal event Action? FxPreviewStatusChanged;
+    internal event Action<MapEntity?>? DestructiblePreviewRequested;
+    internal void RequestDestructiblePreview(MapEntity? entity) => DestructiblePreviewRequested?.Invoke(entity);
     internal event Action? MapFxPreviewStatusChanged;
     internal event Action<string>? InteractionStatusChanged;
     internal event Action? NavigationModeChanged;
@@ -328,6 +342,89 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         if (_transform is { IsCurrent: false }) FinishGesture(cancel: true);
         _renderer.RefreshScene();
         RequestNextFrameRendering();
+    }
+
+    internal void RefreshDestructibleAppearance()
+    {
+        if (_session is { } session) _renderer.RefreshDestructibleAppearance(session.Scene);
+        RequestNextFrameRendering();
+    }
+
+    internal void PrepareFxPreviewMaterials(IReadOnlyList<string> materials)
+    {
+        _renderer.PrepareFxPreviewMaterials(materials);
+        RequestNextFrameRendering();
+    }
+
+    internal void ClearDestructibleRenderingCache()
+    {
+        _session?.Scene.ClearPreparedDestructibleModels();
+        _renderer.CancelDestructiblePreparation();
+        RequestNextFrameRendering();
+    }
+
+    internal async Task<string?> PrepareDestructibleRenderingAsync(MapEntity entity,
+        IReadOnlyList<string> fxMaterials, CancellationToken cancellationToken = default)
+    {
+        EditorSession session = _session ?? throw new InvalidOperationException("Camera has no map session.");
+        if (!session.Document.Entities.Contains(entity))
+            throw new InvalidOperationException("The destructible is no longer in the active map.");
+        Func<string, XModelSource?>? resolveModel = session.Scene.ResolveModel;
+        string modelName = entity.Properties["model"];
+        var (intact, wreck) = await Task.Run(() =>
+        {
+            XModelSource loadedIntact = resolveModel?.Invoke(modelName) ??
+                throw new InvalidDataException("The intact police car model is unavailable.");
+            XModelSource loadedWreck = resolveModel?.Invoke("vehicle_policecar_lapd_destroy") ??
+                throw new InvalidDataException("The destroyed police car model is unavailable.");
+            _ = loadedIntact.Document;
+            _ = loadedWreck.Document;
+            return (loadedIntact, loadedWreck);
+        }, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!ReferenceEquals(session, _session) || !session.Document.Entities.Contains(entity))
+            throw new OperationCanceledException("The active map changed during destructible preparation.");
+        var windows = session.Scene.GetPreparedDestructibleModels(entity, intact, wreck);
+        if (windows is null)
+            windows = await Task.Run(() => new Dictionary<DestructibleWindowState, XModelSource>
+            {
+                [DestructibleWindowState.Intact] = DestructibleModelPreview.Create(intact, wreck,
+                    new DestructiblePreviewSettings()),
+                [DestructibleWindowState.Damaged] = DestructibleModelPreview.Create(intact, wreck,
+                    new DestructiblePreviewSettings(Windshield: DestructibleWindowState.Damaged)),
+                [DestructibleWindowState.Broken] = DestructibleModelPreview.Create(intact, wreck,
+                    new DestructiblePreviewSettings(Windshield: DestructibleWindowState.Broken))
+            }, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!ReferenceEquals(session, _session) || !session.Document.Entities.Contains(entity))
+            throw new OperationCanceledException("The active map changed during destructible preparation.");
+        session.Scene.SetPreparedDestructibleModels(entity, intact, wreck, windows);
+        XModelSource[] models = windows.Values.Append(wreck).ToArray();
+        XModelSource[] missingMeshes = _renderer.DestructibleModelsNeedingMesh(models);
+        var meshData = await Task.Run(() =>
+        {
+            var data = new Dictionary<XModelSource, SceneRenderer.PreparedPreviewModelMesh>(ReferenceEqualityComparer.Instance);
+            foreach (XModelSource model in missingMeshes)
+                data.Add(model, SceneRenderer.BuildDestructibleMesh(model));
+            return data;
+        }, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!ReferenceEquals(session, _session) || !session.Document.Entities.Contains(entity))
+            throw new OperationCanceledException("The active map changed during destructible preparation.");
+        string[] missingFx = fxMaterials.Where(name => ResolveMaterial?.Invoke(name) is not
+                { TechniqueSet: { Length: > 0 }, ImagePath: { } path } || !File.Exists(path))
+            .Distinct(StringComparer.Ordinal).ToArray();
+        string? notice = missingFx.Length == 0 ? null : "FX materials unavailable: " + string.Join(", ", missingFx);
+        string[] materials = models.SelectMany(model => model.Document.Materials
+                .Select(material => material.Name)).Concat(fxMaterials.Except(missingFx, StringComparer.Ordinal))
+            .Distinct(StringComparer.Ordinal).ToArray();
+        Task<string?> preparation = _renderer.PrepareDestructibleRendering(models, meshData, materials, notice);
+        RequestNextFrameRendering();
+        try { return await preparation.WaitAsync(cancellationToken); }
+        finally
+        {
+            if (!preparation.IsCompletedSuccessfully) _renderer.CancelDestructiblePreparation(preparation);
+        }
     }
 
     internal void ReloadTextures()
@@ -862,7 +959,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         try
         {
             bool supported = XModelDrag.TryRead(e.DataTransfer, out _, out _) ||
-                FxSoundDrag.TryRead(e.DataTransfer, out _, out _);
+                FxSoundDrag.TryRead(e.DataTransfer, out _, out _) || DestructibleDrag.Read(e.DataTransfer) is not null;
             e.DragEffects = CanAcceptAssetDrop?.Invoke() != false && supported &&
                 TryMapHit(e.GetPosition(this), includeModels: true, out _, out _) ? DragDropEffects.Copy : DragDropEffects.None;
             e.Handled = true;
@@ -883,9 +980,10 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         try
         {
             if (CanAcceptAssetDrop?.Invoke() == false || _session is not { } session) return;
+            DestructiblePreset? destructible = DestructibleDrag.Read(e.DataTransfer);
             bool modelDrop = XModelDrag.TryRead(e.DataTransfer, out string name, out bool align);
             bool isSound = false;
-            if (!modelDrop && !FxSoundDrag.TryRead(e.DataTransfer, out name, out isSound)) return;
+            if (destructible is null && !modelDrop && !FxSoundDrag.TryRead(e.DataTransfer, out name, out isSound)) return;
             XModelSource? model = modelDrop ? session.Scene.ResolveModel?.Invoke(name) : null;
             if (modelDrop && model is null ||
                 !TryMapHit(e.GetPosition(this), includeModels: true, out Vector3 hit, out Vector3 normal))
@@ -895,10 +993,11 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
             }
             FinishGesture(cancel: true);
             if (session.HasPlacement) session.CancelPlacement();
-            if (model is not null) XModelEditing.Place(session, model, hit, align ? normal : null);
+            if (destructible is not null) DestructiblePresets.Place(session, destructible, hit);
+            else if (model is not null) XModelEditing.Place(session, model, hit, align ? normal : null);
             else GameplayEntityEditing.PlaceFxSound(session, name, isSound, hit);
             e.DragEffects = DragDropEffects.Copy;
-            InteractionStatusChanged?.Invoke($"Placed {name}.");
+            InteractionStatusChanged?.Invoke($"Placed {destructible?.Name ?? name}.");
         }
         catch (Exception exception) when (IsEditError(exception))
         { InteractionStatusChanged?.Invoke(exception.Message); }

@@ -28,10 +28,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="../IW4Studio/Editors/Sound/SoundPreviewPlayer.cs" Link="Views/SoundPreviewPlayer.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Content Include="../../Resources/Bootstrap/ps3/**/*" Link="bootstrap/ps3/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="Shaders/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="../../src/Authoring/IW4.Formats/SourceFormat/Material/Shaders/ocean-waves.hlsl" Link="Shaders/ocean-waves.hlsl" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

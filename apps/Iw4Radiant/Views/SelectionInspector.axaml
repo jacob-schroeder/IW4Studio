@@ -81,6 +81,10 @@
                         </Grid>
                         <TextBlock x:Name="EntitySelectionInfo" Text="Edits apply to the active entity only."
                                    Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
+                        <Expander x:Name="DestructiblePreviewExpander" Header="Destructible preview" IsVisible="False"
+                                  IsExpanded="True">
+                            <views:DestructiblePreviewPanel x:Name="DestructiblePreview" Margin="0,8,0,0" />
+                        </Expander>
                         <views:GameplayEntityInspector x:Name="Gameplay" />
                         <Expander x:Name="FxSoundExpander" Header="FX / sound reference" IsVisible="False">
                             <StackPanel Spacing="7" Margin="0,8,0,0">

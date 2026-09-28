@@ -12,10 +12,11 @@ public static class XModelExportReader
     public static bool TryRead(
         TextReader reader,
         out XModelExportDocument? document,
-        out IReadOnlyList<XModelExportParseIssue> issues)
+        out IReadOnlyList<XModelExportParseIssue> issues,
+        bool skipDegenerateTriangles = false)
     {
         ArgumentNullException.ThrowIfNull(reader);
-        var parser = new Parser(reader.ReadToEnd());
+        var parser = new Parser(reader.ReadToEnd(), skipDegenerateTriangles);
         document = parser.Read();
         issues = parser.Issues;
         return document is not null && issues.Count == 0;
@@ -24,9 +25,14 @@ public static class XModelExportReader
     private sealed class Parser
     {
         private readonly string[] _lines;
+        private readonly bool _skipDegenerateTriangles;
         private int _line;
         private readonly List<XModelExportParseIssue> _issues = [];
-        internal Parser(string text) => _lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');
+        internal Parser(string text, bool skipDegenerateTriangles)
+        {
+            _lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');
+            _skipDegenerateTriangles = skipDegenerateTriangles;
+        }
         internal IReadOnlyList<XModelExportParseIssue> Issues => Array.AsReadOnly(_issues.ToArray());
 
         internal XModelExportDocument? Read()
@@ -68,15 +74,9 @@ public static class XModelExportReader
                 {
                     string[] p = Parts(Next()); Require(p.Length == 5 && p[0] == "TRI" && Integer(p[3]) == 0 && Integer(p[4]) == 0, "Expected TRI object material 0 0.");
                     int obj = Integer(p[1]); int material = Integer(p[2]); var first = Corner(vertexCount); var second = Corner(vertexCount); var third = Corner(vertexCount);
-                    Require(
-                        first.VertexIndex != second.VertexIndex &&
-                        first.VertexIndex != third.VertexIndex &&
-                        second.VertexIndex != third.VertexIndex &&
-                        Vector3.Cross(
-                            vertices[second.VertexIndex].Position - vertices[first.VertexIndex].Position,
-                            vertices[third.VertexIndex].Position - vertices[first.VertexIndex].Position) != Vector3.Zero,
-                        "Triangle is degenerate.");
-                    triangles.Add(new(obj, material, first, second, third));
+                    var triangle = new XModelExportTriangle(obj, material, first, second, third);
+                    Require(_skipDegenerateTriangles || !IsDegenerate(triangle, vertices), "Triangle is degenerate.");
+                    triangles.Add(triangle);
                 }
                 int objectCount = Count("NUMOBJECTS"); var objects = new List<XModelExportObject>(objectCount);
                 for (int i = 0; i < objectCount; i++) { string[] p = Parts(Next()); Require(p.Length == 3 && p[0] == "OBJECT" && Integer(p[1]) == i && ValidString(p[2], false), "Expected indexed OBJECT."); objects.Add(new(p[2])); }
@@ -89,10 +89,21 @@ public static class XModelExportReader
                 }
                 Require(triangles.All(t => t.ObjectIndex >= 0 && t.ObjectIndex < objectCount && t.MaterialIndex >= 0 && t.MaterialIndex < materialCount), "Triangle has an incomplete object or material reference.");
                 while (_line < _lines.Length) { string trailing = _lines[_line++].Trim(); Require(trailing.Length == 0 || trailing.StartsWith("//", StringComparison.Ordinal), "Unexpected trailing content."); }
+                // Extracted stock meshes can contain collapsed faces. Editor consumers
+                // may omit them, after validating every face's syntax and references.
+                if (_skipDegenerateTriangles) triangles.RemoveAll(triangle => IsDegenerate(triangle, vertices));
                 return new(Array.AsReadOnly(bones.ToArray()), Array.AsReadOnly(vertices.ToArray()), Array.AsReadOnly(triangles.ToArray()), Array.AsReadOnly(objects.ToArray()), Array.AsReadOnly(materials.ToArray()));
             }
             catch (InvalidDataException) { return null; }
         }
+        private static bool IsDegenerate(XModelExportTriangle triangle, IReadOnlyList<XModelExportVertex> vertices) =>
+            triangle.First.VertexIndex == triangle.Second.VertexIndex ||
+            triangle.First.VertexIndex == triangle.Third.VertexIndex ||
+            triangle.Second.VertexIndex == triangle.Third.VertexIndex ||
+            Vector3.Cross(
+                vertices[triangle.Second.VertexIndex].Position - vertices[triangle.First.VertexIndex].Position,
+                vertices[triangle.Third.VertexIndex].Position - vertices[triangle.First.VertexIndex].Position) == Vector3.Zero;
+
         private void ExpectMaterialProperties()
         {
             (string Name, int ValueCount)[] properties =

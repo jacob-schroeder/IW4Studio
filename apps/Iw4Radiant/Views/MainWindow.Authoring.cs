@@ -14,8 +14,8 @@ public partial class MainWindow
     private IReadOnlyDictionary<string, WaterMaterialDefinition> _waterDefinitions =
         new Dictionary<string, WaterMaterialDefinition>(StringComparer.Ordinal);
     private bool _waterDefinitionsDirty = true;
-    private readonly SoundAliasAudition _soundAudition = new();
-    private readonly MapSoundPreview _mapSoundPreview = new();
+    private readonly SoundAliasAudition _soundAudition;
+    private readonly MapSoundPreview _mapSoundPreview;
     private readonly Dictionary<string, MaterialSource?> _emitterMaterials = new(StringComparer.Ordinal);
     private string? _emitterMaterialRoot;
     private string? _suggestedEmitterRoot;
@@ -63,6 +63,12 @@ public partial class MainWindow
             browser.SourceLoaded += root =>
             {
                 StopEmitterPreview("Select an asset to preview.");
+                if (browser.IsSoundBrowser)
+                {
+                    CancelDestructiblePreparation();
+                    _previewAudio.Invalidate();
+                    _mapAudioRoot = null;
+                }
                 _buildEmitterAssetsPath = root;
                 if (!browser.IsSoundBrowser)
                 {
@@ -142,6 +148,7 @@ public partial class MainWindow
             StopEmitterPreview("Preview stopped.");
             Workspace.Camera.SetMapFxPreview(null, []);
             _soundAudition.Dispose();
+            CancelMapAudioPreparation();
         };
         Workspace.Materials.CatalogChanged += RefreshAssets;
         Workspace.Models.CatalogChanged += RefreshAssets;
@@ -163,6 +170,11 @@ public partial class MainWindow
         };
         Workspace.Models.PlacementRequested += (model, align) => BeginPlacement(model.Name,
             (position, normal) => XModelEditing.Place(_session, model, position, align ? normal : null));
+        Workspace.Destructibles.InitializeActions(Workspace.Models, _dialogs, FinishGestures);
+        Workspace.Destructibles.PlacementRequested += preset => BeginPlacement(preset.Name,
+            (position, _) => DestructiblePresets.Place(_session, preset, position));
+        InitializeDestructiblePreview();
+        Closed += (_, _) => Workspace.Destructibles.ReleaseImages();
         Workspace.Models.DropRequested += DropModels;
         Workspace.Models.CatalogReset += Inspector.Painter.MarkModelsUnavailable;
         Workspace.Models.FoliageModelRequested += model =>
@@ -380,9 +392,12 @@ public partial class MainWindow
     {
         if (!ReferenceEquals(_session.Document, _mapPreviewDocument))
         {
+            CancelDestructiblePreparation();
+            Workspace.Camera.ClearDestructibleRenderingCache();
             _mapPreviewDocument = _session.Document;
             Workspace.DisableMapPreviews();
         }
+        RefreshMapAudioDependencies();
         RefreshMapFxPreview();
         RefreshMapSoundPreview();
     }

@@ -32,12 +32,25 @@ public partial class XModelBrowser : UserControl
     internal event Action? CatalogReset;
     internal event Action<XModelSource>? FoliageModelRequested;
     internal XModelSource? SelectedModel => (ModelList.SelectedItem as XModelThumbnail)?.Model;
-    internal XModelSource? ResolveModel(string name)
+    internal XModelSource? ResolveModel(string name) => ResolveModel(name, out _);
+
+    internal XModelSource? ResolveModel(string name, out string? error)
     {
+        error = null;
         var source = _catalog?.Resolve(name);
-        if (source is null) return null;
+        if (source is null)
+        {
+            error = _catalog is null
+                ? "Load an extracted XModel library in the Models tab."
+                : $"Model '{name}' is not in the loaded library. Load the library containing this preset in the Models tab.";
+            return null;
+        }
         try { _ = source.Document; return source; }
-        catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { return null; }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+        {
+            error = exception.Message;
+            return null;
+        }
     }
     internal MaterialSource? ResolveMaterial(string name) => _catalog?.ResolveMaterial(name);
 

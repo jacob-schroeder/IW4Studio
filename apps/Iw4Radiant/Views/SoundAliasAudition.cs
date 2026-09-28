@@ -1,8 +1,8 @@
 using Avalonia.Threading;
+using Iw4Radiant.Audio;
 using Iw4Radiant.MapSource;
 using IW4.Formats.SourceFormat.Sound;
 using IW4.Game.Assets.Sound;
-using IW4.Studio.Desktop.Editors.Sound;
 
 namespace Iw4Radiant.Views;
 
@@ -10,11 +10,16 @@ namespace Iw4Radiant.Views;
 internal sealed class SoundAliasAudition : IDisposable
 {
     private readonly DispatcherTimer _playbackTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
-    private SoundPreviewPlayer? _player;
+    private readonly AudioPreviewEngine _engine;
+    private PreviewVoice? _player;
     private bool _disposed;
     private int _generation;
 
-    internal SoundAliasAudition() => _playbackTimer.Tick += OnPlaybackTimerTick;
+    internal SoundAliasAudition(AudioPreviewEngine engine)
+    {
+        _engine = engine;
+        _playbackTimer.Tick += OnPlaybackTimerTick;
+    }
 
     internal event Action? PlaybackEnded;
 
@@ -25,20 +30,18 @@ internal sealed class SoundAliasAudition : IDisposable
         int generation = _generation;
         if (_disposed)
             return "Sound preview is closed.";
-        if (!SoundPreviewPlayer.IsPlatformSupported)
-            return SoundPreviewPlayer.UnavailableReason ?? "Sound preview playback is unavailable.";
+        if (!_engine.IsSupported)
+            return _engine.UnavailableReason ?? "Sound preview playback is unavailable.";
 
-        var loaded = await Task.Run(() => LoadPlayback(rawRoot, exactAliasName, settings));
+        PreparedPreview loaded = await _engine.PrepareAsync(rawRoot, exactAliasName, settings);
         if (_disposed || generation != _generation) return null;
         if (loaded.Error is not null) return loaded.Error;
 
-        SoundPreviewPlayer? player = null;
+        PreviewVoice? player = null;
         try
         {
-            player = new SoundPreviewPlayer(loaded.Audio);
-            player.SetVolume(loaded.Profile?.Volume ?? 1);
-            player.SetNumberOfLoops(loaded.Profile?.Looping == true ? -1 : 0);
-            player.Play();
+            player = _engine.Play(loaded.Sound!, loaded.Profile?.Looping == true,
+                loaded.Profile?.Volume ?? 1, 0);
             _player = player;
             _playbackTimer.Start();
             return null;
@@ -56,7 +59,7 @@ internal sealed class SoundAliasAudition : IDisposable
     {
         _generation++;
         _playbackTimer.Stop();
-        SoundPreviewPlayer? player = _player;
+        PreviewVoice? player = _player;
         _player = null;
         player?.Dispose();
     }
@@ -137,7 +140,7 @@ internal sealed class SoundAliasAudition : IDisposable
 
     private void OnPlaybackTimerTick(object? sender, EventArgs args)
     {
-        SoundPreviewPlayer? player = _player;
+        PreviewVoice? player = _player;
         if (player is null || !player.HasEnded) return;
 
         _playbackTimer.Stop();

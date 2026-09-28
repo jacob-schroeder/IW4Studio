@@ -32,6 +32,9 @@ internal sealed class SceneMaterialTextures
 
     internal string? Error { get; private set; }
     internal bool HasPendingTextures => _pending.Count != 0 || _decode is not null;
+    internal bool IsReady(string material) => _textures.ContainsKey(material);
+    internal IEnumerable<string> Unavailable(IEnumerable<string> materials) => materials.Where(material =>
+        _textures.TryGetValue(material, out uint texture) && (texture == 0 || texture == _fallbackTexture));
 
     internal void Reload(GL gl)
     {
@@ -95,7 +98,7 @@ internal sealed class SceneMaterialTextures
         return texture;
     }
 
-    internal unsafe bool UploadReady(GL gl)
+    internal unsafe string? UploadReady(GL gl)
     {
         // Decode and upload one image at a time so ready RGBA buffers cannot accumulate.
         // Keep an invalidated active decode until it finishes before starting another.
@@ -107,7 +110,7 @@ internal sealed class SceneMaterialTextures
             _decodeRevision = _revision;
             _decode = Task.Run(() => Decode(next.Value));
         }
-        if (_decode is not { IsCompleted: true } ready) return false;
+        if (_decode is not { IsCompleted: true } ready) return null;
         string material = _decodingMaterial;
         _decode = null;
         _decodingMaterial = "";
@@ -117,7 +120,7 @@ internal sealed class SceneMaterialTextures
         if (!current)
         {
             _ = ready.Exception;
-            return false;
+            return null;
         }
         _pending.Remove(material);
         uint texture = 0;
@@ -145,7 +148,7 @@ internal sealed class SceneMaterialTextures
             texture = GetFallbackTexture(gl);
         }
         _textures.Add(material, texture);
-        return true;
+        return material;
     }
 
     private static (PixelSize Size, byte[] Pixels) Decode(MaterialSource source)

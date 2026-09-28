@@ -17,6 +17,7 @@ public partial class SelectionInspector : UserControl
     private bool _updating;
 
     public SelectionInspector() => InitializeComponent();
+    internal DestructiblePreviewPanel Destructibles => DestructiblePreview;
     internal event Action<string>? PlacementRequested;
     internal event Action? ModelBrowserRequested;
     internal event Action? PrefabBrowserRequested;
@@ -38,6 +39,12 @@ public partial class SelectionInspector : UserControl
     {
         InspectorTabs.SelectedItem = EntityTab;
         PropertiesExpander.IsExpanded = true;
+    }
+
+    internal void ShowDestructiblePreview()
+    {
+        InspectorTabs.SelectedItem = EntityTab;
+        DestructiblePreviewExpander.IsExpanded = true;
     }
 
     internal void ShowEnvironment() => InspectorTabs.SelectedItem = EnvironmentTab;
@@ -177,6 +184,12 @@ public partial class SelectionInspector : UserControl
             _shownSelection = session.Selection.Items.ToArray();
             MapEntity? entity = session.Selection.Active as MapEntity;
             bool entityChanged = !ReferenceEquals(entity, _shownEntity);
+            bool destructible = session.Selection.Count == 1 && entity is not null &&
+                session.Document.Entities.Contains(entity) &&
+                DestructiblePresets.Find(entity.Properties) is not null &&
+                DestructiblePresets.HasDiscoveryName(entity);
+            DestructiblePreviewExpander.IsVisible = destructible;
+            if (entityChanged) Destructibles.SetState(new DestructiblePreviewSettings(), false);
             SelectionText.Text = SelectionSummary(session.Selection);
             EntitySelectionInfo.IsVisible = entity is not null && session.Selection.Count > 1;
             bool wholeBrush = session.Selection.Count == 1 && session.Selection.Active is MapBrush;

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using IW4.Formats.SourceFormat.Character;
+using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;
 
@@ -123,9 +124,12 @@ internal static class MapBuildPipeline
         if (managed) start.ArgumentList.Add(linkerPath);
         foreach (string value in new[] { "build", bspPath, assetName, fastFilePath, "--compiled-lighting" }) start.ArgumentList.Add(value);
         var entities = IW4.Formats.D3dbsp.D3dbspFile.Read(bspPath).GetEntities();
+        DestructiblePreset[] destructibles = entities.Select(DestructiblePresets.Find)
+            .OfType<DestructiblePreset>().Distinct().ToArray();
         foreach (string model in entities
                      .Where(entity => entity.GetValueOrDefault("classname") is "script_model" or "misc_turret")
-                     .Select(entity => entity["model"]).Distinct(StringComparer.Ordinal))
+                     .Select(entity => entity["model"]).Concat(destructibles.SelectMany(preset => preset.ModelNames))
+                     .Distinct(StringComparer.Ordinal))
         {
             start.ArgumentList.Add("--xmodel");
             start.ArgumentList.Add(model);
@@ -139,24 +143,25 @@ internal static class MapBuildPipeline
             start.ArgumentList.Add("--character-assets");
             start.ArgumentList.Add(MapFactionAuthoring.GetCharacterAssetsDirectory(sourcePath));
         }
-        if (emitters is not null)
+        // Destruction-only assets have no placed emitter/model of their own.
+        // Package their roots without adding map-start FX or sound playback.
+        foreach (string name in (emitters?.FxNames ?? []).Concat(destructibles.SelectMany(preset => preset.FxNames))
+                     .Distinct(StringComparer.Ordinal))
         {
-            foreach (string name in emitters.FxNames)
-            {
-                start.ArgumentList.Add("--fx");
-                start.ArgumentList.Add(name);
-            }
-            foreach (string name in emitters.SoundNames)
-            {
-                start.ArgumentList.Add("--sound");
-                start.ArgumentList.Add(soundVariantPaths.TryGetValue(name, out string? path)
-                    ? $"{name}={path}" : name);
-            }
-            foreach (var rawFile in emitterRawFiles)
-            {
-                start.ArgumentList.Add("--rawfile");
-                start.ArgumentList.Add($"{rawFile.Name}={rawFile.Path}");
-            }
+            start.ArgumentList.Add("--fx");
+            start.ArgumentList.Add(name);
+        }
+        foreach (string name in (emitters?.SoundNames ?? []).Concat(destructibles.SelectMany(preset => preset.SoundNames))
+                     .Distinct(StringComparer.Ordinal))
+        {
+            start.ArgumentList.Add("--sound");
+            start.ArgumentList.Add(soundVariantPaths.TryGetValue(name, out string? path)
+                ? $"{name}={path}" : name);
+        }
+        foreach (var rawFile in emitterRawFiles)
+        {
+            start.ArgumentList.Add("--rawfile");
+            start.ArgumentList.Add($"{rawFile.Name}={rawFile.Path}");
         }
         using var process = new Process { StartInfo = start };
         try

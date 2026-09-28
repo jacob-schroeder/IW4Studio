@@ -23,6 +23,9 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        _soundAudition = new(_previewAudio);
+        _mapSoundPreview = new(_previewAudio);
+        _destructibleAudio = new(_previewAudio);
         InitializeComponent();
         _dialogs = new EditorDialogs(this, SetStatus);
         _files = new MapFileCommands(this, _session, _dialogs, FinishGestures, FrameAll, SetStatus, ClearLeakPath);
@@ -87,7 +90,7 @@ public partial class MainWindow : Window
         RefreshLayoutControls();
         RefreshEditor();
         SetStatus("Browse an asset folder and choose a material, then draw a brush or terrain in a grid view.");
-        Closed += (_, _) => { Workspace.Camera.StopPhysicsPlacement(); Workspace.Camera.StopGlassShatter(); Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); Workspace.Models.ReleaseImages(); };
+        Closed += (_, _) => { Workspace.Camera.StopPhysicsPlacement(); Workspace.Camera.StopGlassShatter(); Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); Workspace.Models.ReleaseImages(); _previewAudio.Dispose(); };
         Deactivated += (_, _) => { Workspace.Camera.PausePhysicsPlacement(); Workspace.Camera.FinishGesture(cancel: true); };
         AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
     }
@@ -95,6 +98,7 @@ public partial class MainWindow : Window
     private void RefreshEditor()
     {
         if (!_ready) return;
+        RefreshDestructiblePreview();
         if (_shownTool != _session.Tool)
         {
             _shownTool = _session.Tool;
@@ -116,6 +120,7 @@ public partial class MainWindow : Window
         RefreshClipControls();
         RefreshPhaseBControls();
         Inspector.RefreshSelection(_session);
+        UpdateDestructiblePreviewPanel();
         Workspace.SoundBrowser.RefreshSelectedSound(SelectedSoundMarker() is not null);
         Workspace.Prefabs.RefreshSelection(_session);
         RefreshEmitterPreview();

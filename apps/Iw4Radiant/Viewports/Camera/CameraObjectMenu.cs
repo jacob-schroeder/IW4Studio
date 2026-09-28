@@ -30,6 +30,16 @@ internal static class CameraObjectMenu
         var shatter = new MenuItem { Header = "Shatter" };
         ToolTip.SetTip(shatter, "Preview a break at this point on the selected glass. Panes away from this point break at their center.");
         var shatterStop = new MenuItem { Header = "Restore glass" };
+        var destructible = new MenuItem { Header = "Destructible" };
+        var destructiblePreview = new MenuItem { Header = "Preview destruction…" };
+        var destructibleReset = new MenuItem { Header = "Reset preview" };
+        destructible.Items.Add(destructiblePreview);
+        destructible.Items.Add(destructibleReset);
+        destructiblePreview.Click += (_, _) =>
+        {
+            if (IsCurrent() && DestructibleTarget() is { } entity) viewport.RequestDestructiblePreview(entity);
+        };
+        destructibleReset.Click += (_, _) => { if (IsCurrent()) viewport.RequestDestructiblePreview(null); };
         physics.Items.Add(drop);
         physics.Items.Add(reset);
         physics.Items.Add(keep);
@@ -132,6 +142,7 @@ internal static class CameraObjectMenu
         }
         menu.Items.Add(kinds);
         menu.Items.Add(playerClip);
+        menu.Items.Add(destructible);
         menu.Items.Add(physicsMenuSeparator);
         menu.Items.Add(physics);
         Refresh();
@@ -153,7 +164,19 @@ internal static class CameraObjectMenu
             kinds.IsEnabled = IsCurrent() && session.Selection.Items.Select(EditorSelection.Owner).OfType<MapBrush>()
                 .Any(brush => session.Visibility.CanSelect(document, brush));
             playerClip.IsVisible = playerClip.IsEnabled = IsCurrent() && PlayerClipEditing.CanGenerateFromModels(session);
+            MapEntity? destructibleTarget = IsCurrent() ? DestructibleTarget() : null;
+            destructible.IsVisible = destructible.IsEnabled = destructibleTarget is not null;
+            destructibleReset.IsVisible = destructibleTarget is not null &&
+                ReferenceEquals(destructibleTarget, session.Scene.DestructiblePreviewSource);
             RefreshPhysics();
+        }
+
+        MapEntity? DestructibleTarget()
+        {
+            MapEntity[] candidates = hits.Select(hit => session.Scene.Owner(hit.Item)).OfType<MapEntity>()
+                .Where(entity => document.Entities.Contains(entity) && DestructiblePresets.HasDiscoveryName(entity) &&
+                    session.Visibility.CanSelect(document, entity)).Distinct().ToArray();
+            return candidates.FirstOrDefault(entity => ReferenceEquals(entity, session.Selection.Active)) ?? candidates.FirstOrDefault();
         }
 
         void RefreshPhysics()

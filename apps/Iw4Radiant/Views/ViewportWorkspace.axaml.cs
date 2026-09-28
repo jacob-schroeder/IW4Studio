@@ -92,6 +92,7 @@ public partial class ViewportWorkspace : UserControl
     internal MaterialBrowser Materials => MaterialBrowserView;
     internal XModelBrowser Models => XModelBrowserView;
     internal PrefabBrowser Prefabs => PrefabBrowserView;
+    internal DestructibleBrowser Destructibles => DestructibleBrowserView;
     internal FxSoundBrowser FxBrowser => FxBrowserView;
     internal FxSoundBrowser SoundBrowser => SoundBrowserView;
     internal bool MapFxEnabled => MapFxToggle.IsChecked == true;
@@ -184,7 +185,7 @@ public partial class ViewportWorkspace : UserControl
     internal void ShowModels() => ShowBrowser(1);
     internal void ShowPrefabs() => ShowBrowser(2);
     internal void ShowFxSounds(bool isSound) => ShowBrowser(isSound ? 4 : 3);
-    internal void ShowConsole() => ShowBrowser(5);
+    internal void ShowConsole() => ShowBrowser(6);
 
     private void RefreshConsoleOutput()
     {
