@@ -2,6 +2,7 @@ using System.Text;
 using IW4.Formats.SourceFormat.Character;
 using IW4.Formats.SourceFormat.Material;
 using IW4.Formats.SourceFormat.Fx;
+using IW4.Formats.SourceFormat.Physics;
 using IW4.Formats.SourceFormat.Sound;
 using IW4.Game.Assets;
 using IW4.Game.Assets.Fx;
@@ -276,6 +277,22 @@ internal static partial class FastFileConverter
             }
         }
         D3dbspFile sourceBsp = D3dbspFile.Read(inputPath);
+        IReadOnlyDictionary<string, string>[] dynamicEntities = sourceBsp.GetEntities()
+            .Where(entity => entity.GetValueOrDefault("classname") == RuntimePhysicsAuthoring.ClassName)
+            .ToArray();
+        DynEntityDef[] dynamicDefinitions = [];
+        if (dynamicEntities.Length != 0)
+        {
+            if (modelSources is null)
+                throw new InvalidDataException("Runtime physics models require an asset library with native XModel sources.");
+            foreach (IReadOnlyDictionary<string, string> entity in dynamicEntities)
+                RuntimePhysicsAuthoring.Validate(entity);
+            XModelAsset runtimeModel = modelSources.LoadModel(RuntimePhysicsAuthoring.ModelName);
+            availableXModels.Add(runtimeModel);
+            dynamicDefinitions = dynamicEntities
+                .Select(entity => RuntimePhysicsAuthoring.CreateDefinition(entity, runtimeModel))
+                .ToArray();
+        }
         var glassDependencies = D3dbspAssetLinker.ReadGlassDependencyNames(sourceBsp);
         if (modelSources is not null)
         {
@@ -397,7 +414,8 @@ internal static partial class FastFileConverter
                 {
                     WaterMaterialAuthoring.MapPropertyName,
                     MapFactionAuthoring.MapPropertyName
-                }
+                },
+                DynamicEntityDefinitions = [dynamicDefinitions, Array.Empty<DynEntityDef>()]
             });
         GfxImageAsset ResolveLightingImage(string name) =>
             availableLightingImages.TryGetValue(LightingImageKey(name), out GfxImageAsset? image)

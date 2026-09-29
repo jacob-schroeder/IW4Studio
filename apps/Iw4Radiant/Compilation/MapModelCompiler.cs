@@ -2,17 +2,19 @@ using System.Globalization;
 using System.Numerics;
 using System.Text;
 using IW4.Formats.D3dbsp;
+using IW4.Formats.SourceFormat.Physics;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Rendering;
 
 namespace Iw4Radiant.Compilation;
 
-internal static class MapStaticModelCompiler
+internal static class MapModelCompiler
 {
     internal static D3dbspFile Append(MapDocument document, D3dbspFile compiled)
     {
-        MapEntity[] models = document.Entities.Where(entity => entity.ClassName == "misc_model").ToArray();
+        MapEntity[] models = document.Entities.Where(entity =>
+            entity.ClassName is "misc_model" or RuntimePhysicsAuthoring.ClassName).ToArray();
         if (models.Length == 0) return compiled;
 
         var output = new MapDocument();
@@ -26,15 +28,20 @@ internal static class MapStaticModelCompiler
         foreach (MapEntity source in models)
         {
             if (!XModelGeometry.IsModel(source) || string.IsNullOrWhiteSpace(source.Properties["model"]))
-                throw new InvalidDataException("A misc_model needs a named XModel asset.");
+                throw new InvalidDataException($"A {source.ClassName} needs a named XModel asset.");
             string name = source.Properties["model"];
             if (source.Brushes.Count != 0 || source.Terrains.Count != 0 || source.PreservedPrimitives.Count != 0)
-                throw new NotSupportedException($"Static model '{name}' cannot contain map primitives.");
-            foreach (string key in source.Properties.Keys)
-                if (key is not ("classname" or "model" or "origin" or "angles" or "angle" or
-                    "modelscale" or "modelscale_vec" or "spawnflags" or "gndLt"))
-                    throw new NotSupportedException($"Static model '{name}' property '{key}' is not supported by compilation.");
-            _ = CastsShadow(source);
+                throw new NotSupportedException($"Model '{name}' cannot contain map primitives.");
+            if (source.ClassName == RuntimePhysicsAuthoring.ClassName)
+                RuntimePhysicsAuthoring.Validate(source.Properties);
+            else
+            {
+                foreach (string key in source.Properties.Keys)
+                    if (key is not ("classname" or "model" or "origin" or "angles" or "angle" or
+                        "modelscale" or "modelscale_vec" or "spawnflags" or "gndLt"))
+                        throw new NotSupportedException($"Static model '{name}' property '{key}' is not supported by compilation.");
+                _ = CastsShadow(source);
+            }
 
             Vector3 scale = XModelGeometry.Scale(source);
             if (scale.X != scale.Y || scale.X != scale.Z)
@@ -49,8 +56,8 @@ internal static class MapStaticModelCompiler
             output.Entities.Add(normalized);
         }
 
-        // The native linker owns static render/collision construction from these
-        // placements and the full XModels supplied by the selected fastfiles.
+        // The native linker builds static render/collision or dynamic definitions
+        // from these placements and the resolved native XModels.
         string text = MapWriter.Serialize(output);
         byte[] entities = Encoding.GetEncoding(Encoding.Latin1.CodePage,
             EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback).GetBytes(text + '\0');

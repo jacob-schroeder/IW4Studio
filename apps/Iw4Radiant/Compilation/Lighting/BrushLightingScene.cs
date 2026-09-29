@@ -167,7 +167,7 @@ internal sealed class BrushLightingScene
         foreach (MapEntity entity in document.Entities.Where(entity => entity.ClassName == "misc_model"))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!MapStaticModelCompiler.CastsShadow(entity)) continue;
+            if (!MapModelCompiler.CastsShadow(entity)) continue;
             string name = entity.Properties.GetValueOrDefault("model") ?? "";
             if (!models.TryGetValue(name, out XModelSource? model))
                 throw new InvalidDataException($"Lighting has no source geometry for static model '{name}'. Load its XModel before building.");

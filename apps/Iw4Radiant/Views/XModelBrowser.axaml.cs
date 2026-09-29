@@ -14,10 +14,12 @@ namespace Iw4Radiant.Views;
 public partial class XModelBrowser : UserControl
 {
     private XModelCatalog? _catalog;
+    private XModelCatalog? _bundledCatalog;
     private readonly List<XModelThumbnail> _thumbnails = [];
     private EditorDialogs? _dialogs;
     private Action<string>? _setStatus;
     private int _loadRevision;
+    private int _bundledLoadRevision;
     private bool _manualLoadStarted;
     private CancellationTokenSource? _filterCancellation;
     private Window? _previewWindow;
@@ -38,7 +40,7 @@ public partial class XModelBrowser : UserControl
     internal XModelSource? ResolveModel(string name, out string? error)
     {
         error = null;
-        var source = _catalog?.Resolve(name);
+        var source = _catalog?.Resolve(name) ?? _bundledCatalog?.Resolve(name);
         if (source is null)
         {
             error = _catalog is null
@@ -53,7 +55,25 @@ public partial class XModelBrowser : UserControl
             return null;
         }
     }
-    internal MaterialSource? ResolveMaterial(string name) => _catalog?.ResolveMaterial(name);
+    internal MaterialSource? ResolveMaterial(string name) =>
+        _catalog?.ResolveMaterial(name) ?? _bundledCatalog?.ResolveMaterial(name);
+
+    internal async Task LoadBundledAssetsAsync(string root)
+    {
+        int revision = ++_bundledLoadRevision;
+        try
+        {
+            var catalog = await Task.Run(() => XModelCatalog.ReadBundledRuntimeProps(root));
+            if (revision != _bundledLoadRevision) return;
+            _bundledCatalog = catalog;
+            await FilterModelsAsync();
+            if (revision == _bundledLoadRevision) CatalogChanged?.Invoke();
+        }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+        {
+            if (revision == _bundledLoadRevision) _setStatus?.Invoke($"Bundled physics prop unavailable: {exception.Message}");
+        }
+    }
 
     internal void InitializeActions(Window owner, EditorSession session, EditorDialogs dialogs,
         Action finishGestures, Action<string> setStatus)
@@ -121,9 +141,9 @@ public partial class XModelBrowser : UserControl
         };
         PreviewButton.Click += (_, _) =>
         {
-            if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected || _catalog is null) return;
+            if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected) return;
             finishGestures();
-            ShowPreview(owner, selected.Model, _catalog);
+            ShowPreview(owner, selected.Model);
         };
         AddFoliageButton.Click += (_, _) =>
         {
@@ -180,7 +200,12 @@ public partial class XModelBrowser : UserControl
 
     internal void ReleaseImages(bool invalidateLoad = true)
     {
-        if (invalidateLoad) _loadRevision++;
+        if (invalidateLoad)
+        {
+            _loadRevision++;
+            _bundledLoadRevision++;
+            _bundledCatalog = null;
+        }
         ClosePreview();
         _filterCancellation?.Cancel();
         CatalogReset?.Invoke();
@@ -193,11 +218,13 @@ public partial class XModelBrowser : UserControl
     private async Task FilterModelsAsync(int? loadRevision = null)
     {
         _filterCancellation?.Cancel();
-        if (_catalog is not { } catalog) return;
+        XModelSource[] allModels = (_catalog?.Models ?? []).Concat(_bundledCatalog?.Models ?? [])
+            .DistinctBy(model => model.Name, StringComparer.Ordinal).ToArray();
+        if (allModels.Length == 0) return;
         using var cancellation = new CancellationTokenSource();
         _filterCancellation = cancellation;
         string filter = ModelFilter.Text ?? "";
-        var models = catalog.Models.Where(model => model.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+        var models = allModels.Where(model => model.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(model => model.Name.Equals(filter, StringComparison.OrdinalIgnoreCase)).ThenBy(model => model.Name, StringComparer.Ordinal).ToArray();
         var visible = models.Take(120).ToArray();
         var cached = _thumbnails.ToDictionary(thumbnail => thumbnail.Name, StringComparer.Ordinal);
@@ -210,7 +237,7 @@ public partial class XModelBrowser : UserControl
             ModelInfo.Text = $"Loading {visible.Length} model previews…";
             await Task.Run(() =>
             {
-                var renderer = new XModelPreviewRenderer(catalog.ResolveMaterial);
+                var renderer = new XModelPreviewRenderer(ResolveMaterial);
                 foreach (var model in missing)
                 {
                     cancellation.Token.ThrowIfCancellationRequested();
@@ -227,7 +254,7 @@ public partial class XModelBrowser : UserControl
             var previews = visible.Select(model => cached[model.Name]).ToArray();
             var unavailable = previews.Where(preview => preview.Preview is null).ToArray();
             ModelList.ItemsSource = previews.Where(preview => preview.Preview is not null).ToArray();
-            ModelInfo.Text = $"{models.Length} of {catalog.Models.Count} models" +
+            ModelInfo.Text = $"{models.Length} of {allModels.Length} models" +
                 (models.Length > visible.Length ? " · first 120 matches; narrow search" : "") +
                 (unavailable.Length > 0 ? $" · {unavailable.Length} unavailable previews omitted" : "") +
                 " · Drag a thumbnail or Large preview into a viewport; Place model also supports click placement.";
@@ -266,10 +293,10 @@ public partial class XModelBrowser : UserControl
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { await dialogs.MessageAsync("Cannot replace models", exception.Message); }
     }
 
-    private void ShowPreview(Window owner, XModelSource model, XModelCatalog catalog)
+    private void ShowPreview(Window owner, XModelSource model)
     {
         ClosePreview();
-        var renderer = new XModelPreviewRenderer(catalog.ResolveMaterial);
+        var renderer = new XModelPreviewRenderer(ResolveMaterial);
         var image = new Image { Stretch = Stretch.Uniform, MinHeight = 320 };
         var yaw = new Slider { Minimum = -180, Maximum = 180, Value = -45 };
         var pitch = new Slider { Minimum = -85, Maximum = 85, Value = 25 };

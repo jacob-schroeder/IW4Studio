@@ -74,6 +74,19 @@ public partial class SelectionInspector : UserControl
         Gameplay.PlacementRequested += name => PlacementRequested?.Invoke(name);
         Gameplay.ModelBrowserRequested += () => ModelBrowserRequested?.Invoke();
         Gameplay.PrefabBrowserRequested += () => PrefabBrowserRequested?.Invoke();
+        RuntimePhysicsCheckBox.Click += async (_, _) =>
+        {
+            if (_updating || dialogs.BlocksInput || session.Selection.Count != 1 ||
+                session.Selection.Active is not MapEntity entity) return;
+            try
+            {
+                finishGestures();
+                RuntimePhysicsEditing.Set(session, entity, RuntimePhysicsCheckBox.IsChecked == true);
+            }
+            catch (ArgumentException exception)
+            { await dialogs.MessageAsync("Runtime physics", exception.Message); }
+            finally { ShowRuntimePhysics(session, session.Selection.Active as MapEntity); }
+        };
         BrowseFxSoundButton.Click += (_, _) =>
         {
             if (dialogs.BlocksInput || session.Selection.Active is not MapEntity entity ||
@@ -202,6 +215,7 @@ public partial class SelectionInspector : UserControl
             PropertiesBox.IsReadOnly = entity is null;
             if (entityChanged || !PropertiesBox.IsKeyboardFocusWithin)
                 ShowEntityProperties(entity);
+            ShowRuntimePhysics(session, entity);
             bool isFxSound = entity?.ClassName == "fx_origin";
             FxSoundExpander.IsVisible = isFxSound;
             if (isFxSound && entity is not null)
@@ -265,6 +279,21 @@ public partial class SelectionInspector : UserControl
             Skies.RefreshSelection(session);
         }
         finally { _updating = false; }
+    }
+
+    private void ShowRuntimePhysics(EditorSession session, MapEntity? entity)
+    {
+        RuntimePhysicsExpander.IsVisible = entity is not null && session.Selection.Count == 1 &&
+            entity.ClassName is ("misc_model" or "dyn_model");
+        if (!RuntimePhysicsExpander.IsVisible || entity is null) return;
+        bool enabled = entity.ClassName == "dyn_model";
+        RuntimePhysicsCheckBox.IsChecked = enabled;
+        bool available = RuntimePhysicsEditing.CanSet(session, entity, !enabled, out string reason);
+        RuntimePhysicsCheckBox.IsEnabled = available;
+        RuntimePhysicsHint.Text = available
+            ? enabled ? "Compiles as a runtime physics model. Uncheck to restore a static model."
+                : "Uses the stock soccer_ball physics preset. Requires unit model scale and no owned primitives."
+            : reason;
     }
 
     private void ShowFxPlaybackMode()

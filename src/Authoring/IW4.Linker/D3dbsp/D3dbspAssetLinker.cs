@@ -127,8 +127,7 @@ public static class D3dbspAssetLinker
         bool forceFullbright = request.ForceFullbright ||
             (request.WorldOnly && request.Lightmaps.Count == 0 && !request.UseCompiledLighting);
         IReadOnlyList<IReadOnlyList<DynEntityDef>> dynamicEntityDefinitions =
-            FreezeDynamicEntityDefinitions(
-                request.WorldOnly ? null : request.DynamicEntityDefinitions);
+            FreezeDynamicEntityDefinitions(request.DynamicEntityDefinitions);
         ushort[] dynamicEntityCounts = dynamicEntityDefinitions
             .Select(definitions => checked((ushort)definitions.Count))
             .ToArray();

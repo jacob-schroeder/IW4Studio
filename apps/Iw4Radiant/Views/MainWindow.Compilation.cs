@@ -137,7 +137,7 @@ public partial class MainWindow
         IReadOnlyDictionary<string, WaterMaterialDefinition> waterDefinitions =
             WaterMaterialAuthoring.ReadDefinitions(document.World.Properties);
         var models = new Dictionary<string, XModelSource>(StringComparer.Ordinal);
-        foreach (string name in document.Entities.Where(entity => entity.ClassName == "misc_model" && MapStaticModelCompiler.CastsShadow(entity))
+        foreach (string name in document.Entities.Where(entity => entity.ClassName == "misc_model" && MapModelCompiler.CastsShadow(entity))
                      .Select(entity => entity.Properties.GetValueOrDefault("model") ?? "").Distinct(StringComparer.Ordinal))
             models.Add(name, Workspace.Models.ResolveModel(name) ??
                 throw new InvalidDataException($"Model '{name}' is unavailable. Load it in the model browser before building."));

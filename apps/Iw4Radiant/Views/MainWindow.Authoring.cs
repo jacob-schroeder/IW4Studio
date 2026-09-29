@@ -174,8 +174,12 @@ public partial class MainWindow
         Workspace.Weapons.PlacementRequested += () => BeginPlacement("Mounted minigun",
             (position, _) => GameplayEntityEditing.Place(_session, GameplayEntityEditing.TurretClassName, position));
         Workspace.Weapons.AssetsChanged += RefreshAssets;
-        Opened += (_, _) => _ = Workspace.Weapons.LoadAssetsAsync(
-            FindBootstrapAssets() ?? Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3"));
+        Opened += (_, _) =>
+        {
+            string bootstrap = FindBootstrapAssets() ?? Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3");
+            _ = Workspace.Weapons.LoadAssetsAsync(bootstrap);
+            _ = Workspace.Models.LoadBundledAssetsAsync(bootstrap);
+        };
         Closed += (_, _) => Workspace.Weapons.ReleaseImages();
         Workspace.Destructibles.InitializeActions(this, Workspace.Models, _dialogs, FinishGestures);
         Workspace.Destructibles.PlacementRequested += preset => BeginPlacement(preset.Name,

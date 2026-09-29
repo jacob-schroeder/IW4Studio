@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "name": "soccer_ball",
+  "numBones": 1,
+  "numRootBones": 1,
+  "numSurfs": 2,
+  "lodRampType": 0,
+  "scale": 1,
+  "noScalePartBits": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "boneNames": [
+    "tag_origin"
+  ],
+  "parentList": "",
+  "quats": [],
+  "trans": [],
+  "partClassification": "AA==",
+  "baseMat": [
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "transWeight": 2
+    }
+  ],
+  "materials": [
+    "m/mtl_soccer_ball",
+    "m/mtl_soccer_ball"
+  ],
+  "lods": [
+    {
+      "dist": 300,
+      "numSurfs": 1,
+      "surfIndex": 0,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": "soccer_ball01_lod011"
+    },
+    {
+      "dist": 1500,
+      "numSurfs": 1,
+      "surfIndex": 1,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": "soccer_ball01_lod110"
+    },
+    {
+      "dist": 1000000,
+      "numSurfs": 0,
+      "surfIndex": 0,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": null
+    },
+    {
+      "dist": 1000000,
+      "numSurfs": 0,
+      "surfIndex": 0,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": null
+    }
+  ],
+  "maxLoadedLod": 0,
+  "numLods": 2,
+  "collLod": 0,
+  "flags": 0,
+  "contents": 1,
+  "collSurfs": [
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 4.7683716E-07
+        },
+        "halfSize": {
+          "x": 5.555139,
+          "y": 5.631574,
+          "z": 5.5510974
+        }
+      },
+      "boneIndex": 0,
+      "contents": 1,
+      "surfaceFlags": 26214400
+    }
+  ],
+  "boneInfo": [
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 9.536743E-07
+        },
+        "halfSize": {
+          "x": 5.660968,
+          "y": 5.882431,
+          "z": 6.1660957
+        }
+      },
+      "radiusSquared": 104.67029
+    }
+  ],
+  "radius": 5.6373353,
+  "bounds": {
+    "midPoint": {
+      "x": 0,
+      "y": 0,
+      "z": 4.7683716E-07
+    },
+    "halfSize": {
+      "x": 5.554139,
+      "y": 5.630574,
+      "z": 5.5500975
+    }
+  },
+  "invHighMipRadius": [
+    4261,
+    4457
+  ],
+  "memUsage": 7371,
+  "physPreset": "soccer_ball",
+  "physCollmap": "soccer_ball"
+}

@@ -86,6 +86,13 @@
                             <views:DestructiblePreviewPanel x:Name="DestructiblePreview" Margin="0,8,0,0" />
                         </Expander>
                         <views:GameplayEntityInspector x:Name="Gameplay" />
+                        <Expander x:Name="RuntimePhysicsExpander" Header="Runtime physics" IsVisible="False" IsExpanded="True">
+                            <StackPanel Spacing="7" Margin="0,8,0,0">
+                                <CheckBox x:Name="RuntimePhysicsCheckBox" Content="Runtime physics" />
+                                <TextBlock Text="Supported preset: soccer_ball" Classes="caption" />
+                                <TextBlock x:Name="RuntimePhysicsHint" Classes="caption" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Expander>
                         <Expander x:Name="FxSoundExpander" Header="FX / sound reference" IsVisible="False">
                             <StackPanel Spacing="7" Margin="0,8,0,0">
                                 <TextBlock x:Name="FxSoundKind" Classes="caption" />

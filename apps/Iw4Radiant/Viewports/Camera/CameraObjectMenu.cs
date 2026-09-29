@@ -23,6 +23,9 @@ internal static class CameraObjectMenu
         var deselectAll = new MenuItem { Header = "Deselect all hit objects", StaysOpenOnClick = true };
         var physics = new MenuItem { Header = "Physics" };
         var physicsMenuSeparator = new Separator();
+        var enableRuntimePhysics = new MenuItem { Header = "Enable runtime physics" };
+        var disableRuntimePhysics = new MenuItem { Header = "Disable runtime physics" };
+        var runtimePhysicsSeparator = new Separator();
         var drop = new MenuItem();
         var reset = new MenuItem { Header = "Reset" };
         var keep = new MenuItem { Header = "Keep placement" };
@@ -40,12 +43,17 @@ internal static class CameraObjectMenu
             if (IsCurrent() && DestructibleTarget() is { } entity) viewport.RequestDestructiblePreview(entity);
         };
         destructibleReset.Click += (_, _) => { if (IsCurrent()) viewport.RequestDestructiblePreview(null); };
+        physics.Items.Add(enableRuntimePhysics);
+        physics.Items.Add(disableRuntimePhysics);
+        physics.Items.Add(runtimePhysicsSeparator);
         physics.Items.Add(drop);
         physics.Items.Add(reset);
         physics.Items.Add(keep);
         physics.Items.Add(cancel);
         physics.Items.Add(shatter);
         physics.Items.Add(shatterStop);
+        enableRuntimePhysics.Click += (_, _) => SetRuntimePhysics(true);
+        disableRuntimePhysics.Click += (_, _) => SetRuntimePhysics(false);
         drop.Click += async (_, _) =>
         {
             if (!IsCurrent()) return;
@@ -179,6 +187,26 @@ internal static class CameraObjectMenu
             return candidates.FirstOrDefault(entity => ReferenceEquals(entity, session.Selection.Active)) ?? candidates.FirstOrDefault();
         }
 
+        MapEntity? RuntimePhysicsTarget()
+        {
+            MapEntity[] candidates = hits.Select(hit => session.Scene.Owner(hit.Item)).OfType<MapEntity>()
+                .Where(entity => document.Entities.Contains(entity) && entity.ClassName is ("misc_model" or "dyn_model") &&
+                    session.Visibility.CanSelect(document, entity)).Distinct().ToArray();
+            return candidates.FirstOrDefault(entity => ReferenceEquals(entity, session.Selection.Active)) ?? candidates.FirstOrDefault();
+        }
+
+        void SetRuntimePhysics(bool enabled)
+        {
+            if (!IsCurrent() || RuntimePhysicsTarget() is not { } entity) return;
+            try
+            {
+                RuntimePhysicsEditing.Set(session, entity, enabled);
+                status(enabled ? "Runtime physics enabled for the stock soccer_ball preset."
+                    : "Runtime physics disabled; model restored to static misc_model.");
+            }
+            catch (ArgumentException exception) { status(exception.Message); }
+        }
+
         void RefreshPhysics()
         {
             bool active = viewport.PhysicsPlacementActive;
@@ -192,7 +220,20 @@ internal static class CameraObjectMenu
             bool canShatter = CameraGlassShatterSimulation.CanStart(session);
             bool showPlacement = active || !glassActive && canStart;
             bool showShatter = glassActive || !active && canShatter;
-            physics.IsVisible = showPlacement || showShatter;
+            MapEntity? runtimeTarget = IsCurrent() && !openedForSimulation ? RuntimePhysicsTarget() : null;
+            bool showRuntime = runtimeTarget is not null;
+            enableRuntimePhysics.IsVisible = runtimeTarget?.ClassName == "misc_model";
+            disableRuntimePhysics.IsVisible = runtimeTarget?.ClassName == "dyn_model";
+            if (enableRuntimePhysics.IsVisible && runtimeTarget is not null)
+            {
+                enableRuntimePhysics.IsEnabled = RuntimePhysicsEditing.CanSet(session, runtimeTarget, true, out string reason);
+                ToolTip.SetTip(enableRuntimePhysics, enableRuntimePhysics.IsEnabled
+                    ? "Convert this model to the stock soccer_ball runtime physics preset." : reason);
+            }
+            disableRuntimePhysics.IsEnabled = runtimeTarget is not null &&
+                RuntimePhysicsEditing.CanSet(session, runtimeTarget, false, out _);
+            runtimePhysicsSeparator.IsVisible = showRuntime && (showPlacement || showShatter);
+            physics.IsVisible = showRuntime || showPlacement || showShatter;
             physicsMenuSeparator.IsVisible = physics.IsVisible;
             physics.IsEnabled = IsCurrent();
             drop.Header = active && viewport.PhysicsPlacementRunning ? "Pause" :

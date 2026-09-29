@@ -41,3 +41,17 @@ D3dbspLinker export-assets /path/to/mp_checkpoint.ff /path/to/raw /path/to/new-t
 In IW4Radiant, open the **Weapons** tab (or **Create → Weapons…**) and drag **Mounted minigun** onto a camera surface or grid, or use **Place mounted minigun**. Both this browser and the existing gameplay entity menu create the same `misc_turret` with its model and weapon references already set. The browser reads the bundled native model for its thumbnail and supplies model/material fallbacks for viewport drawing; loaded library assets retain precedence in the scene. No separate model extraction is required.
 
 Evidence: targeted production linker and IW4Radiant compilation, native source extraction, successful saved-map FF builds, and confirmation of all six rumble RawFiles in the output. On 2026-09-29 the user reported successful loading and operation on PS3 hardware after the script-string null-index correction. Detailed browser interactions and importer roundtrip were not independently exercised.
+
+## Stock runtime soccer ball — 2026-09-29
+
+`soccer_ball` is bundled with its native XModel surfaces, material, images, PhysPreset and PhysCollmap. The model appears in the **Models** browser without an extracted model library. Place it, then use **Entity inspector → Runtime physics** or **right-click → Physics → Enable runtime physics**. Disabling the property restores a static model; both changes preserve the transform and support undo.
+
+The supported runtime profile comes from PS3 `mp_favela.ff`, model DynEntity list 0, entry 453: type-1 CLUTTER, Contents=1, zero mass vectors and brush indices, and no destruction FX. Its named `soccer_ball` preset and model collision data are retained. The mapper controls placement and rotation; scale must remain 1. Arbitrary models and custom physics parameters are outside this first profile. Physics → Drop remains an editor placement tool.
+
+Offline extraction with `common_mp.ff` recovered 55 asset definitions. Of 144 source/payload files, 121 matched existing bootstrap files exactly and 23 were added (270,012 bytes). Normal map builds resolve these sources without loading stock fastfiles:
+
+```sh
+D3dbspLinker export-assets /path/to/mp_favela.ff /path/to/raw /path/to/new-soccer-bundle --xmodel soccer_ball --dependencies /path/to/common_mp.ff
+```
+
+On 2026-09-29 the user built a fastfile containing the authored ball, loaded it on PS3, and confirmed that shooting it made it bounce around. This is user-reported authored-map loading and bullet-response evidence; the candidate was not independently hashed. The user then confirmed that walking into the stock Favela ball does not move it, matching the authored ball, and explicitly accepted RAD-028 as complete and working on PS3 hardware. Explosion response and multiplayer synchronization remain unverified. No physics values were changed for the player-contact comparison.

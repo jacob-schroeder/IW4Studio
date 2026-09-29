@@ -3,6 +3,7 @@ using System.Numerics;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Rendering;
 using IW4.Formats.SourceFormat.Weapon;
+using IW4.Formats.SourceFormat.Physics;
 
 namespace Iw4Radiant.Editing;
 
@@ -54,6 +55,7 @@ internal static class GameplayEntityEditing
         new("reflection_probe", "Lighting", "Bakes reflections from the surrounding map for shiny surfaces. Place where reflections should be sampled."),
         new("stage", "Lighting", "Create a native stage volume from selected world brushes. Stage-specific ambient, sundirection and sunRadiosity remain editable in Entity properties; compilation requires stage-local lighting support.", GameplayEntityCreation.Brush),
         new("misc_model", "Models", "Choose a loaded XModel in the model browser, then place a compiled static model on a grid or camera surface.", GameplayEntityCreation.ModelBrowser),
+        new(RuntimePhysicsAuthoring.ClassName, "Models", "Place soccer_ball from the Models browser, then enable Runtime physics in the Entity inspector or Physics context menu.", GameplayEntityCreation.ModelBrowser),
         new("misc_prefab", "Organization", "Choose a native .map prefab in the prefab browser, then place an instance.", GameplayEntityCreation.PrefabBrowser),
         new("func_group", "Organization", "Group selected world or group brushes and terrain. Groups compile as world geometry.", GameplayEntityCreation.Group),
         new("info_null", "Lighting", "Named light aim target. Set targetname and connect the light to it; Create aim target in the Light inspector also connects it automatically."),

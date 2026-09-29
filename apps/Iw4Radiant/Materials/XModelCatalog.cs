@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Collections.Concurrent;
 using IW4.Game.Assets.Material;
+using IW4.Formats.SourceFormat.Physics;
 
 namespace Iw4Radiant.Materials;
 
@@ -20,6 +21,20 @@ internal sealed class XModelCatalog
     internal string RootDirectory { get; }
     internal XModelSource? Resolve(string name) => _models.GetValueOrDefault(name);
     internal MaterialSource? ResolveMaterial(string name) => _materials.GetValueOrDefault(name);
+
+    internal static XModelCatalog ReadBundledRuntimeProps(string root)
+    {
+        var assets = new NativeModelPreviewAssets(root);
+        XModelSource model = assets.LoadSource(RuntimePhysicsAuthoring.ModelName);
+        var materials = new ConcurrentDictionary<string, MaterialSource>(StringComparer.Ordinal);
+        foreach (var material in model.Document.Materials)
+            materials[material.Name] = MaterialCatalog.ReadOne(root, material.Name) ??
+                throw new InvalidDataException($"Bundled model material '{material.Name}' is unavailable.");
+        return new XModelCatalog(root, new Dictionary<string, XModelSource>(StringComparer.Ordinal)
+        {
+            [model.Name] = model
+        }, materials);
+    }
 
     internal static XModelCatalog Read(string root)
     {

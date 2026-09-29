@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text;
 using IW4.Formats.SourceFormat.Material;
+using IW4.Formats.SourceFormat.Physics;
 using IW4.Game.Assets.ColMap;
 using IW4.Game.Assets.FxMap;
 using IW4.Game.Assets.GameMap;
@@ -74,7 +75,7 @@ internal static class MapCompiler
 
     internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; native all-face water volumes and GPU ocean tops; solid terrain, painted overlays, decals, cutouts, static glass and rectangular breakable glass with native materials, skies and static models. " +
         "Bakes point and targeted spot lights, sky ambient, one diffuse bounce from opaque world surfaces and reflections; requires authored sunlight and a reflection probe. " +
-        "Native multiplayer points, script entities, brush/trigger models, groups and unambiguous prefabs. Full map builds write FX and sound source markers to scripts; standalone BSP output omits them. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; stage volumes and primary local lights are not compiled yet.";
+        "Native multiplayer points, script entities, stock soccer-ball runtime physics, brush/trigger models, groups and unambiguous prefabs. Full map builds write FX and sound source markers to scripts; standalone BSP output omits them. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; stage volumes and primary local lights are not compiled yet.";
 
     internal static IEnumerable<MapEntity> BrushEntities(MapDocument document) =>
         document.Entities.Where(entity => entity != document.World && entity.Brushes.Count > 0);
@@ -163,7 +164,7 @@ internal static class MapCompiler
         var sun = BrushRenderCompiler.CompileSun(document, assetName);
         var graphics = BrushRenderCompiler.Compile(document, assetName, collision, sun, materials, models, probeOrigins, cancellationToken, progress);
         progress?.Report("Assembling compiled map and model placements…");
-        return MapStaticModelCompiler.Append(document, D3dbspUnlinker.Unlink([
+        return MapModelCompiler.Append(document, D3dbspUnlinker.Unlink([
             collision, sun, graphics, entities,
             new GameWorldMpAsset
             {
@@ -313,6 +314,11 @@ internal static class MapCompiler
             if (entity.Brushes.Count != 0)
                 throw new InvalidDataException($"Point entity '{entity.ClassName}' cannot own brushes.");
             if (entity.ClassName == "misc_model") continue;
+            if (entity.ClassName == RuntimePhysicsAuthoring.ClassName)
+            {
+                RuntimePhysicsAuthoring.Validate(entity.Properties);
+                continue;
+            }
             if (entity.ClassName is "script_model" or "misc_turret")
             {
                 if (!XModelGeometry.IsModel(entity) || string.IsNullOrWhiteSpace(entity.Properties.GetValueOrDefault("model")))
