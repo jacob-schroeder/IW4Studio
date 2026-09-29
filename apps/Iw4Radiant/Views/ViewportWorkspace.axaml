@@ -224,6 +224,7 @@
             <TabItem Header="FX"><views:FxSoundBrowser x:Name="FxBrowserView" /></TabItem>
             <TabItem Header="Sounds"><views:FxSoundBrowser x:Name="SoundBrowserView" IsSoundBrowser="True" /></TabItem>
             <TabItem Header="Destructibles"><views:DestructibleBrowser x:Name="DestructibleBrowserView" /></TabItem>
+            <TabItem Header="Weapons"><views:WeaponBrowser x:Name="WeaponBrowserView" /></TabItem>
             <TabItem Header="Console Output">
                 <Border x:Name="RendererErrorPanel" Padding="9" IsVisible="False">
                     <TextBox x:Name="RendererErrorText" IsReadOnly="True" AcceptsReturn="True"

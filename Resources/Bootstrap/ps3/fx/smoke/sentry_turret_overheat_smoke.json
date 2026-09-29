@@ -1,0 +1,1670 @@
+{
+  "format": "iw4-fx-native-graph",
+  "version": 1,
+  "name": "smoke/sentry_turret_overheat_smoke",
+  "sourceOffset": 29944161,
+  "sourceNamePointer": {
+    "raw": -1,
+    "resolutionMode": 1,
+    "cellAddress": {
+      "blockType": 0,
+      "offset": 0
+    }
+  },
+  "flags": 0,
+  "totalSize": 2683,
+  "msecLoopingLife": 300,
+  "elemDefCountLooping": 2,
+  "elemDefCountOneShot": 0,
+  "elemDefCountEmission": 0,
+  "sourceElemDefsPointer": {
+    "raw": -1,
+    "resolutionMode": 1,
+    "cellAddress": {
+      "blockType": 0,
+      "offset": 28
+    }
+  },
+  "elemDefs": [
+    {
+      "offset": 2715568,
+      "flags": 50331714,
+      "spawn": {
+        "loopingIntervalMsec": 50,
+        "count": 3
+      },
+      "spawnRange": {
+        "base": 0,
+        "amplitude": 500
+      },
+      "fadeInRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "fadeOutRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "spawnFrustumCullRadius": 0,
+      "spawnDelayMsec": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "lifeSpanMsec": {
+        "base": 3000,
+        "amplitude": 100
+      },
+      "spawnOrigin": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "spawnOffsetRadius": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnOffsetHeight": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnAngles": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "angularVelocity": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "initialRotation": {
+        "base": -6.2831855,
+        "amplitude": 12.566371
+      },
+      "gravity": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "reflectionFactor": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "atlas": {
+        "behavior": 5,
+        "index": 0,
+        "fps": 0,
+        "loopCount": 1,
+        "colIndexBits": 3,
+        "rowIndexBits": 2,
+        "entryCount": 32
+      },
+      "elemType": 0,
+      "visualCount": 1,
+      "velIntervalCount": 2,
+      "visStateIntervalCount": 30,
+      "sourceVelSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2715748
+        }
+      },
+      "velSamples": [
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": 0.0018750001,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": -0.0013115001,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0.001525125
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0.004724875
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        },
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": 0.00093750004,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": -0.00065575005,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0.00140625,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": -0.0009836251,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0.002780329
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0.0034696711
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0.002152727
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0.004097273
+              }
+            }
+          }
+        },
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0.0018750001,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": -0.0013115001,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0.00625
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0.0066678915
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0.0058321087
+              }
+            }
+          }
+        }
+      ],
+      "sourceVisSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2715752
+        }
+      },
+      "visSamples": [
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 0
+            },
+            "rotationDelta": -5.817764E-05,
+            "rotationTotal": 0,
+            "size0": 7.954555,
+            "size1": 7.954555,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 0
+            },
+            "rotationDelta": 0.00011635528,
+            "rotationTotal": 0,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 22
+            },
+            "rotationDelta": -5.6379406E-05,
+            "rotationTotal": -5.727852E-05,
+            "size0": 7.9918823,
+            "size1": 7.9918823,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 22
+            },
+            "rotationDelta": 0.00011279406,
+            "rotationTotal": 0.00011457467,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 31
+            },
+            "rotationDelta": -5.4581178E-05,
+            "rotationTotal": -0.00011275881,
+            "size0": 8.029209,
+            "size1": 8.029209,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 31
+            },
+            "rotationDelta": 0.00010923287,
+            "rotationTotal": 0.00022558814,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 34
+            },
+            "rotationDelta": -5.2782943E-05,
+            "rotationTotal": -0.00016644088,
+            "size0": 8.066536,
+            "size1": 8.066536,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 34
+            },
+            "rotationDelta": 0.00010567166,
+            "rotationTotal": 0.0003330404,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 34
+            },
+            "rotationDelta": -5.0984712E-05,
+            "rotationTotal": -0.00021832471,
+            "size0": 8.103863,
+            "size1": 8.103863,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 34
+            },
+            "rotationDelta": 0.00010211045,
+            "rotationTotal": 0.00043693144,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 35
+            },
+            "rotationDelta": -4.9186478E-05,
+            "rotationTotal": -0.0002684103,
+            "size0": 8.14119,
+            "size1": 8.14119,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 35
+            },
+            "rotationDelta": 9.854924E-05,
+            "rotationTotal": 0.0005372613,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 35
+            },
+            "rotationDelta": -4.738825E-05,
+            "rotationTotal": -0.00031669767,
+            "size0": 8.178516,
+            "size1": 8.178516,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 35
+            },
+            "rotationDelta": 9.4988034E-05,
+            "rotationTotal": 0.00063403,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 35
+            },
+            "rotationDelta": -4.5590015E-05,
+            "rotationTotal": -0.0003631868,
+            "size0": 8.249883,
+            "size1": 8.249883,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 35
+            },
+            "rotationDelta": 9.142682E-05,
+            "rotationTotal": 0.0007272374,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 35
+            },
+            "rotationDelta": -4.379178E-05,
+            "rotationTotal": -0.0004078777,
+            "size0": 8.324542,
+            "size1": 8.324542,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 35
+            },
+            "rotationDelta": 8.786561E-05,
+            "rotationTotal": 0.0008168836,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 35
+            },
+            "rotationDelta": -4.1993553E-05,
+            "rotationTotal": -0.00045077037,
+            "size0": 8.399201,
+            "size1": 8.399201,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 35
+            },
+            "rotationDelta": 8.430441E-05,
+            "rotationTotal": 0.0009029686,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 34
+            },
+            "rotationDelta": -4.019532E-05,
+            "rotationTotal": -0.0004918648,
+            "size0": 8.473862,
+            "size1": 8.473862,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 34
+            },
+            "rotationDelta": 8.074319E-05,
+            "rotationTotal": 0.0009854924,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 33
+            },
+            "rotationDelta": -3.8397087E-05,
+            "rotationTotal": -0.00053116103,
+            "size0": 8.548521,
+            "size1": 8.548521,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 33
+            },
+            "rotationDelta": 7.718199E-05,
+            "rotationTotal": 0.0010644549,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 31
+            },
+            "rotationDelta": -3.6598856E-05,
+            "rotationTotal": -0.000568659,
+            "size0": 8.62318,
+            "size1": 8.62318,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 31
+            },
+            "rotationDelta": 7.362078E-05,
+            "rotationTotal": 0.0011398563,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 30
+            },
+            "rotationDelta": -3.4800625E-05,
+            "rotationTotal": -0.00060435873,
+            "size0": 8.895042,
+            "size1": 8.895042,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 30
+            },
+            "rotationDelta": 7.005957E-05,
+            "rotationTotal": 0.0012116964,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 29
+            },
+            "rotationDelta": -3.300239E-05,
+            "rotationTotal": -0.0006382602,
+            "size0": 9.209158,
+            "size1": 9.209158,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 29
+            },
+            "rotationDelta": 6.649836E-05,
+            "rotationTotal": 0.0012799754,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 27
+            },
+            "rotationDelta": -3.120416E-05,
+            "rotationTotal": -0.0006703635,
+            "size0": 9.523273,
+            "size1": 9.523273,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 27
+            },
+            "rotationDelta": 6.293715E-05,
+            "rotationTotal": 0.0013446931,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 26
+            },
+            "rotationDelta": -2.9405926E-05,
+            "rotationTotal": -0.00070066855,
+            "size0": 9.837389,
+            "size1": 9.837389,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 26
+            },
+            "rotationDelta": 5.937594E-05,
+            "rotationTotal": 0.0014058497,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 25
+            },
+            "rotationDelta": -2.7607695E-05,
+            "rotationTotal": -0.00072917534,
+            "size0": 10.1515045,
+            "size1": 10.1515045,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 25
+            },
+            "rotationDelta": 5.5814737E-05,
+            "rotationTotal": 0.001463445,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 23
+            },
+            "rotationDelta": -2.5809462E-05,
+            "rotationTotal": -0.0007558839,
+            "size0": 10.465622,
+            "size1": 10.465622,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 23
+            },
+            "rotationDelta": 5.2253527E-05,
+            "rotationTotal": 0.0015174792,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 21
+            },
+            "rotationDelta": -2.4011231E-05,
+            "rotationTotal": -0.0007807943,
+            "size0": 10.779736,
+            "size1": 10.779736,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 21
+            },
+            "rotationDelta": 4.869232E-05,
+            "rotationTotal": 0.0015679521,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 19
+            },
+            "rotationDelta": -2.2212998E-05,
+            "rotationTotal": -0.0008039064,
+            "size0": 11.186858,
+            "size1": 11.186858,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 19
+            },
+            "rotationDelta": 4.513111E-05,
+            "rotationTotal": 0.0016148639,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 16
+            },
+            "rotationDelta": -2.0414767E-05,
+            "rotationTotal": -0.0008252203,
+            "size0": 11.659083,
+            "size1": 11.659083,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 16
+            },
+            "rotationDelta": 4.1569903E-05,
+            "rotationTotal": 0.0016582144,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 14
+            },
+            "rotationDelta": -1.8616534E-05,
+            "rotationTotal": -0.00084473594,
+            "size0": 12.13131,
+            "size1": 12.13131,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 14
+            },
+            "rotationDelta": 3.8008693E-05,
+            "rotationTotal": 0.0016980036,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 12
+            },
+            "rotationDelta": -1.6818303E-05,
+            "rotationTotal": -0.00086245337,
+            "size0": 12.603538,
+            "size1": 12.603538,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 12
+            },
+            "rotationDelta": 3.4447487E-05,
+            "rotationTotal": 0.0017342317,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 10
+            },
+            "rotationDelta": -1.502007E-05,
+            "rotationTotal": -0.0008783726,
+            "size0": 13.075765,
+            "size1": 13.075765,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 10
+            },
+            "rotationDelta": 3.0886273E-05,
+            "rotationTotal": 0.0017668986,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 8
+            },
+            "rotationDelta": -1.3221839E-05,
+            "rotationTotal": -0.0008924935,
+            "size0": 13.686883,
+            "size1": 13.686883,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 8
+            },
+            "rotationDelta": 2.732507E-05,
+            "rotationTotal": 0.0017960042,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 6
+            },
+            "rotationDelta": -1.1423605E-05,
+            "rotationTotal": -0.00090481626,
+            "size0": 14.631324,
+            "size1": 14.631324,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 6
+            },
+            "rotationDelta": 2.3763858E-05,
+            "rotationTotal": 0.0018215487,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 5
+            },
+            "rotationDelta": -9.625375E-06,
+            "rotationTotal": -0.00091534073,
+            "size0": 15.575765,
+            "size1": 15.575765,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 5
+            },
+            "rotationDelta": 2.0202653E-05,
+            "rotationTotal": 0.001843532,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 3
+            },
+            "rotationDelta": -7.827142E-06,
+            "rotationTotal": -0.000924067,
+            "size0": 16.520206,
+            "size1": 16.520206,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 3
+            },
+            "rotationDelta": 1.6641443E-05,
+            "rotationTotal": 0.001861954,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 2
+            },
+            "rotationDelta": -6.0289117E-06,
+            "rotationTotal": -0.00093099504,
+            "size0": 17.464647,
+            "size1": 17.464647,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 2
+            },
+            "rotationDelta": 1.3080236E-05,
+            "rotationTotal": 0.0018768149,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 0
+            },
+            "rotationDelta": -4.230678E-06,
+            "rotationTotal": -0.0009361248,
+            "size0": 18.40909,
+            "size1": 18.40909,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 191,
+              "g": 191,
+              "b": 191,
+              "a": 0
+            },
+            "rotationDelta": 9.519025E-06,
+            "rotationTotal": 0.0018881145,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        }
+      ],
+      "visuals": {
+        "offset": 2715756,
+        "visual": {
+          "kind": "material",
+          "sourcePointer": {
+            "raw": -1,
+            "resolutionMode": 2,
+            "cellAddress": {
+              "blockType": 4,
+              "offset": 2715756
+            }
+          },
+          "name": "gfx_smk_white_atlas_z3"
+        }
+      },
+      "sourceVisualArrayPointer": null,
+      "visualArray": [],
+      "sourceMarkVisualArrayPointer": null,
+      "markVisualArray": [],
+      "collBounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "effectOnImpact": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2715784
+          }
+        },
+        "name": null
+      },
+      "effectOnDeath": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2715788
+          }
+        },
+        "name": null
+      },
+      "effectEmitted": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2715792
+          }
+        },
+        "name": null
+      },
+      "emitDist": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "emitDistVariance": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "sourceExtendedPointer": {
+        "raw": 0,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2715812
+        }
+      },
+      "extended": null,
+      "sortOrder": 5,
+      "lightingFrac": 0,
+      "useItemClip": 0,
+      "fadeInfo": 0
+    },
+    {
+      "offset": 2715820,
+      "flags": 33556610,
+      "spawn": {
+        "loopingIntervalMsec": 60,
+        "count": 6
+      },
+      "spawnRange": {
+        "base": 0,
+        "amplitude": 150
+      },
+      "fadeInRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "fadeOutRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "spawnFrustumCullRadius": 0,
+      "spawnDelayMsec": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "lifeSpanMsec": {
+        "base": 2000,
+        "amplitude": 500
+      },
+      "spawnOrigin": [
+        {
+          "base": -30,
+          "amplitude": 30
+        },
+        {
+          "base": -5,
+          "amplitude": 10
+        },
+        {
+          "base": -5,
+          "amplitude": 10
+        }
+      ],
+      "spawnOffsetRadius": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnOffsetHeight": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnAngles": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "angularVelocity": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "initialRotation": {
+        "base": -6.2831855,
+        "amplitude": 12.566371
+      },
+      "gravity": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "reflectionFactor": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "atlas": {
+        "behavior": 1,
+        "index": 0,
+        "fps": 0,
+        "loopCount": 1,
+        "colIndexBits": 1,
+        "rowIndexBits": 1,
+        "entryCount": 4
+      },
+      "elemType": 0,
+      "visualCount": 1,
+      "velIntervalCount": 1,
+      "visStateIntervalCount": 2,
+      "sourceVelSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2716000
+        }
+      },
+      "velSamples": [
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        },
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0.0037500001
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0.0037500001
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0.0018750001
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0.0018750001
+              }
+            }
+          }
+        }
+      ],
+      "sourceVisSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2716004
+        }
+      },
+      "visSamples": [
+        {
+          "base": {
+            "color": {
+              "r": 0,
+              "g": 0,
+              "b": 255,
+              "a": 255
+            },
+            "rotationDelta": -0,
+            "rotationTotal": 0,
+            "size0": 5,
+            "size1": 5,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 0,
+              "g": 0,
+              "b": 255,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 223,
+              "g": 223,
+              "b": 255,
+              "a": 255
+            },
+            "rotationDelta": -0,
+            "rotationTotal": 0,
+            "size0": 5,
+            "size1": 5,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 223,
+              "g": 223,
+              "b": 255,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 0,
+              "g": 0,
+              "b": 255,
+              "a": 255
+            },
+            "rotationDelta": -0,
+            "rotationTotal": 0,
+            "size0": 5,
+            "size1": 5,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 0,
+              "g": 0,
+              "b": 255,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        }
+      ],
+      "visuals": {
+        "offset": 2716008,
+        "visual": {
+          "kind": "material",
+          "sourcePointer": {
+            "raw": -1,
+            "resolutionMode": 2,
+            "cellAddress": {
+              "blockType": 4,
+              "offset": 2716008
+            }
+          },
+          "name": "gfx_distortion_noise"
+        }
+      },
+      "sourceVisualArrayPointer": null,
+      "visualArray": [],
+      "sourceMarkVisualArrayPointer": null,
+      "markVisualArray": [],
+      "collBounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "effectOnImpact": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2716036
+          }
+        },
+        "name": null
+      },
+      "effectOnDeath": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2716040
+          }
+        },
+        "name": null
+      },
+      "effectEmitted": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2716044
+          }
+        },
+        "name": null
+      },
+      "emitDist": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "emitDistVariance": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "sourceExtendedPointer": {
+        "raw": 0,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2716064
+        }
+      },
+      "extended": null,
+      "sortOrder": 5,
+      "lightingFrac": 0,
+      "useItemClip": 0,
+      "fadeInfo": 0
+    }
+  ]
+}

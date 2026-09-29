@@ -11,7 +11,7 @@ using IW4.Render.Textures;
 
 namespace Iw4Radiant.Materials;
 
-/// <summary>Native bootstrap assets shared by the faction thumbnails and Walk viewmodel.</summary>
+/// <summary>Native bootstrap assets for faction, weapon and Walk viewmodel previews.</summary>
 internal sealed class NativeModelPreviewAssets
 {
     private readonly string _root;

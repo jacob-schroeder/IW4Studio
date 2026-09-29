@@ -1,0 +1,44 @@
+{
+  "format": "iw4-ps3-tracer",
+  "version": 1,
+  "name": "stryker_50cal_tracer",
+  "material": "gfx_tracer",
+  "drawInterval": 2,
+  "speed": 7500,
+  "beamLength": 160,
+  "beamWidth": 12,
+  "screwRadius": 1,
+  "screwDistance": 100,
+  "colors": [
+    {
+      "red": 0.93,
+      "green": 0.35,
+      "blue": 0.05,
+      "alpha": 0
+    },
+    {
+      "red": 0.93,
+      "green": 0.35,
+      "blue": 0.05,
+      "alpha": 1
+    },
+    {
+      "red": 0.93,
+      "green": 0.35,
+      "blue": 0.05,
+      "alpha": 0.5
+    },
+    {
+      "red": 1,
+      "green": 1,
+      "blue": 1,
+      "alpha": 1
+    },
+    {
+      "red": 1,
+      "green": 1,
+      "blue": 1,
+      "alpha": 1
+    }
+  ]
+}

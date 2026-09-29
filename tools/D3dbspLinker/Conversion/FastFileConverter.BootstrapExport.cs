@@ -4,6 +4,7 @@ using IW4.Formats.SourceFormat.Fx;
 using IW4.Formats.SourceFormat.Image;
 using IW4.Formats.SourceFormat.PhysCollmap;
 using IW4.Formats.SourceFormat.PhysPreset;
+using IW4.Formats.SourceFormat.RawFile;
 using IW4.Formats.SourceFormat.Shader;
 using IW4.Formats.SourceFormat.Sound;
 using IW4.Formats.SourceFormat.Technique;
@@ -11,17 +12,21 @@ using IW4.Formats.SourceFormat.Techset;
 using IW4.Formats.SourceFormat.XModel;
 using IW4.Formats.SourceFormat.XAnim;
 using IW4.Formats.SourceFormat.Weapon;
+using IW4.Formats.SourceFormat.Tracer;
+using IW4.Formats.RawFile;
 using IW4.Game.Assets;
 using IW4.Game.Assets.Fx;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Assets.Image;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.Physics;
+using IW4.Game.Assets.RawFile;
 using IW4.Game.Assets.Sound;
 using IW4.Game.Assets.TechniqueSet;
 using IW4.Game.Assets.XModel;
 using IW4.Game.Assets.XAnim;
 using IW4.Game.Assets.Weapon;
+using IW4.Game.Assets.Tracer;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.Linking;
@@ -42,7 +47,8 @@ internal static partial class FastFileConverter
         IReadOnlyList<string> modelNames, IReadOnlyList<string> materialNames, bool bootstrap = false,
         string? dependencyFastFile = null, IReadOnlyList<string>? fxNames = null,
         IReadOnlyList<string>? weaponNames = null, IReadOnlyList<string>? xanimNames = null,
-        IReadOnlyList<string>? nativeXanimNames = null)
+        IReadOnlyList<string>? nativeXanimNames = null,
+        IReadOnlyList<string>? rawFileNames = null)
     {
         string source = Path.GetFullPath(input);
         string destination = Path.GetFullPath(output);
@@ -105,6 +111,7 @@ internal static partial class FastFileConverter
         foreach (string name in weaponNames ?? []) Include(Resolve(XAssetType.Weapon, name));
         foreach (string name in xanimNames ?? []) Include(Resolve(XAssetType.XAnim, name));
         foreach (string name in nativeXanimNames ?? []) Include(Resolve(XAssetType.XAnim, name));
+        foreach (string name in rawFileNames ?? []) Include(Resolve(XAssetType.RawFile, name));
         string staging = destination + "." + Guid.NewGuid().ToString("N") + ".extracting";
         Directory.CreateDirectory(staging);
         try
@@ -117,6 +124,27 @@ internal static partial class FastFileConverter
                     {
                         case WeaponAsset weapon:
                             new WeaponExchange().Unlink(staging, weapon);
+                            if (weapon.Name == WeaponNativeExchange.SupportedWeaponName)
+                            {
+                                new WeaponNativeExchange().Unlink(staging, weapon);
+                                foreach (var reference in WeaponNativeExchange.EnumerateDependencies(weapon))
+                                    Include(Resolve(reference.Type, reference.Name));
+                            }
+                            break;
+                        case TracerDefAsset tracer:
+                            new TracerExchange().Unlink(staging, tracer);
+                            new TracerNativeExchange().Unlink(staging, tracer);
+                            Include(tracer.Material);
+                            break;
+                        case RawFileAsset rawFile:
+                            string rawFileName = rawFile.Name ??
+                                throw new InvalidDataException("RawFile dependency has no name.");
+                            byte[] logicalContent = RawFileContentCodec.DecodeStrictSerializedContent(
+                                rawFileName, rawFile);
+                            new RawFileExchange().Unlink(staging, rawFile, logicalContent);
+                            foreach (string graphName in WeaponNativeExchange.EnumerateRumbleGraphFiles(
+                                rawFileName, logicalContent))
+                                Include(Resolve(XAssetType.RawFile, graphName));
                             break;
                         case XAnimPartsAsset animation:
                             if (xanimNames?.Contains(animation.Name!, StringComparer.Ordinal) == true)

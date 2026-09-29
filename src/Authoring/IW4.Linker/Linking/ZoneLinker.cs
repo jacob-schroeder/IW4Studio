@@ -1029,6 +1029,10 @@ public sealed class ZoneLinker
         IReadOnlyList<string?> sourceValues)
     {
         var values = new List<string?>(sourceValues);
+        // Null references serialize as local index zero, including unused weapon
+        // notetrack entries. An inherited source string must not occupy that slot.
+        if (values.Count != 0)
+            values[0] = null;
         var indices = new Dictionary<string, ushort>(StringComparer.Ordinal);
         for (int index = 1; index < sourceValues.Count; index++)
         {

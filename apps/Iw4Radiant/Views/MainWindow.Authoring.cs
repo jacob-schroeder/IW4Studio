@@ -170,6 +170,13 @@ public partial class MainWindow
         };
         Workspace.Models.PlacementRequested += (model, align) => BeginPlacement(model.Name,
             (position, normal) => XModelEditing.Place(_session, model, position, align ? normal : null));
+        Workspace.Weapons.InitializeActions(_dialogs, FinishGestures);
+        Workspace.Weapons.PlacementRequested += () => BeginPlacement("Mounted minigun",
+            (position, _) => GameplayEntityEditing.Place(_session, GameplayEntityEditing.TurretClassName, position));
+        Workspace.Weapons.AssetsChanged += RefreshAssets;
+        Opened += (_, _) => _ = Workspace.Weapons.LoadAssetsAsync(
+            FindBootstrapAssets() ?? Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3"));
+        Closed += (_, _) => Workspace.Weapons.ReleaseImages();
         Workspace.Destructibles.InitializeActions(this, Workspace.Models, _dialogs, FinishGestures);
         Workspace.Destructibles.PlacementRequested += preset => BeginPlacement(preset.Name,
             (position, _) => DestructiblePresets.Place(_session, preset, position));
@@ -206,7 +213,7 @@ public partial class MainWindow
             PrefabLibrary.Reference(_session.FilePath ?? throw new ArgumentException("Save the map before placing a prefab."), path);
             BeginPlacement(Path.GetFileNameWithoutExtension(path), (position, _) => _session.Prefabs.Place(_session, path, position));
         };
-        _session.Scene.ResolveModel = Workspace.Models.ResolveModel;
+        _session.Scene.ResolveModel = ResolveSceneModel;
         _session.Scene.ResolveMaterial = ResolveMaterial;
         RefreshFoliagePainting();
         Opened += (_, _) => _ = RestoreAssetFoldersAsync(settings, () => suppressRelatedModelRestore = true,
@@ -495,7 +502,8 @@ public partial class MainWindow
         if (!definitions.TryGetValue(name, out WaterMaterialDefinition? definition))
             return WaterMaterialAuthoring.IsAuthoredMaterialName(name)
                 ? null
-                : Workspace.Materials.ResolveMaterial(name) ?? Workspace.Models.ResolveMaterial(name);
+                : Workspace.Materials.ResolveMaterial(name) ?? Workspace.Models.ResolveMaterial(name) ??
+                  Workspace.Weapons.ResolveMaterial(name);
         if (_authoredWaterMaterials.TryGetValue(name, out MaterialSource? authored)) return authored;
         authored = CreateAuthoredWaterMaterial(definition);
         if (authored is not null) _authoredWaterMaterials.Add(name, authored);
@@ -521,6 +529,9 @@ public partial class MainWindow
             SurfaceTypeBits = source.SurfaceTypeBits
         };
     }
+
+    private XModelSource? ResolveSceneModel(string name) =>
+        Workspace.Models.ResolveModel(name) ?? Workspace.Weapons.ResolveModel(name);
 
     private void RefreshAssets()
     {

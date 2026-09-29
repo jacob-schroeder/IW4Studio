@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Rendering;
+using IW4.Formats.SourceFormat.Weapon;
 
 namespace Iw4Radiant.Editing;
 
@@ -17,6 +18,9 @@ internal sealed record GameplayEntityType(string Name, string Category, string D
 
 internal static class GameplayEntityEditing
 {
+    internal const string TurretClassName = "misc_turret";
+    internal const string TurretModelName = "weapon_minigun";
+
     // Native gameplay classes and compiler-owned lighting markers.
     internal static IReadOnlyList<GameplayEntityType> Types { get; } =
     [
@@ -61,7 +65,7 @@ internal static class GameplayEntityEditing
         new("node_cover_left", "Nodes", "Native multiplayer left-cover marker. Set position, facing and optional script fields in Entity properties."),
         new("node_cover_right", "Nodes", "Native multiplayer right-cover marker. Set position, facing and optional targetname."),
         new("node_cover_stand", "Nodes", "Native multiplayer standing-cover marker. Set position and facing."),
-        new("misc_turret", "Models", "Native minigun turret: weapon_minigun model with turret_minigun_mp weaponinfo. Edit export, leftarc/rightarc and script fields in Entity properties; model preview uses the loaded XModel."),
+        new(TurretClassName, "Models", "Mounted minigun with bundled model and weapon assets. Also available in the Weapons browser. Edit angles, leftarc/rightarc and script fields in Entity properties."),
         new("script_origin", "Script", "Named script position. Set targetname for map scripts to find it."),
         new("script_struct", "Script", "Script data marker. Set targetname and map-specific script fields in Entity properties."),
         new("script_model", "Script", "Convert selected XModel instances to script_model, preserving their model and transform.", GameplayEntityCreation.ConvertModels),
@@ -101,10 +105,10 @@ internal static class GameplayEntityEditing
             entity.Properties["intensity"] = MapLightDefaults.Intensity.ToString(CultureInfo.InvariantCulture);
             entity.Properties["_color"] = MapLightDefaults.Color;
         }
-        if (className == "misc_turret")
+        if (className == TurretClassName)
         {
-            entity.Properties["model"] = "weapon_minigun";
-            entity.Properties["weaponinfo"] = "turret_minigun_mp";
+            entity.Properties["model"] = TurretModelName;
+            entity.Properties["weaponinfo"] = WeaponNativeExchange.SupportedWeaponName;
         }
         session.Edit(() => { session.Document.Entities.Add(entity); session.Selection.Set(entity); });
         return entity;

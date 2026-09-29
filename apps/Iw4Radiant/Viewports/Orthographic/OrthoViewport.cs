@@ -185,7 +185,8 @@ public sealed class OrthoViewport : Control
     private void OnModelDragOver(object? sender, DragEventArgs e)
     {
         e.DragEffects = CanAcceptModelDrop?.Invoke() != false &&
-            (XModelDrag.TryRead(e.DataTransfer, out _, out _) || DestructibleDrag.Read(e.DataTransfer) is not null)
+            (XModelDrag.TryRead(e.DataTransfer, out _, out _) || DestructibleDrag.Read(e.DataTransfer) is not null ||
+             WeaponDrag.IsTurret(e.DataTransfer))
             ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
@@ -198,17 +199,20 @@ public sealed class OrthoViewport : Control
         try
         {
             DestructiblePreset? destructible = DestructibleDrag.Read(e.DataTransfer);
+            bool turret = WeaponDrag.IsTurret(e.DataTransfer);
             XModelSource? model = destructible is null && XModelDrag.TryRead(e.DataTransfer, out string name, out _)
                 ? session.Scene.ResolveModel?.Invoke(name) : null;
-            if (destructible is null && model is null) return;
+            if (destructible is null && model is null && !turret) return;
             _gestures.CancelGesture();
             if (session.HasPlacement) session.CancelPlacement();
             Vector2 point = _projection.ToWorld(e.GetPosition(this));
             point = new Vector2(session.Snap(point.X), session.Snap(point.Y));
             Vector3 position = _projection.Unproject(point, session.Snap(session.BrushBottom));
             if (destructible is not null) DestructiblePresets.Place(session, destructible, position);
+            else if (turret) GameplayEntityEditing.Place(session, GameplayEntityEditing.TurretClassName, position);
             else if (model is not null) XModelEditing.Place(session, model, position);
-            CursorStatusChanged?.Invoke($"Placed {destructible?.Name ?? model?.Name} on the {Plane.ToString().ToLowerInvariant()} grid.");
+            string label = turret ? "Mounted minigun" : destructible?.Name ?? model?.Name ?? "model";
+            CursorStatusChanged?.Invoke($"Placed {label} on the {Plane.ToString().ToLowerInvariant()} grid.");
             e.DragEffects = DragDropEffects.Copy;
         }
         catch (Exception exception) when (exception is ArgumentException or FormatException or InvalidOperationException or IOException)

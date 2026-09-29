@@ -1,0 +1,2260 @@
+{
+  "format": "iw4-fx-native-graph",
+  "version": 1,
+  "name": "muzzleflashes/minigun_flash_view",
+  "sourceOffset": 28260134,
+  "sourceNamePointer": {
+    "raw": -1,
+    "resolutionMode": 1,
+    "cellAddress": {
+      "blockType": 0,
+      "offset": 0
+    }
+  },
+  "flags": 1,
+  "totalSize": 3305,
+  "msecLoopingLife": 0,
+  "elemDefCountLooping": 0,
+  "elemDefCountOneShot": 6,
+  "elemDefCountEmission": 0,
+  "sourceElemDefsPointer": {
+    "raw": -1,
+    "resolutionMode": 1,
+    "cellAddress": {
+      "blockType": 0,
+      "offset": 28
+    }
+  },
+  "elemDefs": [
+    {
+      "offset": 2083804,
+      "flags": 16777286,
+      "spawn": {
+        "loopingIntervalMsec": 1,
+        "count": 0
+      },
+      "spawnRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "fadeInRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "fadeOutRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "spawnFrustumCullRadius": 200,
+      "spawnDelayMsec": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "lifeSpanMsec": {
+        "base": 1000,
+        "amplitude": 0
+      },
+      "spawnOrigin": [
+        {
+          "base": 30,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "spawnOffsetRadius": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "spawnOffsetHeight": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "spawnAngles": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "angularVelocity": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "initialRotation": {
+        "base": 0,
+        "amplitude": 6.2831855
+      },
+      "gravity": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "reflectionFactor": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "atlas": {
+        "behavior": 1,
+        "index": 0,
+        "fps": 45,
+        "loopCount": 1,
+        "colIndexBits": 3,
+        "rowIndexBits": 2,
+        "entryCount": 32
+      },
+      "elemType": 0,
+      "visualCount": 1,
+      "velIntervalCount": 1,
+      "visStateIntervalCount": 1,
+      "sourceVelSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2083984
+        }
+      },
+      "velSamples": [
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": 0.05,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        },
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": 0.05,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0.05,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        }
+      ],
+      "sourceVisSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2083988
+        }
+      },
+      "visSamples": [
+        {
+          "base": {
+            "color": {
+              "r": 192,
+              "g": 192,
+              "b": 192,
+              "a": 39
+            },
+            "rotationDelta": 6.140976E-05,
+            "rotationTotal": 0,
+            "size0": 38.961002,
+            "size1": 38.961002,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 192,
+              "g": 192,
+              "b": 192,
+              "a": 39
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 185,
+              "g": 185,
+              "b": 185,
+              "a": 0
+            },
+            "rotationDelta": 8.726646E-05,
+            "rotationTotal": 7.433811E-05,
+            "size0": 125,
+            "size1": 125,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 185,
+              "g": 185,
+              "b": 185,
+              "a": 0
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        }
+      ],
+      "visuals": {
+        "offset": 2083992,
+        "visual": {
+          "kind": "material",
+          "sourcePointer": {
+            "raw": -1,
+            "resolutionMode": 2,
+            "cellAddress": {
+              "blockType": 4,
+              "offset": 2083992
+            }
+          },
+          "name": "gfx_smk_white_atlas"
+        }
+      },
+      "sourceVisualArrayPointer": null,
+      "visualArray": [],
+      "sourceMarkVisualArrayPointer": null,
+      "markVisualArray": [],
+      "collBounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "effectOnImpact": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2084020
+          }
+        },
+        "name": null
+      },
+      "effectOnDeath": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2084024
+          }
+        },
+        "name": null
+      },
+      "effectEmitted": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2084028
+          }
+        },
+        "name": null
+      },
+      "emitDist": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "emitDistVariance": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "sourceExtendedPointer": {
+        "raw": 0,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2084048
+        }
+      },
+      "extended": null,
+      "sortOrder": 0,
+      "lightingFrac": 63,
+      "useItemClip": 0,
+      "fadeInfo": 0
+    },
+    {
+      "offset": 2084056,
+      "flags": 16777286,
+      "spawn": {
+        "loopingIntervalMsec": 0,
+        "count": 1
+      },
+      "spawnRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "fadeInRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "fadeOutRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "spawnFrustumCullRadius": 1200,
+      "spawnDelayMsec": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "lifeSpanMsec": {
+        "base": 50,
+        "amplitude": 0
+      },
+      "spawnOrigin": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "spawnOffsetRadius": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnOffsetHeight": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnAngles": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "angularVelocity": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "initialRotation": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "gravity": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "reflectionFactor": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "atlas": {
+        "behavior": 0,
+        "index": 0,
+        "fps": 0,
+        "loopCount": 0,
+        "colIndexBits": 0,
+        "rowIndexBits": 0,
+        "entryCount": 0
+      },
+      "elemType": 8,
+      "visualCount": 1,
+      "velIntervalCount": 1,
+      "visStateIntervalCount": 1,
+      "sourceVelSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2084236
+        }
+      },
+      "velSamples": [
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": 0.0013333301,
+                "y": 0.0013333301,
+                "z": 0.0013333301
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        },
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": 0.0013333301,
+                "y": 0.0013333301,
+                "z": 0.0013333301
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0.0013333301,
+                "y": 0.0013333301,
+                "z": 0.0013333301
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        }
+      ],
+      "sourceVisSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2084240
+        }
+      },
+      "visSamples": [
+        {
+          "base": {
+            "color": {
+              "r": 255,
+              "g": 182,
+              "b": 158,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 562.5,
+            "size1": 0,
+            "scale": 1.5
+          },
+          "amplitude": {
+            "color": {
+              "r": 255,
+              "g": 182,
+              "b": 158,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 255,
+              "g": 182,
+              "b": 158,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 2.8125,
+            "size1": 0,
+            "scale": 1.5
+          },
+          "amplitude": {
+            "color": {
+              "r": 255,
+              "g": 182,
+              "b": 158,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        }
+      ],
+      "visuals": {
+        "offset": 2084244,
+        "visual": {
+          "kind": "noChild",
+          "reserved": 0
+        }
+      },
+      "sourceVisualArrayPointer": null,
+      "visualArray": [],
+      "sourceMarkVisualArrayPointer": null,
+      "markVisualArray": [],
+      "collBounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "effectOnImpact": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2084272
+          }
+        },
+        "name": null
+      },
+      "effectOnDeath": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2084276
+          }
+        },
+        "name": null
+      },
+      "effectEmitted": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2084280
+          }
+        },
+        "name": null
+      },
+      "emitDist": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "emitDistVariance": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "sourceExtendedPointer": {
+        "raw": 0,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2084300
+        }
+      },
+      "extended": null,
+      "sortOrder": 5,
+      "lightingFrac": 0,
+      "useItemClip": 0,
+      "fadeInfo": 0
+    },
+    {
+      "offset": 2084308,
+      "flags": 134,
+      "spawn": {
+        "loopingIntervalMsec": 4,
+        "count": 0
+      },
+      "spawnRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "fadeInRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "fadeOutRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "spawnFrustumCullRadius": 200,
+      "spawnDelayMsec": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "lifeSpanMsec": {
+        "base": 5,
+        "amplitude": 0
+      },
+      "spawnOrigin": [
+        {
+          "base": 1,
+          "amplitude": 9
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "spawnOffsetRadius": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnOffsetHeight": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnAngles": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "angularVelocity": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "initialRotation": {
+        "base": -6.2831855,
+        "amplitude": 6.2831855
+      },
+      "gravity": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "reflectionFactor": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "atlas": {
+        "behavior": 5,
+        "index": 8,
+        "fps": 64,
+        "loopCount": 1,
+        "colIndexBits": 2,
+        "rowIndexBits": 0,
+        "entryCount": 4
+      },
+      "elemType": 0,
+      "visualCount": 1,
+      "velIntervalCount": 1,
+      "visStateIntervalCount": 1,
+      "sourceVelSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2084488
+        }
+      },
+      "velSamples": [
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        },
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        }
+      ],
+      "sourceVisSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2084492
+        }
+      },
+      "visSamples": [
+        {
+          "base": {
+            "color": {
+              "r": 57,
+              "g": 57,
+              "b": 57,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 21.103876,
+            "size1": 21.103876,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 32,
+              "g": 32,
+              "b": 32,
+              "a": 255
+            },
+            "rotationDelta": -0,
+            "rotationTotal": 0,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 59,
+              "g": 59,
+              "b": 59,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 9.740251,
+            "size1": 9.740251,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 32,
+              "g": 32,
+              "b": 32,
+              "a": 255
+            },
+            "rotationDelta": -0,
+            "rotationTotal": 0,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        }
+      ],
+      "visuals": {
+        "offset": 2084496,
+        "visual": {
+          "kind": "material",
+          "sourcePointer": {
+            "raw": -1,
+            "resolutionMode": 2,
+            "cellAddress": {
+              "blockType": 4,
+              "offset": 2084496
+            }
+          },
+          "name": "gfx_muzflash_m16_sa_godray"
+        }
+      },
+      "sourceVisualArrayPointer": null,
+      "visualArray": [],
+      "sourceMarkVisualArrayPointer": null,
+      "markVisualArray": [],
+      "collBounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "effectOnImpact": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2084524
+          }
+        },
+        "name": null
+      },
+      "effectOnDeath": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2084528
+          }
+        },
+        "name": null
+      },
+      "effectEmitted": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2084532
+          }
+        },
+        "name": null
+      },
+      "emitDist": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "emitDistVariance": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "sourceExtendedPointer": {
+        "raw": 0,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2084552
+        }
+      },
+      "extended": null,
+      "sortOrder": 9,
+      "lightingFrac": 0,
+      "useItemClip": 0,
+      "fadeInfo": 0
+    },
+    {
+      "offset": 2084560,
+      "flags": 285212806,
+      "spawn": {
+        "loopingIntervalMsec": 1,
+        "count": 1
+      },
+      "spawnRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "fadeInRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "fadeOutRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "spawnFrustumCullRadius": 200,
+      "spawnDelayMsec": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "lifeSpanMsec": {
+        "base": 5,
+        "amplitude": 0
+      },
+      "spawnOrigin": [
+        {
+          "base": 5,
+          "amplitude": 0
+        },
+        {
+          "base": -2,
+          "amplitude": 4
+        },
+        {
+          "base": -2,
+          "amplitude": 4
+        }
+      ],
+      "spawnOffsetRadius": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnOffsetHeight": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnAngles": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "angularVelocity": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "initialRotation": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "gravity": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "reflectionFactor": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "atlas": {
+        "behavior": 1,
+        "index": 8,
+        "fps": 16,
+        "loopCount": 1,
+        "colIndexBits": 2,
+        "rowIndexBits": 0,
+        "entryCount": 4
+      },
+      "elemType": 2,
+      "visualCount": 1,
+      "velIntervalCount": 1,
+      "visStateIntervalCount": 1,
+      "sourceVelSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2084740
+        }
+      },
+      "velSamples": [
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": -0.1505,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        },
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": -0.1505,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": -0.1505,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        }
+      ],
+      "sourceVisSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2084744
+        }
+      },
+      "visSamples": [
+        {
+          "base": {
+            "color": {
+              "r": 94,
+              "g": 94,
+              "b": 94,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 19,
+            "size1": 40,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 132,
+              "g": 132,
+              "b": 132,
+              "a": 255
+            },
+            "rotationDelta": -0,
+            "rotationTotal": 0,
+            "size0": -5.5519524,
+            "size1": -10.129881,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 90,
+              "g": 90,
+              "b": 90,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 19,
+            "size1": 40,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 127,
+              "g": 127,
+              "b": 127,
+              "a": 255
+            },
+            "rotationDelta": -0,
+            "rotationTotal": 0,
+            "size0": -5.6753187,
+            "size1": -9.870119,
+            "scale": 0
+          }
+        }
+      ],
+      "visuals": {
+        "offset": 2084748,
+        "visual": {
+          "kind": "material",
+          "sourcePointer": {
+            "raw": 1075826321,
+            "resolutionMode": 2,
+            "cellAddress": {
+              "blockType": 4,
+              "offset": 2084748
+            }
+          },
+          "name": "gfx_muzflash_m16_sa_godray"
+        }
+      },
+      "sourceVisualArrayPointer": null,
+      "visualArray": [],
+      "sourceMarkVisualArrayPointer": null,
+      "markVisualArray": [],
+      "collBounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "effectOnImpact": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2084776
+          }
+        },
+        "name": null
+      },
+      "effectOnDeath": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2084780
+          }
+        },
+        "name": null
+      },
+      "effectEmitted": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2084784
+          }
+        },
+        "name": null
+      },
+      "emitDist": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "emitDistVariance": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "sourceExtendedPointer": {
+        "raw": 0,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2084804
+        }
+      },
+      "extended": null,
+      "sortOrder": 9,
+      "lightingFrac": 0,
+      "useItemClip": 0,
+      "fadeInfo": 0
+    },
+    {
+      "offset": 2084812,
+      "flags": 16777350,
+      "spawn": {
+        "loopingIntervalMsec": 1,
+        "count": 0
+      },
+      "spawnRange": {
+        "base": 70,
+        "amplitude": 930
+      },
+      "fadeInRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "fadeOutRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "spawnFrustumCullRadius": 200,
+      "spawnDelayMsec": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "lifeSpanMsec": {
+        "base": 50,
+        "amplitude": 0
+      },
+      "spawnOrigin": [
+        {
+          "base": 25,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "spawnOffsetRadius": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnOffsetHeight": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnAngles": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "angularVelocity": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "initialRotation": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "gravity": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "reflectionFactor": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "atlas": {
+        "behavior": 1,
+        "index": 8,
+        "fps": 16,
+        "loopCount": 1,
+        "colIndexBits": 0,
+        "rowIndexBits": 0,
+        "entryCount": 1
+      },
+      "elemType": 0,
+      "visualCount": 1,
+      "velIntervalCount": 1,
+      "visStateIntervalCount": 1,
+      "sourceVelSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2084992
+        }
+      },
+      "velSamples": [
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": -0.1505,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        },
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": -0.1505,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": -0.1505,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        }
+      ],
+      "sourceVisSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2084996
+        }
+      },
+      "visSamples": [
+        {
+          "base": {
+            "color": {
+              "r": 18,
+              "g": 20,
+              "b": 255,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 51.9481,
+            "size1": 51.9481,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 18,
+              "g": 20,
+              "b": 255,
+              "a": 255
+            },
+            "rotationDelta": -0,
+            "rotationTotal": 0,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 21,
+              "g": 21,
+              "b": 255,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 100,
+            "size1": 100,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 21,
+              "g": 21,
+              "b": 255,
+              "a": 255
+            },
+            "rotationDelta": -0,
+            "rotationTotal": 0,
+            "size0": 0,
+            "size1": 0,
+            "scale": 0
+          }
+        }
+      ],
+      "visuals": {
+        "offset": 2085000,
+        "visual": {
+          "kind": "material",
+          "sourcePointer": {
+            "raw": -1,
+            "resolutionMode": 2,
+            "cellAddress": {
+              "blockType": 4,
+              "offset": 2085000
+            }
+          },
+          "name": "gfx_distortion_heat_far"
+        }
+      },
+      "sourceVisualArrayPointer": null,
+      "visualArray": [],
+      "sourceMarkVisualArrayPointer": null,
+      "markVisualArray": [],
+      "collBounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "effectOnImpact": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2085028
+          }
+        },
+        "name": null
+      },
+      "effectOnDeath": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2085032
+          }
+        },
+        "name": null
+      },
+      "effectEmitted": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2085036
+          }
+        },
+        "name": null
+      },
+      "emitDist": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "emitDistVariance": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "sourceExtendedPointer": {
+        "raw": 0,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2085056
+        }
+      },
+      "extended": null,
+      "sortOrder": 0,
+      "lightingFrac": 0,
+      "useItemClip": 0,
+      "fadeInfo": 0
+    },
+    {
+      "offset": 2085064,
+      "flags": 134,
+      "spawn": {
+        "loopingIntervalMsec": 1,
+        "count": 0
+      },
+      "spawnRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "fadeInRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "fadeOutRange": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "spawnFrustumCullRadius": 200,
+      "spawnDelayMsec": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "lifeSpanMsec": {
+        "base": 25,
+        "amplitude": 0
+      },
+      "spawnOrigin": [
+        {
+          "base": 3,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "spawnOffsetRadius": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnOffsetHeight": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "spawnAngles": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "angularVelocity": [
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        },
+        {
+          "base": 0,
+          "amplitude": 0
+        }
+      ],
+      "initialRotation": {
+        "base": 6.2831855,
+        "amplitude": -6.2831855
+      },
+      "gravity": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "reflectionFactor": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "atlas": {
+        "behavior": 1,
+        "index": 2,
+        "fps": 5,
+        "loopCount": 1,
+        "colIndexBits": 1,
+        "rowIndexBits": 1,
+        "entryCount": 4
+      },
+      "elemType": 0,
+      "visualCount": 1,
+      "velIntervalCount": 1,
+      "visStateIntervalCount": 1,
+      "sourceVelSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2085244
+        }
+      },
+      "velSamples": [
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        },
+        {
+          "local": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          },
+          "world": {
+            "velocity": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "totalDelta": {
+              "base": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "amplitude": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            }
+          }
+        }
+      ],
+      "sourceVisSamplesPointer": {
+        "raw": -1,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2085248
+        }
+      },
+      "visSamples": [
+        {
+          "base": {
+            "color": {
+              "r": 31,
+              "g": 31,
+              "b": 31,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 11.493509,
+            "size1": 11.493509,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 15,
+              "g": 15,
+              "b": 15,
+              "a": 255
+            },
+            "rotationDelta": -0,
+            "rotationTotal": 0,
+            "size0": -3.8960996,
+            "size1": -3.8960996,
+            "scale": 0
+          }
+        },
+        {
+          "base": {
+            "color": {
+              "r": 27,
+              "g": 27,
+              "b": 27,
+              "a": 255
+            },
+            "rotationDelta": 0,
+            "rotationTotal": 0,
+            "size0": 15,
+            "size1": 15,
+            "scale": 0
+          },
+          "amplitude": {
+            "color": {
+              "r": 10,
+              "g": 10,
+              "b": 10,
+              "a": 255
+            },
+            "rotationDelta": -0,
+            "rotationTotal": 0,
+            "size0": -3.701295,
+            "size1": -3.701295,
+            "scale": 0
+          }
+        }
+      ],
+      "visuals": {
+        "offset": 2085252,
+        "visual": {
+          "kind": "material",
+          "sourcePointer": {
+            "raw": -1,
+            "resolutionMode": 2,
+            "cellAddress": {
+              "blockType": 4,
+              "offset": 2085252
+            }
+          },
+          "name": "gfx_explosion_flash_atlas"
+        }
+      },
+      "sourceVisualArrayPointer": null,
+      "visualArray": [],
+      "sourceMarkVisualArrayPointer": null,
+      "markVisualArray": [],
+      "collBounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "effectOnImpact": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2085280
+          }
+        },
+        "name": null
+      },
+      "effectOnDeath": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2085284
+          }
+        },
+        "name": null
+      },
+      "effectEmitted": {
+        "sourcePointer": {
+          "raw": 0,
+          "resolutionMode": 1,
+          "cellAddress": {
+            "blockType": 4,
+            "offset": 2085288
+          }
+        },
+        "name": null
+      },
+      "emitDist": {
+        "base": 1,
+        "amplitude": 0
+      },
+      "emitDistVariance": {
+        "base": 0,
+        "amplitude": 0
+      },
+      "sourceExtendedPointer": {
+        "raw": 0,
+        "resolutionMode": 1,
+        "cellAddress": {
+          "blockType": 4,
+          "offset": 2085308
+        }
+      },
+      "extended": null,
+      "sortOrder": 10,
+      "lightingFrac": 0,
+      "useItemClip": 0,
+      "fadeInfo": 0
+    }
+  ]
+}

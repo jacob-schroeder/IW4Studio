@@ -1,0 +1,714 @@
+{
+  "version": 1,
+  "name": "weapon_minigun",
+  "numBones": 16,
+  "numRootBones": 1,
+  "numSurfs": 8,
+  "lodRampType": 0,
+  "scale": 1,
+  "noScalePartBits": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "boneNames": [
+    "tag_origin",
+    "tag_dummy",
+    "tag_pivot",
+    "bi_base",
+    "tag_aim",
+    "bi_center",
+    "bi_l",
+    "bi_r",
+    "mg01",
+    "tag_aim_animated",
+    "tag_butt",
+    "tag_player",
+    "tag_weapon",
+    "tag_barrel",
+    "tag_flash",
+    "j_spin"
+  ],
+  "parentList": "AQIBAwIDBAUBBgcIBAUC",
+  "quats": [
+    0,
+    0,
+    0,
+    32767,
+    0,
+    286,
+    0,
+    32766,
+    0,
+    -3709,
+    0,
+    32556,
+    0,
+    0,
+    0,
+    32767,
+    0,
+    3425,
+    0,
+    32588,
+    0,
+    0,
+    0,
+    32767,
+    0,
+    0,
+    0,
+    32767,
+    0,
+    3425,
+    0,
+    32588,
+    0,
+    0,
+    0,
+    32767,
+    0,
+    0,
+    0,
+    32767,
+    0,
+    0,
+    0,
+    32767,
+    0,
+    0,
+    0,
+    32767,
+    0,
+    0,
+    0,
+    32767,
+    0,
+    0,
+    0,
+    32767,
+    0,
+    0,
+    0,
+    32767
+  ],
+  "trans": [
+    -1.791409,
+    0,
+    8.020691,
+    0,
+    0,
+    0,
+    -1.935405,
+    4E-06,
+    8.016371,
+    0,
+    0,
+    0,
+    -0.4771171,
+    -4E-06,
+    -7.9397874,
+    -0.4771101,
+    5.196846,
+    -7.939789,
+    -0.47712362,
+    -5.196855,
+    -7.939786,
+    0.0011675349,
+    1.6E-05,
+    0.0003120804,
+    0,
+    0,
+    0,
+    -29.064972,
+    -0.040783,
+    -0.848266,
+    -24.18489,
+    4E-06,
+    5.810024,
+    -16.291979,
+    -0.058468,
+    0.19708896,
+    0,
+    0,
+    0,
+    37.112206,
+    -1.6E-05,
+    -0.022869945,
+    15.141362,
+    -1.6E-05,
+    -0.05205798
+  ],
+  "partClassification": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "baseMat": [
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "transWeight": 2
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": -1.791409,
+        "y": 0,
+        "z": 8.020691
+      },
+      "transWeight": 2
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0.008728294,
+        "z": 0,
+        "w": 0.9999695
+      },
+      "trans": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "transWeight": 1.9999697
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": -0.10451761,
+        "z": 0,
+        "w": 0.9945183
+      },
+      "trans": {
+        "x": -1.795178,
+        "y": 4E-06,
+        "z": 8.048934
+      },
+      "transWeight": 2.000019
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": -1.791409,
+        "y": 0,
+        "z": 8.020691
+      },
+      "transWeight": 2
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 6.2648032E-06,
+        "z": 0,
+        "w": 1.0000103
+      },
+      "trans": {
+        "x": -0.6112581,
+        "y": 0,
+        "z": 0.18342721
+      },
+      "transWeight": 1.999959
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": -0.10451761,
+        "z": 0,
+        "w": 0.9945183
+      },
+      "trans": {
+        "x": -0.61125094,
+        "y": 5.19685,
+        "z": 0.18342727
+      },
+      "transWeight": 2.000019
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": -0.10451761,
+        "z": 0,
+        "w": 0.9945183
+      },
+      "trans": {
+        "x": -0.61126477,
+        "y": -5.1968513,
+        "z": 0.18342726
+      },
+      "transWeight": 2.000019
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 6.2648032E-06,
+        "z": 0,
+        "w": 1.0000103
+      },
+      "trans": {
+        "x": -1.7941009,
+        "y": 2E-05,
+        "z": 8.049482
+      },
+      "transWeight": 1.999959
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 6.2648032E-06,
+        "z": 0,
+        "w": 1.0000103
+      },
+      "trans": {
+        "x": -1.7941009,
+        "y": 2E-05,
+        "z": 8.049482
+      },
+      "transWeight": 1.999959
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": -30.85638,
+        "y": -0.040783,
+        "z": 7.172425
+      },
+      "transWeight": 2
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": -25.9763,
+        "y": 4E-06,
+        "z": 13.830715
+      },
+      "transWeight": 2
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "trans": {
+        "x": -18.083387,
+        "y": -0.058468,
+        "z": 8.21778
+      },
+      "transWeight": 2
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 6.2648032E-06,
+        "z": 0,
+        "w": 1.0000103
+      },
+      "trans": {
+        "x": -1.7941009,
+        "y": 2E-05,
+        "z": 8.049482
+      },
+      "transWeight": 1.999959
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 6.2648032E-06,
+        "z": 0,
+        "w": 1.0000103
+      },
+      "trans": {
+        "x": 35.318104,
+        "y": 3.9999995E-06,
+        "z": 8.026148
+      },
+      "transWeight": 1.999959
+    },
+    {
+      "quat": {
+        "x": 0,
+        "y": 6.2648032E-06,
+        "z": 0,
+        "w": 1.0000103
+      },
+      "trans": {
+        "x": 13.34726,
+        "y": 3.9999995E-06,
+        "z": 7.997235
+      },
+      "transWeight": 1.999959
+    }
+  ],
+  "materials": [
+    "m/mtl_weapon_minigun",
+    "m/mtl_weapon_minigun",
+    "m/mtl_weapon_minigun",
+    "m/mtl_weapon_minigun",
+    "m/mtl_weapon_minigun",
+    "m/mtl_weapon_minigun",
+    "m/mtl_weapon_minigun",
+    "m/mtl_weapon_minigun"
+  ],
+  "lods": [
+    {
+      "dist": 150,
+      "numSurfs": 3,
+      "surfIndex": 0,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": "weapon_minigun_lod010"
+    },
+    {
+      "dist": 300,
+      "numSurfs": 3,
+      "surfIndex": 3,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": "weapon_minigun_lod110"
+    },
+    {
+      "dist": 2500,
+      "numSurfs": 2,
+      "surfIndex": 6,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": "weapon_minigun_lod210"
+    },
+    {
+      "dist": 1000000,
+      "numSurfs": 0,
+      "surfIndex": 0,
+      "partBits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "modelSurfs": null
+    }
+  ],
+  "maxLoadedLod": 0,
+  "numLods": 3,
+  "collLod": 255,
+  "flags": 0,
+  "contents": 0,
+  "collSurfs": [],
+  "boneInfo": [
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0.9751501,
+          "y": 4.529953E-06,
+          "z": 0.5095787
+        },
+        "halfSize": {
+          "x": 5.8497,
+          "y": 2.6985176,
+          "z": 7.114894
+        }
+      },
+      "radiusSquared": 92.1227
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": -5.5008526,
+          "y": 1.6827722,
+          "z": 0.85124016
+        },
+        "halfSize": {
+          "x": 10.558245,
+          "y": 6.6353135,
+          "z": 5.8927174
+        }
+      },
+      "radiusSquared": 190.22803
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "halfSize": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radiusSquared": 0
+    },
+    {
+      "bounds": {
+        "midPoint": {
+          "x": 5.0723267,
+          "y": 9.536743E-07,
+          "z": 0.082454205
+        },
+        "halfSize": {
+          "x": 16.926783,
+          "y": 3.151744,
+          "z": 3.151743
+        }
+      },
+      "radiusSquared": 306.38293
+    }
+  ],
+  "radius": 36.9153,
+  "bounds": {
+    "midPoint": {
+      "x": 8.761155,
+      "y": 1.6827922,
+      "z": 4.094057
+    },
+    "halfSize": {
+      "x": 26.585186,
+      "y": 6.6353135,
+      "z": 10.699372
+    }
+  },
+  "invHighMipRadius": [
+    4269,
+    3561,
+    2780,
+    3261,
+    3260,
+    4512,
+    3095,
+    2994
+  ],
+  "memUsage": 146323,
+  "physPreset": "weapon_heavy",
+  "physCollmap": null
+}

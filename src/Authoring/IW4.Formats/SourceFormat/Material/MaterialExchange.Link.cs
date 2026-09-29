@@ -24,11 +24,7 @@ public sealed partial class MaterialExchange
         using FileStream stream = File.OpenRead(path);
         using JsonDocument document = JsonDocument.Parse(stream);
         JsonElement root = Object(document.RootElement, "Material");
-        if (String(root, "_game", "Material") != "iw4" ||
-            String(root, "_platform", "Material") != "ps3" ||
-            String(root, "_type", "Material") != "material")
-            throw new InvalidDataException($"Material '{name}' requires IW4 PS3 material JSON.");
-        if (Int(root, "_version", "Material") != 2)
+        if (ReadSourceVersion(root, name) != 2)
             throw new InvalidDataException($"Material '{name}' requires version 2; re-export the source material.");
 
         JsonElement native = Object(Property(root, "_native", "Material"), "Material._native");
@@ -110,6 +106,30 @@ public sealed partial class MaterialExchange
         };
         Validate(asset, name);
         return asset;
+    }
+
+    internal static bool IsLegacySource(string path, string name)
+    {
+        try
+        {
+            using FileStream stream = File.OpenRead(path);
+            using JsonDocument document = JsonDocument.Parse(stream);
+            return ReadSourceVersion(Object(document.RootElement, "Material"), name) == 1;
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or JsonException)
+        {
+            // Invalid overrides must still reach Link and report their original error.
+            return false;
+        }
+    }
+
+    private static int ReadSourceVersion(JsonElement root, string name)
+    {
+        if (String(root, "_game", "Material") != "iw4" ||
+            String(root, "_platform", "Material") != "ps3" ||
+            String(root, "_type", "Material") != "material")
+            throw new InvalidDataException($"Material '{name}' requires IW4 PS3 material JSON.");
+        return Int(root, "_version", "Material");
     }
 
     private static MaterialConstantDef ReadConstant(JsonElement value, int index)

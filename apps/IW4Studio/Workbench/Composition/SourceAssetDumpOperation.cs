@@ -258,12 +258,19 @@ internal static partial class SourceAssetDumpOperation
                         new StructuredDataExchange().Unlink(
                             sourceDirectory,
                             structuredData),
-                    TracerDefAsset tracer => new TracerExchange().Unlink(
-                        sourceDirectory,
-                        tracer),
+                    TracerDefAsset tracer =>
+                    [
+                        .. new TracerExchange().Unlink(sourceDirectory, tracer),
+                        .. new TracerNativeExchange().Unlink(sourceDirectory, tracer)
+                    ],
                     VehicleDefAsset vehicle => new VehicleExchange().Unlink(
                         sourceDirectory,
                         vehicle),
+                    WeaponAsset weapon when weapon.Name == WeaponNativeExchange.SupportedWeaponName =>
+                    [
+                        .. weaponExchange.Unlink(sourceDirectory, weapon),
+                        .. new WeaponNativeExchange().Unlink(sourceDirectory, weapon)
+                    ],
                     WeaponAsset weapon => weaponExchange.Unlink(
                         sourceDirectory,
                         weapon),

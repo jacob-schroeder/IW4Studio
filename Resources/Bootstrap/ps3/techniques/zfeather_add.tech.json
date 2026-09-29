@@ -1,0 +1,125 @@
+{
+  "format": "iw4-ps3-technique",
+  "version": 1,
+  "name": "zfeather_add",
+  "flags": 40,
+  "passes": [
+    {
+      "perPrimArgCount": 1,
+      "perObjArgCount": 1,
+      "stableArgCount": 6,
+      "customSamplerFlags": 0,
+      "precompiledVertexShader": 2,
+      "vertexShader": "zfeather_nf.hlsl",
+      "pixelShader": "zfeather_premul_nf.hlsl",
+      "vertexDeclaration": {
+        "streamCount": 3,
+        "hasOptionalSourceRaw": 1,
+        "routing": [
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 1,
+            "destination": 3
+          },
+          {
+            "source": 2,
+            "destination": 8
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          }
+        ]
+      },
+      "arguments": [
+        {
+          "type": 3,
+          "destination": 4,
+          "argumentRaw": 6225924,
+          "literalBits": null
+        },
+        {
+          "type": 3,
+          "destination": 0,
+          "argumentRaw": 5439492,
+          "literalBits": null
+        },
+        {
+          "type": 0,
+          "destination": 12,
+          "argumentRaw": 1300144692,
+          "literalBits": null
+        },
+        {
+          "type": 2,
+          "destination": 0,
+          "argumentRaw": -1599401919,
+          "literalBits": null
+        },
+        {
+          "type": 3,
+          "destination": 17,
+          "argumentRaw": 4063233,
+          "literalBits": null
+        },
+        {
+          "type": 3,
+          "destination": 18,
+          "argumentRaw": 4128769,
+          "literalBits": null
+        },
+        {
+          "type": 4,
+          "destination": 2,
+          "argumentRaw": 16,
+          "literalBits": null
+        },
+        {
+          "type": 6,
+          "destination": 3,
+          "argumentRaw": 1300144692,
+          "literalBits": null
+        }
+      ]
+    }
+  ]
+}

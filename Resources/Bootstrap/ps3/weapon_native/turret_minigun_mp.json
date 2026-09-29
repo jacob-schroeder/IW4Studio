@@ -1,0 +1,1414 @@
+{
+  "format": "iw4-ps3-weapon-native",
+  "version": 1,
+  "name": "turret_minigun_mp",
+  "variant": {
+    "internalNamePointer": true,
+    "internalName": "turret_minigun_mp",
+    "definitionPointer": true,
+    "definition": {
+      "internalNamePointer": true,
+      "internalName": "",
+      "gunModelsPointer": true,
+      "gunModelPointers": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "gunModels": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "handModelPointer": false,
+      "handModel": null,
+      "rightHandAnimationNamesPointer": true,
+      "rightHandAnimationNamePointers": [
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "rightHandAnimationNames": [
+        null,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "leftHandAnimationNamesPointer": true,
+      "leftHandAnimationNamePointers": [
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "leftHandAnimationNames": [
+        null,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "modeNamePointer": true,
+      "modeName": "",
+      "noteTrackMaps": {
+        "soundMapKeysPointer": true,
+        "soundMapValuesPointer": true,
+        "soundMappings": [
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          }
+        ],
+        "rumbleMapKeysPointer": true,
+        "rumbleMapValuesPointer": true,
+        "rumbleMappings": [
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          },
+          {
+            "key": null,
+            "value": null
+          }
+        ]
+      },
+      "playerAnimType": 0,
+      "weaponType": 0,
+      "weaponClass": 8,
+      "penetrateType": 3,
+      "inventoryType": 0,
+      "fireType": 0,
+      "offhandClass": 0,
+      "stance": 1,
+      "flashEffects": {
+        "viewPointer": true,
+        "view": "muzzleflashes/minigun_flash_view",
+        "worldPointer": true,
+        "world": "muzzleflashes/minigun_flash_view"
+      },
+      "primarySounds": {
+        "pickupSound": {
+          "pointer": true,
+          "valuePointer": true,
+          "name": "weap_pickup"
+        },
+        "pickupSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "ammoPickupSound": {
+          "pointer": true,
+          "valuePointer": true,
+          "name": "weap_ammo_pickup"
+        },
+        "ammoPickupSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "projectileSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "pullbackSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "pullbackSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "fireSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "fireSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "fireSoundPlayerAkimbo": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "fireLoopSound": {
+          "pointer": true,
+          "valuePointer": true,
+          "name": "minigun_gatling_fire"
+        },
+        "fireLoopSoundPlayer": {
+          "pointer": true,
+          "valuePointer": true,
+          "name": "minigun_gatling_fire"
+        },
+        "fireStopSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "fireStopSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "fireLastSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "fireLastSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "emptyFireSound": {
+          "pointer": true,
+          "valuePointer": true,
+          "name": "weap_dryfire_smg_npc"
+        },
+        "emptyFireSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "meleeSwipeSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "meleeSwipeSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "meleeHitSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "meleeMissSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "rechamberSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "rechamberSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "reloadSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "reloadSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "reloadEmptySound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "reloadEmptySoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "reloadStartSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "reloadStartSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "reloadEndSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "reloadEndSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "detonateSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "detonateSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "nightVisionWearSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "nightVisionWearSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "nightVisionRemoveSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "nightVisionRemoveSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "altSwitchSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "altSwitchSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "raiseSound": {
+          "pointer": true,
+          "valuePointer": true,
+          "name": "weap_raise"
+        },
+        "raiseSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "firstRaiseSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "firstRaiseSoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "putawaySound": {
+          "pointer": true,
+          "valuePointer": true,
+          "name": "weap_putaway"
+        },
+        "putawaySoundPlayer": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        },
+        "scanSound": {
+          "pointer": false,
+          "valuePointer": false,
+          "name": null
+        }
+      },
+      "bounceSoundPointer": false,
+      "bounceSounds": [],
+      "shellEjectEffects": {
+        "viewPointer": false,
+        "view": null,
+        "worldPointer": false,
+        "world": null,
+        "viewLastShotPointer": false,
+        "viewLastShot": null,
+        "worldLastShotPointer": false,
+        "worldLastShot": null
+      },
+      "reticle": {
+        "centerMaterialPointer": true,
+        "centerMaterial": "gfx/reticle/mg42_cross.tga",
+        "sideMaterialPointer": false,
+        "sideMaterial": null,
+        "centerSize": 32,
+        "sideSize": 0,
+        "minOffset": 0,
+        "activeType": 0
+      },
+      "viewMovement": {
+        "standMove": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "standRotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "strafeMove": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "strafeRotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "duckedOffset": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "duckedMove": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "duckedRotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "proneOffset": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "proneMove": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "proneRotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "positionalMovement": {
+        "positionMoveRate": 0,
+        "positionProneMoveRate": 0,
+        "standMoveMinSpeed": 0,
+        "duckedMoveMinSpeed": 0,
+        "proneMoveMinSpeed": 0,
+        "positionRotationRate": 0,
+        "positionProneRotationRate": 0,
+        "standRotationMinSpeed": 0,
+        "duckedRotationMinSpeed": 0,
+        "proneRotationMinSpeed": 0
+      },
+      "worldGunModelsPointer": true,
+      "worldGunModelPointers": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "worldGunModels": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "worldClipModelPointer": false,
+      "worldClipModel": null,
+      "rocketModelPointer": false,
+      "rocketModel": null,
+      "knifeModelPointer": false,
+      "knifeModel": null,
+      "worldKnifeModelPointer": false,
+      "worldKnifeModel": null,
+      "icons": {
+        "hudIconPointer": true,
+        "hudIcon": "hud_icon_minigun",
+        "hudIconRatio": 1,
+        "pickupIconPointer": false,
+        "pickupIcon": null,
+        "pickupIconRatio": 2,
+        "ammoCounterIconPointer": false,
+        "ammoCounterIcon": null,
+        "ammoCounterIconRatio": 0,
+        "ammoCounterClip": 0,
+        "startAmmo": 0
+      },
+      "ammo": {
+        "ammoNamePointer": true,
+        "ammoName": "",
+        "ammoIndex": 0,
+        "clipNamePointer": true,
+        "clipName": "",
+        "clipIndex": 0,
+        "maxAmmo": 0,
+        "shotCount": 0,
+        "sharedAmmoCapNamePointer": true,
+        "sharedAmmoCapName": "",
+        "sharedAmmoCapIndex": 0,
+        "sharedAmmoCap": 0,
+        "damage": 50,
+        "playerDamage": 50,
+        "meleeDamage": 0,
+        "damageType": 0
+      },
+      "overlay": {
+        "materialPointer": false,
+        "material": null,
+        "materialLowResPointer": false,
+        "materialLowRes": null,
+        "materialEmpPointer": false,
+        "materialEmp": null,
+        "materialEmpLowResPointer": false,
+        "materialEmpLowRes": null,
+        "reticle": 0,
+        "interface": 0,
+        "width": 320,
+        "height": 240,
+        "widthSplitscreen": 480,
+        "heightSplitscreen": 480
+      },
+      "timing": {
+        "fireDelay": 0,
+        "meleeDelay": 0,
+        "meleeChargeDelay": 0,
+        "detonateDelay": 0,
+        "rechamberTime": 0,
+        "rechamberTimeOneHanded": 0,
+        "rechamberBoltTime": 0,
+        "holdFireTime": 0,
+        "detonateTime": 0,
+        "meleeTime": 0,
+        "meleeChargeTime": 0,
+        "reloadTime": 0,
+        "reloadShowRocketTime": 0,
+        "reloadEmptyTime": 0,
+        "reloadAddTime": 0,
+        "reloadStartTime": 0,
+        "reloadStartAddTime": 0,
+        "reloadEndTime": 0,
+        "dropTime": 0,
+        "raiseTime": 0,
+        "altDropTime": 0,
+        "quickDropTime": 0,
+        "quickRaiseTime": 0,
+        "breachRaiseTime": 0,
+        "emptyRaiseTime": 0,
+        "emptyDropTime": 0,
+        "sprintInTime": 0,
+        "sprintLoopTime": 0,
+        "sprintOutTime": 0,
+        "stunnedTimeBegin": 0,
+        "stunnedTimeLoop": 0,
+        "stunnedTimeEnd": 0,
+        "nightVisionWearTime": 0,
+        "nightVisionWearTimeFadeOutEnd": 0,
+        "nightVisionWearTimePowerUp": 0,
+        "nightVisionRemoveTime": 0,
+        "nightVisionRemoveTimePowerDown": 0,
+        "nightVisionRemoveTimeFadeInStart": 0,
+        "fuseTime": 0,
+        "aiFuseTime": 0
+      },
+      "aimMovementTuning": {
+        "autoAimRange": 8000,
+        "aimAssistRange": 8000,
+        "aimAssistRangeAds": 8000,
+        "aimPadding": 0,
+        "enemyCrosshairRange": 4000,
+        "moveSpeedScale": 0,
+        "adsMoveSpeedScale": 0,
+        "sprintDurationScale": 0,
+        "adsZoomInFraction": 0,
+        "adsZoomOutFraction": 0
+      },
+      "adsViewAndSpread": {
+        "adsBobFactor": 0,
+        "adsViewBobMultiplier": 0,
+        "hipSpreadStandMin": 0,
+        "hipSpreadDuckedMin": 0,
+        "hipSpreadProneMin": 0,
+        "hipSpreadStandMax": 0,
+        "hipSpreadDuckedMax": 0,
+        "hipSpreadProneMax": 0,
+        "hipSpreadDecayRate": 0,
+        "hipSpreadFireAdd": 0,
+        "hipSpreadTurnAdd": 0,
+        "hipSpreadMoveAdd": 0,
+        "hipSpreadDuckedDecay": 0,
+        "hipSpreadProneDecay": 0,
+        "hipReticleSidePosition": 0,
+        "adsIdleAmount": 0,
+        "hipIdleAmount": 0,
+        "adsIdleSpeed": 0,
+        "hipIdleSpeed": 0,
+        "idleCrouchFactor": 0,
+        "idleProneFactor": 0,
+        "gunMaxPitch": 0,
+        "gunMaxYaw": 0,
+        "swayMaxAngle": 0,
+        "swayLerpSpeed": 0,
+        "swayPitchScale": 0,
+        "swayYawScale": 0,
+        "swayHorizontalScale": 0,
+        "swayVerticalScale": 0,
+        "swayShellShockScale": 0,
+        "adsSwayMaxAngle": 0,
+        "adsSwayLerpSpeed": 0,
+        "adsSwayPitchScale": 0,
+        "adsSwayYawScale": 0,
+        "adsSwayHorizontalScale": 0,
+        "adsSwayVerticalScale": 0,
+        "adsViewErrorMin": 0,
+        "adsViewErrorMax": 0
+      },
+      "physCollmapPointer": false,
+      "physCollmap": null,
+      "physCollmapName": null,
+      "physics": {
+        "dualWieldViewModelOffset": 0,
+        "killIconRatio": 1,
+        "reloadAmmoAdd": 0,
+        "reloadStartAdd": 0,
+        "ammoDropStockMin": 0,
+        "ammoDropClipPercentMin": 0,
+        "ammoDropClipPercentMax": 0,
+        "explosionRadius": 10,
+        "explosionRadiusMin": 0,
+        "explosionInnerDamage": 10,
+        "explosionOuterDamage": 10,
+        "damageConeAngle": 180,
+        "bulletExplosionDamageMultiplier": 1,
+        "bulletExplosionRadiusMultiplier": 1,
+        "projectileSpeed": 10000,
+        "projectileSpeedUp": 0,
+        "projectileSpeedForward": 0,
+        "projectileActivateDistance": 0,
+        "projectileLifetime": 1106247680,
+        "timeToAccelerate": 0,
+        "projectileCurvature": 0
+      },
+      "projectile": {
+        "modelPointer": false,
+        "model": null,
+        "explosion": 0,
+        "explosionEffectPointer": false,
+        "explosionEffect": null,
+        "dudEffectPointer": false,
+        "dudEffect": null,
+        "explosionSoundPointer": false,
+        "explosionSoundValuePointer": false,
+        "explosionSound": null,
+        "dudSoundPointer": false,
+        "dudSoundValuePointer": false,
+        "dudSound": null,
+        "stickiness": 0,
+        "lowAmmoWarningThreshold": 0,
+        "ricochetChance": 0,
+        "parallelBouncePointer": true,
+        "parallelBounce": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "perpendicularBouncePointer": true,
+        "perpendicularBounce": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "trailEffectPointer": false,
+        "trailEffect": null,
+        "beaconEffectPointer": false,
+        "beaconEffect": null,
+        "projectileColor": {
+          "x": 0.75,
+          "y": 0.3,
+          "z": 0
+        },
+        "guidedMissileType": 0,
+        "maxSteeringAcceleration": 0,
+        "ignitionDelay": 0,
+        "ignitionEffectPointer": false,
+        "ignitionEffect": null,
+        "ignitionSoundPointer": false,
+        "ignitionSoundValuePointer": false,
+        "ignitionSound": null,
+        "adsAimPitch": 0,
+        "adsCrosshairInFraction": 0,
+        "adsCrosshairOutFraction": 0,
+        "gunKickAndDistance": {
+          "adsGunKickReducedKickBullets": 0,
+          "adsGunKickReducedKickPercent": 0,
+          "adsGunKickPitchMin": 0,
+          "adsGunKickPitchMax": 0,
+          "adsGunKickYawMin": 0,
+          "adsGunKickYawMax": 0,
+          "adsGunKickAcceleration": 0,
+          "adsGunKickSpeedMax": 0,
+          "adsGunKickSpeedDecay": 0,
+          "adsGunKickStaticDecay": 0,
+          "adsViewKickPitchMin": 0,
+          "adsViewKickPitchMax": 0,
+          "adsViewKickYawMin": 0,
+          "adsViewKickYawMax": 0,
+          "adsViewScatterMin": 0,
+          "adsViewScatterMax": 0,
+          "adsSpread": 0,
+          "hipGunKickReducedKickBullets": 0,
+          "hipGunKickReducedKickPercent": 0,
+          "hipGunKickPitchMin": 0,
+          "hipGunKickPitchMax": 0,
+          "hipGunKickYawMin": 0,
+          "hipGunKickYawMax": 0,
+          "hipGunKickAcceleration": 0,
+          "hipGunKickSpeedMax": 0,
+          "hipGunKickSpeedDecay": 0,
+          "hipGunKickStaticDecay": 0,
+          "hipViewKickPitchMin": 0,
+          "hipViewKickPitchMax": 0,
+          "hipViewKickYawMin": 0,
+          "hipViewKickYawMax": 0,
+          "hipViewScatterMin": 0,
+          "hipViewScatterMax": 0,
+          "fightDistance": 0,
+          "maxDistance": 0
+        }
+      },
+      "accuracy": {
+        "aiVsAiGraphNamePointer": true,
+        "aiVsAiGraphName": "",
+        "aiVsPlayerGraphNamePointer": true,
+        "aiVsPlayerGraphName": "",
+        "originalAiVsAiGraphKnotsPointer": false,
+        "originalAiVsAiGraphKnots": [],
+        "originalAiVsPlayerGraphKnotsPointer": false,
+        "originalAiVsPlayerGraphKnots": [],
+        "originalAiVsAiGraphKnotCount": 0,
+        "originalAiVsPlayerGraphKnotCount": 0,
+        "positionReloadTransitionTime": 0,
+        "leftArc": 45,
+        "rightArc": 45,
+        "topArc": 15,
+        "bottomArc": 15,
+        "accuracy": 1,
+        "aiSpread": 0.2,
+        "playerSpread": 0.5
+      },
+      "turnSpeedAndRange": {
+        "minVerticalTurnSpeed": 1,
+        "minHorizontalTurnSpeed": 1,
+        "maxVerticalTurnSpeed": 360,
+        "maxHorizontalTurnSpeed": 360,
+        "pitchConvergenceTime": 0.3,
+        "yawConvergenceTime": 1.5,
+        "suppressionTime": 3,
+        "maxRange": 0,
+        "animationHorizontalRotateIncrement": 15,
+        "playerPositionDistance": 46
+      },
+      "hints": {
+        "useHintStringPointer": true,
+        "useHintString": "PLATFORM_HOLD_TO_USE",
+        "dropHintStringPointer": true,
+        "dropHintString": "PLATFORM_HOLD_TO_DROP",
+        "useHintStringIndex": 0,
+        "dropHintStringIndex": 0,
+        "horizontalViewJitter": 0.5,
+        "verticalViewJitter": 0.5,
+        "scanSpeed": 60,
+        "scanAcceleration": 40,
+        "scanPauseTime": 0
+      },
+      "scriptNamePointer": true,
+      "scriptName": "",
+      "adsTransitionInRate": 0.0033333334,
+      "adsTransitionOutRate": 0.002,
+      "minDamage": 50,
+      "minPlayerDamage": 50,
+      "maxDamageRange": 15000,
+      "minDamageRange": 16000,
+      "destabilizationRateTime": 0,
+      "destabilizationCurvatureMax": 0,
+      "destabilizeDistance": 0,
+      "locationDamageMultipliersPointer": true,
+      "locationDamageMultipliers": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "rumble": {
+        "fireRumblePointer": true,
+        "fireRumble": "heavygun_fire",
+        "meleeImpactRumblePointer": true,
+        "meleeImpactRumble": ""
+      },
+      "tracerPointer": true,
+      "tracer": "stryker_50cal_tracer",
+      "turretScopeZoomRate": 15,
+      "turretScopeZoomMin": 5,
+      "turretScopeZoomMax": 20,
+      "turretOverheatUpRate": 0.2,
+      "turretOverheatDownRate": 0.2,
+      "turretOverheatPenalty": 1,
+      "turret": {
+        "overheatSoundPointer": true,
+        "overheatSoundValuePointer": true,
+        "overheatSound": "smokegrenade_explode_default",
+        "overheatEffectPointer": true,
+        "overheatEffect": "smoke/sentry_turret_overheat_smoke",
+        "barrelSpinRumblePointer": true,
+        "barrelSpinRumble": "minigun_rumble",
+        "barrelSpinSpeed": 4,
+        "barrelSpinUpTime": 0.8,
+        "barrelSpinDownTime": 0.8,
+        "barrelSpinMaxSoundPointer": true,
+        "barrelSpinMaxSoundValuePointer": true,
+        "barrelSpinMaxSound": "minigun_gatling_spin",
+        "barrelSpinUpSounds": [
+          {
+            "pointer": true,
+            "valuePointer": true,
+            "name": "minigun_gatling_spinup1"
+          },
+          {
+            "pointer": true,
+            "valuePointer": true,
+            "name": "minigun_gatling_spinup2"
+          },
+          {
+            "pointer": true,
+            "valuePointer": true,
+            "name": "minigun_gatling_spinup3"
+          },
+          {
+            "pointer": true,
+            "valuePointer": true,
+            "name": "minigun_gatling_spinup4"
+          }
+        ],
+        "barrelSpinDownSounds": [
+          {
+            "pointer": true,
+            "valuePointer": true,
+            "name": "minigun_gatling_spindown1"
+          },
+          {
+            "pointer": true,
+            "valuePointer": true,
+            "name": "minigun_gatling_spindown2"
+          },
+          {
+            "pointer": true,
+            "valuePointer": true,
+            "name": "minigun_gatling_spindown3"
+          },
+          {
+            "pointer": true,
+            "valuePointer": true,
+            "name": "minigun_gatling_spindown4"
+          }
+        ]
+      },
+      "missileConeSound": {
+        "aliasPointer": false,
+        "aliasValuePointer": false,
+        "alias": null,
+        "aliasAtBasePointer": false,
+        "aliasAtBaseValuePointer": false,
+        "aliasAtBase": null,
+        "radiusAtTop": 0,
+        "radiusAtBase": 0,
+        "height": 0,
+        "originOffset": 0,
+        "volumeScaleAtCore": 0,
+        "volumeScaleAtEdge": 0,
+        "volumeScaleCoreSize": 0,
+        "pitchAtTop": 0,
+        "pitchAtBottom": 0,
+        "pitchTopSize": 0,
+        "pitchBottomSize": 0,
+        "crossfadeTopSize": 0,
+        "crossfadeBottomSize": 0
+      },
+      "tailFlags": {
+        "sharedAmmo": 0,
+        "lockonSupported": 0,
+        "requireLockonToFire": 0,
+        "bigExplosion": 0,
+        "noAdsWhenMagEmpty": 0,
+        "avoidDropCleanup": 0,
+        "inheritsPerks": 0,
+        "crosshairColorChange": 0,
+        "rifleBullet": 1,
+        "armorPiercing": 1,
+        "boltAction": 0,
+        "aimDownSight": 0,
+        "rechamberWhileAds": 0,
+        "bulletExplosiveDamage": 0,
+        "cookOffHold": 0,
+        "clipOnly": 0,
+        "noAmmoPickup": 0,
+        "adsFireOnly": 0,
+        "cancelAutoHolsterWhenEmpty": 0,
+        "disableSwitchToWhenEmpty": 0,
+        "suppressAmmoReserveDisplay": 0,
+        "laserSightDuringNightvision": 0,
+        "markableViewmodel": 0,
+        "noDualWield": 0,
+        "flipKillIcon": 1,
+        "noPartialReload": 0,
+        "segmentedReload": 0,
+        "blocksProne": 0,
+        "silenced": 0,
+        "isRollingGrenade": 0,
+        "projectileExplosionEffectForceNormalUp": 0,
+        "projectileImpactExplode": 0,
+        "stickToPlayers": 0,
+        "hasDetonator": 0,
+        "disableFiring": 0,
+        "timedDetonation": 0,
+        "rotate": 0,
+        "holdButtonToThrow": 0,
+        "freezeMovementWhenFiring": 0,
+        "thermalScope": 0,
+        "altModeSameWeapon": 0,
+        "turretBarrelSpinEnabled": 1,
+        "missileConeSoundEnabled": 0,
+        "missileConeSoundPitchShiftEnabled": 0,
+        "missileConeSoundCrossfadeEnabled": 0,
+        "offhandHoldIsCancelable": 0,
+        "reservedPadding": 0
+      }
+    },
+    "displayNamePointer": true,
+    "displayName": "",
+    "hideTagsPointer": true,
+    "hideTags": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "animationNamesPointer": true,
+    "animationNamePointers": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ],
+    "animationNames": [
+      null,
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "adsZoomFov": 0,
+    "adsTransitionInTime": 0,
+    "adsTransitionOutTime": 0,
+    "clipSize": 0,
+    "impactType": 3,
+    "fireTime": 50,
+    "dpadIconRatio": 0,
+    "penetrateMultiplier": 1,
+    "adsViewKickCenterSpeed": 0,
+    "hipViewKickCenterSpeed": 0,
+    "alternateWeaponNamePointer": true,
+    "alternateWeaponName": "",
+    "alternateWeaponIndex": 0,
+    "alternateRaiseTime": 0,
+    "killIconPointer": true,
+    "dpadIconPointer": false,
+    "killIcon": "hud_icon_minigun",
+    "dpadIcon": null,
+    "fireAnimLength": 0,
+    "firstRaiseTime": 0,
+    "ammoDropStockMax": 0,
+    "adsDofStart": 0,
+    "adsDofEnd": 0,
+    "aiVsAiAccuracyGraphKnotCount": 0,
+    "aiVsPlayerAccuracyGraphKnotCount": 0,
+    "aiVsAiAccuracyGraphKnotsPointer": false,
+    "aiVsAiAccuracyGraphKnots": [],
+    "aiVsPlayerAccuracyGraphKnotsPointer": false,
+    "aiVsPlayerAccuracyGraphKnots": [],
+    "motionTracker": 0,
+    "enhanced": 0,
+    "dpadIconShowsAmmo": 0,
+    "padding73": 0
+  }
+}

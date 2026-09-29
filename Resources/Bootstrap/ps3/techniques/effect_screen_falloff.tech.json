@@ -1,0 +1,113 @@
+{
+  "format": "iw4-ps3-technique",
+  "version": 1,
+  "name": "effect_screen_falloff",
+  "flags": 8,
+  "passes": [
+    {
+      "perPrimArgCount": 1,
+      "perObjArgCount": 1,
+      "stableArgCount": 4,
+      "customSamplerFlags": 0,
+      "precompiledVertexShader": 2,
+      "vertexShader": "vertcol_simple_foa.hlsl",
+      "pixelShader": "vertcol_simple_screen.hlsl",
+      "vertexDeclaration": {
+        "streamCount": 4,
+        "hasOptionalSourceRaw": 1,
+        "routing": [
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 1,
+            "destination": 3
+          },
+          {
+            "source": 2,
+            "destination": 8
+          },
+          {
+            "source": 3,
+            "destination": 2
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          },
+          {
+            "source": 0,
+            "destination": 0
+          }
+        ]
+      },
+      "arguments": [
+        {
+          "type": 3,
+          "destination": 4,
+          "argumentRaw": 6225924,
+          "literalBits": null
+        },
+        {
+          "type": 3,
+          "destination": 0,
+          "argumentRaw": 5439492,
+          "literalBits": null
+        },
+        {
+          "type": 0,
+          "destination": 14,
+          "argumentRaw": 1023779314,
+          "literalBits": null
+        },
+        {
+          "type": 0,
+          "destination": 15,
+          "argumentRaw": 1797105402,
+          "literalBits": null
+        },
+        {
+          "type": 0,
+          "destination": 13,
+          "argumentRaw": -1109500683,
+          "literalBits": null
+        },
+        {
+          "type": 2,
+          "destination": 0,
+          "argumentRaw": -1599401919,
+          "literalBits": null
+        }
+      ]
+    }
+  ]
+}

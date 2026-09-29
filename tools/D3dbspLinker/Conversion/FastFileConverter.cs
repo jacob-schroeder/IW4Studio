@@ -515,13 +515,23 @@ internal static partial class FastFileConverter
             .Select(entity => entity.TryGetValue("weaponinfo", out string? name) && !string.IsNullOrWhiteSpace(name)
                 ? name : throw new InvalidDataException("A misc_turret requires a weaponinfo asset name."))
             .Distinct(StringComparer.Ordinal).ToArray();
-        if (bootstrap is not null && turretWeaponNames.Length != 0)
-            throw new NotSupportedException("Disk map builds do not yet support misc_turret weapon definitions.");
-        WeaponAsset[] turretWeapons = turretWeaponNames.Length == 0 ? [] : ResolveOwnedAssetsAcrossFastFiles<WeaponAsset>(RequireTemplate(), templatePath,
-            [.. dependencyPaths, .. providerPaths], turretWeaponNames, XAssetType.Weapon, "turret Weapon");
+        BaseAsset[] turretDependencies = [];
+        string[] turretFxNames = [];
+        string[] turretSoundNames = [];
+        WeaponAsset[] turretWeapons = turretWeaponNames.Length == 0 ? [] : bootstrap is not null
+            ? LoadDiskTurretWeapons(turretWeaponNames,
+                assetLibraryDirectory ?? throw new InvalidOperationException("Disk turret builds require an asset library."),
+                bootstrapDirectory ?? throw new InvalidOperationException("Disk turret builds require bootstrap sources."),
+                materialSources ?? throw new InvalidOperationException("Disk turret builds require material sources."),
+                out turretDependencies, out turretFxNames, out turretSoundNames)
+            : ResolveOwnedAssetsAcrossFastFiles<WeaponAsset>(RequireTemplate(), templatePath,
+                [.. dependencyPaths, .. providerPaths], turretWeaponNames, XAssetType.Weapon, "turret Weapon");
+        string[] sourceFxNames = additionalFxNames.Concat(turretFxNames).Distinct(StringComparer.Ordinal).ToArray();
+        string[] sourceSoundNames = additionalSoundNames.Concat(turretSoundNames).Distinct(StringComparer.Ordinal).ToArray();
         var soundPackager = new SoundFilePackager();
         BaseAsset[] rawEmitterAssets = assetLibraryDirectory is null ? [] :
-            LoadRawEmitterAssets(assetLibraryDirectory, additionalFxNames, additionalSoundNames, soundDefinitionPaths, soundPackager);
+            LoadRawEmitterAssets(assetLibraryDirectory, sourceFxNames, sourceSoundNames, soundDefinitionPaths, soundPackager,
+                bootstrapDirectory);
         if (modelSources is not null)
             foreach (string name in rawEmitterAssets.OfType<FxEffectDefAsset>().SelectMany(effect => effect.ElemDefs)
                          .SelectMany(element => element.VisualArray.Prepend(element.Visuals))
@@ -546,7 +556,7 @@ internal static partial class FastFileConverter
             ? ResolveOwnedAssetsAcrossFastFiles<FxEffectDefAsset>(
                 RequireTemplate(), templatePath, [.. dependencyPaths, .. providerPaths],
                 additionalFxNames, XAssetType.Fx, "requested FxEffectDef")
-            : additionalFxNames.Select(name => rawEmitterAssets.OfType<FxEffectDefAsset>()
+            : sourceFxNames.Select(name => rawEmitterAssets.OfType<FxEffectDefAsset>()
                 .Single(effect => effect.Name == name)).ToArray();
         HashSet<AssetKey> requestedFxKeys = additionalFx.Select(AssetKey.FromDefinition).ToHashSet();
         FxEffectDefAsset[] nestedDiskFx = assetLibraryDirectory is null ? [] :
@@ -753,7 +763,7 @@ internal static partial class FastFileConverter
 
         SoundAliasListAsset[] additionalSounds = ResolveAdditionalSounds(
             additionalFx,
-            additionalSoundNames,
+            sourceSoundNames,
             fxAndSoundDefinitions,
             existingFullProviderKeys);
         var newSources = new List<LinkAssetProviderSource>(
@@ -783,6 +793,8 @@ internal static partial class FastFileConverter
         }
         foreach (WeaponAsset weapon in turretWeapons)
             newSources.Add(new LinkAssetProviderSource(weapon).AsAuthoredDetached());
+        foreach (BaseAsset dependency in turretDependencies)
+            newSources.Add(new LinkAssetProviderSource(dependency).AsAuthoredDetached());
         foreach (XAnimPartsAsset animation in additionalXAnim)
             newSources.Add(new LinkAssetProviderSource(animation).AsAuthoredDetached());
         foreach (FxEffectDefAsset effect in assetLibraryDirectory is null ? additionalFx : [])
@@ -815,8 +827,8 @@ internal static partial class FastFileConverter
         if (bootstrapMaterials is not null)
             foreach (string name in Ps3MapBootstrap.FactionMaterials)
                 roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:bootstrap:material:{name}", bootstrapMaterials.LoadMaterial(name)));
-        foreach (WeaponAsset weapon in turretWeapons)
-            roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:turret:weapon:{weapon.SerializedAssetName}", weapon));
+        foreach (RawFileAsset rawFile in turretDependencies.OfType<RawFileAsset>())
+            roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:turret:rawfile:{rawFile.Name}", rawFile));
         roots.Add(CreateNamedOwnedRoot(
             "d3dbsplinker:bootstrap:stringtable:dm",
             bootstrapStringTable));
@@ -841,7 +853,7 @@ internal static partial class FastFileConverter
         for (int index = 0; index < additionalFx.Length; index++)
         {
             roots.Add(CreateNamedOwnedRoot(
-                $"d3dbsplinker:additional:fx:{index}:{additionalFxNames[index]}",
+                $"d3dbsplinker:additional:fx:{index}:{sourceFxNames[index]}",
                 additionalFx[index]));
         }
         for (int index = 0; index < additionalXAnim.Length; index++)
@@ -863,6 +875,10 @@ internal static partial class FastFileConverter
                 $"d3dbsplinker:additional:sound:{index}:{sound.AliasName}",
                 sound));
         }
+        // The weapon references independently rooted FX/material providers. Their
+        // top-level rows must be written before the weapon can reference them.
+        foreach (WeaponAsset weapon in turretWeapons)
+            roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:turret:weapon:{weapon.SerializedAssetName}", weapon));
         var request = new ZoneLinkRequest(
             assets,
             roots,
@@ -1465,7 +1481,8 @@ internal static partial class FastFileConverter
         IReadOnlyList<string> requestedFx,
         IReadOnlyList<string> requestedSounds,
         IReadOnlyDictionary<string, string> soundDefinitionPaths,
-        SoundFilePackager soundPackager)
+        SoundFilePackager soundPackager,
+        string? bootstrapDirectory)
     {
         string root = Path.GetFullPath(sourceDirectory);
         if (!Directory.Exists(root))
@@ -1486,8 +1503,10 @@ internal static partial class FastFileConverter
                 continue;
             BaseAsset asset = requested.Type switch
             {
-                XAssetType.Fx => fxExchange.Link(root, requested.Name),
-                XAssetType.Sound => soundExchange.Link(root, requested.Name, soundPackager.AddPayload,
+                XAssetType.Fx => fxExchange.Link(SourceRoot($"fx/{requested.Name}.json"), requested.Name),
+                XAssetType.Sound => soundExchange.Link(
+                    soundDefinitionPaths.ContainsKey(requested.Name) ? root : SourceRoot($"soundaliases/{requested.Name}.json"),
+                    requested.Name, soundPackager.AddPayload,
                     soundDefinitionPaths.GetValueOrDefault(requested.Name)),
                 _ => throw new InvalidDataException($"Unsupported emitter asset type {requested.Type}.")
             };
@@ -1524,6 +1543,10 @@ internal static partial class FastFileConverter
             }
         }
         return assets.Values.ToArray();
+
+        string SourceRoot(string relativePath) =>
+            !File.Exists(Path.Combine(root, relativePath)) && bootstrapDirectory is not null &&
+            File.Exists(Path.Combine(bootstrapDirectory, relativePath)) ? bootstrapDirectory : root;
 
         void Enqueue(XAssetType type, string? name)
         {

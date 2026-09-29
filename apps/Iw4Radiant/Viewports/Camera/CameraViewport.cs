@@ -964,7 +964,8 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         try
         {
             bool supported = XModelDrag.TryRead(e.DataTransfer, out _, out _) ||
-                FxSoundDrag.TryRead(e.DataTransfer, out _, out _) || DestructibleDrag.Read(e.DataTransfer) is not null;
+                FxSoundDrag.TryRead(e.DataTransfer, out _, out _) || DestructibleDrag.Read(e.DataTransfer) is not null ||
+                WeaponDrag.IsTurret(e.DataTransfer);
             e.DragEffects = CanAcceptAssetDrop?.Invoke() != false && supported &&
                 TryMapHit(e.GetPosition(this), includeModels: true, out _, out _) ? DragDropEffects.Copy : DragDropEffects.None;
             e.Handled = true;
@@ -986,9 +987,10 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         {
             if (CanAcceptAssetDrop?.Invoke() == false || _session is not { } session) return;
             DestructiblePreset? destructible = DestructibleDrag.Read(e.DataTransfer);
+            bool turret = WeaponDrag.IsTurret(e.DataTransfer);
             bool modelDrop = XModelDrag.TryRead(e.DataTransfer, out string name, out bool align);
             bool isSound = false;
-            if (destructible is null && !modelDrop && !FxSoundDrag.TryRead(e.DataTransfer, out name, out isSound)) return;
+            if (destructible is null && !turret && !modelDrop && !FxSoundDrag.TryRead(e.DataTransfer, out name, out isSound)) return;
             XModelSource? model = modelDrop ? session.Scene.ResolveModel?.Invoke(name) : null;
             if (modelDrop && model is null ||
                 !TryMapHit(e.GetPosition(this), includeModels: true, out Vector3 hit, out Vector3 normal))
@@ -999,10 +1001,11 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
             FinishGesture(cancel: true);
             if (session.HasPlacement) session.CancelPlacement();
             if (destructible is not null) DestructiblePresets.Place(session, destructible, hit);
+            else if (turret) GameplayEntityEditing.Place(session, GameplayEntityEditing.TurretClassName, hit);
             else if (model is not null) XModelEditing.Place(session, model, hit, align ? normal : null);
             else GameplayEntityEditing.PlaceFxSound(session, name, isSound, hit);
             e.DragEffects = DragDropEffects.Copy;
-            InteractionStatusChanged?.Invoke($"Placed {destructible?.Name ?? name}.");
+            InteractionStatusChanged?.Invoke($"Placed {(turret ? "Mounted minigun" : destructible?.Name ?? name)}.");
         }
         catch (Exception exception) when (IsEditError(exception))
         { InteractionStatusChanged?.Invoke(exception.Message); }

@@ -69,7 +69,7 @@ public partial class MainWindow
             _dialogs.SetBusy(true);
             CompiledBspPreview preview = await Task.Run(() => CompiledBspPreview.Read(path));
             var modelSources = preview.ModelNames.ToDictionary(name => name,
-                Workspace.Models.ResolveModel, StringComparer.Ordinal);
+                ResolveSceneModel, StringComparer.Ordinal);
             await Task.Run(() => preview.ResolveModels(name => modelSources.GetValueOrDefault(name)));
             (_compiledWaterMaterials, _previewAssetNotice) = ResolveCompiledPreviewMaterials(preview);
             _previewLightmapNotice =
