@@ -50,11 +50,12 @@ static int ExportAssets(string input, string library, string output, IReadOnlyLi
     var effects = new List<string>();
     var weapons = new List<string>();
     var animations = new List<string>();
+    var nativeAnimations = new List<string>();
     string? dependency = null;
     for (int index = 0; index < names.Count; index += 2)
     {
-        if (index + 1 >= names.Count || names[index] is not ("--xmodel" or "--material" or "--fx" or "--weapon" or "--xanim" or "--dependencies"))
-            throw new ArgumentException("export-assets expects --xmodel, --material, --fx, --weapon, --xanim <name>, or --dependencies <official.ff> pairs.");
+        if (index + 1 >= names.Count || names[index] is not ("--xmodel" or "--material" or "--fx" or "--weapon" or "--xanim" or "--xanim-native" or "--dependencies"))
+            throw new ArgumentException("export-assets expects --xmodel, --material, --fx, --weapon, --xanim, --xanim-native <name>, or --dependencies <official.ff> pairs.");
         if (names[index] == "--dependencies")
         {
             if (dependency is not null) throw new ArgumentException("export-assets accepts one --dependencies fastfile.");
@@ -66,12 +67,13 @@ static int ExportAssets(string input, string library, string output, IReadOnlyLi
             "--material" => materials,
             "--fx" => effects,
             "--weapon" => weapons,
+            "--xanim-native" => nativeAnimations,
             _ => animations
         }).Add(names[index + 1]);
     }
-    if (models.Count + materials.Count + effects.Count + weapons.Count + animations.Count == 0)
-        throw new ArgumentException("Choose at least one --xmodel, --material, --fx, --weapon, or --xanim to export.");
-    FastFileConverter.ExportSourceAssets(input, library, output, models, materials, dependencyFastFile: dependency, fxNames: effects, weaponNames: weapons, xanimNames: animations);
+    if (models.Count + materials.Count + effects.Count + weapons.Count + animations.Count + nativeAnimations.Count == 0)
+        throw new ArgumentException("Choose at least one asset to export.");
+    FastFileConverter.ExportSourceAssets(input, library, output, models, materials, dependencyFastFile: dependency, fxNames: effects, weaponNames: weapons, xanimNames: animations, nativeXanimNames: nativeAnimations);
     return 0;
 }
 
@@ -112,6 +114,8 @@ static int ToFastFile(
     var distinctMaterialNames = new HashSet<string>(StringComparer.Ordinal);
     var additionalFxNames = new List<string>();
     var distinctFxNames = new HashSet<string>(StringComparer.Ordinal);
+    var additionalXAnimNames = new List<string>();
+    var distinctXAnimNames = new HashSet<string>(StringComparer.Ordinal);
     var additionalSoundNames = new List<string>();
     var distinctSoundNames = new HashSet<string>(StringComparer.Ordinal);
     var soundDefinitionPaths = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -266,6 +270,14 @@ static int ToFastFile(
             additionalFxNames.Add(name);
             continue;
         }
+        if (string.Equals(value, "--xanim", StringComparison.Ordinal))
+        {
+            string name = ReadRequiredOptionValue(optionsAndDependencies, ref index, "--xanim", "an exact XAnim name");
+            if (!distinctXAnimNames.Add(name))
+                throw new ArgumentException($"The --xanim option names XAnim '{name}' more than once.");
+            additionalXAnimNames.Add(name);
+            continue;
+        }
         if (string.Equals(value, "--sound", StringComparison.Ordinal))
         {
             string argument = ReadRequiredOptionValue(
@@ -347,6 +359,7 @@ static int ToFastFile(
         additionalXModelNames,
         additionalMaterialNames,
         additionalFxNames,
+        additionalXAnimNames,
         additionalSoundNames,
         soundDefinitionPaths,
         assetLibraryDirectory,
@@ -445,9 +458,9 @@ static int Rewrite(string input, string output)
 static int Usage()
 {
     Console.Error.WriteLine("usage:");
-    Console.Error.WriteLine("  D3dbspLinker build <input.d3dbsp> <map-asset-name> <output.ff> --asset-library <raw-root> [--character-assets <map-characters-root>] [--compiled-lighting] [asset options]");
+    Console.Error.WriteLine("  D3dbspLinker build <input.d3dbsp> <map-asset-name> <output.ff> --asset-library <raw-root> [--xanim <exact-name>]... [--character-assets <map-characters-root>] [--compiled-lighting] [asset options]");
     Console.Error.WriteLine("  D3dbspLinker import-character <body.glb> <hands.glb> <bootstrap-root> <new-output-root> <unique-model-prefix>");
-    Console.Error.WriteLine("  D3dbspLinker export-assets <official.ff> <exported-raw-root> <new-output-directory> [--xmodel <name>] [--material <name>] [--fx <name>] [--weapon <name>] [--xanim <name>] [--dependencies <official.ff>]  (offline extraction)");
+    Console.Error.WriteLine("  D3dbspLinker export-assets <official.ff> <exported-raw-root> <new-output-directory> [--xmodel <name>] [--material <name>] [--fx <name>] [--weapon <name>] [--xanim <name>] [--xanim-native <name>] [--dependencies <official.ff>]  (offline extraction)");
     Console.Error.WriteLine("  D3dbspLinker export-bootstrap <official-map.ff> <exported-raw-root> <new-output-directory>  (offline extraction)");
     Console.Error.WriteLine("  D3dbspLinker inspect <input.d3dbsp>");
     Console.Error.WriteLine("  D3dbspLinker inspect-fastfile <input.ff>");
@@ -456,7 +469,7 @@ static int Usage()
     Console.Error.WriteLine("  D3dbspLinker inspect-pair <input.d3dbsp> <input.ff>");
     Console.Error.WriteLine("  D3dbspLinker to-d3dbsp <input.ff> <output.d3dbsp>");
     Console.Error.WriteLine(
-        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright | --compiled-lighting] [--world-only] [--source-materials] [--stock-bootstrap] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--sound <exact-name[=absolute-source-json]>]... [--asset-library <raw-root>] [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
+        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright | --compiled-lighting] [--world-only] [--source-materials] [--stock-bootstrap] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--xanim <exact-name>]... [--sound <exact-name[=absolute-source-json]>]... [--asset-library <raw-root>] [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
     Console.Error.WriteLine("  Lighting images compile from --asset-library when supplied; otherwise --provider-fastfile inputs must own them. --lightmap order defines atlas indices. Supplied lighting cannot use --fullbright.");
     Console.Error.WriteLine("  --compiled-lighting preserves the BSP's baked lightmaps and requires at least one lightmap array.");
     Console.Error.WriteLine("  --stock-bootstrap loads the template's native startup dependencies and requires resident images or installed PS3 imagefile1.pak through imagefile4.pak before writing output.");

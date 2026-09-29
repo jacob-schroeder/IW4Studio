@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Collections.Immutable;
 using IW4.Formats.XModel;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
@@ -7,43 +8,42 @@ namespace Iw4Radiant.Rendering;
 
 internal static class DestructibleModelPreview
 {
-    internal static XModelSource Create(XModelSource intact, XModelSource wreck,
-        DestructiblePreviewSettings settings)
+    internal static XModelSource Create(XModelSource model, IReadOnlyList<DestructiblePreviewPart> parts,
+        ImmutableDictionary<int, DestructiblePartState>? states)
     {
-        if (settings.FrontLeftTireFlat)
-            throw new InvalidDataException("The front-left flat tire animation cannot be shown in the map model preview.");
-
-        XModelExportDocument body = intact.Document;
-        _ = wreck.Document;
-        foreach (string tag in new[] { "tag_glass_front", "tag_glass_front_d", "tag_hood_fx", "tag_death_fx" })
-            if (!body.Bones.Any(bone => bone.Name == tag))
-                throw new InvalidDataException($"The police car model is missing '{tag}'.");
-
-        if (settings.Appearance == DestructibleAppearance.Wreck)
-            return wreck;
+        XModelExportDocument body = model.Document;
+        foreach (DestructiblePreviewPart part in parts)
+            foreach (string tag in new[] { part.IntactTag, part.DamagedTag })
+                if (!body.Bones.Any(bone => bone.Name == tag))
+                    throw new InvalidDataException($"The {model.Name} model is missing '{tag}'.");
 
         bool[] hidden = new bool[body.Bones.Count];
         for (int index = 0; index < hidden.Length; index++)
         {
             XModelExportBone bone = body.Bones[index];
-            bool windshield = bone.Name is "tag_glass_front" or "tag_glass_front_d";
-            bool hide = windshield
-                ? settings.Windshield switch
+            bool hide = bone.Name.EndsWith("_d", StringComparison.Ordinal);
+            for (int partIndex = 0; partIndex < parts.Count; partIndex++)
+            {
+                DestructiblePreviewPart part = parts[partIndex];
+                if (bone.Name != part.IntactTag && bone.Name != part.DamagedTag) continue;
+                DestructiblePartState state = states?.GetValueOrDefault(partIndex) ?? DestructiblePartState.Intact;
+                hide = state switch
                 {
-                    DestructibleWindowState.Intact => bone.Name == "tag_glass_front_d",
-                    DestructibleWindowState.Damaged => bone.Name == "tag_glass_front",
-                    DestructibleWindowState.Broken => true,
-                    _ => throw new InvalidDataException("Unknown windshield preview state.")
-                }
-                : bone.Name.EndsWith("_d", StringComparison.Ordinal);
+                    DestructiblePartState.Intact => bone.Name == part.DamagedTag,
+                    DestructiblePartState.Damaged => bone.Name == part.IntactTag,
+                    DestructiblePartState.Broken => true,
+                    _ => throw new InvalidDataException("Unknown part preview state.")
+                };
+                break;
+            }
             hidden[index] = hide || bone.ParentIndex >= 0 && hidden[bone.ParentIndex];
         }
 
         XModelExportTriangle[] visible = body.Triangles.Where(triangle =>
             !(Hidden(triangle.First) && Hidden(triangle.Second) && Hidden(triangle.Third))).ToArray();
         if (visible.Length == 0)
-            throw new InvalidDataException("The police car model has no visible preview geometry.");
-        return new XModelSource(intact.Name, body with { Triangles = visible });
+            throw new InvalidDataException($"The {model.Name} model has no visible preview geometry.");
+        return new XModelSource(model.Name, body with { Triangles = visible });
 
         bool Hidden(XModelExportCorner corner)
         {
@@ -56,10 +56,10 @@ internal static class DestructibleModelPreview
         }
     }
 
-    internal static bool TryGetTagTransform(XModelSource intact, string name, Matrix4x4 entityTransform,
+    internal static bool TryGetTagTransform(XModelSource model, string name, Matrix4x4 entityTransform,
         out Matrix4x4 transform)
     {
-        foreach (XModelExportBone bone in intact.Document.Bones)
+        foreach (XModelExportBone bone in model.Document.Bones)
             if (bone.Name == name)
             {
                 transform = Matrix4x4.CreateFromQuaternion(bone.GlobalRotation) *

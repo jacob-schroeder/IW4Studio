@@ -10,13 +10,15 @@ internal static class DestructibleDrag
     internal static DataTransfer Create(DestructiblePreset preset)
     {
         var transfer = new DataTransfer();
-        transfer.Add(DataTransferItem.Create(Format, preset.ModelName));
+        transfer.Add(DataTransferItem.Create(Format, Key(preset)));
         return transfer;
     }
 
     internal static DestructiblePreset? Read(IDataTransfer transfer)
     {
-        string? modelName = transfer.TryGetValue(Format);
-        return DestructiblePresets.All.FirstOrDefault(preset => preset.ModelName == modelName);
+        string? key = transfer.TryGetValue(Format);
+        return DestructiblePresets.All.FirstOrDefault(preset => Key(preset) == key);
     }
+
+    private static string Key(DestructiblePreset preset) => $"{preset.DestructibleType}:{preset.ModelName}";
 }

@@ -15,7 +15,9 @@ using IW4.Game.Assets.Sound;
 using IW4.Game.Assets.StringTable;
 using IW4.Game.Assets.TechniqueSet;
 using IW4.Game.Assets.XModel;
+using IW4.Game.Assets.XAnim;
 using IW4.Game.Assets.Weapon;
+using IW4.Formats.SourceFormat.XAnim;
 using IW4.Formats.D3dbsp;
 using IW4.Game.Database.Streaming;
 using IW4.Game.Zone;
@@ -137,6 +139,7 @@ internal static partial class FastFileConverter
         IReadOnlyList<string> additionalXModelNames,
         IReadOnlyList<string> additionalMaterialNames,
         IReadOnlyList<string> additionalFxNames,
+        IReadOnlyList<string> additionalXAnimNames,
         IReadOnlyList<string> additionalSoundNames,
         IReadOnlyDictionary<string, string> soundDefinitionPaths,
         string? assetLibraryDirectory,
@@ -153,6 +156,7 @@ internal static partial class FastFileConverter
         ArgumentNullException.ThrowIfNull(additionalXModelNames);
         ArgumentNullException.ThrowIfNull(additionalMaterialNames);
         ArgumentNullException.ThrowIfNull(additionalFxNames);
+        ArgumentNullException.ThrowIfNull(additionalXAnimNames);
         ArgumentNullException.ThrowIfNull(additionalSoundNames);
         ArgumentNullException.ThrowIfNull(soundDefinitionPaths);
         ArgumentNullException.ThrowIfNull(rawFilePaths);
@@ -407,6 +411,21 @@ internal static partial class FastFileConverter
         string mapFxScriptName = assetName[..^".d3dbsp".Length] + "_fx.gsc";
         bool hasMapFxScript = rawFileOverrides.Any(rawFile =>
             string.Equals(rawFile.Name, mapFxScriptName, StringComparison.Ordinal));
+        string[] destructiblePrecacheScripts = rawFileOverrides
+            .Select(rawFile => rawFile.Name)
+            .OfType<string>()
+            .Where(name => name.StartsWith("common_scripts/_destructible_types_anim_", StringComparison.Ordinal) &&
+                name.EndsWith(".gsc", StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        const string destructibleHelperPrefix = "common_scripts/_destructible_types_anim_";
+        if (destructiblePrecacheScripts.Any(name =>
+                name[destructibleHelperPrefix.Length..^".gsc".Length]
+                    .Any(character => !char.IsAsciiLetterOrDigit(character) && character != '_')))
+            throw new InvalidDataException("A destructible precache helper has an invalid RawFile name.");
+        if (destructiblePrecacheScripts.Length != 0 &&
+            !rawFileOverrides.Any(rawFile => rawFile.Name == "animtrees/destructibles.atr"))
+            throw new InvalidDataException("Destructible animation helpers require RawFile 'animtrees/destructibles.atr'.");
         RawFileAsset? waterScript = WaterVolumeScript.Create(assetName, graph.Roots.OfType<ClipMapAsset>().Single(),
             authoredWaterNames.ToDictionary(name => name, name => waterDefinitions[name], StringComparer.Ordinal));
         if (waterScript is not null && rawFileOverrides.Any(rawFile => rawFile.Name == waterScript.Name))
@@ -416,7 +435,12 @@ internal static partial class FastFileConverter
             throw new InvalidDataException($"Faction settings require the generated map script; RawFile '{mapScriptName}' overrides it.");
         RawFileAsset mapScript = rawFileOverrides.FirstOrDefault(rawFile =>
                 string.Equals(rawFile.Name, mapScriptName, StringComparison.Ordinal)) ??
-            CreateMapScript(assetName, waterScript, hasMapFxScript, factions);
+            CreateMapScript(assetName, waterScript, hasMapFxScript, factions, destructiblePrecacheScripts);
+        if (destructiblePrecacheScripts.Length != 0 && rawFileOverrides.Contains(mapScript))
+            Console.WriteLine("Destructible animations: the custom map script must call " +
+                string.Join(", ", destructiblePrecacheScripts.Select(name =>
+                    name[..^".gsc".Length].Replace('/', '\\') + "::main();")) +
+                " in main() before maps\\mp\\_load::main().");
         if (hasMapFxScript && rawFileOverrides.Contains(mapScript))
             Console.WriteLine($"FX and sounds: the custom map script must call {MapFxStartup(mapFxScriptName)} in main() before maps\\mp\\_load::main(); so its emitters are registered before playback starts.");
         if (waterScript is not null && rawFileOverrides.Contains(mapScript))
@@ -529,6 +553,14 @@ internal static partial class FastFileConverter
             rawEmitterAssets.OfType<FxEffectDefAsset>()
                 .Where(effect => !requestedFxKeys.Contains(AssetKey.FromDefinition(effect)))
                 .ToArray();
+        XAnimPartsAsset[] additionalXAnim = assetLibraryDirectory is null
+            ? ResolveOwnedAssetsAcrossFastFiles<XAnimPartsAsset>(
+                RequireTemplate(), templatePath, [.. dependencyPaths, .. providerPaths],
+                additionalXAnimNames, XAssetType.XAnim, "requested XAnim")
+            : additionalXAnimNames.Select(name => new XAnimNativeExchange().Link(
+                File.Exists(Path.Combine(assetLibraryDirectory, "xanim_native", name + ".json"))
+                    ? assetLibraryDirectory : bootstrapDirectory ??
+                        Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3"), name)).ToArray();
         BaseAsset[] xModelGraphProviders = bootstrapXModelGraph.Providers
             .Concat(staticXModelGraph.Providers)
             .Concat(additionalXModelGraph.Providers)
@@ -751,6 +783,8 @@ internal static partial class FastFileConverter
         }
         foreach (WeaponAsset weapon in turretWeapons)
             newSources.Add(new LinkAssetProviderSource(weapon).AsAuthoredDetached());
+        foreach (XAnimPartsAsset animation in additionalXAnim)
+            newSources.Add(new LinkAssetProviderSource(animation).AsAuthoredDetached());
         foreach (FxEffectDefAsset effect in assetLibraryDirectory is null ? additionalFx : [])
         {
             newSources.Add(
@@ -810,6 +844,10 @@ internal static partial class FastFileConverter
                 $"d3dbsplinker:additional:fx:{index}:{additionalFxNames[index]}",
                 additionalFx[index]));
         }
+        for (int index = 0; index < additionalXAnim.Length; index++)
+            roots.Add(CreateNamedOwnedRoot(
+                $"d3dbsplinker:additional:xanim:{index}:{additionalXAnimNames[index]}",
+                additionalXAnim[index]));
         for (int index = 0; index < nestedDiskFx.Length; index++)
         {
             FxEffectDefAsset effect = nestedDiskFx[index];
@@ -974,7 +1012,7 @@ internal static partial class FastFileConverter
         mapFxScriptName[..^".gsc".Length].Replace('/', '\\') + "::main();";
 
     private static RawFileAsset CreateMapScript(string assetName, RawFileAsset? waterScript, bool hasMapFxScript,
-        MapFactionSettings factions)
+        MapFactionSettings factions, IReadOnlyList<string> destructiblePrecacheScripts)
     {
         string scriptName = assetName[..^".d3dbsp".Length] + ".gsc";
         bool authoredAssault = factions.AlliesAssaultA is not null || factions.AxisAssaultA is not null;
@@ -987,6 +1025,8 @@ internal static partial class FastFileConverter
         string script =
             "main()\r\n" +
             "{\r\n" +
+            string.Concat(destructiblePrecacheScripts.Select(name =>
+                "\t" + name[..^".gsc".Length].Replace('/', '\\') + "::main();\r\n")) +
             (hasMapFxScript ? "\t" + MapFxStartup(assetName[..^".d3dbsp".Length] + "_fx.gsc") + "\r\n" : "") +
             "\tmaps\\mp\\_load::main();\r\n" +
             $"\tgame[\"allies\"] = \"{factions.Allies}\";\r\n" +

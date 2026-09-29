@@ -364,42 +364,47 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     }
 
     internal async Task<string?> PrepareDestructibleRenderingAsync(MapEntity entity,
-        IReadOnlyList<string> fxMaterials, CancellationToken cancellationToken = default)
+        DestructiblePreviewSettings settings, IReadOnlyList<string> fxMaterials, CancellationToken cancellationToken = default)
     {
         EditorSession session = _session ?? throw new InvalidOperationException("Camera has no map session.");
         if (!session.Document.Entities.Contains(entity))
             throw new InvalidOperationException("The destructible is no longer in the active map.");
+        DestructiblePreset preset = DestructiblePresets.Find(entity.Properties) ??
+            throw new InvalidDataException("The destructible preset is unavailable.");
         Func<string, XModelSource?>? resolveModel = session.Scene.ResolveModel;
         string modelName = entity.Properties["model"];
-        var (intact, wreck) = await Task.Run(() =>
+        XModelSource[] stageModels = await Task.Run(() =>
         {
-            XModelSource loadedIntact = resolveModel?.Invoke(modelName) ??
-                throw new InvalidDataException("The intact police car model is unavailable.");
-            XModelSource loadedWreck = resolveModel?.Invoke("vehicle_policecar_lapd_destroy") ??
-                throw new InvalidDataException("The destroyed police car model is unavailable.");
-            _ = loadedIntact.Document;
-            _ = loadedWreck.Document;
-            return (loadedIntact, loadedWreck);
+            return preset.Preview.Stages.Select(stage =>
+            {
+                string name = stage.ModelName ?? modelName;
+                XModelSource model = resolveModel?.Invoke(name) ??
+                    throw new InvalidDataException($"The {name} model is unavailable.");
+                _ = model.Document;
+                return model;
+            }).ToArray();
         }, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         if (!ReferenceEquals(session, _session) || !session.Document.Entities.Contains(entity))
             throw new OperationCanceledException("The active map changed during destructible preparation.");
-        var windows = session.Scene.GetPreparedDestructibleModels(entity, intact, wreck);
-        if (windows is null)
-            windows = await Task.Run(() => new Dictionary<DestructibleWindowState, XModelSource>
+        var variants = session.Scene.GetPreparedDestructibleModels(entity, settings.PartStates);
+        if (variants is null)
+            variants = await Task.Run(() =>
             {
-                [DestructibleWindowState.Intact] = DestructibleModelPreview.Create(intact, wreck,
-                    new DestructiblePreviewSettings()),
-                [DestructibleWindowState.Damaged] = DestructibleModelPreview.Create(intact, wreck,
-                    new DestructiblePreviewSettings(Windshield: DestructibleWindowState.Damaged)),
-                [DestructibleWindowState.Broken] = DestructibleModelPreview.Create(intact, wreck,
-                    new DestructiblePreviewSettings(Windshield: DestructibleWindowState.Broken))
+                var prepared = new Dictionary<int, XModelSource>();
+                IReadOnlyList<DestructiblePreviewPart>? parts = preset.Preview.Parts;
+                XModelSource? intact = parts is null ? null :
+                    DestructibleModelPreview.Create(stageModels[0], parts, settings.PartStates);
+                for (int stage = 0; stage < stageModels.Length; stage++)
+                    prepared[stage] = intact is not null && preset.Preview.Stages[stage].ModelName is null
+                        ? intact : stageModels[stage];
+                return prepared;
             }, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         if (!ReferenceEquals(session, _session) || !session.Document.Entities.Contains(entity))
             throw new OperationCanceledException("The active map changed during destructible preparation.");
-        session.Scene.SetPreparedDestructibleModels(entity, intact, wreck, windows);
-        XModelSource[] models = windows.Values.Append(wreck).ToArray();
+        session.Scene.SetPreparedDestructibleModels(entity, settings.PartStates, variants);
+        XModelSource[] models = variants.Values.Distinct<XModelSource>(ReferenceEqualityComparer.Instance).ToArray();
         XModelSource[] missingMeshes = _renderer.DestructibleModelsNeedingMesh(models);
         var meshData = await Task.Run(() =>
         {

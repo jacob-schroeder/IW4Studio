@@ -13,9 +13,9 @@ public partial class MainWindow
     private int _mapAudioGeneration;
     private HashSet<(string Name, SoundEmitterSettings Settings)> _mapAudioDependencies = [];
 
-    private static SoundEmitterSettings DestructibleSoundSettings(string name) => new()
+    private static SoundEmitterSettings DestructibleSoundSettings(bool looping) => new()
     {
-        Looping = name == "fire_vehicle_med",
+        Looping = looping,
         HasPlaybackOverride = true
     };
 
@@ -27,8 +27,15 @@ public partial class MainWindow
         {
             foreach (var preset in _session.Scene.Document.Entities
                 .Select(entity => DestructiblePresets.Find(entity.Properties)).OfType<DestructiblePreset>().Distinct())
-                foreach (string name in preset.SoundNames)
-                    dependencies.Add((name, DestructibleSoundSettings(name)));
+            {
+                foreach (var stage in preset.Preview.Stages)
+                {
+                    if (stage.SoundName is { } loop) dependencies.Add((loop, DestructibleSoundSettings(true)));
+                    if (stage.TransitionSoundName is { } once) dependencies.Add((once, DestructibleSoundSettings(false)));
+                }
+                foreach (var part in preset.Preview.Parts ?? [])
+                    if (part.SoundName is { } once) dependencies.Add((once, DestructibleSoundSettings(false)));
+            }
             foreach (var entity in PlacedEmitterEntities(isSound: true))
             {
                 string? name = entity.Properties.GetValueOrDefault("soundalias");

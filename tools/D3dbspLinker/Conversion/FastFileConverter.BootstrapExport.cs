@@ -41,7 +41,8 @@ internal static partial class FastFileConverter
     internal static void ExportSourceAssets(string input, string imageLibrary, string output,
         IReadOnlyList<string> modelNames, IReadOnlyList<string> materialNames, bool bootstrap = false,
         string? dependencyFastFile = null, IReadOnlyList<string>? fxNames = null,
-        IReadOnlyList<string>? weaponNames = null, IReadOnlyList<string>? xanimNames = null)
+        IReadOnlyList<string>? weaponNames = null, IReadOnlyList<string>? xanimNames = null,
+        IReadOnlyList<string>? nativeXanimNames = null)
     {
         string source = Path.GetFullPath(input);
         string destination = Path.GetFullPath(output);
@@ -103,6 +104,7 @@ internal static partial class FastFileConverter
         foreach (string name in fxNames ?? []) Include(Resolve(XAssetType.Fx, name));
         foreach (string name in weaponNames ?? []) Include(Resolve(XAssetType.Weapon, name));
         foreach (string name in xanimNames ?? []) Include(Resolve(XAssetType.XAnim, name));
+        foreach (string name in nativeXanimNames ?? []) Include(Resolve(XAssetType.XAnim, name));
         string staging = destination + "." + Guid.NewGuid().ToString("N") + ".extracting";
         Directory.CreateDirectory(staging);
         try
@@ -117,7 +119,10 @@ internal static partial class FastFileConverter
                             new WeaponExchange().Unlink(staging, weapon);
                             break;
                         case XAnimPartsAsset animation:
-                            new XAnimExchange().Unlink(staging, animation);
+                            if (xanimNames?.Contains(animation.Name!, StringComparer.Ordinal) == true)
+                                new XAnimExchange().Unlink(staging, animation);
+                            if (nativeXanimNames?.Contains(animation.Name!, StringComparer.Ordinal) == true)
+                                new XAnimNativeExchange().Unlink(staging, animation);
                             break;
                         case XModelAsset model:
                             new XModelNativeExchange().Unlink(staging, model,

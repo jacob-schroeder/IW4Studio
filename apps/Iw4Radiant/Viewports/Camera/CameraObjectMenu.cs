@@ -17,7 +17,7 @@ internal static class CameraObjectMenu
         var entries = new List<(object Item, MenuItem Menu)>();
         var kinds = new MenuItem { Header = "Brush type" };
         var playerClip = new MenuItem { Header = "Create player clip from models" };
-        ToolTip.SetTip(playerClip, "Fit an editable outer hull to each selected model, simplifying dense shapes. Holes and concave spaces are filled; adjust the brushes as needed.");
+        ToolTip.SetTip(playerClip, "Fit editable brushes to solid collision geometry, using smaller sections where the mesh supports them. Models without collision source use an outer visual hull. Review and adjust the result.");
         playerClip.Click += (_, _) => { if (IsCurrent()) createModelPlayerClip(); };
         var selectAll = new MenuItem { Header = "Select all hit objects", StaysOpenOnClick = true };
         var deselectAll = new MenuItem { Header = "Deselect all hit objects", StaysOpenOnClick = true };
@@ -218,7 +218,7 @@ internal static class CameraObjectMenu
         {
             if (session.HasPlacement || viewport.FoliagePaintingEnabled) return false;
             return CameraPrefabPlacementSimulation.CanStart(session) &&
-                session.Selection.Items.OfType<MapEntity>().All(entity => entity.ClassName == "misc_model");
+                session.Selection.Items.OfType<MapEntity>().All(entity => entity.ClassName is "misc_model" or "script_model");
         }
     }
 }

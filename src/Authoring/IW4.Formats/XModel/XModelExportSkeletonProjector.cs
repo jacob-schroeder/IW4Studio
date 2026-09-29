@@ -34,7 +34,10 @@ public static class XModelExportSkeletonProjector
         var result = new List<XModelExportBone>(boneCount);
         for (int index = 0; index < boneCount; index++)
         {
-            string? name = model.BoneNames[index]?.Text;
+            var boneName = model.BoneNames[index];
+            // A zero script-string index is an unnamed bone, not an unresolved
+            // name. XMODEL_EXPORT represents it as an empty quoted string.
+            string? name = boneName?.Text ?? (boneName?.RawLocalIndex == 0 ? string.Empty : null);
             DObjAnimMat? baseMat = model.BaseMat[index];
             if (!IsExportString(name) ||
                 baseMat is null ||

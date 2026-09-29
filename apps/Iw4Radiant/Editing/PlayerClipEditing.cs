@@ -9,6 +9,7 @@ namespace Iw4Radiant.Editing;
 internal static class PlayerClipEditing
 {
     private const int MaximumModels = 128;
+    private const int MaximumPartsPerModel = 64;
     private const int MaximumInputVertices = 20_000;
     private const int MaximumInputTriangles = 40_000;
     private const int MaximumHullFaces = 64;
@@ -28,52 +29,42 @@ internal static class PlayerClipEditing
     internal static bool CanGenerateFromModels(EditorSession session) =>
         session.Selection.Count is > 0 and <= MaximumModels && session.Scene.ResolveModel is not null &&
         session.Selection.Items.All(item =>
-            item is MapEntity entity && entity.ClassName == "misc_model" &&
+            item is MapEntity entity && entity.ClassName is ("misc_model" or "script_model") &&
+            XModelGeometry.IsModel(entity) &&
             entity.Brushes.Count == 0 && entity.Terrains.Count == 0 && entity.PreservedPrimitives.Count == 0 &&
             session.Document.Entities.Contains(entity) && session.Visibility.CanSelect(session.Document, entity) &&
             entity.Properties.TryGetValue("model", out string? name) && !string.IsNullOrWhiteSpace(name));
 
-    internal static async Task<(int Count, int SimplifiedCount)> GenerateFromModelsAsync(EditorSession session)
+    internal static async Task<(int Count, int SimplifiedCount, int FallbackCount)> GenerateFromModelsAsync(EditorSession session)
     {
         if (session.Selection.Count > MaximumModels)
             throw new NotSupportedException($"Select at most {MaximumModels} models for one clip operation.");
         if (!CanGenerateFromModels(session))
-            throw new ArgumentException("Select whole, visible misc_model entities with available mesh geometry.");
+            throw new ArgumentException("Select whole, visible misc_model or script_model entities with available mesh geometry.");
 
         MapDocument document = session.Document;
         long revision = session.ContentRevision;
         MapEntity[] models = session.Selection.Items.Cast<MapEntity>().ToArray();
         Func<string, XModelSource?> resolve = session.Scene.ResolveModel
             ?? throw new ArgumentException("Load a raw model asset folder first.");
-        var inputs = new (Vector3[] Vertices, int[] Indices, Matrix4x4 Transform, string Layer, string Name)[models.Length];
+        var inputs = new (XModelSource Source, Matrix4x4 Transform, string Layer)[models.Length];
         for (int modelIndex = 0; modelIndex < models.Length; modelIndex++)
         {
             MapEntity model = models[modelIndex];
             XModelSource source = resolve(model.Properties["model"])
                 ?? throw new ArgumentException($"Model '{model.Properties["model"]}' is unavailable. Load its raw asset folder first.");
-            var mesh = source.Document;
-            if (mesh.Vertices.Count > MaximumInputVertices || mesh.Triangles.Count > MaximumInputTriangles)
-                throw TooComplex(source.Name);
             Matrix4x4 transform = XModelGeometry.Transform(model);
             if (!Matrix4x4.Invert(transform, out _) || !float.IsFinite(transform.GetDeterminant()))
                 throw new ArgumentException($"Model '{source.Name}' has an invalid transform.");
-            Vector3[] vertices = mesh.Vertices.Select(vertex => vertex.Position).ToArray();
-            int[] indices = new int[mesh.Triangles.Count * 3];
-            for (int triangle = 0; triangle < mesh.Triangles.Count; triangle++)
-            {
-                int first = triangle * 3;
-                indices[first] = mesh.Triangles[triangle].First.VertexIndex;
-                indices[first + 1] = mesh.Triangles[triangle].Second.VertexIndex;
-                indices[first + 2] = mesh.Triangles[triangle].Third.VertexIndex;
-            }
-            inputs[modelIndex] = (vertices, indices, transform, MapOrganization.Layer(model), source.Name);
+            inputs[modelIndex] = (source, transform, MapOrganization.Layer(model));
         }
 
         var results = await Task.Run(() => inputs.Select(input =>
-            CreateHullBrush(input.Vertices, input.Indices, input.Transform, input.Name)).ToArray());
-        MapBrush[] clips = results.Select(result => result.Brush).ToArray();
-        for (int index = 0; index < clips.Length; index++)
-            MapOrganization.Assign(clips[index], inputs[index].Layer);
+            CreateModelClips(input.Source, input.Transform)).ToArray());
+        MapBrush[] clips = results.SelectMany(result => result.Brushes).ToArray();
+        for (int index = 0; index < results.Length; index++)
+            foreach (MapBrush clip in results[index].Brushes)
+                MapOrganization.Assign(clip, inputs[index].Layer);
 
         if (!ReferenceEquals(document, session.Document) || revision != session.ContentRevision ||
             !models.SequenceEqual(session.Selection.Items) || !CanGenerateFromModels(session))
@@ -84,26 +75,105 @@ internal static class PlayerClipEditing
             session.Tool = EditorTool.Select;
             session.Selection.SetRange(clips);
         });
-        return (clips.Length, results.Count(result => result.Simplified));
+        return (clips.Length, results.Sum(result => result.SimplifiedCount), results.Count(result => result.Fallback));
     }
 
-    private static (MapBrush Brush, bool Simplified) CreateHullBrush(Vector3[] vertices, int[] indices,
-        Matrix4x4 transform, string name)
+    private static (MapBrush[] Brushes, int SimplifiedCount, bool Fallback) CreateModelClips(
+        XModelSource source, Matrix4x4 transform)
     {
-        var used = new HashSet<int>(indices);
-        if (used.Count < 4)
-            throw new ArgumentException($"Model '{name}' has too few mesh vertices for a solid clip.");
-        Vector3[] points = new Vector3[used.Count];
-        int next = 0;
-        foreach (int index in used)
+        (Vector3[] Points, int[] Triangles)[]? parts = source.LoadCollisionParts();
+        bool fallback = parts is null;
+        if (parts is null)
         {
-            if ((uint)index >= (uint)vertices.Length)
-                throw new InvalidDataException($"Model '{name}' has an invalid mesh vertex index.");
-            Vector3 point = Vector3.Transform(vertices[index], transform);
-            if (!BrushGeometry.IsFinite(point))
-                throw new ArgumentException($"Model '{name}' has nonfinite mesh coordinates.");
-            points[next++] = point;
+            var mesh = source.Document;
+            if (mesh.Vertices.Count > MaximumInputVertices || mesh.Triangles.Count > MaximumInputTriangles)
+                throw TooComplex(source.Name);
+            int[] used = mesh.Triangles.SelectMany(triangle => new[]
+                { triangle.First.VertexIndex, triangle.Second.VertexIndex, triangle.Third.VertexIndex }).Distinct().ToArray();
+            if (used.Any(index => (uint)index >= (uint)mesh.Vertices.Count))
+                throw new InvalidDataException($"Model '{source.Name}' has an invalid mesh vertex index.");
+            parts = [(used.Select(index => mesh.Vertices[index].Position).ToArray(), [])];
         }
+        long totalPoints = parts.Sum(part => (long)part.Points.Length);
+        if (parts.Length > MaximumPartsPerModel || totalPoints > MaximumInputVertices)
+            throw new NotSupportedException($"Model '{source.Name}' exceeds the automatic clip limit of {MaximumPartsPerModel} parts or {MaximumInputVertices} vertices. Draw the clip manually.");
+        var brushes = new List<MapBrush>();
+        int simplified = 0;
+        for (int partIndex = 0; partIndex < parts.Length; partIndex++)
+        {
+            var part = parts[partIndex];
+            Vector3[] points = part.Points.Select(point => Vector3.Transform(point, transform)).ToArray();
+            if (points.Any(point => !BrushGeometry.IsFinite(point)))
+                throw new ArgumentException($"Model '{source.Name}' has nonfinite collision coordinates.");
+            // A flat collision surface can stop a ray, but cannot enclose a player-clip volume.
+            if (!fallback && !HasVolume(points)) continue;
+            if (!fallback)
+            {
+                Vector3[][] sections = CollisionMeshSections.Split(part.Points, part.Triangles);
+                long sectionPoints = sections.Sum(section => (long)section.Length);
+                if (sections.Length > 1 &&
+                    brushes.Count + sections.Length + parts.Length - partIndex - 1 <= MaximumPartsPerModel &&
+                    totalPoints + sectionPoints - part.Points.Length <= MaximumInputVertices)
+                {
+                    var sectionBrushes = new List<(MapBrush Brush, bool Simplified)>(sections.Length);
+                    try
+                    {
+                        foreach (Vector3[] section in sections)
+                        {
+                            Vector3[] sectionPointsInWorld = section.Select(point => Vector3.Transform(point, transform)).ToArray();
+                            if (!HasVolume(sectionPointsInWorld)) throw new ArgumentException("A collision section has no volume.");
+                            sectionBrushes.Add(CreateHullBrush(sectionPointsInWorld, source.Name));
+                        }
+                    }
+                    catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+                    {
+                        // Keep the original one-hull behavior when a section cannot form an editable brush.
+                    }
+                    if (sectionBrushes.Count == sections.Length)
+                    {
+                        brushes.AddRange(sectionBrushes.Select(result => result.Brush));
+                        simplified += sectionBrushes.Count(result => result.Simplified);
+                        totalPoints += sectionPoints - part.Points.Length;
+                        continue;
+                    }
+                }
+            }
+            try
+            {
+                var result = CreateHullBrush(points, source.Name);
+                brushes.Add(result.Brush);
+                if (result.Simplified) simplified++;
+            }
+            catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+            {
+                string partDescription = fallback ? "visual hull" : $"solid collision part {partIndex + 1} of {parts.Length}";
+                throw new ArgumentException($"Could not convert model '{source.Name}', {partDescription}, into an editable player-clip brush: {exception.Message}", exception);
+            }
+        }
+        if (brushes.Count == 0)
+            throw new NotSupportedException($"Model '{source.Name}' has no solid collision parts that enclose a player-clip volume. Draw the clip manually.");
+        return (brushes.ToArray(), simplified, fallback);
+    }
+
+    private static bool HasVolume(Vector3[] points)
+    {
+        if (points.Length < 4) return false;
+        Vector3 origin = points[0];
+        Vector3 axis = points.MaxBy(point => Vector3.DistanceSquared(point, origin)) - origin;
+        float tolerance = BrushGeometry.PointTolerance;
+        if (axis.LengthSquared() <= tolerance * tolerance) return false;
+        axis = Vector3.Normalize(axis);
+        Vector3 perpendicular = points.Select(point => Vector3.Cross(axis, point - origin))
+            .MaxBy(vector => vector.LengthSquared());
+        if (perpendicular.LengthSquared() <= tolerance * tolerance) return false;
+        Vector3 normal = Vector3.Normalize(perpendicular);
+        return points.Any(point => Math.Abs(BrushGeometry.Dot(normal, point - origin)) > tolerance);
+    }
+
+    private static (MapBrush Brush, bool Simplified) CreateHullBrush(Vector3[] points, string name)
+    {
+        if (points.Length < 4)
+            throw new ArgumentException($"Model '{name}' has too few mesh vertices for a solid clip.");
         // Keep native hull arithmetic close to the origin, then restore map coordinates.
         Vector3 origin = points[0];
         Vector3[] relative = points.Select(point => point - origin).ToArray();
@@ -144,15 +214,23 @@ internal static class PlayerClipEditing
                 directedEdges += (int)count;
             }
         }
-        MapBrush brush = exact ? ExactBrush(hull, hullVertices, center, faceCount) :
-            SimplifiedBrush(hull, hullVertices, center, faceCount, points, name);
-        if (exact && brush.GetPolygons().Sum(polygon => polygon.Vertices.Length) > byte.MaxValue)
+        if (exact)
         {
-            exact = false;
-            brush = SimplifiedBrush(hull, hullVertices, center, faceCount, points, name);
+            MapBrush candidate = ExactBrush(hull, hullVertices, center, faceCount);
+            try
+            {
+                ValidateClipBrush(candidate, points, name);
+                return (candidate, false);
+            }
+            catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+            {
+                // A valid model hull can have edges too small for editable brush tolerances.
+                // Refit its support planes using the same bounded cleanup as dense hulls.
+            }
         }
+        MapBrush brush = SimplifiedBrush(hull, hullVertices, center, faceCount, points, name);
         ValidateClipBrush(brush, points, name);
-        return (brush, !exact);
+        return (brush, true);
     }
 
     private static MapBrush ExactBrush(ConvexHullShape hull, Vector3[] hullVertices, Vector3 center, uint faceCount)

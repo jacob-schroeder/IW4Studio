@@ -9,13 +9,15 @@ internal sealed class XModelCatalog
     private readonly Dictionary<string, XModelSource> _models;
     private readonly ConcurrentDictionary<string, MaterialSource> _materials;
 
-    private XModelCatalog(Dictionary<string, XModelSource> models, ConcurrentDictionary<string, MaterialSource> materials)
+    private XModelCatalog(string root, Dictionary<string, XModelSource> models, ConcurrentDictionary<string, MaterialSource> materials)
     {
+        RootDirectory = root;
         _models = models;
         _materials = materials;
     }
 
     internal IReadOnlyCollection<XModelSource> Models => _models.Values;
+    internal string RootDirectory { get; }
     internal XModelSource? Resolve(string name) => _models.GetValueOrDefault(name);
     internal MaterialSource? ResolveMaterial(string name) => _materials.GetValueOrDefault(name);
 
@@ -71,13 +73,13 @@ internal sealed class XModelCatalog
                             materials.TryAdd(material.Name, new MaterialSource(material.Name, image, false,
                                 MaterialSamplerState.FilterLinear | MaterialSamplerState.MipMapLinear));
                     }
-                }));
+                }, sourceRoot: root));
             }
             catch (Exception exception) when (exception is JsonException or InvalidOperationException or InvalidDataException)
             {
                 throw new InvalidDataException($"XModel metadata '{path}': {exception.Message}", exception);
             }
         }
-        return new XModelCatalog(models, materials);
+        return new XModelCatalog(root, models, materials);
     }
 }

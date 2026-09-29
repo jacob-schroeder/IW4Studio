@@ -22,7 +22,9 @@ public partial class MainWindow
             var result = await PlayerClipEditing.GenerateFromModelsAsync(_session);
             string simplified = result.SimplifiedCount > 0
                 ? $" Simplified {result.SimplifiedCount} dense {(result.SimplifiedCount == 1 ? "hull" : "hulls")} to fit collision limits." : "";
-            SetStatus($"Created {result.Count} editable player-clip {(result.Count == 1 ? "brush" : "brushes")}.{simplified} Adjust the selected brushes as needed. Undo removes this edit.");
+            string fallback = result.FallbackCount > 0
+                ? $" {result.FallbackCount} {(result.FallbackCount == 1 ? "model had" : "models had")} no native collision source; used an outer visual hull." : "";
+            SetStatus($"Created {result.Count} editable player-clip {(result.Count == 1 ? "brush" : "brushes")}.{simplified}{fallback} Adjust the selected brushes as needed. Undo removes this edit.");
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception) ||
             exception is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)

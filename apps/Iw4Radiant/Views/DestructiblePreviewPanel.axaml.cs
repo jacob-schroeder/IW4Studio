@@ -5,33 +5,34 @@ namespace Iw4Radiant.Views;
 
 public partial class DestructiblePreviewPanel : UserControl
 {
+    private DestructiblePreset? _preset;
     private DestructiblePreviewSettings _settings = new();
     private bool _updating;
     private bool _preparing;
-    private bool _tireAvailable;
-    private string? _tireUnavailableReason;
 
     public DestructiblePreviewPanel()
     {
         InitializeComponent();
-        SetTireAvailability(false, "Flat-tire animation preview is not supported yet.");
         AppearanceBox.SelectionChanged += (_, _) =>
         {
             if (_updating || AppearanceBox.SelectedIndex < 0) return;
-            _settings = _settings with { Appearance = (DestructibleAppearance)AppearanceBox.SelectedIndex };
+            _settings = _settings with { Stage = AppearanceBox.SelectedIndex };
             UpdatePartAvailability();
             SettingsChanged?.Invoke(_settings);
         };
-        WindshieldBox.SelectionChanged += (_, _) =>
+        PartBox.SelectionChanged += (_, _) =>
         {
-            if (_updating || WindshieldBox.SelectedIndex < 0) return;
-            _settings = _settings with { Windshield = (DestructibleWindowState)WindshieldBox.SelectedIndex };
+            if (_updating || PartBox.SelectedIndex < 0) return;
+            _settings = _settings with { PartIndex = PartBox.SelectedIndex };
+            _updating = true;
+            PartStateBox.SelectedIndex = (int)_settings.PartState;
+            _updating = false;
             SettingsChanged?.Invoke(_settings);
         };
-        TireBox.SelectionChanged += (_, _) =>
+        PartStateBox.SelectionChanged += (_, _) =>
         {
-            if (_updating || TireBox.SelectedIndex < 0) return;
-            _settings = _settings with { FrontLeftTireFlat = TireBox.SelectedIndex == 1 };
+            if (_updating || PartStateBox.SelectedIndex < 0) return;
+            _settings = _settings.WithPartState((DestructiblePartState)PartStateBox.SelectedIndex);
             SettingsChanged?.Invoke(_settings);
         };
         PlayButton.Click += (_, _) => PlayRequested?.Invoke();
@@ -42,18 +43,38 @@ public partial class DestructiblePreviewPanel : UserControl
     internal event Action? PlayRequested;
     internal event Action? ResetRequested;
 
-    internal void SetState(DestructiblePreviewSettings settings, bool playing, string? status = null, bool preparing = false)
+    internal void SetState(DestructiblePreset? preset, DestructiblePreviewSettings settings,
+        bool playing, string? status = null, bool preparing = false)
     {
         _updating = true;
         try
         {
             _settings = settings;
             _preparing = preparing;
-            AppearanceBox.IsEnabled = !preparing;
-            PlayButton.IsEnabled = !preparing;
-            AppearanceBox.SelectedIndex = (int)settings.Appearance;
-            WindshieldBox.SelectedIndex = (int)settings.Windshield;
-            TireBox.SelectedIndex = settings.FrontLeftTireFlat ? 1 : 0;
+            if (!ReferenceEquals(_preset, preset))
+            {
+                _preset = preset;
+                PresetTitle.Text = preset?.Name ?? "Destructible preview";
+                AppearanceBox.ItemsSource = preset?.Preview.Stages.Select(stage => stage.Label).ToArray() ?? [];
+                PartBox.ItemsSource = preset?.Preview.Parts?.Select(part => part.Label).ToArray() ?? [];
+                PartStateBox.ItemsSource = new[] { "Intact", "Damaged", "Broken" };
+                PartsExpander.IsExpanded = preset?.Preview.Stages.Count == 1;
+            }
+            AppearanceBox.SelectedIndex = settings.Stage;
+            PartBox.SelectedIndex = preset?.Preview.Parts is { Count: > 0 } ? settings.PartIndex : -1;
+            PartStateBox.SelectedIndex = (int)settings.PartState;
+            AppearanceBox.IsEnabled = !preparing && preset?.Preview.Stages.Count > 1;
+            PlayButton.IsEnabled = !preparing && preset?.Preview.Stages.Count > 1;
+            PlayButton.IsVisible = preset?.Preview.Stages.Count > 1;
+            bool modelOnly = preset is not null && preset.Preview.Parts is not { Count: > 0 } &&
+                preset.Preview.Stages.All(stage => stage.FxName is null && stage.SoundName is null &&
+                    stage.TransitionSoundName is null);
+            PreviewAvailabilityHint.IsVisible = modelOnly;
+            PreviewAvailabilityHint.Text = preset?.Preview.Stages.Count == 1
+                ? "Only the intact model can be previewed for this preset."
+                : "Preview shows model states only; effects and sounds are not previewed for this preset.";
+            PartsExpander.IsVisible = preset?.Preview.Parts is { Count: > 0 } || preset?.Preview.HasTires == true;
+            PartSelectionRow.IsVisible = PartConditionRow.IsVisible = preset?.Preview.Parts is { Count: > 0 };
             UpdatePartAvailability();
             PlayButton.Content = preparing ? "Preparing…" : playing ? "Stop playback" : "Play destruction";
             PreviewStatus.Text = status;
@@ -62,21 +83,13 @@ public partial class DestructiblePreviewPanel : UserControl
         finally { _updating = false; }
     }
 
-    internal void SetTireAvailability(bool available, string? reason = null)
-    {
-        _tireAvailable = available;
-        _tireUnavailableReason = reason;
-        UpdatePartAvailability();
-    }
-
     private void UpdatePartAvailability()
     {
-        bool wreck = _settings.Appearance == DestructibleAppearance.Wreck;
-        WindshieldBox.IsEnabled = !wreck && !_preparing;
-        TireBox.IsEnabled = !wreck && _tireAvailable && !_preparing;
-        PartsAvailabilityHint.IsVisible = wreck;
-        TireAvailabilityHint.Text = _tireUnavailableReason;
-        TireAvailabilityHint.IsVisible = !wreck && !_tireAvailable &&
-            !string.IsNullOrWhiteSpace(_tireUnavailableReason);
+        bool replaceModel = _preset?.Preview.Stages.ElementAtOrDefault(_settings.Stage)?.ModelName is not null;
+        bool hasParts = _preset?.Preview.Parts is { Count: > 0 };
+        PartBox.IsEnabled = hasParts && !replaceModel && !_preparing;
+        PartStateBox.IsEnabled = hasParts && !replaceModel && !_preparing;
+        PartsAvailabilityHint.IsVisible = hasParts && replaceModel;
+        TireAvailabilityHint.IsVisible = _preset?.Preview.HasTires == true;
     }
 }

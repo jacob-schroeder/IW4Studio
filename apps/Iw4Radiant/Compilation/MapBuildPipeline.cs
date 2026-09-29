@@ -54,6 +54,24 @@ internal static class MapBuildPipeline
             !Directory.Exists(emitterAssetDirectory))
             throw new DirectoryNotFoundException(
                 "Choose the raw asset library containing the map's materials, FX and sounds.");
+        progress.Report("Checking destructible dependencies before compiling geometry and lighting…");
+        await Task.Run(() =>
+        {
+            var expanded = PrefabLibrary.ExpandForCompilation(document, sourcePath);
+            DestructiblePreset[] presets = expanded.Entities.Select(entity =>
+            {
+                DestructiblePresets.Validate(entity.Properties);
+                return DestructiblePresets.Find(entity.Properties);
+            }).OfType<DestructiblePreset>().Distinct().ToArray();
+            if (presets.Length == 0) return;
+            string bootstrap = Path.Combine(Path.GetDirectoryName(linkerPath) ?? AppContext.BaseDirectory, "bootstrap", "ps3");
+            var readiness = DestructibleAssets.Check(emitterAssetDirectory, presets, cancellationToken, bootstrap);
+            string[] issues = readiness.Where(pair => !pair.Value.IsReady)
+                .SelectMany(pair => pair.Value.Issues.Select(issue => $"{pair.Key.Name}: {issue}")).ToArray();
+            if (issues.Length != 0)
+                throw new InvalidDataException("Destructible assets need attention. Resolve these in the asset library before building:\n" +
+                    string.Join('\n', issues));
+        }, cancellationToken);
         string assetName = $"maps/mp/{mapName}.d3dbsp";
         string token = Guid.NewGuid().ToString("N")[..8];
         string staging = Path.Combine(outputFolder, $".{mapName}-{token}.building");
@@ -150,6 +168,27 @@ internal static class MapBuildPipeline
         {
             start.ArgumentList.Add("--fx");
             start.ArgumentList.Add(name);
+        }
+        foreach (string name in destructibles.SelectMany(preset => preset.AnimationNames).Distinct(StringComparer.Ordinal))
+        {
+            start.ArgumentList.Add("--xanim");
+            start.ArgumentList.Add(name);
+        }
+        string[] precacheRawFiles = destructibles.Select(preset => preset.PrecacheRawFileName)
+            .OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
+        if (precacheRawFiles.Length != 0)
+        {
+            string bootstrap = Path.Combine(Path.GetDirectoryName(linkerPath) ?? AppContext.BaseDirectory,
+                "bootstrap", "ps3");
+            foreach (string name in precacheRawFiles.Append("animtrees/destructibles.atr"))
+            {
+                string source = Path.Combine(emitterAssetDirectory, name);
+                if (!File.Exists(source)) source = Path.Combine(bootstrap, name);
+                if (!File.Exists(source))
+                    throw new FileNotFoundException($"Destructible RawFile '{name}' is missing from the asset library and bootstrap.", source);
+                start.ArgumentList.Add("--rawfile");
+                start.ArgumentList.Add($"{name}={Path.GetFullPath(source)}");
+            }
         }
         foreach (string name in (emitters?.SoundNames ?? []).Concat(destructibles.SelectMany(preset => preset.SoundNames))
                      .Distinct(StringComparer.Ordinal))

@@ -3,13 +3,18 @@
              xmlns:views="using:Iw4Radiant.Views"
              x:Class="Iw4Radiant.Views.DestructibleBrowser">
     <Grid RowDefinitions="Auto,*,Auto" Background="#222427">
-        <TextBlock Text="Destructibles" Classes="panelTitle" Margin="8,5" />
+        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" Margin="8,5" ColumnSpacing="8" RowSpacing="4">
+            <TextBox x:Name="PresetFilter" PlaceholderText="Search destructibles" />
+            <ComboBox x:Name="CategoryBox" Grid.Column="1" MinWidth="110" />
+            <TextBlock x:Name="CatalogSummary" Grid.Row="1" Classes="caption" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <CheckBox x:Name="ShowUnavailableBox" Grid.Row="1" Grid.Column="1" Content="Show unavailable" />
+        </Grid>
         <ListBox x:Name="PresetList" Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="0"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
             <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
             <ListBox.Styles>
                 <Style Selector="ListBoxItem">
-                    <Setter Property="Width" Value="168" /><Setter Property="Height" Value="170" />
+                    <Setter Property="Width" Value="168" /><Setter Property="Height" Value="182" />
                     <Setter Property="Padding" Value="5" /><Setter Property="Margin" Value="3" />
                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                     <Setter Property="VerticalContentAlignment" Value="Stretch" />
@@ -27,17 +32,33 @@
                         </Border>
                         <TextBlock Grid.Row="1" Text="{CompiledBinding Name}" FontSize="11" FontWeight="SemiBold"
                                    Margin="0,4,0,0" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
-                        <TextBlock Grid.Row="2" Text="{CompiledBinding Description}" Classes="caption"
+                        <TextBlock Grid.Row="2" Text="{CompiledBinding ReadinessLabel}" Classes="caption"
                                    TextAlignment="Center" TextTrimming="CharacterEllipsis" />
                     </Grid>
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
+        <TextBlock x:Name="EmptyState" Grid.Row="1" Classes="caption" Margin="12" TextWrapping="Wrap"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
         <Border Grid.Row="2" BorderBrush="#393C42" BorderThickness="0,1,0,0" Padding="8,5">
-            <Grid RowDefinitions="Auto,Auto" RowSpacing="4">
-                <Button x:Name="PlaceButton" Classes="panelAction" Content="Place destructible" IsEnabled="False"
-                        HorizontalAlignment="Left" />
-                <TextBlock x:Name="PresetInfo" Grid.Row="1" Classes="caption" TextWrapping="Wrap"
+            <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
+                <Grid x:Name="VariantRow" ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="False">
+                    <TextBlock Text="Variant" Classes="fieldLabel" VerticalAlignment="Center" />
+                    <ComboBox x:Name="VariantBox" Grid.Column="1" HorizontalAlignment="Left" MinWidth="160">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="views:DestructibleThumbnail">
+                                <TextBlock Text="{CompiledBinding VariantLabel}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </Grid>
+                <WrapPanel Grid.Row="1" Orientation="Horizontal">
+                    <Button x:Name="PlaceButton" Classes="panelAction" Content="Place destructible" IsEnabled="False" Margin="0,0,6,4" />
+                    <Button x:Name="BrowseButton" Content="Choose library…" Margin="0,0,6,4" />
+                    <Button x:Name="RefreshButton" Content="Refresh assets" Margin="0,0,6,4" />
+                    <Button x:Name="IssuesButton" Content="Review missing assets…" IsVisible="False" Margin="0,0,0,4" />
+                </WrapPanel>
+                <TextBlock x:Name="PresetInfo" Grid.Row="2" Classes="caption" TextWrapping="Wrap"
                            Text="Load extracted XModels to preview and place a destructible." />
             </Grid>
         </Border>

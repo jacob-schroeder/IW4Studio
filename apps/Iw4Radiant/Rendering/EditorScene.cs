@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Collections.Immutable;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Materials;
@@ -21,11 +22,11 @@ internal sealed class EditorScene(EditorSession session)
     private MapEntity? _destructiblePreviewSource;
     private MapEntity? _destructiblePreviewEntity;
     private XModelSource? _destructibleIntactModel;
-    private XModelSource? _destructibleWreckModel;
+    private XModelSource? _destructibleFinalModel;
     private XModelSource? _destructiblePreviewModel;
     private MapEntity? _preparedDestructibleSource;
-    private XModelSource? _preparedDestructibleIntact, _preparedDestructibleWreck;
-    private IReadOnlyDictionary<DestructibleWindowState, XModelSource>? _preparedDestructibleWindows;
+    private ImmutableDictionary<int, DestructiblePartState>? _preparedDestructiblePartStates;
+    private IReadOnlyDictionary<int, XModelSource>? _preparedDestructibleModels;
     private DestructiblePreviewSettings? _destructiblePreviewSettings;
     internal Func<string, XModelSource?>? ResolveModel { get; set; }
     internal Func<string, MaterialSource?>? ResolveMaterial { get; set; }
@@ -36,7 +37,7 @@ internal sealed class EditorScene(EditorSession session)
     internal IReadOnlyDictionary<MapBrush, MapEntity>? ShatterFragments => _shatterFragments;
     internal MapEntity? DestructiblePreviewSource => _destructiblePreviewSource;
     internal XModelSource? DestructiblePreviewModel => _destructiblePreviewModel;
-    internal XModelSource? DestructibleWreckModel => _destructibleWreckModel;
+    internal XModelSource? DestructibleWreckModel => _destructibleFinalModel;
     internal MapEntity? DestructiblePreviewEntity
     {
         get
@@ -82,71 +83,70 @@ internal sealed class EditorScene(EditorSession session)
             _destructiblePreviewSource = null;
             _destructiblePreviewSettings = null;
             _destructibleIntactModel = null;
-            _destructibleWreckModel = null;
+            _destructibleFinalModel = null;
             _destructiblePreviewModel = null;
             _destructiblePreviewEntity = null;
             ModelPreviewRevision++;
             return true;
         }
         if (settings is null) throw new ArgumentNullException(nameof(settings));
-        if (settings.FrontLeftTireFlat)
-            throw new InvalidDataException("The front-left flat tire animation cannot be shown in the map model preview.");
-        if (!session.Document.Entities.Contains(source) || !DestructiblePresets.HasDiscoveryName(source))
-            throw new InvalidDataException("Choose a placed LAPD police car destructible to preview.");
-        if (ReferenceEquals(source, _destructiblePreviewSource) && _destructiblePreviewSettings is { } previous)
-        {
-            if (settings == previous) return false;
-            bool isWreck = settings.Appearance == DestructibleAppearance.Wreck;
-            if (settings.FrontLeftTireFlat == previous.FrontLeftTireFlat &&
-                isWreck == (previous.Appearance == DestructibleAppearance.Wreck) &&
-                (isWreck || settings.Windshield == previous.Windshield))
-            {
-                _destructiblePreviewSettings = settings;
-                return false;
-            }
-        }
+        if (!session.Document.Entities.Contains(source) || !DestructiblePresets.HasDiscoveryName(source) ||
+            DestructiblePresets.Find(source.Properties) is not { } preset)
+            throw new InvalidDataException("Choose a placed destructible preset to preview.");
+        var definition = preset.Preview;
+        if (settings.Stage < 0 || settings.Stage >= definition.Stages.Count ||
+            settings.PartIndex < 0 || settings.PartIndex >= (definition.Parts?.Count ?? 1))
+            throw new InvalidDataException("The selected destructible preview stage or part is unavailable.");
+        if (ReferenceEquals(source, _destructiblePreviewSource) && settings == _destructiblePreviewSettings)
+            return false;
 
         XModelSource intact = ResolveModel?.Invoke(source.Properties["model"]) ??
-            throw new InvalidDataException("The intact police car model is unavailable.");
-        XModelSource wreck = ResolveModel?.Invoke("vehicle_policecar_lapd_destroy") ??
-            throw new InvalidDataException("The destroyed police car model is unavailable.");
+            throw new InvalidDataException($"The {preset.Name} model is unavailable.");
+        string? finalName = definition.Stages[^1].ModelName;
+        XModelSource final = finalName is null ? intact : ResolveModel?.Invoke(finalName) ??
+            throw new InvalidDataException($"The {finalName} model is unavailable.");
+        string? stageName = definition.Stages[settings.Stage].ModelName;
+        XModelSource stageModel = stageName is null ? intact : ResolveModel?.Invoke(stageName) ??
+            throw new InvalidDataException($"The {stageName} model is unavailable.");
+        IReadOnlyList<DestructiblePreviewPart>? parts = stageName is null ? definition.Parts : null;
         XModelSource preview = ReferenceEquals(source, _preparedDestructibleSource) &&
-            ReferenceEquals(intact, _preparedDestructibleIntact) && ReferenceEquals(wreck, _preparedDestructibleWreck) &&
-            _preparedDestructibleWindows is { } windows
-            ? settings.Appearance == DestructibleAppearance.Wreck ? wreck : windows[settings.Windshield]
-            : DestructibleModelPreview.Create(intact, wreck, settings);
+            ReferenceEquals(settings.PartStates, _preparedDestructiblePartStates) &&
+            _preparedDestructibleModels?.TryGetValue(settings.Stage, out XModelSource? prepared) == true
+            ? prepared : parts is null ? stageModel : DestructibleModelPreview.Create(stageModel, parts, settings.PartStates);
+        bool geometryChanged = !ReferenceEquals(source, _destructiblePreviewSource) ||
+            !ReferenceEquals(preview, _destructiblePreviewModel);
         _destructiblePreviewSource = source;
         _destructiblePreviewSettings = settings;
         _destructibleIntactModel = intact;
-        _destructibleWreckModel = wreck;
+        _destructibleFinalModel = final;
         _destructiblePreviewModel = preview;
         EnsureCurrent();
         _destructiblePreviewEntity = _document!.Entities.FirstOrDefault(entity =>
             _owners.TryGetValue(entity, out object? owner) && ReferenceEquals(owner, source));
-        ModelPreviewRevision++;
-        return true;
+        if (geometryChanged) ModelPreviewRevision++;
+        return geometryChanged;
     }
 
-    internal void SetPreparedDestructibleModels(MapEntity source, XModelSource intact, XModelSource wreck,
-        IReadOnlyDictionary<DestructibleWindowState, XModelSource> windows)
+    internal void SetPreparedDestructibleModels(MapEntity source,
+        ImmutableDictionary<int, DestructiblePartState>? partStates,
+        IReadOnlyDictionary<int, XModelSource> models)
     {
         _preparedDestructibleSource = source;
-        _preparedDestructibleIntact = intact;
-        _preparedDestructibleWreck = wreck;
-        _preparedDestructibleWindows = windows;
+        _preparedDestructiblePartStates = partStates;
+        _preparedDestructibleModels = models;
     }
 
-    internal IReadOnlyDictionary<DestructibleWindowState, XModelSource>? GetPreparedDestructibleModels(
-        MapEntity source, XModelSource intact, XModelSource wreck) =>
+    internal IReadOnlyDictionary<int, XModelSource>? GetPreparedDestructibleModels(
+        MapEntity source, ImmutableDictionary<int, DestructiblePartState>? partStates) =>
         ReferenceEquals(source, _preparedDestructibleSource) &&
-            ReferenceEquals(intact, _preparedDestructibleIntact) && ReferenceEquals(wreck, _preparedDestructibleWreck)
-            ? _preparedDestructibleWindows : null;
+            ReferenceEquals(partStates, _preparedDestructiblePartStates)
+            ? _preparedDestructibleModels : null;
 
     internal void ClearPreparedDestructibleModels()
     {
         _preparedDestructibleSource = null;
-        _preparedDestructibleIntact = _preparedDestructibleWreck = null;
-        _preparedDestructibleWindows = null;
+        _preparedDestructiblePartStates = null;
+        _preparedDestructibleModels = null;
     }
 
     internal bool TryGetDestructibleTagTransform(string tag, out Matrix4x4 transform)

@@ -45,7 +45,7 @@ public static class XModelExportReader
                 for (int i = 0; i < boneCount; i++)
                 {
                     string[] p = Parts(Next()); Require(p.Length == 4 && p[0] == "BONE" && Integer(p[1]) == i, "Expected indexed BONE header.");
-                    int parent = Integer(p[2]); Require(parent >= -1 && parent < i && ValidString(p[3], false), "Bone parent or name is invalid."); headers[i] = (parent, p[3]);
+                    int parent = Integer(p[2]); Require(parent >= -1 && parent < i && ValidString(p[3], true), "Bone parent or name is invalid."); headers[i] = (parent, p[3]);
                 }
                 var bones = new List<XModelExportBone>(boneCount);
                 for (int i = 0; i < boneCount; i++)

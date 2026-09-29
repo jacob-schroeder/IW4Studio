@@ -105,7 +105,7 @@
                 <MenuItem Header="_Gameplay entities…" Click="Gameplay_Click" />
                 <MenuItem Header="Player clip">
                     <MenuItem x:Name="CreateModelPlayerClipMenu" Header="Create player clip from models" Click="CreateModelPlayerClip_Click"
-                              ToolTip.Tip="Fit an editable outer hull to each selected model, simplifying dense shapes. Holes and concave spaces are filled; adjust the brushes as needed." />
+                              ToolTip.Tip="Fit editable brushes to solid collision geometry, using smaller sections where the mesh supports them. Models without collision source use an outer visual hull. Review and adjust the result." />
                     <MenuItem Header="Draw player-clip brush" Click="DrawPlayerClip_Click"
                               ToolTip.Tip="Draw an invisible volume that blocks players. Shape it around a model in the grid views." />
                     <MenuItem x:Name="ApplyPlayerClipMenu" Header="Make selected brushes player clip" Click="ApplyPlayerClip_Click"

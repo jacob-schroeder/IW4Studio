@@ -87,11 +87,12 @@ internal sealed class CameraPrefabPlacementSimulation : IDisposable
             entities.Length + clips.Length != selection.Length ||
             entities.Any(entity => !session.Document.Entities.Contains(entity) ||
                 !session.Visibility.CanSelect(session.Document, entity) ||
-                entity.ClassName is not ("misc_prefab" or "misc_model") ||
+                entity.ClassName is not ("misc_prefab" or "misc_model" or "script_model") ||
+                entity.ClassName == "script_model" && !XModelGeometry.IsModel(entity) ||
                 entity.PreservedPrimitives.Count != 0 || entity.Brushes.Count != 0 || entity.Terrains.Count != 0))
             return false;
         return clips.Length == 0 || clips.Length <= MaximumLinkedClips && entities.Length == 1 &&
-            entities[0].ClassName == "misc_model" && clips.All(clip =>
+            entities[0].ClassName is ("misc_model" or "script_model") && clips.All(clip =>
                 session.Document.World.Brushes.Contains(clip) &&
                 session.Visibility.CanSelect(session.Document, clip) &&
                 clip.Faces.Count > 0 && clip.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material)));
@@ -114,7 +115,7 @@ internal sealed class CameraPrefabPlacementSimulation : IDisposable
         if (linkedClips.Length > MaximumLinkedClips)
             throw new NotSupportedException($"Physics placement supports at most {MaximumLinkedClips} selected player clip brushes with one model.");
         if (!CanStart(session))
-            throw new ArgumentException("Select 1–128 whole, visible prefab or misc_model instances, or one misc_model with 1–64 whole, visible world player clip brushes. Other geometry and multiple models with clips are unavailable.");
+            throw new ArgumentException("Select 1–128 whole, visible prefab or model instances, or one model with 1–64 whole, visible world player clip brushes. Other geometry and multiple models with clips are unavailable.");
 
         var moving = new List<PreparedBody>();
         foreach (MapEntity source in selected)
@@ -150,7 +151,7 @@ internal sealed class CameraPrefabPlacementSimulation : IDisposable
             else
             {
                 if (!source.Properties.TryGetValue("model", out string? name) || string.IsNullOrWhiteSpace(name))
-                    throw new ArgumentException("A selected misc_model has no model asset reference.");
+                    throw new ArgumentException("A selected model has no model asset reference.");
                 XModelSource model = resolveModel?.Invoke(name) ?? throw new ArgumentException($"Model '{name}' is unavailable. Load its raw asset folder first.");
                 foreach (string materialName in model.Document.Triangles.Select(triangle =>
                              model.Document.Materials[triangle.MaterialIndex].Name).Distinct(StringComparer.Ordinal))

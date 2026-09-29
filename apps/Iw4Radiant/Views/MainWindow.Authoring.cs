@@ -170,7 +170,7 @@ public partial class MainWindow
         };
         Workspace.Models.PlacementRequested += (model, align) => BeginPlacement(model.Name,
             (position, normal) => XModelEditing.Place(_session, model, position, align ? normal : null));
-        Workspace.Destructibles.InitializeActions(Workspace.Models, _dialogs, FinishGestures);
+        Workspace.Destructibles.InitializeActions(this, Workspace.Models, _dialogs, FinishGestures);
         Workspace.Destructibles.PlacementRequested += preset => BeginPlacement(preset.Name,
             (position, _) => DestructiblePresets.Place(_session, preset, position));
         InitializeDestructiblePreview();

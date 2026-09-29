@@ -189,7 +189,8 @@ public partial class SelectionInspector : UserControl
                 DestructiblePresets.Find(entity.Properties) is not null &&
                 DestructiblePresets.HasDiscoveryName(entity);
             DestructiblePreviewExpander.IsVisible = destructible;
-            if (entityChanged) Destructibles.SetState(new DestructiblePreviewSettings(), false);
+            if (entityChanged) Destructibles.SetState(destructible && entity is not null ? DestructiblePresets.Find(entity.Properties) : null,
+                new DestructiblePreviewSettings(), false);
             SelectionText.Text = SelectionSummary(session.Selection);
             EntitySelectionInfo.IsVisible = entity is not null && session.Selection.Count > 1;
             bool wholeBrush = session.Selection.Count == 1 && session.Selection.Active is MapBrush;

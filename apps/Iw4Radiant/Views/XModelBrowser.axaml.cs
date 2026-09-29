@@ -32,6 +32,7 @@ public partial class XModelBrowser : UserControl
     internal event Action? CatalogReset;
     internal event Action<XModelSource>? FoliageModelRequested;
     internal XModelSource? SelectedModel => (ModelList.SelectedItem as XModelThumbnail)?.Model;
+    internal string? SourceDirectory => _catalog?.RootDirectory;
     internal XModelSource? ResolveModel(string name) => ResolveModel(name, out _);
 
     internal XModelSource? ResolveModel(string name, out string? error)
@@ -63,9 +64,7 @@ public partial class XModelBrowser : UserControl
         {
             if (dialogs.BlocksInput) return;
             finishGestures();
-            var folders = await dialogs.ShowModalAsync(() => owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-                { Title = "Choose extracted raw assets containing xmodel and model_export", AllowMultiple = false }));
-            if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } root) await LoadFolderAsync(root);
+            await BrowseFolderAsync(owner);
         };
         ModelFilter.TextChanged += async (_, _) => await FilterModelsAsync();
         ModelList.SelectionChanged += (_, _) =>
@@ -131,6 +130,14 @@ public partial class XModelBrowser : UserControl
             if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected) return;
             FoliageModelRequested?.Invoke(selected.Model);
         };
+    }
+
+    internal async Task BrowseFolderAsync(Window owner)
+    {
+        if (_dialogs is not { } dialogs || dialogs.BlocksInput) return;
+        var folders = await dialogs.ShowModalAsync(() => owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            { Title = "Choose extracted raw assets containing xmodel and model_export", AllowMultiple = false }));
+        if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } root) await LoadFolderAsync(root);
     }
 
     internal async Task<bool> LoadFolderAsync(string root, bool nonBlocking = false)

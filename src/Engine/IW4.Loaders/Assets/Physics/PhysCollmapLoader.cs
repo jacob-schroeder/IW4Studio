@@ -255,10 +255,14 @@ public sealed class PhysCollmapLoader : XAssetLoader<PhysCollmapAsset>
             return [];
 
         XBlockAddress address = PatchCurrentPointerCell<CPlane[]>(pointer, alignment: 4, checked(count * CPlane.SerializedSize), "CPlane[]", context);
-        if (pointer.Type == PointerType.Offset || count == 0)
+        if (count == 0)
             return [];
 
-        byte[] bytes = context.Blocks.Load(cursor, checked(count * CPlane.SerializedSize));
+        // Plane arrays can be views over the planes already loaded by brush
+        // sides. Retain that shared payload without consuming the stream again.
+        byte[] bytes = pointer.Type == PointerType.Offset
+            ? context.Blocks.ReadBytes(address, checked(count * CPlane.SerializedSize))
+            : context.Blocks.Load(cursor, checked(count * CPlane.SerializedSize));
         var planes = new CPlane[count];
         for (int i = 0; i < planes.Length; i++)
         {
@@ -281,10 +285,9 @@ public sealed class PhysCollmapLoader : XAssetLoader<PhysCollmapAsset>
             return null;
 
         XBlockAddress address = PatchCurrentPointerCell<CPlane>(pointer, alignment: 4, CPlane.SerializedSize, "CPlane", context);
-        if (pointer.Type == PointerType.Offset)
-            return null;
-
-        byte[] bytes = context.Blocks.Load(cursor, CPlane.SerializedSize);
+        byte[] bytes = pointer.Type == PointerType.Offset
+            ? context.Blocks.ReadBytes(address, CPlane.SerializedSize)
+            : context.Blocks.Load(cursor, CPlane.SerializedSize);
         return ReadCPlane(new FastFileCursor(bytes, address));
     }
 
@@ -317,11 +320,13 @@ public sealed class PhysCollmapLoader : XAssetLoader<PhysCollmapAsset>
         if (pointer.Type == PointerType.Null)
             return [];
 
-        PatchCurrentPointerCell<byte[]>(pointer, alignment: 1, count, "byte[]", context);
-        if (pointer.Type == PointerType.Offset || count == 0)
+        XBlockAddress address = PatchCurrentPointerCell<byte[]>(pointer, alignment: 1, count, "byte[]", context);
+        if (count == 0)
             return [];
 
-        return context.Blocks.Load(cursor, count);
+        return pointer.Type == PointerType.Offset
+            ? context.Blocks.ReadBytes(address, count)
+            : context.Blocks.Load(cursor, count);
     }
 
     private static XBlockAddress PatchCurrentPointerCell<T>(
