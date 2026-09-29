@@ -885,7 +885,7 @@ public sealed record StringTableCellDraft(string? Value, int Hash);
 
 public sealed class StringTableDraft
 {
-    private readonly List<StringTableCellDraft> _cells;
+    private List<StringTableCellDraft> _cells;
 
     public StringTableDraft(StringTableAsset value)
     {
@@ -906,8 +906,8 @@ public sealed class StringTableDraft
     }
 
     public string? Name { get; }
-    public int RowCount { get; }
-    public int ColumnCount { get; }
+    public int RowCount { get; private set; }
+    public int ColumnCount { get; private set; }
     public IReadOnlyList<StringTableCellDraft> Cells => _cells;
     public int NullCellCount => _cells.Count(value => value.Value is null);
 
@@ -915,6 +915,68 @@ public sealed class StringTableDraft
     {
         int index = checked(row * ColumnCount + column);
         _cells[index] = _cells[index] with { Value = value };
+    }
+
+    public void AddColumn()
+    {
+        if (RowCount < 0 || ColumnCount < 0 || _cells.Count != checked(RowCount * ColumnCount))
+            throw new InvalidOperationException("The StringTable draft dimensions do not match its cells.");
+
+        int rowCount = Math.Max(RowCount, 1);
+        int columnCount = checked(ColumnCount + 1);
+        int cellCount = checked(rowCount * columnCount);
+        List<StringTableCellDraft> cells = new(cellCount);
+        for (int row = 0; row < rowCount; row++)
+        {
+            for (int column = 0; column < ColumnCount; column++)
+                cells.Add(row < RowCount
+                    ? _cells[row * ColumnCount + column]
+                    : new StringTableCellDraft(string.Empty, 0));
+            cells.Add(new StringTableCellDraft(string.Empty, 0));
+        }
+
+        _cells = cells;
+        RowCount = rowCount;
+        ColumnCount = columnCount;
+    }
+
+    public void InsertRow(int row)
+    {
+        if (RowCount < 0 || ColumnCount < 0 || _cells.Count != checked(RowCount * ColumnCount))
+            throw new InvalidOperationException("The StringTable draft dimensions do not match its cells.");
+        if (row < 0 || row > RowCount)
+            throw new ArgumentOutOfRangeException(nameof(row));
+
+        int rowCount = checked(RowCount + 1);
+        int columnCount = Math.Max(ColumnCount, 1);
+        int cellCount = checked(rowCount * columnCount);
+        List<StringTableCellDraft> cells = new(cellCount);
+        for (int currentRow = 0; currentRow < rowCount; currentRow++)
+        {
+            for (int column = 0; column < columnCount; column++)
+            {
+                cells.Add(currentRow == row || ColumnCount == 0
+                    ? new StringTableCellDraft(string.Empty, 0)
+                    : _cells[(currentRow < row ? currentRow : currentRow - 1) * ColumnCount + column]);
+            }
+        }
+
+        _cells = cells;
+        RowCount = rowCount;
+        ColumnCount = columnCount;
+    }
+
+    public void ReplaceWith(StringTableDraft source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (source.RowCount < 0 || source.ColumnCount < 0 ||
+            source._cells.Count != checked(source.RowCount * source.ColumnCount))
+            throw new ArgumentException("The source StringTable draft dimensions do not match its cells.", nameof(source));
+
+        List<StringTableCellDraft> cells = source._cells.ToList();
+        _cells = cells;
+        RowCount = source.RowCount;
+        ColumnCount = source.ColumnCount;
     }
 
     internal StringTableDraft Clone() => new(this);

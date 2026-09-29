@@ -79,8 +79,49 @@
             Background="{DynamicResource StudioInputBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="1">
-      <Grid>
-        <Grid IsVisible="{Binding HasTable}"
+      <Grid RowDefinitions="Auto,*">
+        <Border IsVisible="{Binding IsEditable}"
+                Padding="10,8"
+                Background="{DynamicResource StudioSurfaceBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="0,0,0,1">
+          <WrapPanel Orientation="Horizontal">
+            <Button Classes="ghost"
+                    Content="Import CSV…"
+                    Margin="0,0,14,0"
+                    MinHeight="31"
+                    Padding="10,5"
+                    ToolTip.Tip="Replace the table with CSV rows and columns. The first row is data. Review before applying."
+                    Click="ImportCsvButton_Click" />
+            <Button Classes="ghost"
+                    Margin="0,0,7,0"
+                    MinHeight="31"
+                    Padding="10,5"
+                    Click="AddRowButton_Click">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <materialIcons:MaterialIcon Kind="Plus" Width="16" Height="16" />
+                <TextBlock Text="Add row" />
+              </StackPanel>
+            </Button>
+            <Button Classes="ghost"
+                    Margin="0,0,14,0"
+                    MinHeight="31"
+                    Padding="10,5"
+                    Click="AddColumnButton_Click">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <materialIcons:MaterialIcon Kind="Plus" Width="16" Height="16" />
+                <TextBlock Text="Add column" />
+              </StackPanel>
+            </Button>
+            <TextBlock Text="Right-click a row number to insert a row."
+                       VerticalAlignment="Center"
+                       FontSize="10"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </WrapPanel>
+        </Border>
+
+        <Grid Grid.Row="1"
+              IsVisible="{Binding HasCells}"
               RowDefinitions="34,*">
           <ScrollViewer x:Name="ColumnHeaderScrollViewer"
                         HorizontalScrollBarVisibility="Hidden"
@@ -144,9 +185,20 @@
                               Height="76">
                     <Border Width="52"
                             Height="76"
+                            Focusable="True"
                             Background="{DynamicResource StudioSurfaceSunkenBrush}"
                             BorderBrush="{DynamicResource StudioBorderBrush}"
                             BorderThickness="0,0,1,1">
+                      <Border.ContextMenu>
+                        <ContextMenu>
+                          <MenuItem Header="Insert row above"
+                                    IsEnabled="{Binding CanEdit}"
+                                    Click="InsertRowAboveMenuItem_Click" />
+                          <MenuItem Header="Insert row below"
+                                    IsEnabled="{Binding CanEdit}"
+                                    Click="InsertRowBelowMenuItem_Click" />
+                        </ContextMenu>
+                      </Border.ContextMenu>
                       <TextBlock Text="{Binding Label}"
                                  HorizontalAlignment="Center"
                                  VerticalAlignment="Center"
@@ -208,7 +260,38 @@
           </ScrollViewer>
         </Grid>
 
-        <StackPanel IsVisible="{Binding !HasTable}"
+        <StackPanel Grid.Row="1"
+                    IsVisible="{Binding IsEmpty}"
+                    Margin="32"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="10">
+          <TextBlock Text="This table is empty"
+                     HorizontalAlignment="Center"
+                     FontSize="15"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+          <TextBlock Text="Import a CSV to fill the table, or start with your first row."
+                     IsVisible="{Binding IsEditable}"
+                     TextAlignment="Center"
+                     TextWrapping="Wrap"
+                     FontSize="11"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+          <StackPanel IsVisible="{Binding IsEditable}"
+                      Orientation="Horizontal"
+                      HorizontalAlignment="Center"
+                      Spacing="8">
+            <Button Classes="primary"
+                    Content="Import CSV…"
+                    Click="ImportCsvButton_Click" />
+            <Button Classes="ghost"
+                    Content="Add first row"
+                    Click="AddRowButton_Click" />
+          </StackPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    IsVisible="{Binding !HasTable}"
                     Margin="32"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"

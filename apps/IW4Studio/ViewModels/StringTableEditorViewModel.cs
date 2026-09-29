@@ -1,4 +1,5 @@
 using System.Globalization;
+using IW4.Game.Assets.StringTable;
 using IW4.Game.Zone;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Documents;
@@ -42,6 +43,7 @@ public sealed class StringTableRowEditorViewModel
 
     public int Row { get; }
     public string Label { get; }
+    public bool CanEdit => _canEdit;
     public IReadOnlyList<StringTableCellEditorViewModel> Cells =>
         _cells ??= CreateCells();
 
@@ -299,8 +301,8 @@ public sealed class StringTableCellEditorViewModel : ObservableObject
 
 /// <summary>
 /// Row-major StringTable editor. Cell values are mutable for target-owned
-/// definitions except generated configstring baselines, while stored hashes
-/// and table dimensions remain preserved.
+/// definitions except generated configstring baselines. Rows and columns can
+/// be added while preserving existing cell values and stored hashes.
 /// </summary>
 public sealed class StringTableEditorViewModel
     : ObservableObject,
@@ -311,6 +313,7 @@ public sealed class StringTableEditorViewModel
     private readonly AssetEditorSession _editorSession;
     private readonly Action<int, int, string?> _stageCellValue;
     private readonly Dictionary<int, string?> _pendingOriginalValues = [];
+    private bool _hasStructuralChanges;
     private StringTableDraft? _draft;
     private StringTableReadOnlySnapshot? _readOnlySnapshot;
     private string _statusMessage = string.Empty;
@@ -337,7 +340,7 @@ public sealed class StringTableEditorViewModel
                 _diagnostics = editorSession.Validation.Issues;
                 _statusMessage = IsGeneratedConfigStringBaseline
                     ? "Generated PS3 configstring transport baseline. Edit the owning map, scripts, or assets; ordinary saves preserve this table."
-                    : "Cell edits are staged until Apply. Stored hashes are preserved.";
+                    : "Import a CSV or add rows and columns, then Apply your changes.";
                 break;
 
             case WorkspaceAssetAccess.ReadOnly:
@@ -383,10 +386,13 @@ public sealed class StringTableEditorViewModel
         Mode == WorkspaceAssetAccess.Editable &&
         !IsGeneratedConfigStringBaseline;
     public bool CanApply =>
-        IsEditable && _draft is not null && _pendingOriginalValues.Count != 0;
+        IsEditable && _draft is not null &&
+        (_hasStructuralChanges || _pendingOriginalValues.Count != 0);
     public bool HasUnappliedChanges => CanApply;
     public bool CanRevert => IsEditable;
     public bool HasTable => _draft is not null || _readOnlySnapshot is not null;
+    public bool HasCells => HasTable && CellCount != 0;
+    public bool IsEmpty => HasTable && CellCount == 0;
     public string OriginalName =>
         _draft?.Name
         ?? _readOnlySnapshot?.Name
@@ -460,6 +466,48 @@ public sealed class StringTableEditorViewModel
         new("Hashes", "Preserved source values")
     ];
 
+    public void AddColumn() => StageStructureChange(
+        draft => draft.AddColumn(),
+        "Added a column. Changes are staged until Apply.");
+
+    public void InsertRow(int row) => StageStructureChange(
+        draft => draft.InsertRow(row),
+        $"Inserted row {row}. Changes are staged until Apply.");
+
+    public void ImportCsv(StringTableAsset table, string fileName)
+    {
+        ArgumentNullException.ThrowIfNull(table);
+        StageStructureChange(
+            draft => draft.ReplaceWith(new StringTableDraft(table)),
+            $"Imported {table.RowCount:N0} rows × {table.ColumnCount:N0} columns from {fileName}. Review the table, then Apply.");
+    }
+
+    public void ReportImportFailure(string message) => StatusMessage = message;
+
+    private void StageStructureChange(
+        Action<StringTableDraft> mutation,
+        string statusMessage)
+    {
+        if (!IsEditable || _draft is null)
+            return;
+
+        try
+        {
+            mutation(_draft);
+            _hasStructuralChanges = true;
+            _pendingOriginalValues.Clear();
+            StatusMessage = statusMessage;
+            RefreshTable();
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or
+            InvalidOperationException or
+            OverflowException)
+        {
+            StatusMessage = exception.Message;
+        }
+    }
+
     public void ApplyChanges()
     {
         if (!CanApply || _draft is null)
@@ -472,13 +520,15 @@ public sealed class StringTableEditorViewModel
             return;
         }
 
-        int columnCount = _draft.ColumnCount;
+        StringTableDraft stagedDraft = _draft;
+        bool hasStructuralChanges = _hasStructuralChanges;
+        int columnCount = stagedDraft.ColumnCount;
         var changes = _pendingOriginalValues.Keys
             .Order()
             .Select(index => (
                 Row: index / columnCount,
                 Column: index % columnCount,
-                Value: _draft.Cells[index].Value))
+                Value: stagedDraft.Cells[index].Value))
             .ToArray();
 
         try
@@ -486,6 +536,12 @@ public sealed class StringTableEditorViewModel
             _draft = _editorSession.ApplyAndRead<StringTableDraft>(
                 currentDraft =>
                 {
+                    if (hasStructuralChanges)
+                    {
+                        currentDraft.ReplaceWith(stagedDraft);
+                        return;
+                    }
+
                     foreach (var change in changes)
                     {
                         currentDraft.SetCellValue(
@@ -497,10 +553,13 @@ public sealed class StringTableEditorViewModel
                 out _);
 
             _pendingOriginalValues.Clear();
+            _hasStructuralChanges = false;
             Diagnostics = _editorSession.Validation.Issues;
-            StatusMessage = changes.Length == 1
-                ? "Applied 1 cell change; its stored hash was preserved."
-                : $"Applied {changes.Length:N0} cell changes; their stored hashes were preserved.";
+            StatusMessage = hasStructuralChanges
+                ? $"Applied table changes: {RowCount:N0} rows × {ColumnCount:N0} columns."
+                : changes.Length == 1
+                    ? "Applied 1 cell change; its stored hash was preserved."
+                    : $"Applied {changes.Length:N0} cell changes; their stored hashes were preserved.";
             RefreshTable();
         }
         catch (Exception exception) when (
@@ -525,6 +584,7 @@ public sealed class StringTableEditorViewModel
         _ = _editorSession.Revert();
         _draft = _editorSession.ReadDraft<StringTableDraft>();
         _pendingOriginalValues.Clear();
+        _hasStructuralChanges = false;
         Diagnostics = _editorSession.Validation.Issues;
         StatusMessage =
             "Reverted the detached StringTable draft to its authored baseline.";
@@ -640,6 +700,8 @@ public sealed class StringTableEditorViewModel
         OnPropertyChanged(nameof(CellCount));
         OnPropertyChanged(nameof(DimensionText));
         OnPropertyChanged(nameof(HasTable));
+        OnPropertyChanged(nameof(HasCells));
+        OnPropertyChanged(nameof(IsEmpty));
         NotifyStagingStateChanged();
         OnPropertyChanged(nameof(EditorProperties));
     }
