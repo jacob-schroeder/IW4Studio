@@ -64,11 +64,7 @@ public partial class MainWindow
                 UpdateDestructiblePreviewPanel("Playback stopped · current appearance held.");
                 return;
             }
-            if (!await PrepareDestructiblePreviewAsync(entity)) return;
-            if (!ApplyDestructiblePreview(entity, new())) return;
-            _destructibleSequence.Restart();
-            _destructiblePlaying = true;
-            UpdateDestructiblePreviewPanel();
+            await StartDestructiblePlaybackAsync(entity);
         };
         Inspector.Destructibles.ResetRequested += () =>
         {
@@ -82,8 +78,7 @@ public partial class MainWindow
             if (!_session.Document.Entities.Contains(entity) || !DestructiblePresets.HasDiscoveryName(entity)) return;
             _session.Select(entity);
             ShowInspectorSection(Inspector.ShowDestructiblePreview);
-            if (ReferenceEquals(entity, _destructibleEntity)) UpdateDestructiblePreviewPanel();
-            else if (await PrepareDestructiblePreviewAsync(entity)) ApplyDestructiblePreview(entity, new());
+            await StartDestructiblePlaybackAsync(entity);
         };
         _destructibleTimer.Tick += (_, _) => TickDestructiblePreview();
         Workspace.Camera.NavigationChanged += () =>
@@ -142,6 +137,15 @@ public partial class MainWindow
     private MapEntity? SelectedDestructible() => _session.Selection.Count == 1 &&
         _session.Selection.Active is MapEntity entity && _session.Document.Entities.Contains(entity) &&
         DestructiblePresets.HasDiscoveryName(entity) ? entity : null;
+
+    private async Task StartDestructiblePlaybackAsync(MapEntity entity)
+    {
+        if (!await PrepareDestructiblePreviewAsync(entity)) return;
+        if (!ApplyDestructiblePreview(entity, new())) return;
+        _destructibleSequence.Restart();
+        _destructiblePlaying = DestructiblePresets.Find(entity.Properties)?.Preview.Stages.Count > 1;
+        UpdateDestructiblePreviewPanel();
+    }
 
     private async Task<bool> PrepareDestructiblePreviewAsync(MapEntity entity,
         DestructiblePreviewSettings? settings = null)
