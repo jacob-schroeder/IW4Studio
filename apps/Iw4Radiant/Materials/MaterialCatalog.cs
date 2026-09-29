@@ -64,18 +64,21 @@ internal static class MaterialCatalog
                 continue;
             }
             var (colorMap, isSky, water, waterColor, envMapParms, samplerState, surface, gameFlags, surfaceTypeBits, techniqueSet) = material;
-            string? image = colorMap is null ? null : ResolveImage(colorMap);
-            if (image is not null || isSky || water is not null || includeUnavailable)
+            bool hasSource = false;
+            string? image = colorMap is null ? null : ResolveImage(colorMap, out hasSource);
+            if (image is not null || hasSource || isSky || water is not null || includeUnavailable)
                 materials[name] = new MaterialSource(name, image ?? "", isSky, samplerState)
                 {
+                    SourceImage = hasSource && !isSky && water is null && colorMap is not null
+                        ? (Path.GetDirectoryName(imageRoot) ?? imageRoot, colorMap) : null,
                     Water = water, WaterColor = waterColor, EnvMapParms = envMapParms, Surface = surface, GameFlags = gameFlags,
                     SurfaceTypeBits = surfaceTypeBits, TechniqueSet = techniqueSet,
-                    OceanFoamImagePath = water is null ? "" : ResolveImage(WaterMaterialAuthoring.OceanFoamImageName) ?? ""
+                    OceanFoamImagePath = water is null ? "" : ResolveImage(WaterMaterialAuthoring.OceanFoamImageName, out _) ?? ""
                 };
         }
         return (Ordered(materials), unsupported);
 
-        string? ResolveImage(string assetName)
+        string? ResolveImage(string assetName, out bool hasSource)
         {
             string candidate = assetName.Replace('*', '_').Replace('\\', '/');
             string fullPath = Path.GetFullPath(Path.Combine(imageRoot, candidate));
@@ -84,6 +87,7 @@ internal static class MaterialCatalog
             if (!fullPath.StartsWith(prefix, comparison))
                 throw new InvalidDataException($"Image reference '{assetName}' must remain inside '{imageRoot}'.");
             string name = Path.GetRelativePath(imageRoot, fullPath).Replace('\\', '/');
+            hasSource = File.Exists(fullPath + ".image.json");
             return images.GetValueOrDefault(name);
         }
     }
@@ -112,21 +116,25 @@ internal static class MaterialCatalog
         if (!File.Exists(materialPath)) return null;
         var (colorMap, isSky, water, waterColor, envMapParms, samplerState, surface, gameFlags,
             surfaceTypeBits, techniqueSet) = ReadMaterial(materialPath);
-        string? imagePath = colorMap is null ? null : ResolveImage(colorMap);
-        if (imagePath is null && !isSky && water is null) return null;
+        bool hasSource = false;
+        string? imagePath = colorMap is null ? null : ResolveImage(colorMap, out hasSource);
+        if (imagePath is null && !hasSource && !isSky && water is null) return null;
         return new MaterialSource(name, imagePath ?? "", isSky, samplerState)
         {
+            SourceImage = hasSource && !isSky && water is null && colorMap is not null ? (root, colorMap) : null,
             Water = water, WaterColor = waterColor, EnvMapParms = envMapParms, Surface = surface,
             GameFlags = gameFlags, SurfaceTypeBits = surfaceTypeBits, TechniqueSet = techniqueSet,
-            OceanFoamImagePath = water is null ? "" : ResolveImage(WaterMaterialAuthoring.OceanFoamImageName) ?? ""
+            OceanFoamImagePath = water is null ? "" : ResolveImage(WaterMaterialAuthoring.OceanFoamImageName, out _) ?? ""
         };
 
-        string? ResolveImage(string assetName)
+        string? ResolveImage(string assetName, out bool hasSource)
         {
+            hasSource = false;
             string candidate = assetName.Replace('*', '_').Replace('\\', '/');
             if (Path.IsPathRooted(candidate) || candidate.Split('/').Any(part => part is "" or "." or ".."))
                 return null;
             string image = Path.Combine(root, "images", candidate);
+            hasSource = File.Exists(image + ".image.json");
             return ImageExtensions.Select(extension => image + extension).FirstOrDefault(File.Exists);
         }
     }

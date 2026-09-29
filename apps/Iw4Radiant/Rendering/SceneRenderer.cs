@@ -941,8 +941,12 @@ internal sealed class SceneRenderer
             foreach (var (material, sampled) in effect.Sample(eye))
             {
                 if (!available.TryGetValue(material, out MaterialSource? source)) continue;
-                uint texture = _materialTextures.GetTexture(gl, material, resolveMaterial);
-                if (texture == 0) continue;
+                uint texture = _materialTextures.GetFxTexture(gl, material, resolveMaterial, out string? textureNotice);
+                if (texture == 0)
+                {
+                    if (reportNotice) materialNotice ??= textureNotice;
+                    continue;
+                }
                 SceneMaterialDrawing.Apply(gl, source.Surface, _alphaTestLocation, _premultiplyAlphaLocation,
                     _ignoreVertexColorLocation);
                 gl.Disable(EnableCap.CullFace);
@@ -1029,10 +1033,10 @@ internal sealed class SceneRenderer
                     materialNotice ??= "Heat distortion is omitted from this preview.";
                     continue;
                 }
-                uint texture = _materialTextures.GetTexture(gl, material, resolveMaterial);
+                uint texture = _materialTextures.GetFxTexture(gl, material, resolveMaterial, out string? textureNotice);
                 if (texture == 0)
                 {
-                    materialNotice ??= $"FX material '{material}' could not be loaded.";
+                    materialNotice ??= textureNotice;
                     continue;
                 }
                 SceneMaterialDrawing.Apply(gl, source.Surface, _alphaTestLocation, _premultiplyAlphaLocation,
@@ -1060,8 +1064,7 @@ internal sealed class SceneRenderer
     {
         if (_fxMaterials.TryGetValue(name, out var cached)) return cached;
         MaterialSource? source = resolveMaterial?.Invoke(name);
-        if (source is null || string.IsNullOrEmpty(source.TechniqueSet) ||
-            string.IsNullOrEmpty(source.ImagePath) || !File.Exists(source.ImagePath))
+        if (source is null || string.IsNullOrEmpty(source.TechniqueSet) || !source.HasPreviewImage)
             source = null;
         _fxMaterials.Add(name, source);
         return source;

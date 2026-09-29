@@ -176,8 +176,9 @@ public sealed class FxSourcePreviewControl : UserControl, IDisposable
             if (!GfxImagePreviewDecoder.TryDecodeBestAvailable(image, new WorkspaceGfxImagePayloadResolver(workspace),
                 out GfxImagePreviewSnapshot? decoded, out string reason) || decoded is null)
                 throw new InvalidDataException(reason);
-            return new(surface, decoded.Width, decoded.Height,
-                SourceImageDumpDecoder.ApplyComponentMapping(image, decoded.GetRgbaBytesCopy()));
+            byte[] pixels = decoded.GetRgbaBytesCopy();
+            RsxTextureSwizzleDecoder.Decode(RsxTextureCommandBuilder.FromImage(image)).ApplyToRgba(pixels);
+            return new(surface, decoded.Width, decoded.Height, pixels);
         }
     }
 

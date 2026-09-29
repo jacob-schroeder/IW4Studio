@@ -1,7 +1,10 @@
+using System.Text.Json;
 using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using IW4.Formats.SourceFormat.Image;
+using IW4.Game.Assets.Image;
+using IW4.Render.Textures;
 using Vector3 = System.Numerics.Vector3;
 
 namespace Iw4Radiant.Materials;
@@ -13,8 +16,23 @@ internal static class MaterialImages
         ArgumentOutOfRangeException.ThrowIfLessThan(maximumDimension, 1);
         if (material.IsWater)
             return CreateWaterPreview(material, Math.Min(maximumDimension, 128));
-        Bitmap bitmap;
-        if (material.IsSky || Path.GetExtension(material.ImagePath).Equals(".dds", StringComparison.OrdinalIgnoreCase))
+        Bitmap? bitmap = null;
+        if (!material.IsSky && material.SourceImage is { } sourceImage)
+        {
+            try
+            {
+                var exchange = new ImageExchange();
+                if (exchange.ReadSourceVersion(sourceImage.Root, sourceImage.Name) == 2)
+                    bitmap = ReadNativeBitmap(exchange, sourceImage.Root, sourceImage.Name);
+            }
+            catch (JsonException exception)
+            {
+                throw new InvalidDataException(
+                    $"Image '{sourceImage.Name}' has invalid source metadata.", exception);
+            }
+        }
+        if (bitmap is null &&
+            (material.IsSky || Path.GetExtension(material.ImagePath).Equals(".dds", StringComparison.OrdinalIgnoreCase)))
         {
             ImageSourceMipLevel mip = ReadDdsMip(material, maximumDimension,
                 material.IsSky ? ImageFileShape.Cube : ImageFileShape.TwoDimensional);
@@ -23,7 +41,7 @@ internal static class MaterialImages
             bitmap = new Bitmap(PixelFormat.Rgba8888, AlphaFormat.Unpremul, (nint)pixels.Pointer,
                 new PixelSize(mip.Width, mip.Height), new Vector(96, 96), checked(mip.Width * 4));
         }
-        else
+        else if (bitmap is null)
         {
             using var stream = File.OpenRead(material.ImagePath);
             bitmap = new Bitmap(stream);
@@ -36,6 +54,25 @@ internal static class MaterialImages
             return bitmap.CreateScaledBitmap(new PixelSize(Math.Max(1, (int)(bitmap.PixelSize.Width * scale)),
                 Math.Max(1, (int)(bitmap.PixelSize.Height * scale))), BitmapInterpolationMode.HighQuality);
         }
+    }
+
+    private static unsafe Bitmap ReadNativeBitmap(ImageExchange exchange, string root, string name)
+    {
+        GfxImageAsset image = exchange.Link(root, name, out IReadOnlyList<byte[]> parts);
+        if (image.MapType != MapType.TwoDimensional ||
+            image.DimensionCount != GfxImageDimension.TwoDimensional ||
+            image.IsCubemap || image.Depth != 1)
+            throw new NotSupportedException(
+                $"Native image '{name}' is {image.MapType}/{image.DimensionCount} " +
+                $"(cubemap={image.IsCubemap}, depth={image.Depth}); material previews require a 2D image.");
+        if (!GfxImagePreviewDecoder.TryDecodeBestAvailable(image, new NativeImageParts(name, parts),
+                out GfxImagePreviewSnapshot? decoded, out string reason) || decoded is null)
+            throw new NotSupportedException($"Native image '{name}' cannot be previewed: {reason}");
+        byte[] pixels = decoded.GetRgbaBytesCopy();
+        RsxTextureSwizzleDecoder.Decode(RsxTextureCommandBuilder.FromImage(image)).ApplyToRgba(pixels);
+        fixed (byte* address = pixels)
+            return new Bitmap(PixelFormat.Rgba8888, AlphaFormat.Unpremul, (nint)address,
+                new PixelSize(decoded.Width, decoded.Height), new Vector(96, 96), checked(decoded.Width * 4));
     }
 
     private static unsafe Bitmap CreateWaterPreview(MaterialSource material, int size)

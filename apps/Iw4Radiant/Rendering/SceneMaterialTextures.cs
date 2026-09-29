@@ -24,6 +24,7 @@ internal sealed class SceneMaterialTextures
 
     private readonly Dictionary<string, uint> _textures = new(StringComparer.Ordinal);
     private readonly Dictionary<string, MaterialSource> _pending = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _failures = new(StringComparer.Ordinal);
     private Task<(PixelSize Size, byte[] Pixels)>? _decode;
     private string _decodingMaterial = "";
     private MaterialSource? _decodingSource;
@@ -51,6 +52,7 @@ internal sealed class SceneMaterialTextures
             if (texture != 0 && texture != _fallbackTexture)
                 gl.DeleteTexture(texture);
             _textures.Remove(material);
+            _failures.Remove(material);
         }
         foreach (string material in _pending.Keys.Where(key => !used.Contains(key)).ToArray())
             _pending.Remove(material);
@@ -60,7 +62,19 @@ internal sealed class SceneMaterialTextures
     {
         CancelPending();
         _textures.Clear();
+        _failures.Clear();
         _fallbackTexture = 0;
+    }
+
+    internal uint GetFxTexture(GL gl, string material, Func<string, MaterialSource?>? resolveMaterial,
+        out string? notice)
+    {
+        uint texture = GetTexture(gl, material, resolveMaterial);
+        notice = _failures.GetValueOrDefault(material);
+        if (texture != 0 && texture != _fallbackTexture) return texture;
+        notice ??= IsReady(material) ? $"FX texture '{material}' is unavailable."
+            : $"Preparing FX texture '{material}'…";
+        return 0;
     }
 
     internal uint GetTexture(GL gl, string material, Func<string, MaterialSource?>? resolveMaterial)
@@ -78,7 +92,8 @@ internal sealed class SceneMaterialTextures
             }
             else if (source is null)
             {
-                Error ??= $"Material '{material}' is unavailable. Surface shown with DEFAULT fallback.";
+                _failures[material] = $"Material '{material}' is unavailable.";
+                Error ??= _failures[material];
                 texture = GetFallbackTexture(gl);
             }
             else
@@ -87,11 +102,13 @@ internal sealed class SceneMaterialTextures
                 return GetFallbackTexture(gl);
             }
         }
-        catch (Exception exception) when (SceneRenderer.IsRenderException(exception) || exception is UnauthorizedAccessException)
+        catch (Exception exception) when (SceneRenderer.IsRenderException(exception) ||
+            exception is InvalidDataException or UnauthorizedAccessException)
         {
             if (texture != 0)
                 gl.DeleteTexture(texture);
-            Error ??= $"Texture '{material}': {exception.Message} Surface shown with DEFAULT fallback.";
+            _failures[material] = $"Texture '{material}': {exception.Message}";
+            Error ??= _failures[material];
             texture = GetFallbackTexture(gl);
         }
         _textures.Add(material, texture);
@@ -141,10 +158,12 @@ internal sealed class SceneMaterialTextures
             gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
             gl.GenerateMipmap(TextureTarget.Texture2D);
         }
-        catch (Exception exception) when (SceneRenderer.IsRenderException(exception) || exception is UnauthorizedAccessException)
+        catch (Exception exception) when (SceneRenderer.IsRenderException(exception) ||
+            exception is InvalidDataException or UnauthorizedAccessException)
         {
             if (texture != 0) gl.DeleteTexture(texture);
-            Error ??= $"Texture '{material}': {exception.Message} Surface shown with DEFAULT fallback.";
+            _failures[material] = $"Texture '{material}': {exception.Message}";
+            Error ??= _failures[material];
             texture = GetFallbackTexture(gl);
         }
         _textures.Add(material, texture);
@@ -179,6 +198,7 @@ internal sealed class SceneMaterialTextures
             if (texture != 0 && texture != _fallbackTexture)
                 gl.DeleteTexture(texture);
         _textures.Clear();
+        _failures.Clear();
         if (_fallbackTexture != 0)
             gl.DeleteTexture(_fallbackTexture);
         _fallbackTexture = 0;

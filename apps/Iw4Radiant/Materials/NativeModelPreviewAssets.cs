@@ -8,7 +8,6 @@ using IW4.Game.Assets.Material;
 using IW4.Game.Assets.Physics;
 using IW4.Game.Assets.TechniqueSet;
 using IW4.Render.Textures;
-using IW4.Runtime.Assets.Images;
 
 namespace Iw4Radiant.Materials;
 
@@ -91,7 +90,8 @@ internal sealed class NativeModelPreviewAssets
             throw new InvalidDataException($"Native material '{materialName}' needs one resolved color-map image; found {colorMaps.Length}.");
         GfxImageAsset image = colorMaps[0].Image ??
             throw new InvalidDataException($"Native material '{materialName}' has an unresolved color-map image.");
-        var resolver = new NativeImageParts(_imageParts);
+        var resolver = new NativeImageParts(image.Name,
+            image.Name is { } name ? _imageParts.GetValueOrDefault(name) : null);
         if (!GfxImagePreviewDecoder.TryDecodeBestAvailable(image, resolver,
                 out GfxImagePreviewSnapshot? decoded, out string reason) || decoded is null)
             throw new NotSupportedException($"Native image '{image.Name}' cannot be previewed: {reason}");
@@ -120,49 +120,5 @@ internal sealed class NativeModelPreviewAssets
         _images.Add(name, cached);
         _imageParts.Add(name, parts);
         return cached;
-    }
-
-    private sealed class NativeImageParts(Dictionary<string, IReadOnlyList<byte[]>> partsByName) : IGfxImagePayloadResolver
-    {
-        public bool TryResolveBestPayload(GfxImageAsset image, out GfxImagePayload payload, out string reason)
-        {
-            payload = default;
-            if (image.Name is not { } name || !partsByName.TryGetValue(name, out IReadOnlyList<byte[]>? parts))
-            {
-                reason = $"Image '{image.Name}' has no native stream parts.";
-                return false;
-            }
-            foreach (var item in image.StreamData.Select((data, index) => (data, index))
-                         .Where(item => item.data.HasStreamingData)
-                         .OrderByDescending(item => (long)item.data.Width * item.data.Height))
-            {
-                if (item.index >= parts.Count || parts[item.index].Length == 0) continue;
-                payload = new GfxImagePayload(item.data.Width, item.data.Height, parts[item.index]);
-                reason = string.Empty;
-                return true;
-            }
-            reason = $"Image '{name}' has no populated native stream part.";
-            return false;
-        }
-
-        public bool TryResolveStreamParts(GfxImageAsset image, out IReadOnlyList<byte[]> parts, out string reason)
-        {
-            if (image.Name is { } name && partsByName.TryGetValue(name, out IReadOnlyList<byte[]>? found))
-            {
-                parts = found;
-                reason = string.Empty;
-                return true;
-            }
-            parts = [];
-            reason = $"Image '{image.Name}' has no native stream parts.";
-            return false;
-        }
-
-        public bool TryResolveMipPayloads(GfxImageAsset image, out IReadOnlyList<GfxImagePayload> mips, out string reason)
-        {
-            mips = [];
-            reason = "Native model preview requests only the highest available mip.";
-            return false;
-        }
     }
 }

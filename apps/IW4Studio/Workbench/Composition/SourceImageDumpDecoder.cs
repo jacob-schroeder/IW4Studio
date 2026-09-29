@@ -18,51 +18,14 @@ internal static class SourceImageDumpDecoder
         WorkspaceGfxImagePayloadResolver payloadResolver)
     {
         IReadOnlyList<ImageSourceMipLevel> levels = Decode(image, payloadResolver);
-        return levels.Select(level => level with
+        RsxTextureSwizzle swizzle = RsxTextureSwizzleDecoder.Decode(RsxTextureCommandBuilder.FromImage(image));
+        return levels.Select(level =>
         {
-            RgbaBytes = ApplyComponentMapping(image, level.RgbaBytes.ToArray())
+            byte[] pixels = level.RgbaBytes.ToArray();
+            swizzle.ApplyToRgba(pixels);
+            return level with { RgbaBytes = pixels };
         }).ToArray();
     }
-
-    internal static byte[] ApplyComponentMapping(GfxImageAsset image, byte[] pixels)
-    {
-        RsxTextureSwizzle swizzle = RsxTextureSwizzleDecoder.Decode(
-            RsxTextureCommandBuilder.FromImage(image));
-        if (swizzle == new RsxTextureSwizzle(
-                RsxTextureSwizzleSource.Red,
-                RsxTextureSwizzleSource.Green,
-                RsxTextureSwizzleSource.Blue,
-                RsxTextureSwizzleSource.Alpha))
-        {
-            return pixels;
-        }
-
-        // DDS/IWI and the shared FX viewport consume RGBA without RSX sampler
-        // state. Native material previews instead apply this mapping on the GPU.
-        byte[] rgba = new byte[pixels.Length];
-        for (int pixel = 0; pixel < pixels.Length; pixel += 4)
-        {
-            ReadOnlySpan<byte> channels = pixels.AsSpan(pixel, 4);
-            rgba[pixel] = SampleChannel(channels, swizzle.Red);
-            rgba[pixel + 1] = SampleChannel(channels, swizzle.Green);
-            rgba[pixel + 2] = SampleChannel(channels, swizzle.Blue);
-            rgba[pixel + 3] = SampleChannel(channels, swizzle.Alpha);
-        }
-        return rgba;
-    }
-
-    private static byte SampleChannel(
-        ReadOnlySpan<byte> rgba,
-        RsxTextureSwizzleSource source) => source switch
-    {
-        RsxTextureSwizzleSource.Zero => 0,
-        RsxTextureSwizzleSource.One => byte.MaxValue,
-        RsxTextureSwizzleSource.Red => rgba[0],
-        RsxTextureSwizzleSource.Green => rgba[1],
-        RsxTextureSwizzleSource.Blue => rgba[2],
-        RsxTextureSwizzleSource.Alpha => rgba[3],
-        _ => throw new ArgumentOutOfRangeException(nameof(source))
-    };
 
     internal static IReadOnlyList<ImageSourceMipLevel> Decode(
         GfxImageAsset image,

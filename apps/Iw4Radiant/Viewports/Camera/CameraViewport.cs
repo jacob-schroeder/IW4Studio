@@ -417,7 +417,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         if (!ReferenceEquals(session, _session) || !session.Document.Entities.Contains(entity))
             throw new OperationCanceledException("The active map changed during destructible preparation.");
         string[] missingFx = fxMaterials.Where(name => ResolveMaterial?.Invoke(name) is not
-                { TechniqueSet: { Length: > 0 }, ImagePath: { } path } || !File.Exists(path))
+                { TechniqueSet: { Length: > 0 }, HasPreviewImage: true })
             .Distinct(StringComparer.Ordinal).ToArray();
         string? notice = missingFx.Length == 0 ? null : "FX materials unavailable: " + string.Join(", ", missingFx);
         string[] materials = models.SelectMany(model => model.Document.Materials

@@ -10,6 +10,8 @@ internal sealed record MaterialSource(
     bool IsSky,
     MaterialSamplerState SamplerState)
 {
+    internal (string Root, string Name)? SourceImage { get; init; }
+    internal bool HasPreviewImage => SourceImage is not null || File.Exists(ImagePath);
     internal bool PreviewDefinitionAvailable { get; init; } = true;
     internal string TechniqueSet { get; init; } = "";
     internal bool UsesVertexColor => TechniqueSet.StartsWith("wc_", StringComparison.Ordinal);

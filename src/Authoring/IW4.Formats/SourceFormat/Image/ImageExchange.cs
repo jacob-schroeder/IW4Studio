@@ -60,27 +60,10 @@ public sealed partial class ImageExchange
         string name = SourceOutput.NormalizeOwnedAssetName(assetName, "Image");
         string imagePath = Path.Combine(Path.GetFullPath(sourceDirectory), "images", name.Replace('*', '_'));
         string metadataPath = imagePath + ".image.json";
-        if (!File.Exists(metadataPath))
-            throw new FileNotFoundException(
-                $"Image '{name}' needs sampling metadata at '{metadataPath}'. Re-export this image from IW4Studio.", metadataPath);
-        using FileStream metadataStream = File.OpenRead(metadataPath);
-        using JsonDocument document = JsonDocument.Parse(metadataStream);
+        using JsonDocument document = ReadMetadata(metadataPath, name, out int sourceVersion);
         JsonElement root = document.RootElement;
-        if (root.ValueKind != JsonValueKind.Object ||
-            !root.TryGetProperty("format", out JsonElement format) ||
-            format.ValueKind != JsonValueKind.String ||
-            format.GetString() != "iw4-image-source" ||
-            !root.TryGetProperty("version", out JsonElement version) ||
-            version.ValueKind != JsonValueKind.Number ||
-            !version.TryGetInt32(out int sourceVersion) ||
-            !root.TryGetProperty("name", out JsonElement sourceName) ||
-            sourceName.ValueKind != JsonValueKind.String ||
-            sourceName.GetString() != name)
-            throw new InvalidDataException($"Image '{name}' has invalid source metadata.");
         if (sourceVersion == 2)
             return LinkNative(imagePath, name, root, out streamParts);
-        if (sourceVersion != 1)
-            throw new InvalidDataException($"Image '{name}' has unsupported source version {sourceVersion}.");
         ImageMetadata metadata = root.Deserialize<ImageMetadata>(MetadataOptions)
             ?? throw new InvalidDataException($"Image '{name}' has empty metadata.");
         if (!Enum.IsDefined(metadata.Semantic))
@@ -90,6 +73,44 @@ public sealed partial class ImageExchange
         if (source.UsesSrgbReads is { } encodedSrgb && encodedSrgb != metadata.UsesSrgbReads)
             throw new InvalidDataException($"Image '{name}' has conflicting DDS and metadata color-space settings.");
         return ImageSourceCompiler.Compile(name, source, metadata.Semantic, metadata.UsesSrgbReads);
+    }
+
+    /// <summary>Identifies authored DDS (1) or native PS3 (2) sources without decoding pixels.</summary>
+    public int ReadSourceVersion(string sourceDirectory, string assetName)
+    {
+        string name = SourceOutput.NormalizeOwnedAssetName(assetName, "Image");
+        string path = Path.Combine(Path.GetFullPath(sourceDirectory), "images", name.Replace('*', '_') + ".image.json");
+        using JsonDocument document = ReadMetadata(path, name, out int version);
+        return version;
+    }
+
+    private static JsonDocument ReadMetadata(string path, string name, out int sourceVersion)
+    {
+        if (!File.Exists(path))
+            throw new FileNotFoundException(
+                $"Image '{name}' needs sampling metadata at '{path}'. Re-export this image from IW4Studio.", path);
+        using FileStream stream = File.OpenRead(path);
+        JsonDocument document = JsonDocument.Parse(stream);
+        try
+        {
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("format", out JsonElement format) ||
+                format.ValueKind != JsonValueKind.String || format.GetString() != "iw4-image-source" ||
+                !root.TryGetProperty("version", out JsonElement version) ||
+                version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out sourceVersion) ||
+                !root.TryGetProperty("name", out JsonElement sourceName) ||
+                sourceName.ValueKind != JsonValueKind.String || sourceName.GetString() != name)
+                throw new InvalidDataException($"Image '{name}' has invalid source metadata.");
+            if (sourceVersion is not (1 or 2))
+                throw new InvalidDataException($"Image '{name}' has unsupported source version {sourceVersion}.");
+            return document;
+        }
+        catch
+        {
+            document.Dispose();
+            throw;
+        }
     }
 
     private const byte Iwi8Version = 8;

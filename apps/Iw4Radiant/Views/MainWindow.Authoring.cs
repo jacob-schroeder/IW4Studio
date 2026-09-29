@@ -524,6 +524,7 @@ public partial class MainWindow
 
     private void RefreshAssets()
     {
+        lock (_emitterMaterials) _emitterMaterials.Clear();
         _authoredWaterMaterials.Clear();
         _waterDefinitionsDirty = true;
         RefreshCompiledPreviewMaterials();
