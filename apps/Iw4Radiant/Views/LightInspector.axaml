@@ -3,6 +3,11 @@
              xmlns:views="using:Iw4Radiant.Views"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Iw4Radiant.Views.LightInspector">
+    <UserControl.Styles>
+        <Style Selector="Expander /template/ Border#ExpanderContent">
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+    </UserControl.Styles>
     <StackPanel Spacing="8">
         <StackPanel Orientation="Horizontal" Spacing="6">
             <materialIcons:MaterialIcon Kind="LightbulbOutline" Width="15" Height="15" />
@@ -38,16 +43,37 @@
                 <StackPanel Spacing="7" Margin="0,8,0,0">
                     <TextBox x:Name="DefinitionBox" ToolTip.Tip="Light definition." />
                     <CheckBox x:Name="PrimaryOmniBox" Content="Primary omni" />
-                    <CheckBox x:Name="PrimarySpotBox" Content="Primary spot" />
+                    <CheckBox x:Name="PrimarySpotBox" Content="Primary spot"
+                              ToolTip.Tip="Aim at a target. Use an outer FOV below 180 degrees and a whole-number exponent (0–255)." />
+                    <CheckBox x:Name="DynamicShadowsBox" Content="Dynamic shadows"
+                              ToolTip.Tip="Allow this Primary spot to cast shadows from moving objects in game. The game limits active shadow maps. Requires a rebuild; preview shadows remain baked." />
                 </StackPanel>
             </Expander>
+            <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                    <CheckBox x:Name="SweepBox" Content="Sweep" VerticalAlignment="Center"
+                              ToolTip.Tip="Apply the current light values and preview a vertical sweep around its aim target." />
+                    <Button x:Name="SweepPreviewButton" Grid.Column="1" Classes="toolbarButton" VerticalAlignment="Center"
+                            ToolTip.Tip="Play sweep preview" AutomationProperties.Name="Play sweep preview">
+                        <materialIcons:MaterialIcon x:Name="SweepPreviewIcon" Kind="Play" Width="16" Height="16" />
+                    </Button>
+                </Grid>
+                <StackPanel x:Name="SweepFields" Spacing="6" Margin="12,0,0,0">
+                    <Grid ColumnDefinitions="*,100" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                        <TextBlock Text="Total arc (°)" Classes="fieldLabel" />
+                        <TextBox x:Name="SweepAngleBox" Grid.Column="1" />
+                        <TextBlock Grid.Row="1" Text="Seconds each way" Classes="fieldLabel" />
+                        <TextBox x:Name="SweepSecondsBox" Grid.Row="1" Grid.Column="1" />
+                    </Grid>
+                </StackPanel>
+            </StackPanel>
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
                 <Button x:Name="ApplyLightButton" Content="Apply light" Classes="panelAction" HorizontalAlignment="Stretch" />
                 <Button x:Name="RevertLightButton" Grid.Column="1" Content="Revert"
                         ToolTip.Tip="Restore this light's current values without editing the map." />
             </Grid>
             <TextBlock Classes="caption" TextWrapping="Wrap"
-                       Text="Build bakes light_point_linear point and targeted spot lights into surfaces, model lighting and reflections. Leave Primary omni/spot unchecked. Lighting changes require a rebuild." />
+                       Text="Enabling Sweep applies these values and starts preview. Drag the purple arc ends to adjust its range. Lighting changes require a rebuild." />
         </StackPanel>
     </StackPanel>
 </UserControl>

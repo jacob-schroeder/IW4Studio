@@ -22,6 +22,8 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     private int _lastFxPlaybackState;
     private bool _lastMapFxFinished;
     private CameraTransformGesture? _transform;
+    private CameraSweepGesture? _sweep;
+    private CameraLightConeGesture? _cone;
     private IPointer? _dragPointer;
     private MouseButton _dragButton;
     private Point _lastPointer;
@@ -54,15 +56,23 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         PointerPressed += OnPointerPressed;
         PointerMoved += OnPointerMoved;
         PointerReleased += OnPointerReleased;
-        PointerExited += (_, _) => { if (!_paintingFoliage) FoliageBrushChanged?.Invoke(null); };
+        PointerExited += (_, _) =>
+        {
+            if (!_paintingFoliage) FoliageBrushChanged?.Invoke(null);
+            if (_dragPointer is null) Cursor = null;
+        };
         PointerCaptureLost += (_, _) => { if (_dragPointer is not null) FinishGesture(cancel: true); };
         PointerWheelChanged += OnPointerWheelChanged;
-        KeyDown += (_, e) => HandleNavigationKeyDown(e);
-        KeyUp += (_, e) => { if (WalkMode) _walkMovement.KeyUp(e); else _flyMovement.KeyUp(e); };
+        KeyDown += (_, e) => { if (_dragPointer is null) Cursor = null; HandleNavigationKeyDown(e); };
+        KeyUp += (_, e) =>
+        {
+            if (_dragPointer is null) Cursor = null;
+            if (WalkMode) _walkMovement.KeyUp(e); else _flyMovement.KeyUp(e);
+        };
         GotFocus += (_, _) => _walkMovement.Start();
         LostFocus += (_, _) => FinishGesture(cancel: true);
         SizeChanged += (_, _) => { FinishGesture(cancel: true); RequestNextFrameRendering(); };
-        DetachedFromVisualTree += (_, _) => { StopPhysicsPlacement(); StopGlassShatter(); StopWalk(); FinishGesture(cancel: true); _objectMenu?.Close(); };
+        DetachedFromVisualTree += (_, _) => { _session?.StopLightSweepPreview(); StopPhysicsPlacement(); StopGlassShatter(); StopWalk(); FinishGesture(cancel: true); _objectMenu?.Close(); };
         DragDrop.SetAllowDrop(this, true);
         DragDrop.AddDragOverHandler(this, OnAssetDragOver);
         DragDrop.AddDropHandler(this, OnAssetDrop);
@@ -79,10 +89,22 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
             StopWalk();
             FinishGesture(cancel: true);
             _objectMenu?.Close();
-            if (_session is not null) _session.PointEntityPreviewChanged -= OnPointEntityPreviewChanged;
+            if (_session is not null)
+            {
+                _session.StopLightSweepPreview();
+                _session.PointEntityPreviewChanged -= OnPointEntityPreviewChanged;
+                _session.LightInfluencePreviewChanged -= OnLightInfluencePreviewChanged;
+                _session.LightSweepPlaybackChanged -= OnLightSweepPlaybackChanged;
+            }
             _renderer.CancelDestructiblePreparation();
             _session = value;
-            if (_session is not null) _session.PointEntityPreviewChanged += OnPointEntityPreviewChanged;
+            if (_session is not null)
+            {
+                _session.LightSweepPreviewAvailable = _previewLighting && CompiledPreview is null;
+                _session.PointEntityPreviewChanged += OnPointEntityPreviewChanged;
+                _session.LightInfluencePreviewChanged += OnLightInfluencePreviewChanged;
+                _session.LightSweepPlaybackChanged += OnLightSweepPlaybackChanged;
+            }
             RefreshScene();
         }
     }
@@ -94,18 +116,37 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         StopWalk();
         if (_session is { } session && session.DeferPreviewLighting && session.TransformMode == TransformMode.Move &&
             session.Selection.Count > 0 && session.Selection.Items.All(item => item is MapEntity entity &&
-                (entity.ClassName == "fx_origin" || XModelGeometry.IsModel(entity))))
+                (entity.ClassName is "fx_origin" or "light" or "info_null" || XModelGeometry.IsModel(entity))))
         {
             _renderer.PreviewPointEntityMove();
             RequestNextFrameRendering();
         }
-        else if (modelsChanged || _transform is not null) RefreshScene();
+        else if (modelsChanged || _transform is not null ||
+            _session is { DeferPreviewLighting: true } movingSession &&
+            movingSession.Selection.Items.OfType<MapEntity>().Any(entity => entity.ClassName == "light")) RefreshScene();
     }
+
+    private void OnLightInfluencePreviewChanged(MapEntity entity)
+    {
+        _renderer.PreviewLightInfluence(entity);
+        RequestNextFrameRendering();
+    }
+
+    private void OnLightSweepPlaybackChanged(object? sender, EventArgs e) => RequestNextFrameRendering();
 
     internal bool PreviewLighting
     {
         get => _previewLighting;
-        set { _previewLighting = value; RequestNextFrameRendering(); }
+        set
+        {
+            _previewLighting = value;
+            if (_session is { } session)
+            {
+                session.LightSweepPreviewAvailable = value && CompiledPreview is null;
+                if (!session.LightSweepPreviewAvailable) session.StopLightSweepPreview();
+            }
+            RequestNextFrameRendering();
+        }
     }
     internal CompiledBspPreview? CompiledPreview
     {
@@ -118,6 +159,11 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
             FinishGesture(cancel: true);
             _objectMenu?.Close();
             _renderer.CompiledPreview = value;
+            if (_session is { } session)
+            {
+                session.LightSweepPreviewAvailable = value is null && PreviewLighting;
+                if (!session.LightSweepPreviewAvailable) session.StopLightSweepPreview();
+            }
             RefreshScene();
             if (value is not null) FrameAll();
         }
@@ -162,6 +208,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
             if (_foliagePaintingEnabled == value) return;
             if (_paintingFoliage) FinishGesture(cancel: true);
             _foliagePaintingEnabled = value;
+            if (_dragPointer is null) Cursor = null;
             if (!value) FoliageBrushChanged?.Invoke(null);
         }
     }
@@ -277,6 +324,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     internal event Action? NavigationModeChanged;
     internal event Action? NavigationChanged;
     internal event Action<BrushKind>? BrushKindRequested;
+    internal event Action<MapEntity>? EntityInspectorRequested;
     internal event Action? CreateModelPlayerClipRequested;
     internal event Action<IReadOnlyList<Point>?>? FoliageBrushChanged;
     internal bool HasPointerGesture => _dragPointer is not null;
@@ -324,7 +372,8 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
             e.Handled = true;
             return true;
         }
-        return CanFlyMove && _session is not null && _flyMovement.KeyDown(e, canMove: _transform is null);
+        return CanFlyMove && _session is not null && _flyMovement.KeyDown(e,
+            canMove: _transform is null && _sweep is null && _cone is null);
     }
 
     internal void FlyMovementApplied()
@@ -340,6 +389,9 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         StopGlassShatter();
         StopWalk();
         if (_transform is { IsCurrent: false }) FinishGesture(cancel: true);
+        if (_sweep is { IsCurrent: false }) FinishGesture(cancel: true);
+        if (_cone is { IsCurrent: false }) FinishGesture(cancel: true);
+        if (_dragPointer is null) Cursor = null;
         _renderer.RefreshScene();
         RequestNextFrameRendering();
     }
@@ -479,11 +531,16 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     {
         if (!FlyMode) _flyMovement.Stop();
         var transform = _transform;
+        var sweep = _sweep;
+        var cone = _cone;
         var pointer = _dragPointer;
         bool paintingFoliage = _paintingFoliage;
         bool foliageChanged = _foliageChanged;
         _transform = null;
+        _sweep = null;
+        _cone = null;
         _dragPointer = null;
+        Cursor = null;
         _paintingFoliage = _foliageChanged = false;
         _foliagePrefabsNeedRefresh = false;
         _foliageSurfaceDocument = null;
@@ -496,6 +553,8 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         // operation can synchronously reenter this control.
         pointer?.Capture(null);
         transform?.Complete(cancel);
+        sweep?.Complete(cancel);
+        cone?.Complete(cancel);
         if (paintingFoliage && _session is { } session)
         {
             if (cancel) session.CancelEdit();
@@ -544,7 +603,8 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         NotifyMapFxPreviewStatusChanged(mapFxWasActive, previousMapFxNotice);
         // Render one final frame when an effect finishes so its last particles disappear.
         if (_renderer.HasPendingTextures || _renderer.HasVisibleAnimatedWater || fxWasPlaying ||
-            _renderer.HasPlayingFxPreview || _renderer.HasPlayingMapFxPreview)
+            _renderer.HasPlayingFxPreview || _renderer.HasPlayingMapFxPreview ||
+            (CompiledPreview is null && PreviewLighting && session.LightSweepPreviewEntity is not null))
             RequestNextFrameRendering();
     }
 
@@ -554,6 +614,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         Focus(NavigationMethod.Pointer, e.KeyModifiers);
         var properties = e.GetCurrentPoint(this).Properties;
         Point point = e.GetPosition(this);
+        if (_dragPointer is null) Cursor = null;
         if (PhysicsPlacementActive && properties.PointerUpdateKind == PointerUpdateKind.LeftButtonPressed)
         {
             e.Handled = true;
@@ -605,6 +666,42 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
                 return;
             }
             bool additive = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            if (!additive && session.Tool == EditorTool.Select &&
+                CameraSweepGesture.TryBegin(session, _navigation, point, Bounds.Size,
+                    out CameraSweepGesture? sweep, out string? sweepNotice))
+            {
+                if (sweep is not null)
+                {
+                    session.StopLightSweepPreview();
+                    _sweep = sweep;
+                    _dragPointer = e.Pointer;
+                    _dragButton = MouseButton.Left;
+                    Cursor = ViewportCursors.ClosedHand;
+                    e.Pointer.Capture(this);
+                    InteractionStatusChanged?.Invoke("Drag to adjust both sweep endpoints. Escape cancels.");
+                }
+                else if (sweepNotice is not null) InteractionStatusChanged?.Invoke(sweepNotice);
+                e.Handled = true;
+                return;
+            }
+            if (!additive && session.Tool == EditorTool.Select &&
+                CameraLightConeGesture.TryBegin(session, _navigation, point, Bounds.Size,
+                    out CameraLightConeGesture? cone, out string? coneNotice))
+            {
+                if (cone is not null)
+                {
+                    session.StopLightSweepPreview();
+                    _cone = cone;
+                    _dragPointer = e.Pointer;
+                    _dragButton = MouseButton.Left;
+                    Cursor = ViewportCursors.ClosedHand;
+                    e.Pointer.Capture(this);
+                    InteractionStatusChanged?.Invoke($"Drag to adjust {cone.Label.ToLowerInvariant()}. Escape cancels.");
+                }
+                else if (coneNotice is not null) InteractionStatusChanged?.Invoke(coneNotice);
+                e.Handled = true;
+                return;
+            }
             object? vertex = session.Tool == EditorTool.Vertex
                 ? CameraPicking.PickVertex(session, _navigation, point, Bounds.Size) : null;
             int axis = !additive && vertex is null && (session.Tool is EditorTool.Select or EditorTool.Vertex) && session.CanTransformSelection &&
@@ -615,6 +712,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
                 _transform = new CameraTransformGesture(session, _navigation, axis, point, Bounds.Size);
                 _dragPointer = e.Pointer;
                 _dragButton = MouseButton.Left;
+                Cursor = ViewportCursors.ClosedHand;
                 e.Pointer.Capture(this);
                 InteractionStatusChanged?.Invoke("Drag the handle to transform. Escape cancels.");
             }
@@ -649,9 +747,18 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         {
             Point position = e.GetPosition(this);
             if (!WalkMode) UpdateFoliageBrush(position);
+            if (_dragPointer is null)
+            {
+                UpdateHoverCursor(position, e.KeyModifiers);
+                return;
+            }
             if (!ReferenceEquals(e.Pointer, _dragPointer)) return;
             if (_paintingFoliage)
                 ContinueFoliageStroke(position);
+            else if (_sweep is { } sweep)
+                UpdateSweep(sweep, position);
+            else if (_cone is { } cone)
+                UpdateCone(cone, position);
             else if (_transform is { } transform)
                 UpdateTransform(transform, position);
             else if (_dragButton == MouseButton.Left)
@@ -680,6 +787,33 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         }
     }
 
+    private void UpdateHoverCursor(Point point, KeyModifiers modifiers)
+    {
+        bool hover = false;
+        if (_session is { } session && CompiledPreview is null && !PhysicsPlacementActive &&
+            !GlassShatterActive && !WalkMode && !session.HasPlacement &&
+            !(FoliagePaintingEnabled && modifiers == KeyModifiers.None) &&
+            !modifiers.HasFlag(KeyModifiers.Shift) && new Rect(Bounds.Size).Contains(point))
+        {
+            if (session.Tool == EditorTool.Select &&
+                CameraSweepGesture.TryBegin(session, _navigation, point, Bounds.Size,
+                    out CameraSweepGesture? sweep, out _))
+                hover = sweep is not null;
+            else if (session.Tool == EditorTool.Select &&
+                     CameraLightConeGesture.TryBegin(session, _navigation, point, Bounds.Size,
+                         out CameraLightConeGesture? cone, out _))
+                hover = cone is not null;
+            else if (session.Tool is EditorTool.Select or EditorTool.Vertex &&
+                     session.CanTransformSelection && session.SelectionBounds is { } bounds &&
+                     (session.Tool != EditorTool.Vertex ||
+                      CameraPicking.PickVertex(session, _navigation, point, Bounds.Size) is null))
+                hover = CameraPicking.PickGizmo(session, bounds, session.TransformMode,
+                    _navigation, point, Bounds.Size) != 0;
+        }
+        var cursor = hover ? ViewportCursors.OpenHand : null;
+        if (!ReferenceEquals(Cursor, cursor)) Cursor = cursor;
+    }
+
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (!ReferenceEquals(e.Pointer, _dragPointer) || e.InitialPressMouseButton != _dragButton) return;
@@ -690,6 +824,8 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
             bool showMenu = !WalkMode && _dragButton == MouseButton.Right &&
                 !_navigationMoved && fromPress.SquaredLength < 16;
             if (_paintingFoliage) ContinueFoliageStroke(point);
+            else if (_sweep is { } sweep) UpdateSweep(sweep, point);
+            else if (_cone is { } cone) UpdateCone(cone, point);
             else if (_transform is { } transform) UpdateTransform(transform, point);
             else if (_dragButton == MouseButton.Left) UpdateSelectionPaint(point);
             FinishPointerGesture();
@@ -705,8 +841,10 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
                     hits, face, point,
                     kind => BrushKindRequested?.Invoke(kind),
                     () => CreateModelPlayerClipRequested?.Invoke(),
+                    entity => EntityInspectorRequested?.Invoke(entity),
                     message => InteractionStatusChanged?.Invoke(message));
             }
+            if (_dragPointer is null) UpdateHoverCursor(point, e.KeyModifiers);
         }
         catch (Exception exception) when (IsEditError(exception))
         {
@@ -751,10 +889,36 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         }
     }
 
+    private void UpdateSweep(CameraSweepGesture sweep, Point position)
+    {
+        try
+        {
+            if (sweep.Update(position, Bounds.Size) is { } status) InteractionStatusChanged?.Invoke(status);
+        }
+        catch (Exception exception) when (IsEditError(exception))
+        {
+            FinishGesture(cancel: true);
+            InteractionStatusChanged?.Invoke(exception.Message);
+        }
+    }
+
+    private void UpdateCone(CameraLightConeGesture cone, Point position)
+    {
+        try
+        {
+            if (cone.Update(position, Bounds.Size) is { } status) InteractionStatusChanged?.Invoke(status);
+        }
+        catch (Exception exception) when (IsEditError(exception))
+        {
+            FinishGesture(cancel: true);
+            InteractionStatusChanged?.Invoke(exception.Message);
+        }
+    }
+
     private void OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
         if (WalkMode) { e.Handled = true; return; }
-        if (_transform is not null) { e.Handled = true; return; }
+        if (_transform is not null || _sweep is not null || _cone is not null) { e.Handled = true; return; }
         double delta = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
         if (!double.IsFinite(delta) || delta == 0) return;
         if (_dragPointer is not null) _navigationMoved = true;

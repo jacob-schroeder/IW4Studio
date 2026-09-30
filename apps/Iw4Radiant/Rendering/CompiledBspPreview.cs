@@ -4,6 +4,7 @@ using IW4.Formats.SourceFormat.Material;
 using IW4.Game.Assets.ComWorld;
 using IW4.Game.Codecs.GfxMap;
 using Iw4Radiant.Materials;
+using Iw4Radiant.MapSource;
 
 namespace Iw4Radiant.Rendering;
 
@@ -20,9 +21,11 @@ internal sealed class CompiledBspPreview
     internal string? ReflectionProbeDataError { get; }
     internal Vector3 SunDirection { get; }
     internal Vector3 SunColorLinear { get; }
+    internal IReadOnlyDictionary<byte, (bool IsSpotlight, Vector3 Origin, float Radius, Vector3 ColorLinear,
+        Vector3 Direction, float OuterCos, float InnerCos, byte Exponent)> PrimaryLocalLights { get; }
     internal (string Material, int Start, int Count, int WireStart, int WireCount)[] Batches { get; }
     internal int[] BatchLightmapIndices { get; }
-    internal bool[] BatchHasDirectSun { get; }
+    internal byte[] BatchPrimaryLightIndices { get; }
     internal byte[] BatchReflectionProbeIndices { get; }
     internal int MissingSurfaceCount { get; }
     internal int UnsupportedSurfaceCount { get; }
@@ -45,8 +48,10 @@ internal sealed class CompiledBspPreview
         IReadOnlyList<byte[]?> diffuseLightmaps, IReadOnlyList<byte[]?> sunVisibilityLightmaps,
         IReadOnlyList<IReadOnlyList<byte[]>?> reflectionProbeRgbaMips, string? reflectionProbeDataError,
         Vector3 sunDirection, Vector3 sunColorLinear,
+        IReadOnlyDictionary<byte, (bool IsSpotlight, Vector3 Origin, float Radius, Vector3 ColorLinear,
+            Vector3 Direction, float OuterCos, float InnerCos, byte Exponent)> primaryLocalLights,
         (string Material, int Start, int Count, int WireStart, int WireCount)[] batches,
-        int[] batchLightmapIndices, bool[] batchHasDirectSun, byte[] batchReflectionProbeIndices,
+        int[] batchLightmapIndices, byte[] batchPrimaryLightIndices, byte[] batchReflectionProbeIndices,
         int missingSurfaceCount, int unsupportedSurfaceCount,
         int unlightmappedSurfaceCount, int directSunOmittedSurfaceCount,
         string? lightmapDataError, string? sunDataError,
@@ -60,9 +65,10 @@ internal sealed class CompiledBspPreview
         ReflectionProbeDataError = reflectionProbeDataError;
         SunDirection = sunDirection;
         SunColorLinear = sunColorLinear;
+        PrimaryLocalLights = primaryLocalLights;
         Batches = batches;
         BatchLightmapIndices = batchLightmapIndices;
-        BatchHasDirectSun = batchHasDirectSun;
+        BatchPrimaryLightIndices = batchPrimaryLightIndices;
         BatchReflectionProbeIndices = batchReflectionProbeIndices;
         MissingSurfaceCount = missingSurfaceCount;
         UnsupportedSurfaceCount = unsupportedSurfaceCount;
@@ -73,7 +79,7 @@ internal sealed class CompiledBspPreview
         Bounds = bounds;
     }
 
-    internal (int LightmapIndex, bool HasDirectSun) LightingAt(int vertexIndex)
+    internal (int LightmapIndex, byte PrimaryLightIndex) LightingAt(int vertexIndex)
     {
         int low = 0, high = Batches.Length - 1;
         while (low <= high)
@@ -82,7 +88,7 @@ internal sealed class CompiledBspPreview
             if (Batches[middle].Start > vertexIndex) high = middle - 1;
             else low = middle + 1;
         }
-        return (BatchLightmapIndices[high], BatchHasDirectSun[high]);
+        return (BatchLightmapIndices[high], BatchPrimaryLightIndices[high]);
     }
 
     internal byte ReflectionProbeAt(int vertexIndex)
@@ -119,21 +125,18 @@ internal sealed class CompiledBspPreview
         }
         var diffuseLightmaps = new byte[]?[planes.Count];
         var sunVisibilityLightmaps = new byte[]?[planes.Count];
-        for (int index = 0; index < planes.Count; index++)
-        {
-            (byte[] primary, byte[] upper, byte[] lower) = planes[index];
-            if (!IsRadiantDiffuseEncoding(upper, lower)) continue;
-            diffuseLightmaps[index] = upper;
-            sunVisibilityLightmaps[index] = primary;
-        }
         Vector3 sunDirection = Vector3.Zero, sunColorLinear = Vector3.Zero;
+        var primaryLocalLights = new Dictionary<byte, (bool IsSpotlight, Vector3 Origin, float Radius,
+            Vector3 ColorLinear, Vector3 Direction, float OuterCos, float InnerCos, byte Exponent)>();
         string? sunDataError = null;
         try
         {
             IReadOnlyList<ComPrimaryLight> lights = file.GetRenderPrimaryLights();
-            if (lights.Count != 2 || lights[0].Type != GfxLightType.None ||
-                lights[1].Type != GfxLightType.Directional)
-                sunDataError = "The compiled primary-light table is outside Radiant's two-row sun profile.";
+            if (lights.Count < 2 || lights.Count > byte.MaxValue ||
+                lights[0].Type != GfxLightType.None || lights[1].Type != GfxLightType.Directional ||
+                lights.Skip(2).Any(light => light.Type is not (GfxLightType.Omni or GfxLightType.Spot) ||
+                    light.DefName != "light_point_linear" || light.CanUseShadowMapRaw != 0))
+                sunDataError = "The compiled primary-light table is outside Radiant's Sun and stationary local-light profile.";
             else
             {
                 var direction = lights[1].Dir;
@@ -153,14 +156,55 @@ internal sealed class CompiledBspPreview
                     if (!Finite(sunColorLinear))
                         sunDataError = "The compiled sun color exceeds the supported range.";
                 }
+                for (int index = 2; index < lights.Count && sunDataError is null; index++)
+                {
+                    ComPrimaryLight light = lights[index];
+                    Vector3 origin = new(light.Origin.X, light.Origin.Y, light.Origin.Z);
+                    Vector3 encoded = new(light.Color.X, light.Color.Y, light.Color.Z);
+                    if (!Finite(origin) || !float.IsFinite(light.Radius) || light.Radius <= 0 ||
+                        !Finite(encoded) || Vector3.Min(encoded, Vector3.Zero) != Vector3.Zero)
+                    {
+                        sunDataError = $"Compiled primary local light {index} has invalid position, radius, or color.";
+                        break;
+                    }
+                    Vector3 nativeDirection = new(light.Dir.X, light.Dir.Y, light.Dir.Z);
+                    float nativeDirectionLengthSquared = nativeDirection.LengthSquared();
+                    if (light.Type == GfxLightType.Spot &&
+                        (!Finite(nativeDirection) || !float.IsFinite(nativeDirectionLengthSquared) ||
+                         nativeDirectionLengthSquared <= 0 || !float.IsFinite(light.CosHalfFovOuter) ||
+                         !float.IsFinite(light.CosHalfFovInner) || light.CosHalfFovOuter <= 0 ||
+                         light.CosHalfFovOuter >= light.CosHalfFovInner || light.CosHalfFovInner > 1))
+                    {
+                        sunDataError = $"Compiled primary Spot {index} has invalid direction or cone cosines.";
+                        break;
+                    }
+                    Vector3 linear = new(GfxColorCodec.GammaToLinear(encoded.X),
+                        GfxColorCodec.GammaToLinear(encoded.Y), GfxColorCodec.GammaToLinear(encoded.Z));
+                    if (!Finite(linear))
+                    {
+                        sunDataError = $"Compiled primary local light {index} color exceeds the supported range.";
+                        break;
+                    }
+                    primaryLocalLights.Add((byte)index, (light.Type == GfxLightType.Spot, origin, light.Radius,
+                        linear, light.Type == GfxLightType.Spot ? Vector3.Normalize(nativeDirection) : Vector3.Zero,
+                        light.CosHalfFovOuter, light.CosHalfFovInner, light.Exponent));
+                }
             }
         }
         catch (InvalidDataException exception) { sunDataError = exception.Message; }
+        bool hasLocalLookup = sunDataError is null && primaryLocalLights.Count != 0;
+        for (int index = 0; index < planes.Count; index++)
+        {
+            (byte[] primary, byte[] upper, byte[] lower) = planes[index];
+            if (!IsRadiantDiffuseEncoding(upper, lower, hasLocalLookup)) continue;
+            diffuseLightmaps[index] = upper;
+            sunVisibilityLightmaps[index] = primary;
+        }
         var vertices = new List<SceneVertex>();
         var lightmapUvs = new List<Vector2>();
         var batches = new List<(string Material, int Start, int Count, int WireStart, int WireCount)>();
         var batchLightmapIndices = new List<int>();
-        var batchHasDirectSun = new List<bool>();
+        var batchPrimaryLightIndices = new List<byte>();
         var batchReflectionProbeIndices = new List<byte>();
         int missing = 0, unsupported = 0, unlightmapped = 0, sunOmitted = 0;
         Vector3 min = new(float.PositiveInfinity), max = new(float.NegativeInfinity);
@@ -177,14 +221,15 @@ internal sealed class CompiledBspPreview
                 unsupported++;
                 index = UnsupportedLightmap;
             }
-            bool hasSun = index >= 0 && index != NoLightmap &&
-                sunDataError is null && surface.PrimaryLightIndex == 1;
-            if (index >= 0 && index != NoLightmap && !hasSun) sunOmitted++;
-            return (Surface: surface, LightmapIndex: index, HasSun: hasSun,
+            byte primaryIndex = index >= 0 && index != NoLightmap && sunDataError is null &&
+                (surface.PrimaryLightIndex == 1 || primaryLocalLights.ContainsKey(surface.PrimaryLightIndex))
+                ? surface.PrimaryLightIndex : (byte)0;
+            if (index >= 0 && index != NoLightmap && primaryIndex == 0) sunOmitted++;
+            return (Surface: surface, LightmapIndex: index, PrimaryIndex: primaryIndex,
                 surface.ReflectionProbeIndex);
         });
         foreach (var material in classified.GroupBy(item => item.Surface.Material, StringComparer.Ordinal))
-        foreach (var group in material.GroupBy(item => (item.LightmapIndex, item.HasSun, item.ReflectionProbeIndex)))
+        foreach (var group in material.GroupBy(item => (item.LightmapIndex, item.PrimaryIndex, item.ReflectionProbeIndex)))
         {
             int start = vertices.Count;
             foreach (var item in group)
@@ -200,7 +245,7 @@ internal sealed class CompiledBspPreview
             }
             batches.Add((material.Key, start, vertices.Count - start, 0, 0));
             batchLightmapIndices.Add(group.Key.LightmapIndex);
-            batchHasDirectSun.Add(group.Key.HasSun);
+            batchPrimaryLightIndices.Add(group.Key.PrimaryIndex);
             batchReflectionProbeIndices.Add(group.Key.ReflectionProbeIndex);
         }
         void Add((Vector3 Position, Vector3 Normal, Vector2 Uv, Vector2 LightmapUv, Vector4 Color) vertex)
@@ -215,7 +260,7 @@ internal sealed class CompiledBspPreview
             throw new InvalidDataException("The d3dbsp has no render triangles to preview.");
         var preview = new CompiledBspPreview(vertices.ToArray(), lightmapUvs.ToArray(), diffuseLightmaps,
             sunVisibilityLightmaps, reflectionProbeRgbaMips, reflectionProbeDataError, sunDirection, sunColorLinear,
-            batches.ToArray(), batchLightmapIndices.ToArray(), batchHasDirectSun.ToArray(),
+            primaryLocalLights, batches.ToArray(), batchLightmapIndices.ToArray(), batchPrimaryLightIndices.ToArray(),
             batchReflectionProbeIndices.ToArray(),
             missing, unsupported, unlightmapped, sunOmitted, lightmapDataError, sunDataError, (min, max));
         try { preview._modelPlacements = file.GetRenderStaticModels(); }
@@ -298,12 +343,29 @@ internal sealed class CompiledBspPreview
         ModelAssetNotice = notice.Length == 0 ? null : notice;
     }
 
-    private static bool IsRadiantDiffuseEncoding(byte[] upper, byte[] lower)
+    private static bool IsRadiantDiffuseEncoding(byte[] upper, byte[] lower, bool hasLocalLookup)
     {
         // BrushLightmapCompiler writes sqrt-encoded diffuse RGB in the upper
         // plane, no directional RGB in the lower, and alpha 128 at occupied luxels.
+        // Primary local-light maps reserve the upper plane's first row for the exact
+        // native falloff strip; the corresponding lower row remains zero.
+        int lookupPixels = PrimaryLocalLightProfile.LookupStart + PrimaryLocalLightProfile.Width + 1;
+        if (hasLocalLookup)
+        {
+            ReadOnlySpan<byte> samples = PrimaryLocalLightProfile.Samples;
+            for (int x = 0; x < lookupPixels; x++)
+            {
+                byte value = samples[Math.Clamp(x - PrimaryLocalLightProfile.LookupStart,
+                    0, PrimaryLocalLightProfile.Width - 1)];
+                int offset = x * 4;
+                if (upper[offset] != value || upper[offset + 1] != value || upper[offset + 2] != value ||
+                    upper[offset + 3] != byte.MaxValue || lower[offset] != 0 || lower[offset + 1] != 0 ||
+                    lower[offset + 2] != 0 || lower[offset + 3] != 0)
+                    return false;
+            }
+        }
         bool occupied = false;
-        for (int offset = 0; offset < upper.Length; offset += 4)
+        for (int offset = hasLocalLookup ? lookupPixels * 4 : 0; offset < upper.Length; offset += 4)
         {
             if (lower[offset] != 0 || lower[offset + 1] != 0 || lower[offset + 2] != 0 ||
                 upper[offset + 3] is not (0 or 128) || lower[offset + 3] != upper[offset + 3])

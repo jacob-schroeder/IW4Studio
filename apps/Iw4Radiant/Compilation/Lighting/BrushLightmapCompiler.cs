@@ -42,11 +42,13 @@ internal static class BrushLightmapCompiler
             MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 2)
         };
         using var traversal = scene.CreateGpuTraversal();
-        int cursorX = 0, cursorY = 0, rowHeight = 0;
+        int reservedRows = scene.HasPrimaryLocalLights ? 1 : 0;
+        int cursorX = 0, cursorY = reservedRows, rowHeight = 0;
         for (int faceIndex = 0; faceIndex < scene.Polygons.Count; faceIndex++)
         {
             scene.CancellationToken.ThrowIfCancellationRequested();
             MapRenderSurface polygon = scene.Polygons[faceIndex];
+            byte primaryLight = scene.PrimaryLightForFace(faceIndex);
             faceUvs[faceIndex] = new Vector2[polygon.Vertices.Length];
             // Water shaders use native spectra, lights and reflection probes, not lightmaps.
             // Subdivision must not turn every wave cell into an unused CPU lighting bake.
@@ -73,7 +75,8 @@ internal static class BrushLightmapCompiler
                 Flush();
                 primary = new byte[primary.Length];
                 secondary = new byte[secondary.Length];
-                cursorX = cursorY = rowHeight = 0;
+                cursorX = rowHeight = 0;
+                cursorY = reservedRows;
             }
             faceIndices[faceIndex] = checked((byte)rawPages.Count);
             var layout = new FaceLayout(rawPages.Count, cursorX, cursorY, width, height,
@@ -159,26 +162,27 @@ internal static class BrushLightmapCompiler
                 scene.CancellationToken.ThrowIfCancellationRequested();
                 for (int x = 0; x < width; x++)
                 {
-                    Vector3 irradiance = Vector3.Zero;
+                    Vector3 irradiance = Vector3.Zero, directForBounce = Vector3.Zero;
                     for (int sy = 0; sy < 2; sy++)
                     for (int sx = 0; sx < 2; sx++)
                     {
-                        if (baked is not null)
-                            irradiance += baked[((y - firstRow) * width + x) * 4 + sy * 2 + sx];
-                        else
-                        {
-                            Vector3 point = Position(x + (sx - 0.5f) * 0.5f, y + (sy - 0.5f) * 0.5f);
-                            irradiance += scene.DiffuseIrradiance(point, polygon.Sample(point).Normal);
-                        }
+                        Vector3 point = Position(x + (sx - 0.5f) * 0.5f, y + (sy - 0.5f) * 0.5f);
+                        Vector3 sampleNormal = polygon.Sample(point).Normal;
+                        Vector3 direct = baked is not null
+                            ? baked[((y - firstRow) * width + x) * 4 + sy * 2 + sx]
+                            : scene.DiffuseIrradiance(point, sampleNormal);
+                        directForBounce += direct;
+                        irradiance += scene.SecondaryIrradiance(point, sampleNormal, direct, primaryLight);
                     }
                     // Filter irradiance in linear light, before the native square-root encoding.
                     irradiance *= 0.25f;
+                    directForBounce *= 0.25f;
                     int upper = ((cursorY + y) * GfxLightmapCodec.SecondaryWidth + cursorX + x) * 4;
                     int lower = upper + GfxLightmapCodec.SecondaryWidth * GfxLightmapCodec.SecondaryPlaneHeight * 4;
                     // Native lm_* reconstructs upper.rgb * normal.z plus lower.rgb *
-                    // directional weight, then squares the result. Sun is added separately
-                    // using the primary visibility image. This bake stores diffuse sky
-                    // and local lights in the upper term; the directional term is empty.
+                    // directional weight, then squares the result. Only the assigned
+                    // primary's direct term is separate; other direct light and bounce
+                    // remain in secondary RGB. The directional term is empty.
                     secondary[upper] = EncodeIrradiance(irradiance.X);
                     secondary[upper + 1] = EncodeIrradiance(irradiance.Y);
                     secondary[upper + 2] = EncodeIrradiance(irradiance.Z);
@@ -187,25 +191,24 @@ internal static class BrushLightmapCompiler
                     for (int py = 0; py < 2; py++)
                     for (int px = 0; px < 2; px++)
                     {
-                        float visibility = 0;
+                        float visibility = 0, sunVisibility = 0;
                         for (int sy = 0; sy < 2; sy++)
                         for (int sx = 0; sx < 2; sx++)
                         {
-                            if (bakedSun is not null)
-                                visibility += bakedSun[(((y - firstRow) * width + x) * 4 + py * 2 + px) * 4 + sy * 2 + sx];
-                            else
-                            {
-                                Vector3 sample = Position(x + (px - 0.5f) * 0.5f + (sx - 0.5f) * 0.25f,
-                                    y + (py - 0.5f) * 0.5f + (sy - 0.5f) * 0.25f);
-                                visibility += scene.SunVisibility(sample, normal);
-                            }
+                            Vector3 sample = Position(x + (px - 0.5f) * 0.5f + (sx - 0.5f) * 0.25f,
+                                y + (py - 0.5f) * 0.5f + (sy - 0.5f) * 0.25f);
+                            float sun = bakedSun is not null
+                                ? bakedSun[(((y - firstRow) * width + x) * 4 + py * 2 + px) * 4 + sy * 2 + sx]
+                                : scene.SunVisibility(sample, normal);
+                            sunVisibility += sun;
+                            visibility += primaryLight == 1 ? sun : scene.PrimaryVisibility(sample, normal, primaryLight);
                         }
-                        totalSunVisibility += visibility;
+                        totalSunVisibility += sunVisibility;
                         int offset = ((cursorY + y) * 2 + py) * GfxLightmapCodec.PrimaryWidth + (cursorX + x) * 2 + px;
                         primary[offset] = (byte)Math.Clamp(MathF.Round(visibility * 0.25f * 255), 0, 255);
                     }
                     if (recordDirect && BrushLightingScene.IsDirectCacheLuxel(x, y, width, height))
-                        scene.RecordDirectLuxel(faceIndex, x, y, irradiance, totalSunVisibility / 16);
+                        scene.RecordDirectLuxel(faceIndex, x, y, directForBounce, totalSunVisibility / 16);
                 }
             }
 
@@ -295,6 +298,7 @@ internal static class BrushLightmapCompiler
         {
             if (rawPages.Count >= LightmapLimit)
                 throw new NotSupportedException("The baked world exceeds the 31-lightmap v22 limit.");
+            if (scene.HasPrimaryLocalLights) PrimaryLocalLightProfile.WriteLookupRow(secondary);
             rawPages.Add((primary, secondary));
         }
     }
@@ -434,7 +438,9 @@ internal static class BrushLightmapCompiler
     private static int AtlasCount(BrushLightingScene scene, Vector2[] spans, float brushScale, float authoredScale,
         float[]? luxelSizes)
     {
-        int count = 1, cursorX = 0, cursorY = 0, rowHeight = 0;
+        int reservedRows = scene.HasPrimaryLocalLights ? 1 : 0;
+        int usableHeight = GfxLightmapCodec.SecondaryPlaneHeight - reservedRows;
+        int count = 1, cursorX = 0, cursorY = reservedRows, rowHeight = 0;
         for (int faceIndex = 0; faceIndex < scene.Polygons.Count; faceIndex++)
         {
             if (scene.IsSky(faceIndex) || scene.IsWater(faceIndex)) continue;
@@ -444,9 +450,9 @@ internal static class BrushLightmapCompiler
             if (!float.IsFinite(requestedSize)) requestedSize = float.MaxValue;
             float luxelSize = MathF.Max(requestedSize,
                 MathF.Max(spans[faceIndex].X / (GfxLightmapCodec.SecondaryWidth - 1 - Border * 2),
-                    spans[faceIndex].Y / (GfxLightmapCodec.SecondaryPlaneHeight - 1 - Border * 2)));
+                    spans[faceIndex].Y / (usableHeight - 1 - Border * 2)));
             while (TileLength(spans[faceIndex].X, luxelSize) > GfxLightmapCodec.SecondaryWidth ||
-                   TileLength(spans[faceIndex].Y, luxelSize) > GfxLightmapCodec.SecondaryPlaneHeight)
+                   TileLength(spans[faceIndex].Y, luxelSize) > usableHeight)
                 luxelSize = MathF.BitIncrement(luxelSize);
             if (luxelSizes is not null) luxelSizes[faceIndex] = luxelSize;
             int width = TileLength(spans[faceIndex].X, luxelSize);
@@ -460,7 +466,8 @@ internal static class BrushLightmapCompiler
             if (cursorY + height > GfxLightmapCodec.SecondaryPlaneHeight)
             {
                 count++;
-                cursorX = cursorY = rowHeight = 0;
+                cursorX = rowHeight = 0;
+                cursorY = reservedRows;
             }
             cursorX += width;
             rowHeight = Math.Max(rowHeight, height);

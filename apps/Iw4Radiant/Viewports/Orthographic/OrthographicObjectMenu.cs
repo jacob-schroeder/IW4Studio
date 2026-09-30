@@ -2,6 +2,7 @@ using System.Numerics;
 using Avalonia.Controls;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Viewports;
 
 namespace Iw4Radiant.Viewports.Orthographic;
 
@@ -35,7 +36,10 @@ internal static class OrthographicObjectMenu
 
         MapEntity? currentEntity = session.Selection.Active is { } active
             ? MapOrganization.Entity(document, active) : null;
-        if (currentEntity is { ClassName: not "worldspawn" })
+        MenuItem? lighting = LightObjectMenu.Create(session, document, hit, inspectEntity, status);
+        if (lighting is not null) menu.Items.Add(lighting);
+        if (currentEntity is { ClassName: not "worldspawn" } &&
+            !(currentEntity.ClassName == "light" && lighting is not null))
         {
             var properties = new MenuItem { Header = $"Edit {currentEntity.ClassName} properties" };
             properties.Click += (_, _) =>

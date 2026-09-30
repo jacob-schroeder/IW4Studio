@@ -9,7 +9,7 @@ namespace Iw4Radiant.Viewports.Orthographic;
 
 internal sealed class OrthographicGestures
 {
-    private enum Gesture { None, Pan, Transform, Marquee, PaintSelection, Brush, Terrain, Sculpt, Clip }
+    private enum Gesture { None, Pan, Transform, Marquee, PaintSelection, Brush, Terrain, Sculpt, Clip, Sweep }
     private readonly Control _viewport;
     private readonly OrthographicProjection _projection;
     private readonly OrthographicTransform _transform;
@@ -25,6 +25,7 @@ internal sealed class OrthographicGestures
     private Vector2 _startWorld, _currentWorld;
     private bool _editStarted, _changed, _pointerInside, _changingSelection, _toggle, _paintSelecting, _panDragged;
     private SelectionVolumeMode _selectionVolumeMode;
+    private MapEntity? _sweepEntity;
 
     internal OrthographicGestures(Control viewport, OrthographicProjection projection)
     {
@@ -65,6 +66,7 @@ internal sealed class OrthographicGestures
                          _gestureItems.Any(item => !session.Selection.Contains(item))) EndGesture(cancel: true);
             }
         }
+        if (!IsActive) _viewport.Cursor = null;
         _viewport.InvalidateVisual();
     }
 
@@ -79,6 +81,7 @@ internal sealed class OrthographicGestures
         if (Session is not { } session || IsActive) return;
         PointerPointProperties properties = e.GetCurrentPoint(_viewport).Properties;
         if (!properties.IsLeftButtonPressed && !properties.IsMiddleButtonPressed && !properties.IsRightButtonPressed) return;
+        _viewport.Cursor = null;
         _viewport.Focus(NavigationMethod.Pointer, e.KeyModifiers);
         _startScreen = _lastScreen = _cursorScreen = e.GetPosition(_viewport);
         _startWorld = _currentWorld = Snap(_projection.ToWorld(_startScreen));
@@ -97,6 +100,12 @@ internal sealed class OrthographicGestures
             return;
         }
         if (_button != MouseButton.Left) _gesture = Gesture.Pan;
+        else if (!_toggle && session.Tool == EditorTool.Select && TryPickSweepHandle(session, _startScreen, out _sweepEntity))
+        {
+            session.StopLightSweepPreview();
+            _gesture = Gesture.Sweep;
+            CursorStatusChanged?.Invoke("Drag to adjust the total sweep arc; both endpoints move together. Escape cancels.");
+        }
         else if (_toggle && session.Tool is EditorTool.Select or EditorTool.Terrain or EditorTool.Clip)
         {
             object? hit = OrthographicGeometry.HitTest(session, _projection, _startScreen);
@@ -146,7 +155,9 @@ internal sealed class OrthographicGestures
         _gestureItems = session.Selection.Items.ToArray();
         _pointer = e.Pointer;
         e.Pointer.Capture(_viewport);
-        _viewport.Cursor = new Cursor(_gesture == Gesture.Pan ? StandardCursorType.SizeAll : StandardCursorType.Cross);
+        _viewport.Cursor = _gesture is Gesture.Sweep or Gesture.Transform
+            ? ViewportCursors.ClosedHand
+            : new Cursor(_gesture == Gesture.Pan ? StandardCursorType.SizeAll : StandardCursorType.Cross);
         if (_gesture == Gesture.Sculpt)
             _changed |= _stroke.Begin(session, _projection.ToWorld(_startScreen), e.KeyModifiers.HasFlag(KeyModifiers.Shift), StartEdit);
         if (HasClipPreview) ClipPreviewChanged?.Invoke();
@@ -247,6 +258,7 @@ internal sealed class OrthographicGestures
         var labels = _projection.Plane switch { OrthoPlane.Top => ("X", "Y"), OrthoPlane.Front => ("X", "Z"), _ => ("Y", "Z") };
         CursorStatusChanged?.Invoke((Session?.HasPlacement == true ? $"Place {Session.PlacementLabel} · click, Shift to repeat, Esc to cancel · " : "") +
             FormattableString.Invariant($"{labels.Item1}: {world.X:0.##}   {labels.Item2}: {world.Y:0.##}"));
+        if (!IsActive) UpdateHoverCursor(e.KeyModifiers);
         if (Session is not { } session || !ReferenceEquals(_pointer, e.Pointer))
         {
             if (Session?.Tool == EditorTool.Sculpt) _viewport.InvalidateVisual();
@@ -266,6 +278,8 @@ internal sealed class OrthographicGestures
             PaintSelection(OrthographicGeometry.HitTestSegment(session, _projection, _lastScreen, _cursorScreen).ToArray());
         else if (_gesture == Gesture.Sculpt)
             _changed |= _stroke.Move(session, world, e.KeyModifiers.HasFlag(KeyModifiers.Shift), StartEdit);
+        else if (_gesture == Gesture.Sweep && (Dragged || _editStarted))
+            UpdateSweep(session, world);
         else if (Dragged || _editStarted)
         {
             _currentWorld = Snap(world);
@@ -332,6 +346,7 @@ internal sealed class OrthographicGestures
                 else if (_gesture == Gesture.Clip && ClipStart == ClipEnd) ClearClipPreview();
             }
             EndGesture(cancel: false);
+            UpdateHoverCursor(e.KeyModifiers);
             if (showContextMenu && Session is not null) ContextMenuRequested?.Invoke(menuPoint, menuPosition);
         }
         catch (Exception exception) when (IsInputError(exception)) { Fail(exception); }
@@ -380,6 +395,7 @@ internal sealed class OrthographicGestures
         if (cancel && _gesture == Gesture.Clip) ClearClipPreview();
         _pointer = null;
         _gesture = Gesture.None;
+        _sweepEntity = null;
         _gestureDocument = null;
         _gestureItems = _selectionBefore = _marqueeCandidates = [];
         _selectionVolumeMode = SelectionVolumeMode.None;
@@ -438,6 +454,75 @@ internal sealed class OrthographicGestures
         _editStarted = true;
     }
 
+    private bool TryPickSweepHandle(EditorSession session, Point point, out MapEntity? entity)
+    {
+        entity = session.Selection.Active as MapEntity;
+        if (_projection.Plane == OrthoPlane.Top || entity?.ClassName != "light" ||
+            !MapLight.TryCreate(entity, session.Scene.ResolveTargets(entity), out MapLight light, out _) ||
+            !light.IsMoving) return false;
+        float yaw = MathF.Atan2(light.Direction.Y, light.Direction.X);
+        float component = _projection.Plane == OrthoPlane.Front ? MathF.Cos(yaw) : MathF.Sin(yaw);
+        if (MathF.Abs(component) < 0.1f) return false;
+        foreach (Vector3 direction in new[] { light.SweepStartDirection, light.SweepEndDirection })
+        {
+            Point handle = _projection.ToScreen(light.Origin + direction * light.Radius);
+            if (OrthographicGeometry.Distance(point, handle) <= 8) return true;
+        }
+        entity = null;
+        return false;
+    }
+
+    private void UpdateHoverCursor(KeyModifiers modifiers)
+    {
+        bool hover = false;
+        if (_pointerInside && Session is { HasPlacement: false } session &&
+            !modifiers.HasFlag(KeyModifiers.Shift))
+        {
+            if (session.Tool == EditorTool.Select &&
+                TryPickSweepHandle(session, _cursorScreen, out _))
+                hover = true;
+            else if (session.Tool is EditorTool.Select or EditorTool.Vertex &&
+                     (session.Tool != EditorTool.Select || session.SelectionVolumeMode == SelectionVolumeMode.None))
+            {
+                if (session.Tool == EditorTool.Vertex &&
+                    OrthographicSelection.HitTestVertexHandle(session, _projection, _cursorScreen) is { } handle)
+                    hover = session.TransformMode == TransformMode.Move &&
+                        (handle.Vertices.All(session.Selection.Contains)
+                            ? session.CanTransformSelection
+                            : handle.Vertices.All(SelectionGeometry.CanTransform) &&
+                              handle.Vertices.Any(vertex => vertex is not TerrainVertexSelection terrain ||
+                                  !session.IsPatchVertexLocked(terrain)));
+                else hover = _transform.CanBegin(session, _cursorScreen);
+            }
+        }
+        var cursor = hover ? ViewportCursors.OpenHand : null;
+        if (!ReferenceEquals(_viewport.Cursor, cursor)) _viewport.Cursor = cursor;
+    }
+
+    private void UpdateSweep(EditorSession session, Vector2 world)
+    {
+        if (_sweepEntity is not { } entity ||
+            !MapLight.TryCreate(entity, session.Scene.ResolveTargets(entity), out MapLight light, out _) ||
+            !MapLightProperties.TryRead(entity, out MapLightProperties properties, out _)) return;
+        Vector3 origin = light.Origin;
+        float yaw = MathF.Atan2(light.Direction.Y, light.Direction.X);
+        float component = _projection.Plane == OrthoPlane.Front ? MathF.Cos(yaw) : MathF.Sin(yaw);
+        if (MathF.Abs(component) < 0.1f) return;
+        Vector2 projectedOrigin = _projection.Project(origin);
+        float horizontal = (world.X - projectedOrigin.X) / component;
+        float pitch = MathF.Atan2(-(world.Y - projectedOrigin.Y), horizontal) * (180 / MathF.PI);
+        float centerPitch = MathF.Atan2(-light.Direction.Z,
+            new Vector2(light.Direction.X, light.Direction.Y).Length()) * (180 / MathF.PI);
+        float maximum = MathF.Min(120, 180 - light.OuterAngle * (360 / MathF.PI) - 0.01f);
+        if (maximum < 0.1f) return;
+        float arc = Math.Clamp(2 * MathF.Abs(pitch - centerPitch), 0.1f, maximum);
+        if (MathF.Abs(arc - properties.SweepAngle) < 0.01f) return;
+        StartEdit();
+        (properties with { SweepAngle = arc }).ApplyTo(entity);
+        _changed = true;
+        session.RefreshLightInfluencePreview(entity);
+    }
+
     private void Fail(Exception exception)
     {
         CancelGesture();
@@ -450,6 +535,7 @@ internal sealed class OrthographicGestures
     internal void PointerExited()
     {
         _pointerInside = false;
+        if (!IsActive) _viewport.Cursor = null;
         _viewport.InvalidateVisual();
     }
 

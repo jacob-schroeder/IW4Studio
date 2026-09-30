@@ -3,15 +3,18 @@ using System.Numerics;
 using System.Text;
 using IW4.Formats.D3dbsp;
 using IW4.Formats.SourceFormat.Physics;
+using IW4.Game.Assets.ComWorld;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Materials;
 using Iw4Radiant.Rendering;
 
 namespace Iw4Radiant.Compilation;
 
 internal static class MapModelCompiler
 {
-    internal static D3dbspFile Append(MapDocument document, D3dbspFile compiled)
+    internal static D3dbspFile Append(MapDocument document, D3dbspFile compiled,
+        IReadOnlyDictionary<string, XModelSource> modelSources, IReadOnlyList<ComPrimaryLight> primaryLights)
     {
         MapEntity[] models = document.Entities.Where(entity =>
             entity.ClassName is "misc_model" or RuntimePhysicsAuthoring.ClassName).ToArray();
@@ -53,6 +56,35 @@ internal static class MapModelCompiler
             normalized.Properties.Remove("modelscale_vec");
             normalized.Properties["angles"] = FormattableString.Invariant($"{angles.X:G9} {angles.Y:G9} {angles.Z:G9}");
             normalized.Properties["modelscale"] = scale.X.ToString("G9", CultureInfo.InvariantCulture);
+            if (source.ClassName == "misc_model" && primaryLights.Count > 2)
+            {
+                if (!modelSources.TryGetValue(name, out XModelSource? model))
+                    throw new InvalidDataException($"Static model '{name}' is unavailable for primary-light assignment.");
+                var (minimum, maximum) = XModelGeometry.Bounds(source, model);
+                if (!BrushGeometry.IsFinite(minimum) || !BrushGeometry.IsFinite(maximum))
+                    throw new InvalidDataException($"Static model '{name}' has no finite render bounds.");
+                byte primaryIndex = 1;
+                for (int index = 2; index < primaryLights.Count; index++)
+                {
+                    ComPrimaryLight light = primaryLights[index];
+                    Vector3 origin = new(light.Origin.X, light.Origin.Y, light.Origin.Z);
+                    if (Vector3.DistanceSquared(origin, Vector3.Clamp(origin, minimum, maximum)) >= light.Radius * light.Radius)
+                        continue;
+                    if (light.Type == GfxLightType.Spot &&
+                        !PrimaryLocalLightProfile.SpotIntersectsBounds(origin,
+                            -new Vector3(light.Dir.X, light.Dir.Y, light.Dir.Z), light.CosHalfFovExpanded,
+                            minimum, maximum))
+                        continue;
+                    primaryIndex = checked((byte)index);
+                    break;
+                }
+                string groundLighting = source.Properties.GetValueOrDefault("gndLt", "00000000");
+                if (groundLighting.Length is not (8 or 10) || groundLighting.Any(character => !Uri.IsHexDigit(character)))
+                    throw new InvalidDataException($"Static model '{name}' gndLt must contain four or five hex bytes.");
+                // The native placement codec stores its primary index in byte five.
+                // Keeping the first four bytes zero leaves grid lighting enabled.
+                normalized.Properties["gndLt"] = groundLighting[..8] + primaryIndex.ToString("X2", CultureInfo.InvariantCulture);
+            }
             output.Entities.Add(normalized);
         }
 

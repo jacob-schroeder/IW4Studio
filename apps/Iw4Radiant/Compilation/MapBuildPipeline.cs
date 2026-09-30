@@ -50,6 +50,7 @@ internal static class MapBuildPipeline
         if (!Directory.Exists(outputFolder)) throw new DirectoryNotFoundException("Choose an existing output folder.");
         string mapName = Path.GetFileNameWithoutExtension(sourcePath);
         MapEmitterScripts? emitters = MapEmitterScriptAuthoring.Create(document, sourcePath, mapName);
+        MapMovingLightScripts? movingLights = MapMovingLightScripts.Create(document, sourcePath, mapName);
         if (string.IsNullOrWhiteSpace(emitterAssetDirectory) ||
             !Directory.Exists(emitterAssetDirectory))
             throw new DirectoryNotFoundException(
@@ -97,14 +98,15 @@ internal static class MapBuildPipeline
                 bsp.Write(bspPath);
                 progress.Report("Compiled BSP written.");
             }, cancellationToken);
-            IReadOnlyList<(string Name, string Path)> emitterRawFiles = emitters?.WriteTo(staging) ?? [];
+            var mapRawFiles = new List<(string Name, string Path)>(emitters?.WriteTo(staging) ?? []);
+            if (movingLights is not null) mapRawFiles.Add(movingLights.WriteTo(staging));
             if (emitters is not null)
             {
                 progress.Report($"Exported {emitters.FxNames.Length} FX references and {emitters.SoundNames.Length} sound aliases to map scripts.");
             }
             progress.Report("Compiling source assets and included startup assets; linking the PS3 fastfile…");
             await RunLinkerAsync(linkerPath, bspPath, assetName, fastFilePath,
-                emitters, emitterAssetDirectory, emitterRawFiles, soundVariantPaths,
+                emitters, emitterAssetDirectory, mapRawFiles, soundVariantPaths,
                 sourcePath, progress, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(fastFilePath) || new FileInfo(fastFilePath).Length == 0)
@@ -125,7 +127,7 @@ internal static class MapBuildPipeline
     private static async Task RunLinkerAsync(string linkerPath, string bspPath,
         string assetName, string fastFilePath,
         MapEmitterScripts? emitters, string emitterAssetDirectory,
-        IReadOnlyList<(string Name, string Path)> emitterRawFiles,
+        IReadOnlyList<(string Name, string Path)> mapRawFiles,
         IReadOnlyDictionary<string, string> soundVariantPaths,
         string sourcePath,
         IProgress<string> progress,
@@ -197,7 +199,7 @@ internal static class MapBuildPipeline
             start.ArgumentList.Add(soundVariantPaths.TryGetValue(name, out string? path)
                 ? $"{name}={path}" : name);
         }
-        foreach (var rawFile in emitterRawFiles)
+        foreach (var rawFile in mapRawFiles)
         {
             start.ArgumentList.Add("--rawfile");
             start.ArgumentList.Add($"{rawFile.Name}={rawFile.Path}");

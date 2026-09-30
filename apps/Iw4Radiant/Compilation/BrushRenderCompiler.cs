@@ -15,7 +15,7 @@ namespace Iw4Radiant.Compilation;
 
 internal static class BrushRenderCompiler
 {
-    internal static ComWorldAsset CompileSun(MapDocument document, string assetName)
+    internal static ComWorldAsset CompilePrimaryLights(MapDocument document, string assetName)
     {
         if (!MapSunProperties.TryRead(document.World, out MapSunProperties? source, out string? error))
             throw new InvalidDataException(error);
@@ -24,21 +24,38 @@ internal static class BrushRenderCompiler
         Vector3 color = sun.Color * sun.Intensity;
         if (!BrushGeometry.IsFinite(color))
             throw new InvalidDataException("The authored sun color and intensity exceed the supported numeric range.");
+        var lights = new List<ComPrimaryLight>
+        {
+            new() { Type = GfxLightType.None },
+            new() { Type = GfxLightType.Directional, Color = ToVec3(color), Dir = ToVec3(sun.Direction) }
+        };
+        foreach (var (_, light, _) in MapLight.EnumeratePrimary(document))
+        {
+            // Omni diffuse stays spherical. Its native shadow pass uses these stock
+            // 120-degree outer / 90-degree inner cones with a fixed downward projection.
+            float outer = light.IsSpotlight ? MathF.Cos(light.OuterAngle) : 0.49999997f;
+            lights.Add(new ComPrimaryLight
+            {
+                Type = light.IsSpotlight ? GfxLightType.Spot : GfxLightType.Omni,
+                Color = ToVec3(light.Color), Origin = ToVec3(light.Origin), Radius = light.Radius,
+                // Native Spot direction points toward the source, opposite its aim target.
+                Dir = ToVec3(light.IsSpotlight ? -light.Direction : Vector3.UnitZ),
+                // PS3 selects eligible lights within its runtime shadow budget.
+                CanUseShadowMapRaw = light.DynamicShadows ? (byte)1 : (byte)0,
+                Exponent = light.IsSpotlight ? checked((byte)light.Exponent) : (byte)0,
+                CosHalfFovOuter = outer,
+                CosHalfFovInner = light.IsSpotlight ? MathF.Cos(light.InnerAngle) : 0.70710677f,
+                CosHalfFovExpanded = light.IsMoving ? MathF.Cos(light.CoverageAngle) : outer,
+                RotationLimit = light.IsMoving ? MathF.Cos(light.SweepAngle * (MathF.PI / 360)) : 1,
+                DefName = MapLightDefaults.Definition
+            });
+        }
         return new ComWorldAsset
         {
             Name = assetName,
             IsInUse = 1,
-            PrimaryLightCount = 2,
-            PrimaryLights =
-            [
-                new ComPrimaryLight { Type = GfxLightType.None },
-                new ComPrimaryLight
-                {
-                    Type = GfxLightType.Directional,
-                    Color = ToVec3(color),
-                    Dir = ToVec3(sun.Direction)
-                }
-            ]
+            PrimaryLightCount = lights.Count,
+            PrimaryLights = lights
         };
     }
 
@@ -121,7 +138,7 @@ internal static class BrushRenderCompiler
                 Material = material,
                 LightmapIndex = faceLightmapIndices[faceIndex],
                 ReflectionProbeIndex = isSky ? (byte)0 : NearestProbe(polygon.ReflectionCenter ?? polygon.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / polygon.Vertices.Length, probes),
-                PrimaryLightIndex = isSky ? (byte)0 : (byte)1,
+                PrimaryLightIndex = lightingScene.PrimaryLightForFace(faceIndex),
                 Flags = lightingScene.CastsSunShadow(faceIndex) ? GfxSurfaceFlags.CastsSunShadow : 0,
                 Triangles = new SrfTriangles
                 {
@@ -208,12 +225,14 @@ internal static class BrushRenderCompiler
             Mins = [bounds.MidPoint.X, bounds.MidPoint.Y, bounds.MidPoint.Z],
             Maxs = [bounds.HalfSize.X, bounds.HalfSize.Y, bounds.HalfSize.Z],
             Checksum = clip.Checksum,
-            ShadowGeom = [new GfxShadowGeometry(), new GfxShadowGeometry
+            ShadowGeom = Enumerable.Range(0, checked((int)com.PrimaryLightCount)).Select(light =>
             {
-                SurfaceCount = checked((ushort)shadowSurfaces.Length),
-                SortedSurfIndex = shadowSurfaces
-            }],
-            LightRegions = [new GfxLightRegion(), new GfxLightRegion()],
+                ushort[] owned = shadowSurfaces.Where(index => surfaces[index].PrimaryLightIndex == light).ToArray();
+                return new GfxShadowGeometry { SurfaceCount = checked((ushort)owned.Length), SortedSurfIndex = owned };
+            }).ToArray(),
+            // PS3 sphere/box selectors accept zero-hull rows after radius checks.
+            // Keep an allocated row for every primary; do not emit guessed KDOP hulls.
+            LightRegions = Enumerable.Range(0, checked((int)com.PrimaryLightCount)).Select(_ => new GfxLightRegion()).ToArray(),
             Dpvs = new GfxWorldDpvsStatic
             {
                 StaticSurfaceCount = surfaceCount,

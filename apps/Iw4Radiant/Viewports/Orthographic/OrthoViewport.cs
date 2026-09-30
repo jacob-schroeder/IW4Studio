@@ -42,12 +42,14 @@ public sealed class OrthoViewport : Control
             {
                 previous.Changed -= SessionChanged;
                 previous.PointEntityPreviewChanged -= PointEntityPreviewChanged;
+                previous.LightInfluencePreviewChanged -= LightInfluencePreviewChanged;
             }
             _gestures.Session = value;
             if (Session is { } current)
             {
                 current.Changed += SessionChanged;
                 current.PointEntityPreviewChanged += PointEntityPreviewChanged;
+                current.LightInfluencePreviewChanged += LightInfluencePreviewChanged;
             }
             InvalidateVisual();
         }
@@ -135,6 +137,7 @@ public sealed class OrthoViewport : Control
     }
 
     private void PointEntityPreviewChanged(bool _) => InvalidateVisual();
+    private void LightInfluencePreviewChanged(MapEntity _) => InvalidateVisual();
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -222,6 +225,7 @@ public sealed class OrthoViewport : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        if (!_gestures.IsActive) Cursor = null;
         if (e.Key == Key.Escape)
         {
             if (HasActiveGesture) _gestures.CancelGesture();
@@ -233,6 +237,12 @@ public sealed class OrthoViewport : Control
         {
             e.Handled = CommitClip();
         }
+    }
+
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        base.OnKeyUp(e);
+        if (!_gestures.IsActive) Cursor = null;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)

@@ -136,15 +136,26 @@ public partial class MainWindow
         document = PrefabLibrary.ExpandForCompilation(document, _session.FilePath);
         IReadOnlyDictionary<string, WaterMaterialDefinition> waterDefinitions =
             WaterMaterialAuthoring.ReadDefinitions(document.World.Properties);
+        string[] shadowModelNames = document.Entities
+            .Where(entity => entity.ClassName == "misc_model" && MapModelCompiler.CastsShadow(entity))
+            .Select(entity => entity.Properties.GetValueOrDefault("model") ?? "")
+            .Distinct(StringComparer.Ordinal).ToArray();
+        bool hasPrimaryLocalLights = document.Entities.Any(entity => entity.ClassName == "light" &&
+            MapLight.TryCreate(entity, document.ResolveTargets(entity), out MapLight light, out _) && light.IsPrimary);
+        // Primary assignment needs every static model's bounds, independently
+        // of whether its geometry participates in the shadow bake.
+        IEnumerable<string> modelNames = hasPrimaryLocalLights
+            ? document.Entities.Where(entity => entity.ClassName == "misc_model")
+                .Select(entity => entity.Properties.GetValueOrDefault("model") ?? "").Distinct(StringComparer.Ordinal)
+            : shadowModelNames;
         var models = new Dictionary<string, XModelSource>(StringComparer.Ordinal);
-        foreach (string name in document.Entities.Where(entity => entity.ClassName == "misc_model" && MapModelCompiler.CastsShadow(entity))
-                     .Select(entity => entity.Properties.GetValueOrDefault("model") ?? "").Distinct(StringComparer.Ordinal))
+        foreach (string name in modelNames)
             models.Add(name, Workspace.Models.ResolveModel(name) ??
                 throw new InvalidDataException($"Model '{name}' is unavailable. Load it in the model browser before building."));
         var materials = new Dictionary<string, MaterialSource>(StringComparer.Ordinal);
         foreach (string name in document.Brushes.SelectMany(brush => brush.Faces)
                      .Select(face => face.Material).Concat(document.Terrains.Select(terrain => terrain.Material))
-                     .Concat(models.Values.SelectMany(model => model.Document.Materials).Select(material => material.Name))
+                     .Concat(shadowModelNames.SelectMany(name => models[name].Document.Materials).Select(material => material.Name))
                      .Concat(document.Brushes.Where(BrushGlass.IsGlass).SelectMany(BrushGlassCompiler.RequiredMaterialNames))
                      .Distinct(StringComparer.Ordinal))
         {

@@ -23,6 +23,8 @@ internal static class BrushLightGridCompiler
         // Use a long for the product: imported bounds can overflow a 32-bit count before the
         // native dense representation's ushort.MaxValue sample cap is checked.
         long entryCount = (long)(maxs[0] - mins[0] + 1) * (maxs[1] - mins[1] + 1) * (maxs[2] - mins[2] + 1);
+        if (entryCount > ushort.MaxValue && scene.HasPrimaryLocalLights)
+            throw new NotSupportedException("Primary local lights require a baked light grid. Reduce the map bounds to fit the native 65535-entry grid limit.");
         progress?.Report(entryCount > ushort.MaxValue
             ? "Light grid: preparing oversized-map fallback."
             : $"Light grid: 0/{entryCount} entries completed.");
@@ -38,6 +40,9 @@ internal static class BrushLightGridCompiler
             progress?.Report("Light grid complete: oversized map uses the scene-center fallback; no grid entries baked.");
             return CreateFallbackLightGrid(centerColor);
         }
+        byte[]? primaryOwners = scene.HasPrimaryLocalLights
+            ? SelectPrimaryOwners(scene, mins, maxs, checked((int)entryCount))
+            : null;
         var entries = new List<GfxLightGridEntry>(checked((int)entryCount));
         var black = new byte[GfxLightGridColors.SerializedSize];
         var colors = new List<GfxLightGridColors>
@@ -57,16 +62,15 @@ internal static class BrushLightGridCompiler
         for (int z = mins[2]; z <= maxs[2]; z++)
         {
             scene.CancellationToken.ThrowIfCancellationRequested();
-            Vector3 point = new(GfxLightGridCodec.CoordinateOrigin + x * GfxLightGridCodec.HorizontalSpacing,
-                GfxLightGridCodec.CoordinateOrigin + y * GfxLightGridCodec.HorizontalSpacing,
-                GfxLightGridCodec.CoordinateOrigin + z * GfxLightGridCodec.VerticalSpacing);
+            Vector3 point = GridPoint(x, y, z);
             if (scene.IsInsideSolid(point))
             {
                 entries.Add(new GfxLightGridEntry(0, 0, 1));
                 ReportEntryProgress();
                 continue;
             }
-            scene.DiffuseIrradianceDirections(point, irradiance);
+            byte primaryLight = primaryOwners?[entries.Count] ?? scene.PrimaryLightAt(point);
+            scene.DiffuseIrradianceDirections(point, irradiance, primaryLight);
             Encode(irradiance, rgb);
             Convert.TryToHexString(rgb, key, out _);
             if (!colorLookup.TryGetValue(key, out ushort colorIndex))
@@ -75,7 +79,8 @@ internal static class BrushLightGridCompiler
                 colors.Add(new GfxLightGridColors(rgb.ToArray()));
                 colorIndices.Add(new string(key), colorIndex);
             }
-            entries.Add(new GfxLightGridEntry(colorIndex, scene.SunVisibility(point, Vector3.Zero) > 0 ? (byte)1 : (byte)0, 0));
+            entries.Add(new GfxLightGridEntry(colorIndex,
+                scene.PrimaryVisibility(point, Vector3.Zero, primaryLight) > 0 ? primaryLight : (byte)0, 0));
             ReportEntryProgress();
         }
         // Canonical BSP export omits the final linker-generated row. Keep that
@@ -95,6 +100,55 @@ internal static class BrushLightGridCompiler
             progress.Report($"Light grid: {completedEntries}/{entryCount} entries completed ({completedEntries * 100 / entryCount}%).");
         }
     }
+
+    private static byte[] SelectPrimaryOwners(BrushLightingScene scene, ushort[] mins, ushort[] maxs,
+        int entryCount)
+    {
+        int rows = maxs[0] - mins[0] + 1;
+        int columns = maxs[1] - mins[1] + 1;
+        int depth = maxs[2] - mins[2] + 1;
+        var owners = new byte[entryCount];
+        for (int x = 0; x < rows; x++)
+        for (int y = 0; y < columns; y++)
+        for (int z = 0; z < depth; z++)
+        {
+            scene.CancellationToken.ThrowIfCancellationRequested();
+            Vector3 point = GridPoint(mins[0] + x, mins[1] + y, mins[2] + z);
+            owners[(x * columns + y) * depth + z] = scene.IsInsideSolid(point)
+                ? (byte)0 : scene.PrimaryLightAt(point);
+        }
+
+        // PS3 blends grid RGB, but ordinary Sun and local primary indices compete
+        // for one runtime light. Separate them by a layer of fully baked None rows.
+        // All eight corners of an interpolation cell are within one step per axis.
+        // Baking these rows with owner 0 below includes Sun; changing only the
+        // serialized index would lose its direct contribution.
+        for (int x = 0; x < rows; x++)
+        for (int y = 0; y < columns; y++)
+        for (int z = 0; z < depth; z++)
+        {
+            scene.CancellationToken.ThrowIfCancellationRequested();
+            int index = (x * columns + y) * depth + z;
+            if (owners[index] == 1 && HasLocalNeighbor(x, y, z))
+                owners[index] = 0;
+        }
+        return owners;
+
+        bool HasLocalNeighbor(int x, int y, int z)
+        {
+            for (int nx = Math.Max(0, x - 1); nx <= Math.Min(rows - 1, x + 1); nx++)
+            for (int ny = Math.Max(0, y - 1); ny <= Math.Min(columns - 1, y + 1); ny++)
+            for (int nz = Math.Max(0, z - 1); nz <= Math.Min(depth - 1, z + 1); nz++)
+                if (owners[(nx * columns + ny) * depth + nz] > 1)
+                    return true;
+            return false;
+        }
+    }
+
+    private static Vector3 GridPoint(int x, int y, int z) => new(
+        GfxLightGridCodec.CoordinateOrigin + x * GfxLightGridCodec.HorizontalSpacing,
+        GfxLightGridCodec.CoordinateOrigin + y * GfxLightGridCodec.HorizontalSpacing,
+        GfxLightGridCodec.CoordinateOrigin + z * GfxLightGridCodec.VerticalSpacing);
 
     private static GfxLightGrid CreateFallbackLightGrid(GfxLightGridColors centerColor)
     {

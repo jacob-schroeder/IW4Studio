@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Diagnostics;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Rendering;
 
@@ -15,6 +16,10 @@ internal sealed class EditorSession
     private readonly Dictionary<MapTerrain, HashSet<int>> _lockedPatchVertices = new(ReferenceEqualityComparer.Instance);
     private MapDocument? _beforeEdit;
     private int _transformPreviewDepth;
+    private readonly Stopwatch _lightSweepClock = new();
+    private MapEntity? _lightSweepEntity;
+    private MapDocument? _lightSweepDocument;
+    private bool _lightSweepPreviewAvailable = true;
     private SelectionPath[] _beforeSelection = [];
     private long _revision, _savedRevision, _nextRevision = 1;
     private Action<Vector3, Vector3?>? _place;
@@ -49,6 +54,35 @@ internal sealed class EditorSession
     internal float PaintAlpha { get; set; } = 1;
     public bool IsDirty => _revision != _savedRevision || _beforeEdit is not null;
     internal bool DeferPreviewLighting => _transformPreviewDepth > 0;
+    internal MapEntity? LightSweepPreviewEntity => _lightSweepClock.IsRunning ? _lightSweepEntity : null;
+    internal double LightSweepPreviewSeconds => _lightSweepClock.Elapsed.TotalSeconds;
+    internal bool LightSweepPreviewAvailable
+    {
+        get => _lightSweepPreviewAvailable;
+        set
+        {
+            if (_lightSweepPreviewAvailable == value) return;
+            _lightSweepPreviewAvailable = value;
+            if (!value && _lightSweepClock.IsRunning) StopLightSweepPreview();
+            else LightSweepPlaybackChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+    internal void StartLightSweepPreview(MapEntity entity)
+    {
+        if (!LightSweepPreviewAvailable) return;
+        _lightSweepEntity = entity;
+        _lightSweepDocument = Document;
+        _lightSweepClock.Restart();
+        LightSweepPlaybackChanged?.Invoke(this, EventArgs.Empty);
+    }
+    internal void StopLightSweepPreview()
+    {
+        if (!_lightSweepClock.IsRunning) return;
+        _lightSweepClock.Reset();
+        _lightSweepEntity = null;
+        _lightSweepDocument = null;
+        LightSweepPlaybackChanged?.Invoke(this, EventArgs.Empty);
+    }
     internal long ContentRevision => _revision;
     public bool CanTransformSelection => Selection.Count > 0 && Selection.Items.All(item =>
         Visibility.CanSelect(Document, item) && SelectionGeometry.CanTransform(item)) &&
@@ -58,6 +92,8 @@ internal sealed class EditorSession
     public bool CanRedo => _redo.Count > 0;
     public event EventHandler? Changed;
     internal event Action<bool>? PointEntityPreviewChanged;
+    internal event Action<MapEntity>? LightInfluencePreviewChanged;
+    internal event EventHandler? LightSweepPlaybackChanged;
 
     internal void BeginTransformPreview() => _transformPreviewDepth++;
     internal void EndTransformPreview() => _transformPreviewDepth = Math.Max(0, _transformPreviewDepth - 1);
@@ -89,6 +125,8 @@ internal sealed class EditorSession
 
     public void Refresh()
     {
+        if (_lightSweepClock.IsRunning && (!ReferenceEquals(_lightSweepDocument, Document) ||
+            !ReferenceEquals(Selection.Active, _lightSweepEntity))) StopLightSweepPreview();
         Visibility.Invalidate();
         Selection.SetRange(Selection.Items.Where(item => ReferenceEquals(item, Document.World) ||
             Visibility.CanSelect(Document, item)).ToArray());
@@ -101,6 +139,15 @@ internal sealed class EditorSession
         if (!Scene.UpdatePointEntities(Selection.Items.OfType<MapEntity>(), out bool modelsChanged)) return false;
         PointEntityPreviewChanged?.Invoke(modelsChanged);
         return true;
+    }
+    internal void RefreshLightInfluencePreview(MapEntity entity)
+    {
+        if (!Scene.UpdatePointEntities([entity], out _))
+        {
+            Refresh();
+            return;
+        }
+        LightInfluencePreviewChanged?.Invoke(entity);
     }
     public float Snap(float value) => MathF.Round(value / GridSize, MidpointRounding.AwayFromZero) * GridSize;
 
@@ -140,6 +187,7 @@ internal sealed class EditorSession
 
     public void Replace(MapDocument document, string? path)
     {
+        StopLightSweepPreview();
         Document = document;
         _place = null;
         PlacementLabel = null;
@@ -167,6 +215,7 @@ internal sealed class EditorSession
     public void BeginEdit()
     {
         if (_beforeEdit is not null) return;
+        StopLightSweepPreview();
         _beforeSelection = Selection.Capture(Document);
         _beforeEdit = Document.Clone();
     }
@@ -223,6 +272,7 @@ internal sealed class EditorSession
 
     public void Undo()
     {
+        StopLightSweepPreview();
         if (_beforeEdit is not null) CancelEdit();
         if (_undo.Count == 0) return;
         _redo.Add((Document, _revision, Selection.Capture(Document)));
@@ -238,6 +288,7 @@ internal sealed class EditorSession
 
     public void Redo()
     {
+        StopLightSweepPreview();
         if (_beforeEdit is not null) CancelEdit();
         if (_redo.Count == 0) return;
         _undo.Add((Document, _revision, Selection.Capture(Document)));

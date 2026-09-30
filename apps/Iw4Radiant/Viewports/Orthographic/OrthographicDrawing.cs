@@ -36,6 +36,7 @@ internal sealed class OrthographicDrawing
     private static readonly Pen VehicleHeadingPen = new(VehicleLookaheadBrush, 1.8);
     private static readonly Pen VehicleLookaheadPen = new(VehicleLookaheadBrush, 1.5, DashStyle.Dash);
     private static readonly Pen SelectedPen = new(SelectionBrush, 1.8);
+    private static readonly Pen SweepPen = new(Brush("#B859FF"), 1.5);
     private static readonly Pen LeakPathPen = new(Brush("#FF6666"), 2.5);
     private static readonly IBrush LeakPointBrush = Brush("#FFB5B5");
     private static readonly Pen XAxisPen = new(Brush("#BD6165"), 1.5);
@@ -130,6 +131,24 @@ internal sealed class OrthographicDrawing
             }
             MapEntity? selectedVehicle = scene.Selection.Items.OfType<MapEntity>().FirstOrDefault(VehiclePathPreview.IsNode);
             DrawTargets(context, scene, selectedVehicle is not null);
+            if (session.Selection.Active is MapEntity { ClassName: "light" } selectedLight &&
+                MapLight.TryCreate(selectedLight, scene.ResolveTargets(selectedLight), out MapLight sweepLight, out _) && sweepLight.IsMoving)
+            {
+                float yaw = MathF.Atan2(sweepLight.Direction.Y, sweepLight.Direction.X);
+                bool handlesEditable = _projection.Plane switch
+                {
+                    OrthoPlane.Front => MathF.Abs(MathF.Cos(yaw)) >= 0.1f,
+                    OrthoPlane.Side => MathF.Abs(MathF.Sin(yaw)) >= 0.1f,
+                    _ => false
+                };
+                foreach (Vector3 direction in new[] { sweepLight.SweepStartDirection, sweepLight.SweepEndDirection })
+                {
+                    Point origin = _projection.ToScreen(sweepLight.Origin);
+                    Point endpoint = _projection.ToScreen(sweepLight.Origin + direction * sweepLight.Radius);
+                    context.DrawLine(SweepPen, origin, endpoint);
+                    if (handlesEditable) context.DrawEllipse(Brushes.Black, SweepPen, endpoint, 5, 5);
+                }
+            }
             if (selectedVehicle is not null) DrawVehiclePath(context, scene.Document, selectedVehicle);
             if (session.SelectionBounds is { } bounds)
                 DrawSelection(context, session, bounds.Min, bounds.Max);

@@ -23,8 +23,18 @@ internal sealed class OrthographicTransform
 
     internal bool TryBegin(EditorSession session, Point point)
     {
+        if (PickHandle(session, point) is not { } handle) return false;
+        Begin(session, point, handle.Axis);
+        _resizeCorner = handle.ResizeCorner;
+        return true;
+    }
+
+    internal bool CanBegin(EditorSession session, Point point) => PickHandle(session, point) is not null;
+
+    private (int Axis, int ResizeCorner)? PickHandle(EditorSession session, Point point)
+    {
         if (!session.CanTransformSelection || session.SelectionBounds is not { } bounds ||
-            session.Tool is not (EditorTool.Select or EditorTool.Vertex)) return false;
+            session.Tool is not (EditorTool.Select or EditorTool.Vertex)) return null;
         Rect rect = _projection.ScreenBounds(bounds.Min, bounds.Max);
         Point center = rect.Center;
         if (session.Tool == EditorTool.Select && session.TransformMode == TransformMode.Move && session.Selection.Count == 1 && session.Selection.Active is MapBrush)
@@ -32,24 +42,17 @@ internal sealed class OrthographicTransform
             Point[] corners = OrthographicGeometry.Corners(rect);
             for (int i = 0; i < corners.Length; i++)
                 if (OrthographicGeometry.Distance(point, corners[i]) <= 7)
-                {
-                    Begin(session, point, 0);
-                    _resizeCorner = i;
-                    return true;
-                }
+                    return (0, i);
         }
         if (session.TransformMode == TransformMode.Rotate)
         {
-            if (Math.Abs(OrthographicGeometry.Distance(point, center) - RotationRadius) > 6) return false;
-            Begin(session, point, 0);
-            return true;
+            return Math.Abs(OrthographicGeometry.Distance(point, center) - RotationRadius) <= 6
+                ? (0, -1) : null;
         }
         int axis = OrthographicGeometry.Distance(point, center) <= 7 ? 0 :
             OrthographicGeometry.DistanceToSegment(point, center, center + new Vector(AxisLength, 0)) <= 6 ? 1 :
             OrthographicGeometry.DistanceToSegment(point, center, center - new Vector(0, AxisLength)) <= 6 ? 2 : -1;
-        if (axis < 0) return false;
-        Begin(session, point, axis);
-        return true;
+        return axis < 0 ? null : (axis, -1);
     }
 
     internal void Begin(EditorSession session, Point point, int axis = 0)

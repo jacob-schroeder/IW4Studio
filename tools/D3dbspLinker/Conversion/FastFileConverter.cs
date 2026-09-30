@@ -1,13 +1,16 @@
 using System.Text;
 using IW4.Formats.SourceFormat.Character;
+using IW4.Formats.SourceFormat.LightDef;
 using IW4.Formats.SourceFormat.Material;
 using IW4.Formats.SourceFormat.Fx;
 using IW4.Formats.SourceFormat.Physics;
 using IW4.Formats.SourceFormat.Sound;
 using IW4.Game.Assets;
 using IW4.Game.Assets.Fx;
+using IW4.Game.Assets.ComWorld;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Assets.Image;
+using IW4.Game.Assets.LightDef;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.Physics;
 using IW4.Game.Assets.RawFile;
@@ -417,6 +420,57 @@ internal static partial class FastFileConverter
                 },
                 DynamicEntityDefinitions = [dynamicDefinitions, Array.Empty<DynEntityDef>()]
             });
+        LightDefAsset? diskLightDef = null;
+        if (bootstrapMaterials is not null)
+        {
+            ComWorldAsset comWorld = graph.Roots.OfType<ComWorldAsset>().Single();
+            string[] lightDefNames = comWorld.PrimaryLights
+                .Select(light => light.DefName)
+                .OfType<string>()
+                .Where(name => name.Length != 0)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (lightDefNames.Any(name => name != "light_point_linear"))
+                throw new InvalidDataException("Disk builds support only the light_point_linear primary-light definition.");
+            if (lightDefNames.Length != 0)
+            {
+                diskLightDef = new LightDefExchange().LinkPointLinear(
+                    bootstrapDirectory ?? throw new InvalidOperationException("Disk bootstrap sources are missing."),
+                    bootstrapMaterials.LoadImage);
+                GfxWorldAsset world = graph.Roots.OfType<GfxWorldAsset>().Single();
+                foreach (GfxSurface surface in world.Dpvs.Surfaces.Where(surface =>
+                             surface.PrimaryLightIndex > world.SunPrimaryLightIndex))
+                    RequirePrimaryLightTechniques(surface.Material, surface.PrimaryLightIndex);
+                foreach (GfxStaticModelDrawInst model in world.Dpvs.SModelDrawInsts.Where(model =>
+                             model.PrimaryLightIndex > world.SunPrimaryLightIndex))
+                {
+                    foreach (MaterialAsset? material in model.Model?.Materials ?? [])
+                        if (material?.TechniqueSet?.TechniqueSlots.Any(slot =>
+                                slot.Type == MaterialTechniqueType.Lit && slot.Technique is not null) == true)
+                            RequirePrimaryLightTechniques(material, model.PrimaryLightIndex);
+                }
+            }
+            void RequirePrimaryLightTechniques(MaterialAsset? material, int lightIndex)
+            {
+                if ((uint)lightIndex >= (uint)comWorld.PrimaryLights.Count)
+                    throw new InvalidDataException($"Primary light index {lightIndex} is outside the ComWorld table of {comWorld.PrimaryLights.Count} lights.");
+                ComPrimaryLight light = comWorld.PrimaryLights[lightIndex];
+                (MaterialTechniqueType ordinary, MaterialTechniqueType shadowed) = light.Type switch
+                {
+                    GfxLightType.Spot => (MaterialTechniqueType.LitSpot, MaterialTechniqueType.LitSpotShadow),
+                    GfxLightType.Omni => (MaterialTechniqueType.LitOmni, MaterialTechniqueType.LitOmniShadow),
+                    _ => throw new InvalidDataException($"Primary light index {lightIndex} has unsupported local light type {light.Type}.")
+                };
+                RequirePrimaryLightTechnique(material, ordinary);
+                if (light.CanUseShadowMap) RequirePrimaryLightTechnique(material, shadowed);
+            }
+            static void RequirePrimaryLightTechnique(MaterialAsset? material, MaterialTechniqueType requiredTechnique)
+            {
+                if (material?.TechniqueSet?.TechniqueSlots.Any(slot =>
+                        slot.Type == requiredTechnique && slot.Technique is not null) != true)
+                    throw new InvalidDataException($"Material '{material?.Info.Name}' is assigned a primary light but has no native {requiredTechnique} technique.");
+            }
+        }
         GfxImageAsset ResolveLightingImage(string name) =>
             availableLightingImages.TryGetValue(LightingImageKey(name), out GfxImageAsset? image)
                 ? image
@@ -427,8 +481,11 @@ internal static partial class FastFileConverter
             new(CanonicalAssetFamily.FromSerializedType(XAssetType.Image), name);
         string mapScriptName = assetName[..^".d3dbsp".Length] + ".gsc";
         string mapFxScriptName = assetName[..^".d3dbsp".Length] + "_fx.gsc";
+        string mapMovingLightsScriptName = assetName[..^".d3dbsp".Length] + "_lights.gsc";
         bool hasMapFxScript = rawFileOverrides.Any(rawFile =>
             string.Equals(rawFile.Name, mapFxScriptName, StringComparison.Ordinal));
+        bool hasMapMovingLightsScript = rawFileOverrides.Any(rawFile =>
+            string.Equals(rawFile.Name, mapMovingLightsScriptName, StringComparison.Ordinal));
         string[] destructiblePrecacheScripts = rawFileOverrides
             .Select(rawFile => rawFile.Name)
             .OfType<string>()
@@ -453,14 +510,17 @@ internal static partial class FastFileConverter
             throw new InvalidDataException($"Faction settings require the generated map script; RawFile '{mapScriptName}' overrides it.");
         RawFileAsset mapScript = rawFileOverrides.FirstOrDefault(rawFile =>
                 string.Equals(rawFile.Name, mapScriptName, StringComparison.Ordinal)) ??
-            CreateMapScript(assetName, waterScript, hasMapFxScript, factions, destructiblePrecacheScripts);
+            CreateMapScript(assetName, waterScript, hasMapFxScript, hasMapMovingLightsScript,
+                factions, destructiblePrecacheScripts);
         if (destructiblePrecacheScripts.Length != 0 && rawFileOverrides.Contains(mapScript))
             Console.WriteLine("Destructible animations: the custom map script must call " +
                 string.Join(", ", destructiblePrecacheScripts.Select(name =>
                     name[..^".gsc".Length].Replace('/', '\\') + "::main();")) +
                 " in main() before maps\\mp\\_load::main().");
         if (hasMapFxScript && rawFileOverrides.Contains(mapScript))
-            Console.WriteLine($"FX and sounds: the custom map script must call {MapFxStartup(mapFxScriptName)} in main() before maps\\mp\\_load::main(); so its emitters are registered before playback starts.");
+            Console.WriteLine($"FX and sounds: the custom map script must call {MapScriptStartup(mapFxScriptName)} in main() before maps\\mp\\_load::main(); so its emitters are registered before playback starts.");
+        if (hasMapMovingLightsScript && rawFileOverrides.Contains(mapScript))
+            Console.WriteLine($"Moving lights: the custom map script must call {MapScriptStartup(mapMovingLightsScriptName)} in main() before maps\\mp\\_load::main(); to start the authored light sweeps.");
         if (waterScript is not null && rawFileOverrides.Contains(mapScript))
             Console.WriteLine($"Water effects: the custom map script must call {WaterVolumeScript.Startup(waterScript)} during main(). " +
                 "The water helper owns its HUD overlay and the level-priority reverb slot.");
@@ -788,10 +848,16 @@ internal static partial class FastFileConverter
             fastFileMapRoots.Length + graph.NestedAssets.Count +
             xModelGraphProviders.Length + 1 +
             additionalMaterials.Length +
-            additionalFx.Length);
+            additionalFx.Length + (diskLightDef is null ? 0 : 2));
         var externalFallbackNames = new List<string>();
         foreach (BaseAsset root in fastFileMapRoots)
             newSources.Add(new LinkAssetProviderSource(root).AsAuthoredDetached());
+        if (diskLightDef is not null)
+        {
+            newSources.Add(new LinkAssetProviderSource(diskLightDef.Image ??
+                throw new InvalidDataException("The point-light definition has no attenuation image.")).AsAuthoredDetached());
+            newSources.Add(new LinkAssetProviderSource(diskLightDef).AsAuthoredDetached());
+        }
         foreach (BaseAsset nestedAsset in graph.NestedAssets)
         {
             newSources.Add(
@@ -838,7 +904,14 @@ internal static partial class FastFileConverter
         var roots = new List<LinkRoot>(
             fastFileMapRoots.Length + bootstrapXModelGraph.Models.Count +
             additionalXModelGraph.Models.Count + additionalMaterials.Length +
-            additionalFx.Length + nestedDiskFx.Length + additionalSounds.Length + 1);
+            additionalFx.Length + nestedDiskFx.Length + additionalSounds.Length +
+            (diskLightDef is null ? 0 : 2) + 1);
+        if (diskLightDef is not null)
+        {
+            roots.Add(CreateNamedOwnedRoot("d3dbsplinker:bootstrap:image:falloff_linear",
+                diskLightDef.Image ?? throw new InvalidDataException("The point-light definition has no attenuation image.")));
+            roots.Add(CreateNamedOwnedRoot("d3dbsplinker:bootstrap:lightdef:light_point_linear", diskLightDef));
+        }
         roots.AddRange(fastFileMapRoots.Select(CreateOwnedRoot));
         foreach (XModelAsset model in characterModels)
             roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:faction:xmodel:{model.Name}", model));
@@ -1042,11 +1115,12 @@ internal static partial class FastFileConverter
             opaqueHeader: null);
     }
 
-    private static string MapFxStartup(string mapFxScriptName) =>
-        mapFxScriptName[..^".gsc".Length].Replace('/', '\\') + "::main();";
+    private static string MapScriptStartup(string scriptName) =>
+        scriptName[..^".gsc".Length].Replace('/', '\\') + "::main();";
 
-    private static RawFileAsset CreateMapScript(string assetName, RawFileAsset? waterScript, bool hasMapFxScript,
-        MapFactionSettings factions, IReadOnlyList<string> destructiblePrecacheScripts)
+    private static RawFileAsset CreateMapScript(string assetName, RawFileAsset? waterScript,
+        bool hasMapFxScript, bool hasMapMovingLightsScript, MapFactionSettings factions,
+        IReadOnlyList<string> destructiblePrecacheScripts)
     {
         string scriptName = assetName[..^".d3dbsp".Length] + ".gsc";
         bool authoredAssault = factions.AlliesAssaultA is not null || factions.AxisAssaultA is not null;
@@ -1061,7 +1135,8 @@ internal static partial class FastFileConverter
             "{\r\n" +
             string.Concat(destructiblePrecacheScripts.Select(name =>
                 "\t" + name[..^".gsc".Length].Replace('/', '\\') + "::main();\r\n")) +
-            (hasMapFxScript ? "\t" + MapFxStartup(assetName[..^".d3dbsp".Length] + "_fx.gsc") + "\r\n" : "") +
+            (hasMapFxScript ? "\t" + MapScriptStartup(assetName[..^".d3dbsp".Length] + "_fx.gsc") + "\r\n" : "") +
+            (hasMapMovingLightsScript ? "\t" + MapScriptStartup(assetName[..^".d3dbsp".Length] + "_lights.gsc") + "\r\n" : "") +
             "\tmaps\\mp\\_load::main();\r\n" +
             $"\tgame[\"allies\"] = \"{factions.Allies}\";\r\n" +
             $"\tgame[\"axis\"] = \"{factions.Axis}\";\r\n" +

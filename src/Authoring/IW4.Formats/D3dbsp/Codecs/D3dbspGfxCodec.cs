@@ -512,8 +512,20 @@ internal static class D3dbspGfxCodec
         foreach (ushort surfaceIndex in sortedSurfaceIndices)
         {
             GfxSurface surface = surfaces[surfaceIndex];
-            if ((surface.Flags & GfxSurfaceFlags.CastsSunShadow) != 0)
+            MaterialAsset material = surface.Material ??
+                throw new InvalidDataException($"Render surface {surfaceIndex} has no material.");
+            if ((material.Info.GameFlags & MaterialGameFlags.ShadowCasterRouteMask) == 0)
+                continue;
+            // PS3 rebuilds these lists after sorting, without checking capacity.
+            // Its caster predicate is the material draw token, not CastsSunShadow.
+            // The token's custom index comes from ShadowCasterRouteMask. A
+            // lightmapped caster belongs to its assigned primary; other casters
+            // may belong to any local primary after the native volume cull.
+            if ((material.Info.GameFlags & MaterialGameFlags.HasLightmap) != 0)
                 shadowSurfaceIndices[surface.PrimaryLightIndex].Add(surfaceIndex);
+            else
+                for (int lightIndex = sunPrimaryLightIndex + 1; lightIndex < primaryLightCount; lightIndex++)
+                    shadowSurfaceIndices[lightIndex].Add(surfaceIndex);
         }
         GfxShadowGeometry[] shadowGeometry = Enumerable.Range(0, primaryLightCount)
             .Select(index => new GfxShadowGeometry

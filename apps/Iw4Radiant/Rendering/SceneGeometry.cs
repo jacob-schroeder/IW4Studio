@@ -25,6 +25,8 @@ internal sealed class SceneGeometry
     internal int LeakPathStart { get; }
     internal int LeakPathCount { get; }
     internal List<(int Start, int Count)> MovePreviewRanges { get; } = [];
+    internal List<(MapEntity Source, MapEntity Target, int Start, int Count)> MoveConnectionRanges { get; } = [];
+    internal List<(MapEntity Source, int Start, int Count)> LightInfluenceRanges { get; } = [];
     internal List<(MapEntity Source, string Material, int Start, int Count, int WireStart, int WireCount)> DestructibleRanges { get; } = [];
     internal List<(MapEntity Source, int Start, int Count)> DestructibleOutlines { get; } = [];
     internal List<(MapEntity Owner, string Material, int Start, int Count, int WireStart, int WireCount)> PhysicsBatches { get; } = [];
@@ -49,7 +51,7 @@ internal sealed class SceneGeometry
         var selectedFaces = selection.Items.OfType<BrushFaceSelection>().Select(face => face.Face).ToHashSet();
         IReadOnlyDictionary<MapEntity, MapEntity>? physicsPoses = editor.PhysicsPlacementPreview;
         bool movePreview = physicsPoses is null && selection.Count > 0 && selection.Items.All(item =>
-            item is MapEntity entity && (entity.ClassName == "fx_origin" || XModelGeometry.IsModel(entity)));
+            item is MapEntity entity && (entity.ClassName is "fx_origin" or "light" or "info_null" || XModelGeometry.IsModel(entity)));
         var modelPreviewRanges = new List<(string Material, int TriangleStart, int TriangleCount, int WireStart, int WireCount)>();
         var destructibleRanges = new List<(MapEntity Source, string Material, int TriangleStart, int TriangleCount, int WireStart, int WireCount)>();
         var destructibleOutlines = new List<(MapEntity Source, int Start, int Count)>();
@@ -273,11 +275,16 @@ internal sealed class SceneGeometry
         }
         AxesStart = all.Count;
         MapEntity? selectedVehicle = selection.Items.OfType<MapEntity>().FirstOrDefault(VehiclePathPreview.IsNode);
-        AddEntityConnections(all, document, selection, editor, selectedVehicle is not null);
+        AddEntityConnections(all, document, selection, editor, selectedVehicle is not null,
+            movePreview && selection.Items.OfType<MapEntity>().Any(entity => entity.ClassName is "light" or "info_null"));
         if (selectedVehicle is not null) AddVehiclePathPreview(all, document, selectedVehicle);
         foreach (MapEntity light in selection.Items.OfType<MapEntity>().Where(entity => entity.ClassName == "light"))
-            foreach (var line in LightInfluenceGeometry.GetLines(editor, light))
-                AddLine(all, line.A, line.B, new Vector3(1, 0.85f, 0.35f));
+        {
+            int start = all.Count;
+            AddLightInfluence(all, editor, light);
+            if (editor.Owner(light) is MapEntity { ClassName: "light" } source)
+                LightInfluenceRanges.Add((source, start, all.Count - start));
+        }
         if (tool == EditorTool.Vertex)
             foreach (object handle in SelectionGeometry.GetVertexHandles(selection))
             {
@@ -450,14 +457,20 @@ internal sealed class SceneGeometry
 
     }
 
+    internal static void AddLightInfluence(List<SceneVertex> vertices, EditorScene scene, MapEntity light)
+    {
+        foreach (var line in LightInfluenceGeometry.GetLines(scene, light))
+            AddLine(vertices, line.A, line.B, line.Color);
+    }
+
     private static void AddLine(List<SceneVertex> vertices, Vector3 a, Vector3 b, Vector3 color)
     {
         vertices.Add(new SceneVertex(a, Vector3.UnitZ, Vector2.Zero, color));
         vertices.Add(new SceneVertex(b, Vector3.UnitZ, Vector2.Zero, color));
     }
 
-    private static void AddEntityConnections(List<SceneVertex> vertices, MapDocument document, EditorSelection selection,
-        EditorScene editor, bool vehiclePreview)
+    private void AddEntityConnections(List<SceneVertex> vertices, MapDocument document, EditorSelection selection,
+        EditorScene editor, bool vehiclePreview, bool trackMove)
     {
         foreach (MapEntity source in document.Entities)
         {
@@ -465,20 +478,34 @@ internal sealed class SceneGeometry
             foreach (MapEntity destination in editor.ResolveTargets(source))
             {
                 if (!selection.Contains(source) && !selection.Contains(destination)) continue;
-                if (editor.Bounds(source) is not { } sourceBounds || editor.Bounds(destination) is not { } destinationBounds) continue;
-                Vector3 start = sourceBounds.Min / 2 + sourceBounds.Max / 2, end = destinationBounds.Min / 2 + destinationBounds.Max / 2;
-                Vector3 direction = end - start;
-                float length = direction.Length();
-                if (!float.IsFinite(length) || length < 0.001f) continue;
-                direction /= length;
-                Vector3 side = Vector3.Normalize(Vector3.Cross(direction, MathF.Abs(direction.Z) < 0.9f ? Vector3.UnitZ : Vector3.UnitY));
-                float arrow = Math.Min(12, length * 0.2f);
-                Vector3 color = new(0.35f, 0.9f, 0.7f);
-                AddLine(vertices, start, end, color);
-                AddLine(vertices, end, end - direction * arrow + side * arrow * 0.4f, color);
-                AddLine(vertices, end, end - direction * arrow - side * arrow * 0.4f, color);
+                int start = vertices.Count;
+                AddEntityConnection(vertices, editor, source, destination);
+                if (trackMove && vertices.Count > start)
+                    MoveConnectionRanges.Add((source, destination, start, vertices.Count - start));
             }
         }
+    }
+
+    internal static void AddEntityConnection(List<SceneVertex> vertices, EditorScene editor,
+        MapEntity source, MapEntity destination)
+    {
+        if (editor.Bounds(source) is not { } sourceBounds || editor.Bounds(destination) is not { } destinationBounds) return;
+        Vector3 start = sourceBounds.Min / 2 + sourceBounds.Max / 2, end = destinationBounds.Min / 2 + destinationBounds.Max / 2;
+        Vector3 direction = end - start;
+        float length = direction.Length();
+        if (!float.IsFinite(length)) return;
+        Vector3 side = Vector3.Zero;
+        if (length >= 0.001f)
+        {
+            direction /= length;
+            side = Vector3.Normalize(Vector3.Cross(direction, MathF.Abs(direction.Z) < 0.9f ? Vector3.UnitZ : Vector3.UnitY));
+        }
+        else end = start; // Keep the same slots while a dragged light crosses its aim target.
+        float arrow = length >= 0.001f ? Math.Min(12, length * 0.2f) : 0;
+        Vector3 color = new(0.35f, 0.9f, 0.7f);
+        AddLine(vertices, start, end, color);
+        AddLine(vertices, end, end - direction * arrow + side * arrow * 0.4f, color);
+        AddLine(vertices, end, end - direction * arrow - side * arrow * 0.4f, color);
     }
 
     private static void AddVehiclePathPreview(List<SceneVertex> vertices, MapDocument document, MapEntity selectedEntity)

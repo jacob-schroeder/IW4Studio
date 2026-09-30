@@ -60,11 +60,12 @@ public partial class SelectionInspector : UserControl
 
     internal void InitializeActions(EditorSession session, EditorDialogs dialogs, Action finishGestures, MaterialBrowser materials,
         Func<string, MaterialSource?> resolveMaterial, Func<OrthoPlane> editPlane,
-        Func<string, bool> supportsAlpha, Func<string, bool> supportsVertexColor, Action<string> setStatus)
+        Func<string, bool> supportsAlpha, Func<string, bool> supportsVertexColor, Action<string> setStatus,
+        Func<bool> authoredPreviewAvailable, Action enablePreviewLighting)
     {
         Transforms.InitializeActions(session, dialogs, finishGestures);
         Surfaces.InitializeActions(session, dialogs, finishGestures, resolveMaterial, setStatus);
-        Lights.InitializeActions(session, dialogs, finishGestures);
+        Lights.InitializeActions(session, dialogs, finishGestures, authoredPreviewAvailable, enablePreviewLighting);
         Terrain.InitializeActions(session, dialogs, finishGestures, setStatus);
         Sunlight.InitializeActions(session, dialogs, finishGestures);
         Skies.InitializeActions(session, dialogs, finishGestures, materials);

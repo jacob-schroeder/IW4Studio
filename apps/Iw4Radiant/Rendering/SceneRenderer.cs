@@ -45,7 +45,9 @@ internal sealed class SceneRenderer
         _ignoreVertexColorLocation, _waterPreviewLocation, _eyeLocation, _linearCaptureLocation, _hasWaterReflectionLocation,
         _cubicClipLocation, _cubicClipCenterLocation, _cubicClipDistanceLocation, _modelLocation, _normalTransformLocation,
         _fogEnabledLocation, _fogColorLocation, _fogStartLocation, _fogDensityLocation;
-    private int _compiledLightmapModeLocation, _compiledSunDirectionLocation, _compiledSunColorLocation;
+    private int _compiledLightmapModeLocation, _compiledSunDirectionLocation, _compiledSunColorLocation,
+        _compiledPrimaryTypeLocation, _compiledLocalPositionRadiusLocation, _compiledLocalColorLocation,
+        _compiledSpotDirectionOuterCosLocation, _compiledSpotInnerCosExponentLocation;
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _batches = [];
     private readonly List<(string Material, int Start, int Count, int WireStart, int WireCount)> _surfaceBatches = [];
     private readonly List<(MapEntity? Owner, string Material, int Start, int Count, int WireStart, int WireCount)> _drawBatches = [];
@@ -92,6 +94,9 @@ internal sealed class SceneRenderer
     private bool _sceneDirty = true, _texturesDirty = true, _shadowsDirty = true;
     private SceneVertex[] _movePreviewVertices = [];
     private readonly List<(int Start, int Count)> _movePreviewRanges = [];
+    private readonly List<(MapEntity Source, MapEntity Target, int Start, int Count)> _moveConnectionRanges = [];
+    private readonly Dictionary<MapEntity, (int Start, int Count)> _lightInfluenceRanges = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<MapEntity> _lightInfluencePreviewSources = new(ReferenceEqualityComparer.Instance);
     private MapEntity? _movePreviewSource;
     private Vector3 _movePreviewOrigin, _movePreviewApplied;
     private bool _movePreviewDirty;
@@ -156,6 +161,7 @@ internal sealed class SceneRenderer
     internal event EventHandler? StatusChanged;
 
     internal void RefreshScene() => _sceneDirty = true;
+    internal void PreviewLightInfluence(MapEntity source) => _lightInfluencePreviewSources.Add(source);
     internal void RefreshDestructibleAppearance(EditorScene scene)
     {
         _activeDestructibleSource = scene.DestructiblePreviewEntity is null ? null : scene.DestructiblePreviewSource;
@@ -444,6 +450,11 @@ internal sealed class SceneRenderer
             _compiledLightmapModeLocation = _gl.GetUniformLocation(_program, "uCompiledLightmapMode");
             _compiledSunDirectionLocation = _gl.GetUniformLocation(_program, "uCompiledSunDirection");
             _compiledSunColorLocation = _gl.GetUniformLocation(_program, "uCompiledSunColorLinear");
+            _compiledPrimaryTypeLocation = _gl.GetUniformLocation(_program, "uCompiledPrimaryType");
+            _compiledLocalPositionRadiusLocation = _gl.GetUniformLocation(_program, "uCompiledLocalPositionRadius");
+            _compiledLocalColorLocation = _gl.GetUniformLocation(_program, "uCompiledLocalColorLinear");
+            _compiledSpotDirectionOuterCosLocation = _gl.GetUniformLocation(_program, "uCompiledSpotDirectionOuterCos");
+            _compiledSpotInnerCosExponentLocation = _gl.GetUniformLocation(_program, "uCompiledSpotInnerCosExponent");
             _litLocation = _gl.GetUniformLocation(_program, "uLit");
             _alphaTestLocation = _gl.GetUniformLocation(_program, "uAlphaTest");
             _premultiplyAlphaLocation = _gl.GetUniformLocation(_program, "uPremultiplyAlpha");
@@ -579,7 +590,14 @@ internal sealed class SceneRenderer
                 _shadowsDirty = _reflectionsDirty = true;
                 _worldTextureUploaded = false;
             }
-            if (_movePreviewDirty) UpdatePointEntityMove(gl);
+            if ((_movePreviewDirty && !UpdatePointEntityMove(gl, session.Scene)) ||
+                (_compiledPreview is null && !UpdateLightInfluence(gl, session.Scene)))
+            {
+                _sceneDirty = true;
+                UploadScene(gl, session, resolveMaterial);
+            }
+            if (_compiledPreview is null)
+                _lighting.UpdateSweep(gl, session.LightSweepPreviewEntity, session.LightSweepPreviewSeconds);
             if (_compiledPreview is null && previewLighting && _shadowsDirty &&
                 (!session.DeferPreviewLighting || _physicsTransforms is not null))
             {
@@ -713,6 +731,8 @@ internal sealed class SceneRenderer
             gl.BindVertexArray(0);
             gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture8);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture9);
             gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture7);
             gl.BindTexture(TextureTarget.Texture2D, 0);
@@ -1371,7 +1391,7 @@ internal sealed class SceneRenderer
                 _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation);
             if (_compiledPreview is not null) gl.Uniform1(_ignoreVertexColorLocation, 0);
             BindCompiledLightmap(gl, _compiledPreview?.LightingAt(batch.Start) ??
-                (CompiledBspPreview.NoLightmap, false));
+                (CompiledBspPreview.NoLightmap, (byte)0));
             gl.BindTexture(TextureTarget.Texture2D, texture);
             gl.Uniform1(_waterPreviewLocation, water ? 1 : 0);
             if (water) _water.Bind(gl, batch.Material);
@@ -1443,7 +1463,7 @@ internal sealed class SceneRenderer
                     material = triangle.Material;
                 }
                 BindCompiledLightmap(gl, _compiledPreview?.LightingAt(triangle.Start) ??
-                    (CompiledBspPreview.NoLightmap, false));
+                    (CompiledBspPreview.NoLightmap, (byte)0));
                 if ((_compiledPreview is not null && _waterMaterials.Contains(triangle.Material)) ||
                     _waterProbes.ContainsKey(triangle.Start)) BindWaterReflection(gl, triangle.Start);
                 gl.DrawArrays(PrimitiveType.Triangles, triangle.Start, 3);
@@ -1486,11 +1506,11 @@ internal sealed class SceneRenderer
             }
         }
         UseOwner(null);
-        BindCompiledLightmap(gl, (CompiledBspPreview.NoLightmap, false));
+        BindCompiledLightmap(gl, (CompiledBspPreview.NoLightmap, (byte)0));
         ResetSurfaceState(gl);
     }
 
-    private void BindCompiledLightmap(GL gl, (int Index, bool HasDirectSun) lighting)
+    private void BindCompiledLightmap(GL gl, (int Index, byte PrimaryLightIndex) lighting)
     {
         if (_compiledPreview is null)
         {
@@ -1500,10 +1520,29 @@ internal sealed class SceneRenderer
         int index = lighting.Index;
         uint texture = index >= 0 && index < _compiledDiffuseTextures.Length
             ? _compiledDiffuseTextures[index] : 0;
-        uint sunVisibility = lighting.HasDirectSun && index >= 0 && index < _compiledSunVisibilityTextures.Length
+        uint sunVisibility = lighting.PrimaryLightIndex != 0 && index >= 0 && index < _compiledSunVisibilityTextures.Length
             ? _compiledSunVisibilityTextures[index] : 0;
+        int primaryType = 0;
+        if (sunVisibility != 0 && lighting.PrimaryLightIndex == 1)
+            primaryType = 1;
+        else if (sunVisibility != 0 && _compiledPreview.PrimaryLocalLights.TryGetValue(lighting.PrimaryLightIndex,
+                     out var local))
+        {
+            primaryType = local.IsSpotlight ? 3 : 2;
+            gl.Uniform4(_compiledLocalPositionRadiusLocation, local.Origin.X, local.Origin.Y, local.Origin.Z,
+                local.Radius);
+            gl.Uniform3(_compiledLocalColorLocation, local.ColorLinear.X, local.ColorLinear.Y, local.ColorLinear.Z);
+            if (local.IsSpotlight)
+            {
+                gl.Uniform4(_compiledSpotDirectionOuterCosLocation, local.Direction.X, local.Direction.Y,
+                    local.Direction.Z, local.OuterCos);
+                gl.Uniform2(_compiledSpotInnerCosExponentLocation, local.InnerCos, (float)local.Exponent);
+            }
+            _lighting.BindPrimaryFalloff(gl);
+        }
+        gl.Uniform1(_compiledPrimaryTypeLocation, primaryType);
         gl.Uniform1(_compiledLightmapModeLocation, index == CompiledBspPreview.NoLightmap
-            ? 0 : texture == 0 ? 2 : sunVisibility != 0 ? 3 : 1);
+            ? 0 : texture == 0 ? 2 : primaryType != 0 ? 3 : 1);
         gl.ActiveTexture(TextureUnit.Texture7);
         gl.BindTexture(TextureTarget.Texture2D, texture);
         gl.ActiveTexture(TextureUnit.Texture8);
@@ -1658,6 +1697,12 @@ internal sealed class SceneRenderer
         _movePreviewVertices = scene.Vertices;
         _movePreviewRanges.Clear();
         _movePreviewRanges.AddRange(scene.MovePreviewRanges);
+        _moveConnectionRanges.Clear();
+        _moveConnectionRanges.AddRange(scene.MoveConnectionRanges);
+        _lightInfluenceRanges.Clear();
+        foreach (var range in scene.LightInfluenceRanges)
+            _lightInfluenceRanges.Add(range.Source, (range.Start, range.Count));
+        _lightInfluencePreviewSources.Clear();
         _movePreviewSource = session.Selection.Items.OfType<MapEntity>().FirstOrDefault();
         _movePreviewOrigin = _movePreviewSource is null ? Vector3.Zero : EditorSession.EntityOrigin(_movePreviewSource);
         _movePreviewApplied = Vector3.Zero;
@@ -1794,13 +1839,29 @@ internal sealed class SceneRenderer
         _shadowsDirty = _reflectionsDirty = true;
     }
 
-    private unsafe void UpdatePointEntityMove(GL gl)
+    private bool UpdateLightInfluence(GL gl, EditorScene scene)
+    {
+        if (_lightInfluencePreviewSources.Count == 0) return true;
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vertexBuffer);
+        foreach (MapEntity source in _lightInfluencePreviewSources)
+        {
+            if (!_lightInfluenceRanges.TryGetValue(source, out var range)) return false;
+            var vertices = new List<SceneVertex>(range.Count);
+            SceneGeometry.AddLightInfluence(vertices, scene, source);
+            if (!_lighting.UpdateInfluence(gl, scene, source)) return false;
+            if (!UploadPreviewRange(gl, range, vertices)) return false;
+        }
+        _lightInfluencePreviewSources.Clear();
+        return true;
+    }
+
+    private unsafe bool UpdatePointEntityMove(GL gl, EditorScene scene)
     {
         _movePreviewDirty = false;
-        if (_movePreviewSource is null || _movePreviewRanges.Count == 0) return;
+        if (_movePreviewSource is null || _movePreviewRanges.Count == 0) return true;
         Vector3 desired = EditorSession.EntityOrigin(_movePreviewSource) - _movePreviewOrigin;
         Vector3 delta = desired - _movePreviewApplied;
-        if (delta == Vector3.Zero) return;
+        if (delta == Vector3.Zero) return true;
         gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vertexBuffer);
         foreach (var (start, count) in _movePreviewRanges)
         {
@@ -1815,6 +1876,36 @@ internal sealed class SceneRenderer
                     (nuint)(count * sizeof(SceneVertex)), vertices);
         }
         _movePreviewApplied = desired;
+        // Moving a spotlight changes its aim as well as its origin. Rebuild only its guides;
+        // lighting/shadows stay at the committed pose until the transform finishes.
+        foreach (var (source, range) in _lightInfluenceRanges)
+        {
+            var vertices = new List<SceneVertex>(range.Count);
+            SceneGeometry.AddLightInfluence(vertices, scene, source);
+            if (!UploadPreviewRange(gl, range, vertices)) return false;
+        }
+        foreach (var connection in _moveConnectionRanges)
+        {
+            var vertices = new List<SceneVertex>(connection.Count);
+            SceneGeometry.AddEntityConnection(vertices, scene, connection.Source, connection.Target);
+            if (!UploadPreviewRange(gl, (connection.Start, connection.Count), vertices)) return false;
+        }
+        return true;
+    }
+
+    private unsafe bool UploadPreviewRange(GL gl, (int Start, int Count) range, List<SceneVertex> vertices)
+    {
+        if (vertices.Count > range.Count) return false;
+        if (range.Count == 0) return true;
+        // A temporarily unresolved cone (for example, at its target) disappears without
+        // reallocating scene geometry; the reserved range is reused when it becomes valid.
+        var empty = new SceneVertex(Vector3.Zero, Vector3.UnitZ, Vector2.Zero, Vector3.Zero);
+        for (int index = 0; index < range.Count; index++)
+            _movePreviewVertices[range.Start + index] = index < vertices.Count ? vertices[index] : empty;
+        fixed (SceneVertex* pointer = &_movePreviewVertices[range.Start])
+            gl.BufferSubData(BufferTargetARB.ArrayBuffer, (nint)(range.Start * sizeof(SceneVertex)),
+                (nuint)(range.Count * sizeof(SceneVertex)), pointer);
+        return true;
     }
 
     private unsafe void UploadCompiledScene(GL gl, CompiledBspPreview preview,
@@ -1826,6 +1917,9 @@ internal sealed class SceneRenderer
         UploadCompiledLightmaps(gl, preview);
         _movePreviewVertices = [];
         _movePreviewRanges.Clear();
+        _moveConnectionRanges.Clear();
+        _lightInfluenceRanges.Clear();
+        _lightInfluencePreviewSources.Clear();
         _movePreviewSource = null;
         _movePreviewDirty = false;
         _batches.Clear();
@@ -2060,6 +2154,9 @@ internal sealed class SceneRenderer
         _sortedTransparentTriangles.Clear();
         _movePreviewVertices = [];
         _movePreviewRanges.Clear();
+        _moveConnectionRanges.Clear();
+        _lightInfluenceRanges.Clear();
+        _lightInfluencePreviewSources.Clear();
         _movePreviewSource = null;
         _movePreviewDirty = false;
         _previewMeshes.Clear();

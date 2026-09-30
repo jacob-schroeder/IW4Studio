@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
+using Iw4Radiant.Viewports;
 
 namespace Iw4Radiant.Viewports.Camera;
 
@@ -9,7 +10,8 @@ internal static class CameraObjectMenu
 {
     internal static ContextMenu Open(CameraViewport viewport, EditorSession session,
         IReadOnlyList<(object Item, string Label)> hits, BrushFaceSelection? target, Point position,
-        Action<BrushKind> classify, Action createModelPlayerClip, Action<string> status)
+        Action<BrushKind> classify, Action createModelPlayerClip, Action<MapEntity> inspectEntity,
+        Action<string> status)
     {
         MapDocument document = session.Document;
         var menu = new ContextMenu();
@@ -137,6 +139,11 @@ internal static class CameraObjectMenu
         menu.Items.Add(selectAll);
         menu.Items.Add(deselectAll);
         menu.Items.Add(new Separator());
+        if (LightObjectMenu.Create(session, document, hits.FirstOrDefault().Item, inspectEntity, status) is { } lighting)
+        {
+            menu.Items.Add(lighting);
+            menu.Items.Add(new Separator());
+        }
         foreach (var (label, kind) in new[]
                  {
                      ("Structural", BrushKind.Structural), ("Detail", BrushKind.Detail),

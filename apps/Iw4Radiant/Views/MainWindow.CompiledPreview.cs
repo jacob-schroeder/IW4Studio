@@ -79,7 +79,7 @@ public partial class MainWindow
                 $"{preview.DirectSunOmittedSurfaceCount} baked surfaces show diffuse only. " +
                 "Missing/unsupported lightmaps have a magenta material fallback." +
                 (preview.LightmapDataError is null ? "" : $" Lightmap data: {preview.LightmapDataError}") +
-                (preview.SunDataError is null ? "" : $" Direct sun: {preview.SunDataError}");
+                (preview.SunDataError is null ? "" : $" Direct primary light: {preview.SunDataError}");
             _previewBspPath = Path.GetFullPath(path);
             Workspace.SetCompiledPreview(preview);
             CompiledPreviewBanner.IsVisible = true;

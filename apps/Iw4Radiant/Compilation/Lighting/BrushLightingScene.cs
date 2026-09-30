@@ -26,7 +26,7 @@ internal sealed class BrushLightingScene
     private readonly float[] _lightGridSkyWeights;
     private readonly float[] _lightGridSkyWeightTotals;
     private readonly Vector3 _sunColor;
-    private readonly (MapLight Light, Vector3 LinearColor)[] _localLights;
+    private readonly (MapLight Light, Vector3 LinearColor, byte PrimaryIndex)[] _localLights;
     private readonly ShadowModel[] _shadowModels;
     private readonly LightingRayHierarchy _worldRays;
     private readonly Comparison<(int Face, float Distance, float Opacity, Vector4 Texel)> _coincidentHitComparison;
@@ -82,7 +82,8 @@ internal sealed class BrushLightingScene
         SunDirection = sun.Direction;
         Vector3 sunColor = sun.Color * sun.Intensity;
         _sunColor = new Vector3(GfxColorCodec.GammaToLinear(sunColor.X), GfxColorCodec.GammaToLinear(sunColor.Y), GfxColorCodec.GammaToLinear(sunColor.Z));
-        var localLights = new List<(MapLight, Vector3)>();
+        var localLights = new List<(MapLight, Vector3, byte)>();
+        int primaryIndex = 2;
         foreach (MapEntity entity in document.Entities.Where(entity => entity.ClassName == "light"))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -97,7 +98,7 @@ internal sealed class BrushLightingScene
                 GfxColorCodec.GammaToLinear(light.Color.Y), GfxColorCodec.GammaToLinear(light.Color.Z));
             if (!BrushGeometry.IsFinite(color))
                 throw new NotSupportedException("The authored local light color and intensity exceed the supported numeric range.");
-            localLights.Add((light, color));
+            localLights.Add((light, color, light.IsPrimary ? checked((byte)primaryIndex++) : (byte)0));
         }
         _localLights = localLights.ToArray();
         _materials = new MaterialSource[polygons.Count];
@@ -251,6 +252,56 @@ internal sealed class BrushLightingScene
     internal Vector3 SunDirection { get; }
     internal bool IsSky(int face) => _materials[face].IsSky;
     internal bool IsWater(int face) => _materials[face].IsWater;
+    internal bool HasPrimaryLocalLights => _localLights.Any(light => light.PrimaryIndex != 0);
+
+    internal byte PrimaryLightForFace(int face)
+    {
+        if (IsSky(face)) return 0;
+        if (IsWater(face)) return 1;
+        Vector3 minimum = Polygons[face].Vertices.Aggregate(Vector3.Min);
+        Vector3 maximum = Polygons[face].Vertices.Aggregate(Vector3.Max);
+        // Native selectors scan local primaries in ascending order. A face may
+        // extend outside the radius: the native attenuation clips that portion.
+        foreach (var (light, _, index) in _localLights)
+            if (index != 0 && Vector3.DistanceSquared(light.Origin,
+                    Vector3.Clamp(light.Origin, minimum, maximum)) < light.Radius * light.Radius &&
+                (!light.IsSpotlight || PrimaryLocalLightProfile.SpotIntersectsBounds(light.Origin,
+                    light.Direction, MathF.Cos(light.CoverageAngle), minimum, maximum)))
+                return index;
+        return 1;
+    }
+
+    internal byte PrimaryLightAt(Vector3 point)
+    {
+        foreach (var (light, _, index) in _localLights)
+            if (index != 0 && Vector3.DistanceSquared(point, light.Origin) < light.Radius * light.Radius &&
+                (!light.IsSpotlight || Vector3.Dot(light.Direction,
+                    -DirectionToLight(point, light.Origin, out _)) > MathF.Cos(light.CoverageAngle)))
+                return index;
+        return 1;
+    }
+
+    internal float PrimaryVisibility(Vector3 point, Vector3 normal, byte primaryIndex)
+    {
+        if (primaryIndex == 1) return SunVisibility(point, normal);
+        if (primaryIndex == 0) return 0;
+        MapLight light = _localLights.First(value => value.PrimaryIndex == primaryIndex).Light;
+        Vector3 origin = point + normal * RayOffset;
+        if (IsInsideSolid(origin, 0)) return 0;
+        Vector3 direction = DirectionToLight(origin, light.Origin, out double distance);
+        return ModelOccludes(origin, direction, distance, normal == Vector3.Zero ? ContainingModels(point) : null) ||
+            WorldOccludes(origin, direction, distance) ? 0 : 1;
+    }
+
+    internal Vector3 SecondaryIrradiance(Vector3 point, Vector3 normal, Vector3 total, byte primaryIndex)
+    {
+        if (primaryIndex <= 1) return total;
+        var (light, color, _) = _localLights.First(value => value.PrimaryIndex == primaryIndex);
+        Vector3 direct = LocalRadiance(point, point + normal * RayOffset, light, color, out Vector3 direction) *
+            MathF.Max(0, Vector3.Dot(normal, direction));
+        Vector3 sun = _sunColor * (MathF.Max(0, Vector3.Dot(normal, SunDirection)) * SunVisibility(point, normal));
+        return Vector3.Max(Vector3.Zero, total - direct) + sun;
+    }
 
     internal bool BeginDirectFace(int face, Vector3 anchor, Vector3 uAxis, Vector3 vAxis,
         Vector2 minimum, float luxelSize, int width, int height)
@@ -481,7 +532,7 @@ internal sealed class BrushLightingScene
         // preserves its radiance exactly; blocked directions still contribute weight.
         sum /= totalWeight;
         if (!indirectOnly)
-            foreach (var (light, color) in _localLights)
+            foreach (var (light, color, _) in _localLights)
             {
                 Vector3 radiance = LocalRadiance(point, origin, light, color, out Vector3 direction);
                 sum += radiance * MathF.Max(0, Vector3.Dot(normal, direction));
@@ -489,7 +540,7 @@ internal sealed class BrushLightingScene
         return sum;
     }
 
-    internal void DiffuseIrradianceDirections(Vector3 point, Span<Vector3> result)
+    internal void DiffuseIrradianceDirections(Vector3 point, Span<Vector3> result, byte primaryIndex = 1)
     {
         CancellationToken.ThrowIfCancellationRequested();
         if (result.Length != _lightGridNormals.Length)
@@ -509,11 +560,18 @@ internal sealed class BrushLightingScene
             }
         }
         for (int sample = 0; sample < result.Length; sample++) result[sample] /= _lightGridSkyWeightTotals[sample];
-        foreach (var (light, color) in _localLights)
+        foreach (var (light, color, index) in _localLights)
         {
+            if (index != 0 && index == primaryIndex) continue;
             Vector3 radiance = LocalRadiance(point, point, light, color, out Vector3 direction, containingModels);
             for (int sample = 0; sample < result.Length; sample++)
                 result[sample] += radiance * MathF.Max(0, Vector3.Dot(_lightGridNormals[sample], direction));
+        }
+        if (primaryIndex != 1)
+        {
+            float visibility = SunVisibility(point, Vector3.Zero);
+            for (int sample = 0; sample < result.Length; sample++)
+                result[sample] += _sunColor * (visibility * MathF.Max(0, Vector3.Dot(_lightGridNormals[sample], SunDirection)));
         }
     }
 
@@ -521,17 +579,25 @@ internal sealed class BrushLightingScene
         out Vector3 direction, HashSet<int>? containingModels = null)
     {
         direction = DirectionToLight(point, light.Origin, out double distance);
-        float attenuation = (float)Math.Max(1 - distance / light.Radius, 0);
+        float attenuation = light.IsPrimary ? PrimaryLocalLightProfile.Sample((float)(distance / light.Radius)) :
+            (float)Math.Max(1 - distance / light.Radius, 0);
         if (attenuation <= 0 || distance == 0) return Vector3.Zero;
         // Match the preview's finite point-source diffuse direction at its origin.
         if (distance < 0.0001) direction *= (float)(distance / 0.0001);
         if (light.IsSpotlight)
         {
-            float angle = MathF.Acos(Math.Clamp(Vector3.Dot(light.Direction, -direction), -1, 1));
-            if (angle >= light.OuterAngle) return Vector3.Zero;
-            if (light.Exponent > 0)
-                attenuation *= MathF.Pow(Math.Clamp((light.OuterAngle - angle) /
-                    (light.OuterAngle - light.InnerAngle), 0, 1), light.Exponent);
+            float cosine = Vector3.Dot(light.Direction, -direction);
+            if (light.IsPrimary)
+                attenuation *= PrimaryLocalLightProfile.SpotAttenuation(cosine,
+                    MathF.Cos(light.InnerAngle), MathF.Cos(light.OuterAngle), light.Exponent);
+            else
+            {
+                float angle = MathF.Acos(Math.Clamp(cosine, -1, 1));
+                if (angle >= light.OuterAngle) return Vector3.Zero;
+                if (light.Exponent > 0)
+                    attenuation *= MathF.Pow(Math.Clamp((light.OuterAngle - angle) /
+                        (light.OuterAngle - light.InnerAngle), 0, 1), light.Exponent);
+            }
         }
         if (attenuation <= 0) return Vector3.Zero;
 

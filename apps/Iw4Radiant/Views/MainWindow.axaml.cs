@@ -31,7 +31,8 @@ public partial class MainWindow : Window
         _files = new MapFileCommands(this, _session, _dialogs, FinishGestures, FrameAll, SetStatus, ClearLeakPath);
         Inspector.InitializeActions(_session, _dialogs, FinishGestures, Workspace.Materials,
             ResolveMaterial, () => Workspace.ActivePlane, name => ResolveMaterial(name)?.Surface.SupportsAlpha == true,
-            name => ResolveMaterial(name)?.UsesVertexColor == true, SetStatus);
+            name => ResolveMaterial(name)?.UsesVertexColor == true, SetStatus,
+            () => Workspace.Camera.CompiledPreview is null, Workspace.EnablePreviewLights);
         Workspace.InitializeActions(_dialogs, FinishGestures);
         Workspace.LayoutChanged += RefreshLayoutControls;
         Workspace.Materials.InitializeActions(this, _session, _dialogs, FinishGestures, SetStatus, () =>
@@ -52,6 +53,7 @@ public partial class MainWindow : Window
                 if (!ReferenceEquals(_session.Selection.Active, entity)) _session.Select(entity);
                 if (entity.ClassName == "func_group") Inspector.ShowOrganization();
                 else if (entity.ClassName == "misc_prefab") Workspace.ShowPrefabs();
+                else if (entity.ClassName == "light") ShowInspectorSection(Inspector.ShowEntity);
                 else Inspector.ShowEntity();
             };
             view.ModelsRequested += Workspace.ShowModels;
@@ -72,6 +74,11 @@ public partial class MainWindow : Window
         Workspace.Camera.InteractionStatusChanged += SetStatus;
         Workspace.Camera.RendererStatusChanged += OnCompiledPreviewRendererStatus;
         Workspace.Camera.BrushKindRequested += ApplyBrushKind;
+        Workspace.Camera.EntityInspectorRequested += entity =>
+        {
+            if (!ReferenceEquals(_session.Selection.Active, entity)) _session.Select(entity);
+            ShowInspectorSection(Inspector.ShowEntity);
+        };
         Workspace.Camera.CreateModelPlayerClipRequested += async () => await CreateModelPlayerClipAsync();
         Workspace.Camera.ResolveMaterial = ResolveMaterial;
         _session.Changed += (_, _) =>

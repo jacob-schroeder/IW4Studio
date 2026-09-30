@@ -14,6 +14,9 @@ internal readonly record struct MapLightProperties
     public float InnerFov { get; init; }
     public float Exponent { get; init; }
     public int SpawnFlags { get; init; }
+    public bool DynamicShadows { get; init; }
+    public float SweepAngle { get; init; }
+    public float SweepSeconds { get; init; }
     public bool IsSpotlight => (SpawnFlags & MapLightDefaults.PrimaryOmni) == 0 &&
         (!string.IsNullOrWhiteSpace(Target) || (SpawnFlags & MapLightDefaults.PrimarySpot) != 0);
 
@@ -29,7 +32,9 @@ internal readonly record struct MapLightProperties
         if (!ReadScalar(entity, "radius", MapLightDefaults.Radius, out float radius, out error) ||
             !ReadScalar(entity, "intensity", MapLightDefaults.Intensity, out float intensity, out error) ||
             !ReadScalar(entity, "fov_inner", MapLightDefaults.InnerFov, out float inner, out error) ||
-            !ReadScalar(entity, "exponent", MapLightDefaults.Exponent, out float exponent, out error))
+            !ReadScalar(entity, "exponent", MapLightDefaults.Exponent, out float exponent, out error) ||
+            !ReadScalar(entity, "sweep_angle", 0, out float sweepAngle, out error) ||
+            !ReadScalar(entity, "sweep_time", 3, out float sweepSeconds, out error))
             return false;
 
         float? outer = null;
@@ -53,12 +58,19 @@ internal readonly record struct MapLightProperties
             error = "Light spawnflags must be an integer.";
             return false;
         }
+        string shadowText = entity.Properties.GetValueOrDefault("dynamic_shadows", "0");
+        if (shadowText is not ("0" or "1"))
+        {
+            error = "Light dynamic_shadows must be 0 or 1.";
+            return false;
+        }
         properties = new MapLightProperties
         {
             Definition = entity.Properties.GetValueOrDefault("def", MapLightDefaults.Definition),
             Radius = radius, Intensity = intensity, Color = new Vector3(red, green, blue),
             Target = entity.Properties.GetValueOrDefault("target", ""), OuterFov = outer,
-            InnerFov = inner, Exponent = exponent, SpawnFlags = flags
+            InnerFov = inner, Exponent = exponent, SpawnFlags = flags,
+            DynamicShadows = shadowText == "1", SweepAngle = sweepAngle, SweepSeconds = sweepSeconds
         };
         error = properties.Validate();
         return error is null;
@@ -86,6 +98,21 @@ internal readonly record struct MapLightProperties
         if (!valid || Exponent != previous.Exponent) entity.Properties["exponent"] = Number(Exponent);
         if (!valid || SpawnFlags != previous.SpawnFlags)
             entity.Properties["spawnflags"] = SpawnFlags.ToString(CultureInfo.InvariantCulture);
+        if (!valid || DynamicShadows != previous.DynamicShadows)
+        {
+            if (DynamicShadows) entity.Properties["dynamic_shadows"] = "1";
+            else entity.Properties.Remove("dynamic_shadows");
+        }
+        if (SweepAngle == 0)
+        {
+            entity.Properties.Remove("sweep_angle");
+            entity.Properties.Remove("sweep_time");
+        }
+        else
+        {
+            if (!valid || SweepAngle != previous.SweepAngle) entity.Properties["sweep_angle"] = Number(SweepAngle);
+            if (!valid || SweepSeconds != previous.SweepSeconds) entity.Properties["sweep_time"] = Number(SweepSeconds);
+        }
     }
 
     private string? Validate()
@@ -104,6 +131,29 @@ internal readonly record struct MapLightProperties
             return "The outer light FOV must be greater than zero and at most 360 degrees.";
         if (OuterFov is { } limit && InnerFov >= limit) return "The inner light FOV must be smaller than the outer FOV.";
         if (!float.IsFinite(Exponent) || Exponent < 0) return "The light exponent must be finite and nonnegative.";
+        if ((SpawnFlags & (MapLightDefaults.PrimaryOmni | MapLightDefaults.PrimarySpot)) ==
+            (MapLightDefaults.PrimaryOmni | MapLightDefaults.PrimarySpot))
+            return "Choose either Primary omni or Primary spot for a light.";
+        if (DynamicShadows && SpawnFlags is not (MapLightDefaults.PrimaryOmni or MapLightDefaults.PrimarySpot))
+            return "Dynamic shadows require a Primary omni or Primary spot light.";
+        if (!float.IsFinite(SweepAngle) || SweepAngle < 0 || SweepAngle > 120)
+            return "The sweep arc must be between 0 and 120 degrees; zero keeps the light still.";
+        if (SweepAngle > 0)
+        {
+            if (SweepAngle < 0.1f) return "The sweep arc must be at least 0.1 degrees.";
+            if (SpawnFlags != MapLightDefaults.PrimarySpot) return "Sweep requires a Primary spot light.";
+            if (!float.IsFinite(SweepSeconds) || SweepSeconds < 0.1f || SweepSeconds > 60)
+                return "Sweep time each way must be between 0.1 and 60 seconds.";
+            if (OuterFov is { } sweepFov && sweepFov + SweepAngle >= 180)
+                return "The outer FOV plus the sweep arc must be below 180 degrees. Narrow the cone or sweep arc.";
+        }
+        if ((SpawnFlags & MapLightDefaults.PrimarySpot) != 0)
+        {
+            if (Exponent > byte.MaxValue || Exponent != MathF.Truncate(Exponent))
+                return "A primary spotlight exponent must be a whole number from 0 to 255.";
+            if (OuterFov is >= 180)
+                return "A primary spotlight outer FOV must be below 180 degrees.";
+        }
         return null;
     }
 

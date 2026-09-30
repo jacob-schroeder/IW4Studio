@@ -16,6 +16,11 @@ uniform sampler2D uCompiledSunVisibility;
 uniform int uCompiledLightmapMode;
 uniform vec3 uCompiledSunDirection;
 uniform vec3 uCompiledSunColorLinear;
+uniform int uCompiledPrimaryType;
+uniform vec4 uCompiledLocalPositionRadius;
+uniform vec3 uCompiledLocalColorLinear;
+uniform vec4 uCompiledSpotDirectionOuterCos;
+uniform vec2 uCompiledSpotInnerCosExponent;
 uniform bool uTextured;
 uniform bool uLit;
 uniform bool uPremultiplyAlpha;
@@ -43,6 +48,7 @@ uniform float uFogStart;
 uniform float uFogDensity;
 uniform int uLightCount;
 uniform sampler2D uLightData;
+uniform sampler2D uPrimaryFalloff;
 uniform sampler2D uShadowAtlas;
 uniform ivec2 uShadowGrid;
 uniform int uShadowTileSize;
@@ -235,20 +241,38 @@ void main()
             vec4 lightColorExponent = texelFetch(uLightData, ivec2(1, i), 0);
             vec3 toLight = lightPositionRadius.xyz - vPosition;
             float distanceToLight = length(toLight);
+            vec3 innerAngleSpotPrimary = texelFetch(uLightData, ivec2(3, i), 0).xyz;
             float attenuation = max(1.0 - distanceToLight / lightPositionRadius.w, 0.0);
+            if (innerAngleSpotPrimary.z > 0.5)
+            {
+                float falloff = texture(uPrimaryFalloff,
+                    vec2(clamp(distanceToLight / lightPositionRadius.w, 0.0, 1.0), 0.5)).r;
+                attenuation = falloff * falloff;
+            }
             if (attenuation <= 0.0)
                 continue;
             vec4 directionOuterAngle = texelFetch(uLightData, ivec2(2, i), 0);
-            vec2 innerAngleSpot = texelFetch(uLightData, ivec2(3, i), 0).xy;
-            if (innerAngleSpot.y > 0.5)
+            if (innerAngleSpotPrimary.y > 0.5)
             {
-                float angle = acos(clamp(dot(directionOuterAngle.xyz,
-                    -toLight / max(distanceToLight, 0.0001)), -1.0, 1.0));
-                if (angle >= directionOuterAngle.w)
-                    continue;
-                if (lightColorExponent.w > 0.0)
-                    attenuation *= pow(clamp((directionOuterAngle.w - angle) /
-                        (directionOuterAngle.w - innerAngleSpot.x), 0.0, 1.0), lightColorExponent.w);
+                float facing = dot(directionOuterAngle.xyz,
+                    -toLight / max(distanceToLight, 0.0001));
+                if (innerAngleSpotPrimary.z > 0.5)
+                {
+                    float cone = clamp((facing - directionOuterAngle.w) /
+                        (innerAngleSpotPrimary.x - directionOuterAngle.w), 0.0, 1.0);
+                    if (cone <= 0.0)
+                        continue;
+                    attenuation *= pow(cone, lightColorExponent.w);
+                }
+                else
+                {
+                    float angle = acos(clamp(facing, -1.0, 1.0));
+                    if (angle >= directionOuterAngle.w)
+                        continue;
+                    if (lightColorExponent.w > 0.0)
+                        attenuation *= pow(clamp((directionOuterAngle.w - angle) /
+                            (directionOuterAngle.w - innerAngleSpotPrimary.x), 0.0, 1.0), lightColorExponent.w);
+                }
             }
             float diffuse = max(dot(normal, toLight / max(distanceToLight, 0.0001)), 0.0);
             if (diffuse <= 0.0)
@@ -262,8 +286,34 @@ void main()
     {
         vec3 diffuse = texture(uCompiledDiffuseLightmap, vLightmapTexCoord).rgb;
         float visibility = texture(uCompiledSunVisibility, vLightmapTexCoord).r;
-        float incidence = max(dot(normalize(vNormal), uCompiledSunDirection), 0.0);
-        color *= sqrt(diffuse * diffuse + uCompiledSunColorLinear * (incidence * visibility));
+        vec3 direct = vec3(0.0);
+        if (uCompiledPrimaryType == 1)
+        {
+            float incidence = max(dot(normalize(vNormal), uCompiledSunDirection), 0.0);
+            direct = uCompiledSunColorLinear * incidence;
+        }
+        else if (uCompiledPrimaryType == 2 || uCompiledPrimaryType == 3)
+        {
+            vec3 toLight = uCompiledLocalPositionRadius.xyz - vPosition;
+            float distanceToLight = length(toLight);
+            if (distanceToLight < uCompiledLocalPositionRadius.w)
+            {
+                vec3 toLightDirection = toLight / max(distanceToLight, 0.0001);
+                float incidence = max(dot(normalize(vNormal), toLightDirection), 0.0);
+                float falloff = texture(uPrimaryFalloff,
+                    vec2(clamp(distanceToLight / uCompiledLocalPositionRadius.w, 0.0, 1.0), 0.5)).r;
+                float cone = 1.0;
+                if (uCompiledPrimaryType == 3)
+                {
+                    float cosine = dot(toLightDirection, uCompiledSpotDirectionOuterCos.xyz);
+                    float factor = clamp((cosine - uCompiledSpotDirectionOuterCos.w) /
+                        (uCompiledSpotInnerCosExponent.x - uCompiledSpotDirectionOuterCos.w), 0.0, 1.0);
+                    cone = factor > 0.0 ? pow(factor, uCompiledSpotInnerCosExponent.y) : 0.0;
+                }
+                direct = uCompiledLocalColorLinear * (incidence * falloff * falloff * cone);
+            }
+        }
+        color *= sqrt(diffuse * diffuse + direct * visibility);
     }
     else if (uCompiledLightmapMode == 1)
         color *= texture(uCompiledDiffuseLightmap, vLightmapTexCoord).rgb;

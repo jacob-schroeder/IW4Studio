@@ -74,8 +74,8 @@ internal static class MapCompiler
     }
 
     internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; native all-face water volumes and GPU ocean tops; solid terrain, painted overlays, decals, cutouts, static glass and rectangular breakable glass with native materials, skies and static models. " +
-        "Bakes point and targeted spot lights, sky ambient, one diffuse bounce from opaque world surfaces and reflections; requires authored sunlight and a reflection probe. " +
-        "Native multiplayer points, script entities, stock soccer-ball runtime physics, brush/trigger models, groups and unambiguous prefabs. Full map builds write FX and sound source markers to scripts; standalone BSP output omits them. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; stage volumes and primary local lights are not compiled yet.";
+        "Bakes static point/targeted spot lights, sky ambient, one diffuse bounce from opaque world surfaces and reflections; primary omni/spot lights use native runtime direct lighting with baked occlusion. Primary spots support fixed-position sweeps. Requires authored sunlight and a reflection probe. " +
+        "Native multiplayer points, script entities, stock soccer-ball runtime physics, brush/trigger models, groups and unambiguous prefabs. Full map builds write FX and sound source markers to scripts; standalone BSP output omits them. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; stage volumes and runtime local shadow maps are not compiled yet.";
 
     internal static IEnumerable<MapEntity> BrushEntities(MapDocument document) =>
         document.Entities.Where(entity => entity != document.World && entity.Brushes.Count > 0);
@@ -161,11 +161,11 @@ internal static class MapCompiler
         progress?.Report("Compiling terrain collision…");
         collision = TerrainCollisionCompiler.Append(collision,
             document.World.Terrains.Where(terrain => !TerrainContents.ReadNonColliding(terrain)).ToArray());
-        var sun = BrushRenderCompiler.CompileSun(document, assetName);
-        var graphics = BrushRenderCompiler.Compile(document, assetName, collision, sun, materials, models, probeOrigins, cancellationToken, progress);
+        var primaryLights = BrushRenderCompiler.CompilePrimaryLights(document, assetName);
+        var graphics = BrushRenderCompiler.Compile(document, assetName, collision, primaryLights, materials, models, probeOrigins, cancellationToken, progress);
         progress?.Report("Assembling compiled map and model placements…");
         return MapModelCompiler.Append(document, D3dbspUnlinker.Unlink([
-            collision, sun, graphics, entities,
+            collision, primaryLights, graphics, entities,
             new GameWorldMpAsset
             {
                 Name = assetName,
@@ -176,7 +176,7 @@ internal static class MapCompiler
                 }
             },
             new FxWorldAsset { Name = assetName, GlassSystem = glass }
-        ]));
+        ]), models, primaryLights.PrimaryLights);
     }
 
     private static IReadOnlyDictionary<string, MaterialSource> PrepareWaterMaterials(MapDocument document,
@@ -372,12 +372,13 @@ internal static class MapCompiler
     {
         foreach (string key in entity.Properties.Keys)
             if (key is not ("classname" or "origin" or "angles" or "angle" or "targetname" or "target" or
-                "def" or "radius" or "intensity" or "_color" or "fov_outer" or "fov_inner" or "exponent" or "spawnflags"))
-                throw new NotSupportedException($"Light property '{key}' is not supported by static light compilation.");
+                "def" or "radius" or "intensity" or "_color" or "fov_outer" or "fov_inner" or "exponent" or "spawnflags" or
+                "dynamic_shadows" or "sweep_angle" or "sweep_time"))
+                throw new NotSupportedException($"Light property '{key}' is not supported by light compilation.");
         if (!MapLightProperties.TryRead(entity, out MapLightProperties properties, out string? error))
             throw new InvalidDataException(error);
-        if (properties.SpawnFlags != 0)
-            throw new NotSupportedException("Local lights currently bake static illumination. Clear Primary omni/spot and other light spawnflags before building.");
+        if (properties.SpawnFlags is not (0 or MapLightDefaults.PrimaryOmni or MapLightDefaults.PrimarySpot))
+            throw new NotSupportedException("Only static lights, Primary omni and Primary spot lights are supported. Clear other light spawnflags before building.");
         if (!MapLight.TryCreate(entity, document.ResolveTargets(entity), out _, out error) && error is not null)
             throw new InvalidDataException(error);
     }
@@ -413,8 +414,8 @@ internal static class MapCompiler
         int brushModel = 0;
         foreach (MapEntity entity in document.Entities)
         {
-            // Static light entities and their aim markers are consumed by the bake;
-            // retaining them in MapEnts would imply runtime light/script behavior.
+            // Light authoring keys and aim markers stay out of MapEnts. Moving
+            // primary lights receive native light controllers below.
             if (entity.ClassName is "light" or "info_null" or "fx_origin") continue;
             var point = new MapEntity();
             foreach (var property in entity.Properties) point.Properties.Add(property.Key, property.Value);
@@ -422,6 +423,7 @@ internal static class MapCompiler
                 point.Properties["model"] = $"*{++brushModel}";
             source.Entities.Add(point);
         }
+        source.Entities.AddRange(MapMovingLightScripts.CreateRuntimeEntities(document));
         string text = MapWriter.Serialize(source);
         byte[] bytes = Encoding.GetEncoding(Encoding.Latin1.CodePage,
             EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback).GetBytes(text + '\0');

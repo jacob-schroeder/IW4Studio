@@ -2,10 +2,70 @@ using System.Numerics;
 
 namespace Iw4Radiant.MapSource;
 
-// The preview and compiler approximate light_point_linear analytically; they do not sample its asset.
 internal readonly record struct MapLight(Vector3 Origin, float Radius, Vector3 Color, Vector3 Direction,
-    float InnerAngle, float OuterAngle, float Exponent, bool IsSpotlight)
+    float InnerAngle, float OuterAngle, float Exponent, bool IsSpotlight, bool IsPrimary, bool DynamicShadows,
+    float SweepAngle, float SweepSeconds)
 {
+    internal const float SweepEaseFraction = 1f / 6f;
+    internal const float SweepWarmupSeconds = 2;
+    internal bool IsMoving => SweepAngle > 0;
+    internal float CoverageAngle => OuterAngle + SweepAngle * (MathF.PI / 360);
+    internal Vector3 SweepStartAngles => AimAngles - new Vector3(SweepAngle / 2, 0, 0);
+    internal Vector3 SweepEndAngles => AimAngles + new Vector3(SweepAngle / 2, 0, 0);
+    internal Vector3 SweepStartDirection => FromAngles(SweepStartAngles);
+    internal Vector3 SweepEndDirection => FromAngles(SweepEndAngles);
+
+    private Vector3 AimAngles => new(
+        MathF.Atan2(-Direction.Z, new Vector2(Direction.X, Direction.Y).Length()) * (180 / MathF.PI),
+        MathF.Atan2(Direction.Y, Direction.X) * (180 / MathF.PI), 0);
+
+    internal Vector3 DirectionAt(double elapsedSeconds)
+    {
+        if (!IsMoving || elapsedSeconds <= SweepWarmupSeconds) return Direction;
+        double elapsed = elapsedSeconds - SweepWarmupSeconds;
+        double firstLeg = SweepSeconds / 2d;
+        if (elapsed < firstLeg)
+            return FromAngles(Vector3.Lerp(AimAngles, SweepStartAngles, Ease(elapsed / firstLeg)));
+        double leg = (elapsed - firstLeg) / SweepSeconds;
+        float fraction = Ease(leg - Math.Floor(leg));
+        return FromAngles((Math.Floor(leg) % 2) == 0
+            ? Vector3.Lerp(SweepStartAngles, SweepEndAngles, fraction)
+            : Vector3.Lerp(SweepEndAngles, SweepStartAngles, fraction));
+    }
+
+    private static float Ease(double fraction)
+    {
+        // rotateTo's equal acceleration/deceleration intervals leave a constant-speed middle.
+        double edge = SweepEaseFraction;
+        if (fraction < edge) return (float)(fraction * fraction / (2 * edge * (1 - edge)));
+        if (fraction > 1 - edge) return 1 - (float)(Math.Pow(1 - fraction, 2) / (2 * edge * (1 - edge)));
+        return (float)((fraction - edge / 2) / (1 - edge));
+    }
+
+    private static Vector3 FromAngles(Vector3 angles)
+    {
+        float pitch = angles.X * (MathF.PI / 180), yaw = angles.Y * (MathF.PI / 180);
+        return new Vector3(MathF.Cos(pitch) * MathF.Cos(yaw), MathF.Cos(pitch) * MathF.Sin(yaw), -MathF.Sin(pitch));
+    }
+
+    internal static IEnumerable<(MapEntity Entity, MapLight Light, int Index)> EnumeratePrimary(MapDocument document)
+    {
+        int index = 2; // None and sun occupy the first two records.
+        foreach (MapEntity entity in document.Entities)
+        {
+            if (entity.ClassName != "light") continue;
+            if (!TryCreate(entity, document.ResolveTargets(entity), out MapLight light, out string? error))
+            {
+                if (error is not null) throw new InvalidDataException(error);
+                continue;
+            }
+            if (!light.IsPrimary) continue;
+            if (index >= 255)
+                throw new NotSupportedException("A map supports at most 253 primary local lights alongside its sun.");
+            yield return (entity, light, index++);
+        }
+    }
+
     internal static bool TryCreate(MapEntity entity, IReadOnlyList<MapEntity> resolvedTargets,
         out MapLight light, out string? error)
     {
@@ -16,6 +76,7 @@ internal readonly record struct MapLight(Vector3 Origin, float Radius, Vector3 C
             error = $"Light definition '{properties.Definition}' is not supported. Use '{MapLightDefaults.Definition}'.";
             return false;
         }
+        bool primarySpot = properties.SpawnFlags == MapLightDefaults.PrimarySpot;
         float maximum = Math.Max(properties.Color.X, Math.Max(properties.Color.Y, properties.Color.Z));
         if (properties.Radius == 0 || properties.Intensity == 0 || maximum == 0) return false;
 
@@ -67,10 +128,23 @@ internal readonly record struct MapLight(Vector3 Origin, float Radius, Vector3 C
                 error = "The inner and outer spotlight FOVs are too close to distinguish.";
                 return false;
             }
+            if (primarySpot && (outerAngle >= MathF.PI / 2 ||
+                MathF.Cos(innerAngle) <= MathF.Cos(outerAngle)))
+            {
+                error = "A primary spotlight needs distinguishable inner and outer cones with an outer FOV below 180 degrees.";
+                return false;
+            }
+            if (properties.SweepAngle > 0 && outerAngle + properties.SweepAngle * (MathF.PI / 360) >= MathF.PI / 2)
+            {
+                error = "The outer FOV plus the sweep arc must be below 180 degrees. Narrow the cone or sweep arc.";
+                return false;
+            }
         }
         Vector3 color = properties.Color / maximum * properties.Intensity;
         light = new MapLight(origin, properties.Radius, color, direction, innerAngle, outerAngle,
-            properties.Exponent, properties.IsSpotlight);
+            properties.Exponent, properties.IsSpotlight,
+            properties.SpawnFlags is MapLightDefaults.PrimaryOmni or MapLightDefaults.PrimarySpot,
+            properties.DynamicShadows, properties.SweepAngle, properties.SweepSeconds);
         return true;
     }
 }

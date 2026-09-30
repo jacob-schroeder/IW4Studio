@@ -340,6 +340,13 @@ public partial class ViewportWorkspace : UserControl
         if (CameraView is not null) CameraView.PreviewLighting = PreviewLights.IsChecked == true;
     }
 
+    internal void EnablePreviewLights()
+    {
+        if (CameraView.CompiledPreview is not null) return;
+        PreviewLights.IsChecked = true;
+        CameraView.PreviewLighting = true;
+    }
+
     private void FilmPanel_Changed(object? sender, RoutedEventArgs e)
     {
         if (FilmPreviewPanel is not null)
