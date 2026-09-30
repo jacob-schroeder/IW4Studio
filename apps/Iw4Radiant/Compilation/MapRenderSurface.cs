@@ -7,6 +7,7 @@ internal sealed record MapRenderSurface(string Material, Vector3[] Vertices, Vec
     Vector3[] Normals, Vector3[] Tangents, Vector3[] Binormals, Vector2[] TextureCoordinates, Vector4[] Colors, int SourceIndex)
 {
     internal int ModelIndex { get; init; }
+    internal byte SunPrimaryLightIndex { get; init; } = 1;
     // Authored world units covered by one secondary-lightmap luxel. Terrain carries its authored
     // density here; brush surfaces remain null so the baker can apply its automatic 4-unit baseline.
     internal float? LightmapSize { get; init; }

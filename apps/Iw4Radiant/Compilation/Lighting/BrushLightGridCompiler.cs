@@ -20,22 +20,23 @@ internal static class BrushLightGridCompiler
             mins[axis] = checked((ushort)(MathF.Floor(minimum) - 1));
             maxs[axis] = checked((ushort)(MathF.Ceiling(maximum) + 1));
         }
-        // Use a long for the product: imported bounds can overflow a 32-bit count before the
-        // native dense representation's ushort.MaxValue sample cap is checked.
+        // Entries and row entry offsets are 32-bit. Only the color references
+        // are ushort; staged maps must retain a full grid beyond 65535 samples.
         long entryCount = (long)(maxs[0] - mins[0] + 1) * (maxs[1] - mins[1] + 1) * (maxs[2] - mins[2] + 1);
-        if (entryCount > ushort.MaxValue && scene.HasPrimaryLocalLights)
-            throw new NotSupportedException("Primary local lights require a baked light grid. Reduce the map bounds to fit the native 65535-entry grid limit.");
-        progress?.Report(entryCount > ushort.MaxValue
+        bool useFallback = entryCount > ushort.MaxValue && scene.SunCount == 1 && !scene.HasPrimaryLocalLights;
+        if (!useFallback) entryCount = GfxLightGridCodec.DenseEntryCount(mins, maxs);
+        progress?.Report(useFallback
             ? "Light grid: preparing oversized-map fallback."
             : $"Light grid: 0/{entryCount} entries completed.");
         Vector3 sceneCenter = (scene.Minimum + scene.Maximum) * 0.5f;
         // Reuse scratch for every sample; only unique encoded colors need heap storage.
         Span<Vector3> irradiance = stackalloc Vector3[GfxLightGridCodec.SampleDirections.Count];
         Span<byte> rgb = stackalloc byte[GfxLightGridColors.SerializedSize];
-        scene.DiffuseIrradianceDirections(sceneCenter, irradiance);
+        byte centerPrimary = scene.SunCount > 1 ? scene.PrimaryLightAt(sceneCenter) : (byte)1;
+        scene.DiffuseIrradianceDirections(sceneCenter, irradiance, centerPrimary);
         Encode(irradiance, rgb);
         var centerColor = new GfxLightGridColors(rgb.ToArray());
-        if (entryCount > ushort.MaxValue)
+        if (useFallback)
         {
             progress?.Report("Light grid complete: oversized map uses the scene-center fallback; no grid entries baked.");
             return CreateFallbackLightGrid(centerColor);
@@ -75,18 +76,24 @@ internal static class BrushLightGridCompiler
             Convert.TryToHexString(rgb, key, out _);
             if (!colorLookup.TryGetValue(key, out ushort colorIndex))
             {
+                if (colors.Count > ushort.MaxValue)
+                    throw new NotSupportedException("The baked light grid exceeds 65536 unique colors. Reduce map bounds or lighting variation.");
                 colorIndex = checked((ushort)colors.Count);
                 colors.Add(new GfxLightGridColors(rgb.ToArray()));
                 colorIndices.Add(new string(key), colorIndex);
             }
-            entries.Add(new GfxLightGridEntry(colorIndex,
-                scene.PrimaryVisibility(point, Vector3.Zero, primaryLight) > 0 ? primaryLight : (byte)0, 0));
+            byte visiblePrimary = scene.PrimaryVisibility(point, Vector3.Zero, primaryLight) > 0
+                ? primaryLight
+                : scene.SunCount > 1 && primaryLight > 0 && primaryLight <= scene.SunCount
+                    ? checked((byte)(255 - scene.SunCount + primaryLight))
+                    : (byte)0;
+            entries.Add(new GfxLightGridEntry(colorIndex, visiblePrimary, 0));
             ReportEntryProgress();
         }
         // Canonical BSP export omits the final linker-generated row. Keep that
         // row separate from the authored Colors[1] used by native fallback sampling.
         colors.Add(GfxLightGridCodec.CreateDefault());
-        GfxLightGrid grid = GfxLightGridCodec.CreateDenseGrid(mins, maxs, entries, colors, 1);
+        GfxLightGrid grid = GfxLightGridCodec.CreateDenseGrid(mins, maxs, entries, colors, scene.SunCount);
         progress?.Report($"Light grid complete: {completedEntries}/{entryCount} entries.");
         return grid;
 
@@ -129,7 +136,7 @@ internal static class BrushLightGridCompiler
         {
             scene.CancellationToken.ThrowIfCancellationRequested();
             int index = (x * columns + y) * depth + z;
-            if (owners[index] == 1 && HasLocalNeighbor(x, y, z))
+            if (owners[index] > 0 && owners[index] <= scene.SunCount && HasLocalNeighbor(x, y, z))
                 owners[index] = 0;
         }
         return owners;
@@ -139,7 +146,7 @@ internal static class BrushLightGridCompiler
             for (int nx = Math.Max(0, x - 1); nx <= Math.Min(rows - 1, x + 1); nx++)
             for (int ny = Math.Max(0, y - 1); ny <= Math.Min(columns - 1, y + 1); ny++)
             for (int nz = Math.Max(0, z - 1); nz <= Math.Min(depth - 1, z + 1); nz++)
-                if (owners[(nx * columns + ny) * depth + nz] > 1)
+                if (owners[(nx * columns + ny) * depth + nz] > scene.SunCount)
                     return true;
             return false;
         }

@@ -509,7 +509,7 @@ public sealed class GfxWorldLoader : XAssetLoader<GfxWorldAsset>
     {
         int cellCount = Count(header.CellCount, "cellCount");
         IReadOnlyList<DpvsPlane> planes = ReadDpvsPlaneArray(cursor, header.PlanesPointer.Untyped, planeCount, context, "GfxWorld.dpvsPlanes.planes");
-        IReadOnlyList<ushort> nodes = ReadUInt16Array(cursor, header.NodesPointer.Untyped, nodeCount, 4, context, "GfxWorld.dpvsPlanes.nodes");
+        IReadOnlyList<ushort> nodes = ReadUInt16Array(cursor, header.NodesPointer.Untyped, nodeCount, 2, context, "GfxWorld.dpvsPlanes.nodes");
         IReadOnlyList<uint> sceneEntCellBits = ReadPushed(context, XFileBlockType.RUNTIME, () => ReadUInt32Array(cursor, header.SceneEntCellBitsPointer.Untyped, checked(cellCount << 9), 4, context, "GfxWorld.dpvsPlanes.sceneEntCellBits"));
 
         return new GfxWorldDpvsPlanes

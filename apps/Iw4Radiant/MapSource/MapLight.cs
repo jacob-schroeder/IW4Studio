@@ -48,9 +48,11 @@ internal readonly record struct MapLight(Vector3 Origin, float Radius, Vector3 C
         return new Vector3(MathF.Cos(pitch) * MathF.Cos(yaw), MathF.Cos(pitch) * MathF.Sin(yaw), -MathF.Sin(pitch));
     }
 
-    internal static IEnumerable<(MapEntity Entity, MapLight Light, int Index)> EnumeratePrimary(MapDocument document)
+    internal static IEnumerable<(MapEntity Entity, MapLight Light, int Index)> EnumeratePrimary(MapDocument document, int sunCount = 1)
     {
-        int index = 2; // None and sun occupy the first two records.
+        if (sunCount is < 1 or > 127) throw new ArgumentOutOfRangeException(nameof(sunCount));
+        // None, then contiguous directional Suns. The top S bytes are occluded-Sun markers.
+        int index = sunCount + 1;
         foreach (MapEntity entity in document.Entities)
         {
             if (entity.ClassName != "light") continue;
@@ -60,8 +62,8 @@ internal readonly record struct MapLight(Vector3 Origin, float Radius, Vector3 C
                 continue;
             }
             if (!light.IsPrimary) continue;
-            if (index >= 255)
-                throw new NotSupportedException("A map supports at most 253 primary local lights alongside its sun.");
+            if (index >= 256 - sunCount)
+                throw new NotSupportedException($"A map with {sunCount} Suns supports at most {255 - 2 * sunCount} primary local lights.");
             yield return (entity, light, index++);
         }
     }

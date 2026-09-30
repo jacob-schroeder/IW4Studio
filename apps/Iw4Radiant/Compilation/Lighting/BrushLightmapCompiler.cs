@@ -49,6 +49,7 @@ internal static class BrushLightmapCompiler
             scene.CancellationToken.ThrowIfCancellationRequested();
             MapRenderSurface polygon = scene.Polygons[faceIndex];
             byte primaryLight = scene.PrimaryLightForFace(faceIndex);
+            byte sunIndex = polygon.SunPrimaryLightIndex;
             faceUvs[faceIndex] = new Vector2[polygon.Vertices.Length];
             // Water shaders use native spectra, lights and reflection probes, not lightmaps.
             // Subdivision must not turn every wave cell into an unused CPU lighting bake.
@@ -135,9 +136,9 @@ internal static class BrushLightmapCompiler
                             }
                         });
                         int luxelCount = (lastRow - firstRow) * width;
-                        scene.BakeDiffuseSamples(points, normals, irradiances, luxelCount * 4,
+                        scene.BakeDiffuseSamples(points, normals, irradiances, luxelCount * 4, sunIndex,
                             traversal, parallelOptions);
-                        scene.BakeSunSamples(sunPoints, normal, sunVisibility, luxelCount * 16,
+                        scene.BakeSunSamples(sunPoints, normal, sunVisibility, luxelCount * 16, sunIndex,
                             traversal, parallelOptions);
                         Parallel.For(firstRow, lastRow, parallelOptions,
                             y => BakeRow(y, irradiances, sunVisibility, firstRow));
@@ -170,9 +171,9 @@ internal static class BrushLightmapCompiler
                         Vector3 sampleNormal = polygon.Sample(point).Normal;
                         Vector3 direct = baked is not null
                             ? baked[((y - firstRow) * width + x) * 4 + sy * 2 + sx]
-                            : scene.DiffuseIrradiance(point, sampleNormal);
+                            : scene.DiffuseIrradiance(point, sampleNormal, sunIndex);
                         directForBounce += direct;
-                        irradiance += scene.SecondaryIrradiance(point, sampleNormal, direct, primaryLight);
+                        irradiance += scene.SecondaryIrradiance(point, sampleNormal, direct, primaryLight, sunIndex);
                     }
                     // Filter irradiance in linear light, before the native square-root encoding.
                     irradiance *= 0.25f;
@@ -199,9 +200,9 @@ internal static class BrushLightmapCompiler
                                 y + (py - 0.5f) * 0.5f + (sy - 0.5f) * 0.25f);
                             float sun = bakedSun is not null
                                 ? bakedSun[(((y - firstRow) * width + x) * 4 + py * 2 + px) * 4 + sy * 2 + sx]
-                                : scene.SunVisibility(sample, normal);
+                                : scene.SunVisibility(sample, normal, sunIndex);
                             sunVisibility += sun;
-                            visibility += primaryLight == 1 ? sun : scene.PrimaryVisibility(sample, normal, primaryLight);
+                            visibility += primaryLight == sunIndex ? sun : scene.PrimaryVisibility(sample, normal, primaryLight);
                         }
                         totalSunVisibility += sunVisibility;
                         int offset = ((cursorY + y) * 2 + py) * GfxLightmapCodec.PrimaryWidth + (cursorX + x) * 2 + px;
@@ -232,7 +233,8 @@ internal static class BrushLightmapCompiler
                     {
                         Vector3 point = layout.Position(x, y);
                         AddIndirect(layout, x, y,
-                            scene.IndirectIrradiance(point, layout.Polygon.Sample(point).Normal), page);
+                            scene.IndirectIrradiance(point, layout.Polygon.Sample(point).Normal,
+                                layout.Polygon.SunPrimaryLightIndex), page);
                     }
                 });
                 bouncedLuxels += (long)layout.Width * layout.Height;
@@ -261,7 +263,8 @@ internal static class BrushLightmapCompiler
                             }
                         });
                         scene.BakeDiffuseSamples(points, normals, irradiances,
-                            (lastRow - firstRow) * layout.Width, traversal, parallelOptions, indirectOnly: true);
+                            (lastRow - firstRow) * layout.Width, layout.Polygon.SunPrimaryLightIndex,
+                            traversal, parallelOptions, indirectOnly: true);
                         Parallel.For(firstRow, lastRow, parallelOptions, y =>
                         {
                             for (int x = 0; x < layout.Width; x++)

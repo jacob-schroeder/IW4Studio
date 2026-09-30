@@ -63,6 +63,10 @@ internal sealed class SceneRenderer
     private readonly SceneLighting _lighting = new();
     private readonly SceneShadows _shadows = new();
     private readonly SceneSunlight _sunlight = new();
+    private MapStageLighting? _stages;
+    private string? _stageLightingNotice;
+    private readonly HashSet<byte> _usedSunIndices = [1];
+    private readonly List<(int Start, int End, byte SunIndex)> _sourceSunRanges = [];
     private readonly SceneSkies _skies = new();
     private readonly SceneWater _water = new();
     private readonly SceneReflections _reflections = new();
@@ -423,6 +427,7 @@ internal sealed class SceneRenderer
     {
         _foliagePreview = preview;
         _previewMeshesDirty = true;
+        _sceneDirty = true;
     }
 
     internal unsafe void Initialize(GlInterface gl)
@@ -602,7 +607,7 @@ internal sealed class SceneRenderer
                 (!session.DeferPreviewLighting || _physicsTransforms is not null))
             {
                 _shadows.Update(gl, _lighting.Lights, _vertexArray, _surfaceBatches, resolveMaterial, _materialTextures);
-                _sunlight.Update(gl, document.World, _surfaceBounds, _vertexArray, _surfaceBatches,
+                _sunlight.Update(gl, document.World, _stages, _usedSunIndices, _surfaceBounds, _vertexArray, _surfaceBatches,
                     resolveMaterial, _materialTextures);
                 _shadowsDirty = false;
             }
@@ -646,11 +651,6 @@ internal sealed class SceneRenderer
             gl.Uniform3(_eyeLocation, eye.X, eye.Y, eye.Z);
             gl.Uniform1(_linearCaptureLocation, 0);
             gl.Uniform1(_compiledLightmapModeLocation, 0);
-            Vector3 compiledSunDirection = _compiledPreview?.SunDirection ?? Vector3.Zero;
-            Vector3 compiledSunColor = _compiledPreview?.SunColorLinear ?? Vector3.Zero;
-            gl.Uniform3(_compiledSunDirectionLocation, compiledSunDirection.X, compiledSunDirection.Y,
-                compiledSunDirection.Z);
-            gl.Uniform3(_compiledSunColorLocation, compiledSunColor.X, compiledSunColor.Y, compiledSunColor.Z);
             gl.Uniform1(_fogEnabledLocation, 0);
             gl.Uniform3(_fogColorLocation, fogPreview.Color.X, fogPreview.Color.Y, fogPreview.Color.Z);
             gl.Uniform1(_fogStartLocation, fogPreview.StartDistance);
@@ -758,6 +758,7 @@ internal sealed class SceneRenderer
                     HasAnimatedWater ? _reflections.Notice : null,
                     previewLighting ? _lighting.GetNotice(_sunlight.IsAvailable) : null,
                     previewLighting ? _shadows.Notice : null, previewLighting ? _sunlight.Notice : null,
+                    previewLighting ? _stageLightingNotice : null,
                     _walkPlayerNotice];
             string notice = string.Join('\n', notices.Where(value => !string.IsNullOrEmpty(value)));
             PublishStatus(notice.Length == 0 ? null : notice);
@@ -1181,6 +1182,13 @@ internal sealed class SceneRenderer
         Matrix4x4 normalTransform = Matrix4x4.Transpose(inverse);
         gl.UniformMatrix4(_modelLocation, 1, false, (float*)&transform);
         gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&normalTransform);
+        if (previewLighting)
+        {
+            var (minimum, maximum) = model.Bounds;
+            byte sunIndex = _stages?.SunIndexAt(Vector3.Transform(
+                minimum * 0.5f + maximum * 0.5f, transform)) ?? (byte)1;
+            _sunlight.Bind(gl, sunIndex);
+        }
         gl.BindVertexArray(mesh.VertexArray);
         foreach (var batch in mesh.Batches)
         {
@@ -1333,6 +1341,30 @@ internal sealed class SceneRenderer
         gl.DrawArrays(primitive, start, (uint)(end - start));
     }
 
+    private void DrawSourceRange(GL gl, int start, int count, bool capture)
+    {
+        if (_compiledPreview is not null || _stages?.SunCount is not > 1)
+        {
+            DrawStaticRange(gl, PrimitiveType.Triangles, start, count, capture);
+            return;
+        }
+        int end = start + count;
+        int low = 0, high = _sourceSunRanges.Count;
+        while (low < high)
+        {
+            int middle = (low + high) / 2;
+            if (_sourceSunRanges[middle].End <= start) low = middle + 1;
+            else high = middle;
+        }
+        for (int index = low; index < _sourceSunRanges.Count && _sourceSunRanges[index].Start < end; index++)
+        {
+            var range = _sourceSunRanges[index];
+            int first = Math.Max(start, range.Start), last = Math.Min(end, range.End);
+            _sunlight.Bind(gl, range.SunIndex);
+            DrawStaticRange(gl, PrimitiveType.Triangles, first, last - first, capture);
+        }
+    }
+
     private bool IsHiddenDestructibleTriangle(int start) => _activeDestructibleSource is not null &&
         _destructibleRanges.Any(range => ReferenceEquals(range.Source, _activeDestructibleSource) &&
             start >= range.Start && start < range.Start + range.Count);
@@ -1353,6 +1385,7 @@ internal sealed class SceneRenderer
     private void RenderSurfaces(GL gl, Func<string, MaterialSource?>? resolveMaterial, bool previewLighting,
         bool previewAlpha, Vector3 eye, bool transparent, bool capture = false)
     {
+        if (_compiledPreview is null) _sunlight.Bind(gl);
         var textures = new Dictionary<string, uint>(StringComparer.Ordinal);
         MapEntity? drawnOwner = null;
         void UseOwner(MapEntity? owner)
@@ -1403,13 +1436,13 @@ internal sealed class SceneRenderer
                 foreach (var range in _waterDrawRanges[batch.Material])
                 {
                     BindWaterReflection(gl, range.Start);
-                    gl.DrawArrays(PrimitiveType.Triangles, range.Start, (uint)range.Count);
+                    DrawSourceRange(gl, range.Start, range.Count, capture);
                 }
             }
             else
             {
                 if (water) BindWaterReflection(gl, batch.Start);
-                DrawStaticRange(gl, PrimitiveType.Triangles, batch.Start, batch.Count, capture);
+                DrawSourceRange(gl, batch.Start, batch.Count, capture);
             }
         }
         if (transparent)
@@ -1464,6 +1497,8 @@ internal sealed class SceneRenderer
                 }
                 BindCompiledLightmap(gl, _compiledPreview?.LightingAt(triangle.Start) ??
                     (CompiledBspPreview.NoLightmap, (byte)0));
+                if (_compiledPreview is null && _stages?.SunCount > 1)
+                    _sunlight.Bind(gl, _movePreviewVertices[triangle.Start].SunIndex);
                 if ((_compiledPreview is not null && _waterMaterials.Contains(triangle.Material)) ||
                     _waterProbes.ContainsKey(triangle.Start)) BindWaterReflection(gl, triangle.Start);
                 gl.DrawArrays(PrimitiveType.Triangles, triangle.Start, 3);
@@ -1499,7 +1534,7 @@ internal sealed class SceneRenderer
                         foreach (var range in _waterDrawRanges[batch.Material])
                         {
                             BindWaterReflection(gl, range.Start);
-                            gl.DrawArrays(PrimitiveType.Triangles, range.Start, (uint)range.Count);
+                            DrawSourceRange(gl, range.Start, range.Count, capture);
                         }
                     }
                 }
@@ -1523,8 +1558,13 @@ internal sealed class SceneRenderer
         uint sunVisibility = lighting.PrimaryLightIndex != 0 && index >= 0 && index < _compiledSunVisibilityTextures.Length
             ? _compiledSunVisibilityTextures[index] : 0;
         int primaryType = 0;
-        if (sunVisibility != 0 && lighting.PrimaryLightIndex == 1)
+        if (sunVisibility != 0 && _compiledPreview.DirectionalSuns.TryGetValue(lighting.PrimaryLightIndex,
+                out var sun))
+        {
             primaryType = 1;
+            gl.Uniform3(_compiledSunDirectionLocation, sun.Direction.X, sun.Direction.Y, sun.Direction.Z);
+            gl.Uniform3(_compiledSunColorLocation, sun.ColorLinear.X, sun.ColorLinear.Y, sun.ColorLinear.Z);
+        }
         else if (sunVisibility != 0 && _compiledPreview.PrimaryLocalLights.TryGetValue(lighting.PrimaryLightIndex,
                      out var local))
         {
@@ -1688,8 +1728,17 @@ internal sealed class SceneRenderer
     {
         _compiledWaterNotice = null;
         ClearCompiledLightmaps(gl);
+        _stages = null;
+        _stageLightingNotice = null;
+        if (MapSunProperties.TryRead(session.Scene.Document.World, out MapSunProperties? worldSun, out _) &&
+            worldSun is not null)
+            try { _stages = MapStageLighting.Read(session.Scene.Document); }
+            catch (Exception exception) when (exception is InvalidDataException or NotSupportedException or ArgumentException)
+            {
+                _stageLightingNotice = $"Stage lighting preview unavailable: {exception.Message}";
+            }
         var scene = new SceneGeometry(session.Scene, session.TransformMode, session.Tool, resolveMaterial,
-            LeakPath, LeakPointIndex, _fxPreviewOutlinesMarkers || _mapFxPreviews.Count != 0);
+            LeakPath, LeakPointIndex, _fxPreviewOutlinesMarkers || _mapFxPreviews.Count != 0, _stages);
         _destructibleRanges.Clear();
         _destructibleRanges.AddRange(scene.DestructibleRanges);
         _destructibleOutlines.Clear();
@@ -1712,11 +1761,40 @@ internal sealed class SceneRenderer
         _batches.AddRange(scene.Batches);
         _surfaceBatches.Clear();
         _surfaceBatches.AddRange(scene.Batches.Where(batch => resolveMaterial?.Invoke(batch.Material)?.IsSky != true));
+        _usedSunIndices.Clear();
+        _usedSunIndices.Add(1);
+        foreach (var batch in _surfaceBatches)
+            for (int index = batch.Start; index < batch.Start + batch.Count; index += 3)
+                _usedSunIndices.Add(scene.Vertices[index].SunIndex);
+        foreach (var batch in scene.PhysicsBatches)
+            for (int index = batch.Start; index < batch.Start + batch.Count; index += 3)
+                _usedSunIndices.Add(scene.Vertices[index].SunIndex);
+        if (_stages is not null)
+            foreach (var (entity, model) in _foliagePreview)
+            {
+                var (minimum, maximum) = model.Bounds;
+                _usedSunIndices.Add(_stages.SunIndexAt(Vector3.Transform(
+                    minimum * 0.5f + maximum * 0.5f, XModelGeometry.Transform(entity))));
+            }
         _drawBatches.Clear();
         _drawBatches.AddRange(_surfaceBatches.Select(batch => ((MapEntity?)null, batch.Material,
             batch.Start, batch.Count, batch.WireStart, batch.WireCount)));
         _drawBatches.AddRange(scene.PhysicsBatches.Select(batch => ((MapEntity?)batch.Owner, batch.Material,
             batch.Start, batch.Count, batch.WireStart, batch.WireCount)));
+        _sourceSunRanges.Clear();
+        foreach (var batch in _drawBatches)
+        {
+            int end = batch.Start + batch.Count;
+            for (int start = batch.Start; start < end;)
+            {
+                byte sunIndex = scene.Vertices[start].SunIndex;
+                int next = start + 3;
+                while (next < end && scene.Vertices[next].SunIndex == sunIndex) next += 3;
+                _sourceSunRanges.Add((start, next, sunIndex));
+                start = next;
+            }
+        }
+        _sourceSunRanges.Sort((left, right) => left.Start.CompareTo(right.Start));
         _physicsOutlines.Clear();
         _physicsOutlines.AddRange(scene.PhysicsOutlines);
         _physicsBounds.Clear();
@@ -1869,7 +1947,7 @@ internal sealed class SceneRenderer
             {
                 SceneVertex vertex = _movePreviewVertices[index];
                 _movePreviewVertices[index] = new SceneVertex(vertex.Position + delta, vertex.Normal, vertex.Uv,
-                    vertex.Color);
+                    vertex.Color, vertex.SunIndex);
             }
             fixed (SceneVertex* vertices = &_movePreviewVertices[start])
                 gl.BufferSubData(BufferTargetARB.ArrayBuffer, (nint)(start * sizeof(SceneVertex)),
@@ -2168,6 +2246,10 @@ internal sealed class SceneRenderer
         _worldTextureUploaded = false;
         _compiledModelFailures.Clear();
         _compiledWaterNotice = null;
+        _stages = null;
+        _stageLightingNotice = null;
+        _usedSunIndices.Clear();
+        _sourceSunRanges.Clear();
         _walkPlayerGl = null;
         _uploadedWalkPlayer = null;
         _walkPlayerFailed = false;

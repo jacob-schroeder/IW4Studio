@@ -11,23 +11,36 @@ public static class GfxLightGridCodec
 
     public static IReadOnlyList<Vec3> SampleDirections { get; } = Array.AsReadOnly(CreateSampleDirections());
 
-    /// <summary>Encodes a complete X-row/Y-column lattice; entries advance Z, then Y, then X.</summary>
-    public static GfxLightGrid CreateDenseGrid(IReadOnlyList<ushort> mins, IReadOnlyList<ushort> maxs,
-        IReadOnlyList<GfxLightGridEntry> entries, IReadOnlyList<GfxLightGridColors> colors, uint sunPrimaryLightIndex)
+    public static int DenseEntryCount(IReadOnlyList<ushort> mins, IReadOnlyList<ushort> maxs)
     {
         if (mins.Count != 3 || maxs.Count != 3 || Enumerable.Range(0, 3).Any(axis => maxs[axis] < mins[axis]))
             throw new ArgumentException("A light-grid lattice requires three ordered coordinate bounds.");
         int rows = maxs[0] - mins[0] + 1, columns = maxs[1] - mins[1] + 1, depth = maxs[2] - mins[2] + 1;
         if (depth > byte.MaxValue)
             throw new NotSupportedException("A dense light-grid column can contain at most 255 vertical samples.");
-        if (entries.Count != checked(rows * columns * depth))
+        if (columns > ushort.MaxValue)
+            throw new NotSupportedException("A dense light-grid row can contain at most 65535 columns.");
+        int rowBytes = DenseRowBytes(columns);
+        if ((long)(rows - 1) * rowBytes / 4 >= ushort.MaxValue)
+            throw new NotSupportedException("The light-grid row offsets exceed the native 16-bit word range.");
+        long count = (long)rows * columns * depth;
+        if (count > int.MaxValue)
+            throw new NotSupportedException("The dense light grid exceeds the supported array size.");
+        return (int)count;
+    }
+
+    /// <summary>Encodes a complete X-row/Y-column lattice; entries advance Z, then Y, then X.</summary>
+    public static GfxLightGrid CreateDenseGrid(IReadOnlyList<ushort> mins, IReadOnlyList<ushort> maxs,
+        IReadOnlyList<GfxLightGridEntry> entries, IReadOnlyList<GfxLightGridColors> colors, uint sunPrimaryLightIndex)
+    {
+        int entryCount = DenseEntryCount(mins, maxs);
+        int rows = maxs[0] - mins[0] + 1, columns = maxs[1] - mins[1] + 1, depth = maxs[2] - mins[2] + 1;
+        if (entries.Count != entryCount)
             throw new ArgumentException("The light-grid entry count does not match its lattice dimensions.");
         if (colors.Count < 2 || colors.Any(color => color.RgbBytes.Count != GfxLightGridColors.SerializedSize) ||
             entries.Any(entry => entry.ColorsIndex >= colors.Count))
             throw new ArgumentException("The light-grid colors and entry indices are inconsistent.");
-        int rowBytes = (12 + ((columns + 254) / 255) * 3 + 3) & ~3;
-        if (checked((rows - 1) * rowBytes / 4) >= ushort.MaxValue)
-            throw new NotSupportedException("The light-grid row offsets exceed the native 16-bit word range.");
+        int rowBytes = DenseRowBytes(columns);
         var starts = new ushort[rows];
         var data = new byte[checked(rows * rowBytes)];
         for (int row = 0; row < rows; row++)
@@ -58,6 +71,8 @@ public static class GfxLightGridCodec
             ColorCount = checked((uint)colors.Count), Colors = colors.ToArray()
         };
     }
+
+    private static int DenseRowBytes(int columns) => (12 + ((columns + 254) / 255) * 3 + 3) & ~3;
 
     public static GfxLightGridColors CreateDefault()
     {

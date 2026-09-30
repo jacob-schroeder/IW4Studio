@@ -25,7 +25,9 @@ internal sealed class BrushLightingScene
     private readonly Vector3[] _lightGridNormals;
     private readonly float[] _lightGridSkyWeights;
     private readonly float[] _lightGridSkyWeightTotals;
-    private readonly Vector3 _sunColor;
+    private readonly MapStageLighting _stages;
+    private readonly Vector3[] _sunColors;
+    private readonly Vector3[] _sunDirections;
     private readonly (MapLight Light, Vector3 LinearColor, byte PrimaryIndex)[] _localLights;
     private readonly ShadowModel[] _shadowModels;
     private readonly LightingRayHierarchy _worldRays;
@@ -73,17 +75,24 @@ internal sealed class BrushLightingScene
 
     internal BrushLightingScene(MapDocument document, IReadOnlyList<MapRenderSurface> polygons,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
-        CancellationToken cancellationToken = default)
+        MapStageLighting stages, CancellationToken cancellationToken = default)
     {
         Polygons = polygons;
         CancellationToken = cancellationToken;
-        if (!MapSunProperties.TryRead(document.World, out MapSunProperties? source, out string? error) || source is not { } sun)
-            throw new InvalidDataException(error ?? "The lighting bake requires authored sunlight.");
-        SunDirection = sun.Direction;
-        Vector3 sunColor = sun.Color * sun.Intensity;
-        _sunColor = new Vector3(GfxColorCodec.GammaToLinear(sunColor.X), GfxColorCodec.GammaToLinear(sunColor.Y), GfxColorCodec.GammaToLinear(sunColor.Z));
+        _stages = stages;
+        _sunColors = new Vector3[stages.SunCount + 1];
+        _sunDirections = new Vector3[stages.SunCount + 1];
+        for (byte index = 1; index <= stages.SunCount; index++)
+        {
+            MapSunProperties sun = stages.Sun(index);
+            _sunDirections[index] = sun.Direction;
+            Vector3 sunColor = sun.Color * sun.Intensity;
+            _sunColors[index] = new Vector3(GfxColorCodec.GammaToLinear(sunColor.X),
+                GfxColorCodec.GammaToLinear(sunColor.Y), GfxColorCodec.GammaToLinear(sunColor.Z));
+        }
         var localLights = new List<(MapLight, Vector3, byte)>();
-        int primaryIndex = 2;
+        int primaryIndex = stages.SunCount + 1;
+        string? error;
         foreach (MapEntity entity in document.Entities.Where(entity => entity.ClassName == "light"))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -98,6 +107,8 @@ internal sealed class BrushLightingScene
                 GfxColorCodec.GammaToLinear(light.Color.Y), GfxColorCodec.GammaToLinear(light.Color.Z));
             if (!BrushGeometry.IsFinite(color))
                 throw new NotSupportedException("The authored local light color and intensity exceed the supported numeric range.");
+            if (light.IsPrimary && primaryIndex >= 256 - stages.SunCount)
+                throw new NotSupportedException("The authored primary lights exceed the native light-grid ordinal range.");
             localLights.Add((light, color, light.IsPrimary ? checked((byte)primaryIndex++) : (byte)0));
         }
         _localLights = localLights.ToArray();
@@ -249,7 +260,12 @@ internal sealed class BrushLightingScene
     internal CancellationToken CancellationToken { get; }
     internal Vector3 Minimum { get; }
     internal Vector3 Maximum { get; }
-    internal Vector3 SunDirection { get; }
+    internal byte SunCount => _stages.SunCount;
+    internal Vector3 SunDirection(byte sunIndex) => _sunDirections[sunIndex];
+    private Vector3 SunColor(byte sunIndex) => _sunColors[sunIndex];
+    private byte SunIndexAt(Vector3 point) => _stages.SunIndexAt(point);
+    private byte SunIndexForPrimary(Vector3 point, byte primaryIndex) =>
+        primaryIndex > 0 && primaryIndex <= SunCount ? primaryIndex : SunIndexAt(point);
     internal bool IsSky(int face) => _materials[face].IsSky;
     internal bool IsWater(int face) => _materials[face].IsWater;
     internal bool HasPrimaryLocalLights => _localLights.Any(light => light.PrimaryIndex != 0);
@@ -257,7 +273,7 @@ internal sealed class BrushLightingScene
     internal byte PrimaryLightForFace(int face)
     {
         if (IsSky(face)) return 0;
-        if (IsWater(face)) return 1;
+        if (IsWater(face)) return Polygons[face].SunPrimaryLightIndex;
         Vector3 minimum = Polygons[face].Vertices.Aggregate(Vector3.Min);
         Vector3 maximum = Polygons[face].Vertices.Aggregate(Vector3.Max);
         // Native selectors scan local primaries in ascending order. A face may
@@ -268,7 +284,7 @@ internal sealed class BrushLightingScene
                 (!light.IsSpotlight || PrimaryLocalLightProfile.SpotIntersectsBounds(light.Origin,
                     light.Direction, MathF.Cos(light.CoverageAngle), minimum, maximum)))
                 return index;
-        return 1;
+        return Polygons[face].SunPrimaryLightIndex;
     }
 
     internal byte PrimaryLightAt(Vector3 point)
@@ -278,12 +294,12 @@ internal sealed class BrushLightingScene
                 (!light.IsSpotlight || Vector3.Dot(light.Direction,
                     -DirectionToLight(point, light.Origin, out _)) > MathF.Cos(light.CoverageAngle)))
                 return index;
-        return 1;
+        return SunIndexAt(point);
     }
 
     internal float PrimaryVisibility(Vector3 point, Vector3 normal, byte primaryIndex)
     {
-        if (primaryIndex == 1) return SunVisibility(point, normal);
+        if (primaryIndex > 0 && primaryIndex <= SunCount) return SunVisibility(point, normal, primaryIndex);
         if (primaryIndex == 0) return 0;
         MapLight light = _localLights.First(value => value.PrimaryIndex == primaryIndex).Light;
         Vector3 origin = point + normal * RayOffset;
@@ -293,13 +309,14 @@ internal sealed class BrushLightingScene
             WorldOccludes(origin, direction, distance) ? 0 : 1;
     }
 
-    internal Vector3 SecondaryIrradiance(Vector3 point, Vector3 normal, Vector3 total, byte primaryIndex)
+    internal Vector3 SecondaryIrradiance(Vector3 point, Vector3 normal, Vector3 total, byte primaryIndex, byte sunIndex)
     {
-        if (primaryIndex <= 1) return total;
+        if (primaryIndex <= SunCount) return total;
         var (light, color, _) = _localLights.First(value => value.PrimaryIndex == primaryIndex);
         Vector3 direct = LocalRadiance(point, point + normal * RayOffset, light, color, out Vector3 direction) *
             MathF.Max(0, Vector3.Dot(normal, direction));
-        Vector3 sun = _sunColor * (MathF.Max(0, Vector3.Dot(normal, SunDirection)) * SunVisibility(point, normal));
+        Vector3 sun = SunColor(sunIndex) * (MathF.Max(0, Vector3.Dot(normal, SunDirection(sunIndex))) *
+            SunVisibility(point, normal, sunIndex));
         return Vector3.Max(Vector3.Zero, total - direct) + sun;
     }
 
@@ -346,31 +363,32 @@ internal sealed class BrushLightingScene
     internal bool CastsSunShadow(int face) => !IsSky(face) && !_materials[face].IsWater &&
         _materials[face].Surface.HasShadowMapTechnique;
 
-    internal float SunVisibility(Vector3 point, Vector3 normal)
-        => SampleSunVisibility(point, normal, default);
+    internal float SunVisibility(Vector3 point, Vector3 normal, byte sunIndex)
+        => SampleSunVisibility(point, normal, sunIndex, default);
 
-    private float SampleSunVisibility(Vector3 point, Vector3 normal, ReadOnlySpan<int> candidateRow)
+    private float SampleSunVisibility(Vector3 point, Vector3 normal, byte sunIndex, ReadOnlySpan<int> candidateRow)
     {
         Vector3 origin = point + normal * RayOffset;
-        if (ModelOccludes(origin, SunDirection, double.PositiveInfinity,
+        Vector3 direction = SunDirection(sunIndex);
+        if (ModelOccludes(origin, direction, double.PositiveInfinity,
                 normal == Vector3.Zero ? ContainingModels(point) : null)) return 0;
         int candidateCount = candidateRow.IsEmpty ? -1 : candidateRow[0];
         bool occluded = candidateCount >= 0 && candidateCount < WebGpuRayTraversal.ResultStride
-            ? WorldOccludes(origin, SunDirection, double.PositiveInfinity, candidateRow.Slice(1, candidateCount))
-            : WorldOccludes(origin, SunDirection, double.PositiveInfinity);
+            ? WorldOccludes(origin, direction, double.PositiveInfinity, candidateRow.Slice(1, candidateCount))
+            : WorldOccludes(origin, direction, double.PositiveInfinity);
         return occluded ? 0 : 1;
     }
 
-    internal Vector3 DiffuseIrradiance(Vector3 point, Vector3 normal)
-        => SampleDiffuseIrradiance(point, normal, default, indirectOnly: false);
+    internal Vector3 DiffuseIrradiance(Vector3 point, Vector3 normal, byte sunIndex)
+        => SampleDiffuseIrradiance(point, normal, default, indirectOnly: false, sunIndex: sunIndex);
 
-    internal Vector3 IndirectIrradiance(Vector3 point, Vector3 normal)
-        => SampleDiffuseIrradiance(point, normal, default, indirectOnly: true);
+    internal Vector3 IndirectIrradiance(Vector3 point, Vector3 normal, byte sunIndex)
+        => SampleDiffuseIrradiance(point, normal, default, indirectOnly: true, sunIndex: sunIndex);
 
     internal WebGpuRayTraversal? CreateGpuTraversal() => _worldRays.CreateGpuTraversal(CancellationToken);
 
     internal void BakeDiffuseSamples(Vector3[] points, Vector3[] normals, Vector3[] irradiance, int count,
-        WebGpuRayTraversal traversal, ParallelOptions parallelOptions, bool indirectOnly = false)
+        byte sunIndex, WebGpuRayTraversal traversal, ParallelOptions parallelOptions, bool indirectOnly = false)
     {
         var offsets = ArrayPool<int>.Shared.Rent(count + 1);
         var masks = ArrayPool<ulong>.Shared.Rent(count);
@@ -422,7 +440,7 @@ internal sealed class BrushLightingScene
                     irradiance[index] = SampleDiffuseIrradiance(points[index], normals[index], ready
                         ? candidates.AsSpan(firstRay * WebGpuRayTraversal.ResultStride,
                             activeCount * WebGpuRayTraversal.ResultStride)
-                        : default, indirectOnly);
+                        : default, indirectOnly, sunIndex);
                 });
                 first = nextFirst;
                 last = nextLast;
@@ -460,7 +478,7 @@ internal sealed class BrushLightingScene
     }
 
     internal void BakeSunSamples(Vector3[] points, Vector3 normal, float[] visibility, int count,
-        WebGpuRayTraversal traversal, ParallelOptions parallelOptions)
+        byte sunIndex, WebGpuRayTraversal traversal, ParallelOptions parallelOptions)
     {
         int batchCapacity = WebGpuRayTraversal.MaximumRayCount;
         var rays = ArrayPool<WebGpuRayTraversal.Ray>.Shared.Rent(batchCapacity);
@@ -478,7 +496,7 @@ internal sealed class BrushLightingScene
                 {
                     int index = first + sample;
                     int offset = sample * WebGpuRayTraversal.ResultStride;
-                    visibility[index] = SampleSunVisibility(points[index], normal, ready
+                    visibility[index] = SampleSunVisibility(points[index], normal, sunIndex, ready
                         ? candidates.AsSpan(offset, WebGpuRayTraversal.ResultStride)
                         : default);
                 });
@@ -488,7 +506,7 @@ internal sealed class BrushLightingScene
             {
                 int sampleCount = Math.Min(batchCapacity, count - first);
                 for (int sample = 0; sample < sampleCount; sample++)
-                    rays[sample] = new(points[first + sample] + normal * RayOffset, SunDirection);
+                    rays[sample] = new(points[first + sample] + normal * RayOffset, SunDirection(sunIndex));
                 return traversal.TrySubmit(rays.AsSpan(0, sampleCount), CancellationToken);
             }
         }
@@ -500,10 +518,11 @@ internal sealed class BrushLightingScene
     }
 
     private Vector3 SampleDiffuseIrradiance(Vector3 point, Vector3 normal, ReadOnlySpan<int> skyCandidates,
-        bool indirectOnly)
+        bool indirectOnly, byte sunIndex)
     {
         Vector3 sum = Vector3.Zero;
         float totalWeight = 0;
+        float ambientScale = _stages.AmbientScale(sunIndex);
         Vector3 origin = point + normal * RayOffset;
         // A face can continue underneath an adjoining brush. Subsamples inside
         // that solid must not see sky through its culled exit faces.
@@ -519,8 +538,10 @@ internal sealed class BrushLightingScene
                 {
                     int offset = activeDirection * WebGpuRayTraversal.ResultStride;
                     int count = skyCandidates.IsEmpty ? -1 : skyCandidates[offset];
-                    Vector3 radiance = count < 0 ? DiffuseRayRadiance(origin, direction, indirectOnly) :
+                    Vector3 radiance = count < 0 ? DiffuseRayRadiance(origin, direction, indirectOnly,
+                        ambientScale: ambientScale) :
                         count == 0 ? Vector3.Zero : DiffuseRayRadiance(origin, direction, indirectOnly,
+                            ambientScale: ambientScale,
                             candidates: skyCandidates.Slice(offset + 1, count));
                     sum += radiance * cosine;
                 }
@@ -540,19 +561,21 @@ internal sealed class BrushLightingScene
         return sum;
     }
 
-    internal void DiffuseIrradianceDirections(Vector3 point, Span<Vector3> result, byte primaryIndex = 1)
+    internal void DiffuseIrradianceDirections(Vector3 point, Span<Vector3> result, byte primaryIndex)
     {
         CancellationToken.ThrowIfCancellationRequested();
         if (result.Length != _lightGridNormals.Length)
             throw new ArgumentException("The light-grid sample requires one value per direction.", nameof(result));
         result.Clear();
+        byte sunIndex = SunIndexForPrimary(point, primaryIndex);
+        float ambientScale = _stages.AmbientScale(sunIndex);
         HashSet<int>? containingModels = ContainingModels(point);
         bool insideSolid = IsInsideSolid(point, 0);
         for (int directionIndex = 0; directionIndex < _skyDirections.Length; directionIndex++)
         {
             Vector3 direction = _skyDirections[directionIndex];
             Vector3 radiance = insideSolid ? Vector3.Zero : DiffuseRayRadiance(point, direction,
-                indirectOnly: false, containingModels: containingModels);
+                indirectOnly: false, containingModels: containingModels, ambientScale: ambientScale);
             for (int sample = 0; sample < result.Length; sample++)
             {
                 float weight = _lightGridSkyWeights[directionIndex * result.Length + sample];
@@ -567,11 +590,12 @@ internal sealed class BrushLightingScene
             for (int sample = 0; sample < result.Length; sample++)
                 result[sample] += radiance * MathF.Max(0, Vector3.Dot(_lightGridNormals[sample], direction));
         }
-        if (primaryIndex != 1)
+        if (primaryIndex == 0 || primaryIndex > SunCount)
         {
-            float visibility = SunVisibility(point, Vector3.Zero);
+            float visibility = SunVisibility(point, Vector3.Zero, sunIndex);
             for (int sample = 0; sample < result.Length; sample++)
-                result[sample] += _sunColor * (visibility * MathF.Max(0, Vector3.Dot(_lightGridNormals[sample], SunDirection)));
+                result[sample] += SunColor(sunIndex) *
+                    (visibility * MathF.Max(0, Vector3.Dot(_lightGridNormals[sample], SunDirection(sunIndex))));
         }
     }
 
@@ -631,8 +655,9 @@ internal sealed class BrushLightingScene
                 if (Vector3.Dot(normal, direction) > 0) normal = -normal;
                 Vector3 color = new Vector3(hit.Texel.X, hit.Texel.Y, hit.Texel.Z) *
                     new Vector3(attributes.Color.X, attributes.Color.Y, attributes.Color.Z);
-                Vector3 lighting = DiffuseIrradiance(point, normal) + _sunColor *
-                    (MathF.Max(0, Vector3.Dot(normal, SunDirection)) * SunVisibility(point, normal));
+                byte sunIndex = Polygons[hit.Face].SunPrimaryLightIndex;
+                Vector3 lighting = DiffuseIrradiance(point, normal, sunIndex) + SunColor(sunIndex) *
+                    (MathF.Max(0, Vector3.Dot(normal, SunDirection(sunIndex))) * SunVisibility(point, normal, sunIndex));
                 // Native lit alpha materials premultiply their output. Composite the
                 // diffuse capture using the texture and painted vertex alpha together.
                 radiance += color * color * lighting * (transmission * hit.Opacity);
@@ -671,12 +696,12 @@ internal sealed class BrushLightingScene
     }
 
     private Vector3 DiffuseRayRadiance(Vector3 origin, Vector3 direction, bool indirectOnly,
-        HashSet<int>? containingModels = null, ReadOnlySpan<int> candidates = default)
+        HashSet<int>? containingModels = null, ReadOnlySpan<int> candidates = default, float ambientScale = 1)
     {
         // Direct sampling runs before the field is frozen. The later receivers
         // inspect one ordered world-hit stream for both sky and one diffuse bounce.
         if (!_directFacesFrozen)
-            return indirectOnly ? Vector3.Zero : SkyRadiance(origin, direction, containingModels, candidates);
+            return indirectOnly ? Vector3.Zero : SkyRadiance(origin, direction, containingModels, candidates) * ambientScale;
 
         float transmission = 1;
         var (hits, count) = TraceCandidates(origin, direction, sampleColor: true, candidates);
@@ -687,7 +712,7 @@ internal sealed class BrushLightingScene
                 var hit = hits[index];
                 if (IsSky(hit.Face))
                     return indirectOnly || ModelOccludes(origin, direction, double.PositiveInfinity, containingModels)
-                        ? Vector3.Zero : ReadSky(hit.Face, direction) * transmission;
+                        ? Vector3.Zero : ReadSky(hit.Face, direction) * (transmission * ambientScale);
                 if (_directFaces[hit.Face] is { } directFace)
                 {
                     MapRenderSurface surface = Polygons[hit.Face];
@@ -702,8 +727,9 @@ internal sealed class BrushLightingScene
                     Vector3 color = Vector3.Clamp(new Vector3(hit.Texel.X, hit.Texel.Y, hit.Texel.Z) *
                         new Vector3(attributes.Color.X, attributes.Color.Y, attributes.Color.Z), Vector3.Zero, Vector3.One);
                     DirectSample direct = directFace.Sample(point);
-                    Vector3 lighting = direct.Irradiance + _sunColor *
-                        (MathF.Max(0, Vector3.Dot(normal, SunDirection)) * direct.SunVisibility);
+                    byte sunIndex = surface.SunPrimaryLightIndex;
+                    Vector3 lighting = direct.Irradiance + SunColor(sunIndex) *
+                        (MathF.Max(0, Vector3.Dot(normal, SunDirection(sunIndex))) * direct.SunVisibility);
                     return color * color * lighting * transmission;
                 }
                 // Alpha-tested holes never enter this stream; blended surfaces

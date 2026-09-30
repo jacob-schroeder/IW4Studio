@@ -75,7 +75,7 @@ internal static class MapCompiler
 
     internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; native all-face water volumes and GPU ocean tops; solid terrain, painted overlays, decals, cutouts, static glass and rectangular breakable glass with native materials, skies and static models. " +
         "Bakes static point/targeted spot lights, sky ambient, one diffuse bounce from opaque world surfaces and reflections; primary omni/spot lights use native runtime direct lighting with baked occlusion. Primary spots support fixed-position sweeps. Requires authored sunlight and a reflection probe. " +
-        "Native multiplayer points, script entities, stock soccer-ball runtime physics, brush/trigger models, groups and unambiguous prefabs. Full map builds write FX and sound source markers to scripts; standalone BSP output omits them. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; stage volumes and runtime local shadow maps are not compiled yet.";
+        "Native multiplayer points, script entities, stock soccer-ball runtime physics, brush/trigger models, groups and unambiguous prefabs. Full map builds write FX and sound source markers to scripts; standalone BSP output omits them. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; ordered convex-brush Stages with local sunlight and ambient scale. Runtime local shadow maps are not compiled yet.";
 
     internal static IEnumerable<MapEntity> BrushEntities(MapDocument document) =>
         document.Entities.Where(entity => entity != document.World && entity.Brushes.Count > 0);
@@ -97,6 +97,7 @@ internal static class MapCompiler
             MapOrganization.Ungroup(document, group);
         }
         Vector3[] probeOrigins = Validate(document, assetName, materials);
+        MapStageLighting stages = MapStageLighting.Read(document);
         materials = PrepareWaterMaterials(document, materials);
         var staticMaterialNames = document.Brushes.Where(brush => !BrushGlass.IsGlass(brush))
             .SelectMany(brush => brush.Faces).Select(face => face.Material)
@@ -161,10 +162,10 @@ internal static class MapCompiler
         progress?.Report("Compiling terrain collision…");
         collision = TerrainCollisionCompiler.Append(collision,
             document.World.Terrains.Where(terrain => !TerrainContents.ReadNonColliding(terrain)).ToArray());
-        var primaryLights = BrushRenderCompiler.CompilePrimaryLights(document, assetName);
-        var graphics = BrushRenderCompiler.Compile(document, assetName, collision, primaryLights, materials, models, probeOrigins, cancellationToken, progress);
+        var primaryLights = BrushRenderCompiler.CompilePrimaryLights(document, assetName, stages);
+        var graphics = BrushRenderCompiler.Compile(document, assetName, collision, primaryLights, materials, models, probeOrigins, stages, cancellationToken, progress);
         progress?.Report("Assembling compiled map and model placements…");
-        return MapModelCompiler.Append(document, D3dbspUnlinker.Unlink([
+        return stages.AppendStageMetadata(MapModelCompiler.Append(document, D3dbspUnlinker.Unlink([
             collision, primaryLights, graphics, entities,
             new GameWorldMpAsset
             {
@@ -176,7 +177,7 @@ internal static class MapCompiler
                 }
             },
             new FxWorldAsset { Name = assetName, GlassSystem = glass }
-        ]), models, primaryLights.PrimaryLights);
+        ]), models, primaryLights.PrimaryLights, stages));
     }
 
     private static IReadOnlyDictionary<string, MaterialSource> PrepareWaterMaterials(MapDocument document,
@@ -299,8 +300,6 @@ internal static class MapCompiler
             GameplayEntityType? type = GameplayEntityEditing.Types.FirstOrDefault(type => type.Name == entity.ClassName);
             if (type is null)
                 throw new NotSupportedException($"Entity '{entity.ClassName}' is not supported by compilation.");
-            if (entity.ClassName == "stage")
-                throw new NotSupportedException("Authored stage volumes require matching MapEnts Stage rows, stage-local ComWorld sun lights and a stage-aware lighting bake. This compiler currently builds only stage 0; the source volume and lighting properties are preserved but cannot yet be compiled.");
             if (!entity.TryGetOrigin(out Vector3 origin))
                 throw new InvalidDataException($"Entity '{entity.ClassName}' needs a finite three-component origin.");
             _ = EntityOrientation.Read(entity);

@@ -4,6 +4,7 @@ using System.Numerics;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
+using Iw4Radiant.Compilation;
 
 namespace Iw4Radiant.Rendering;
 
@@ -35,7 +36,7 @@ internal sealed class SceneGeometry
 
     internal SceneGeometry(EditorScene editor, TransformMode transformMode, EditorTool tool,
         Func<string, MaterialSource?>? resolveMaterial, LeakPath? leakPath, int leakPointIndex,
-        bool outlineFxMarkers)
+        bool outlineFxMarkers, MapStageLighting? stages = null)
     {
         MapDocument document = editor.Document;
         var shore = new WaterShoreGeometry(document, name => resolveMaterial?.Invoke(name));
@@ -93,8 +94,10 @@ internal sealed class SceneGeometry
                 AddPolygon(polygon, geometry.Triangles, Vector3.One, selected ? highlight : null, geometry.Lines,
                     ownerOutlines,
                     source?.Ocean, source?.IsWater == true && staticBrushes.Contains(brush) ? shore.Contacts(polygon) : null);
-                geometry.Surfaces.Add((start, geometry.Triangles.Count - start,
-                    polygon.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / polygon.Vertices.Length));
+                Vector3 center = polygon.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) /
+                    polygon.Vertices.Length;
+                StampSun(geometry.Triangles, start, stages?.SunIndexAt(center) ?? (byte)1);
+                geometry.Surfaces.Add((start, geometry.Triangles.Count - start, center));
             }
         }
         foreach (var terrain in document.Terrains)
@@ -108,6 +111,7 @@ internal sealed class SceneGeometry
                 if (cross.LengthSquared() < 0.000001f)
                     continue;
                 Vector3 normal = Vector3.Normalize(cross);
+                byte sunIndex = stages?.SunIndexAt((p0 + p1 + p2) / 3) ?? (byte)1;
                 Add(a);
                 Add(b);
                 Add(c);
@@ -126,7 +130,7 @@ internal sealed class SceneGeometry
                 {
                     Vector4 color = surface.Colors[index];
                     Vector2 uv = surface.TextureCoordinates[index];
-                    geometry.Triangles.Add(new SceneVertex(surface.Vertices[index], normal, uv, color));
+                    geometry.Triangles.Add(new SceneVertex(surface.Vertices[index], normal, uv, color, sunIndex));
                 }
             }
         }
@@ -140,12 +144,15 @@ internal sealed class SceneGeometry
                 bool moving = movePreview && selectedObjects.Contains(entity);
                 var starts = new Dictionary<string, (int Triangles, int Lines)>(StringComparer.Ordinal);
                 int outlineStart = ownerOutlines.Count;
+                byte modelSunIndex = stages?.SunIndexAt(Vector3.Transform(
+                    model.Bounds.Min * 0.5f + model.Bounds.Max * 0.5f, XModelGeometry.Transform(entity))) ?? (byte)1;
                 foreach (var triangle in XModelGeometry.GetTriangles(entity, model))
                 {
                     var geometry = GetMaterialGeometry(triangle.Material, physicsOwner);
                     if (moving || destructibleSource is not null)
                         starts.TryAdd(triangle.Material, (geometry.Triangles.Count, geometry.Lines.Count));
-                    geometry.Triangles.AddRange([triangle.A, triangle.B, triangle.C]);
+                    geometry.Triangles.AddRange([triangle.A.WithSunIndex(modelSunIndex),
+                        triangle.B.WithSunIndex(modelSunIndex), triangle.C.WithSunIndex(modelSunIndex)]);
                     foreach (var edge in new[] { (triangle.A.Position, triangle.B.Position),
                                  (triangle.B.Position, triangle.C.Position), (triangle.C.Position, triangle.A.Position) })
                     {
@@ -320,6 +327,12 @@ internal sealed class SceneGeometry
         LeakPathCount = all.Count - LeakPathStart;
         Vertices = all.ToArray();
 
+        static void StampSun(List<SceneVertex> vertices, int start, byte sunIndex)
+        {
+            for (int index = start; index < vertices.Count; index++)
+                vertices[index] = vertices[index].WithSunIndex(sunIndex);
+        }
+
         void AddMovePreviewRange(int start, int count)
         {
             if (count > 0) MovePreviewRanges.Add((start, count));
@@ -361,8 +374,11 @@ internal sealed class SceneGeometry
                         SceneVertex vertex = geometry.Triangles[index + corner];
                         geometry.Triangles.Add(new SceneVertex(vertex.Position, -vertex.Normal, vertex.Uv, vertex.Color));
                     }
+            Vector3 center = pane.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) /
+                pane.Vertices.Length + offset;
+            StampSun(geometry.Triangles, start, stages?.SunIndexAt(center) ?? (byte)1);
             geometry.Surfaces.Add((start, geometry.Triangles.Count - start,
-                pane.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / pane.Vertices.Length + offset));
+                center));
             for (int index = 0; index < pane.Vertices.Length; index++)
                 AddLine(geometry.Lines, pane.Vertices[index] + offset,
                     pane.Vertices[(index + 1) % pane.Vertices.Length] + offset, wireColor);

@@ -53,7 +53,7 @@ internal static class GameplayEntityEditing
         new("mp_airdrop_point", "Script", "Airdrop position used by multiplayer map scripts."),
         new("light", "Lighting", "Static point or targeted spot light. Native defaults are created here; edit color, radius, intensity and aim in the Light inspector."),
         new("reflection_probe", "Lighting", "Bakes reflections from the surrounding map for shiny surfaces. Place where reflections should be sampled."),
-        new("stage", "Lighting", "Create a native stage volume from selected world brushes. Stage-specific ambient, sundirection and sunRadiosity remain editable in Entity properties; compilation requires stage-local lighting support.", GameplayEntityCreation.Brush),
+        new("stage", "Lighting", "Create a Stage from selected convex brushes. Edit sunlight and ambient in the Entity inspector; unchecked values inherit world lighting. In overlaps the first Stage in entity order wins. Rotate or reshape its brushes to shape the volume.", GameplayEntityCreation.Brush),
         new("misc_model", "Models", "Choose a loaded XModel in the model browser, then place a compiled static model on a grid or camera surface.", GameplayEntityCreation.ModelBrowser),
         new(RuntimePhysicsAuthoring.ClassName, "Models", "Place soccer_ball from the Models browser, then enable Runtime physics in the Entity inspector or Physics context menu.", GameplayEntityCreation.ModelBrowser),
         new("misc_prefab", "Organization", "Choose a native .map prefab in the prefab browser, then place an instance.", GameplayEntityCreation.PrefabBrowser),

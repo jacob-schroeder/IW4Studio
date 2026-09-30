@@ -78,7 +78,9 @@ internal sealed record MapMovingLightScripts(string Name, string Source)
     {
         var usedNames = document.Entities.Select(entity => entity.Properties.GetValueOrDefault("targetname"))
             .OfType<string>().ToHashSet(StringComparer.Ordinal);
-        foreach (var (entity, light, index) in MapLight.EnumeratePrimary(document))
+        int sunCount = document.Entities.Any(entity => entity.ClassName == "stage")
+            ? MapStageLighting.Read(document).SunCount : 1;
+        foreach (var (entity, light, index) in MapLight.EnumeratePrimary(document, sunCount))
         {
             if (!light.IsSpotlight || !light.IsMoving) continue;
             string baseName = $"iw4radiant_moving_light_{index:D3}";

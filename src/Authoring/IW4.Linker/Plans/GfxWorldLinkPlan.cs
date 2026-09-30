@@ -244,7 +244,7 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
             LinkStorageTarget? nodes = FreezeUInt16Array(
                 value.DpvsPlanes.NodesPointer.Untyped,
                 value.DpvsPlanes.Nodes,
-                4,
+                2,
                 XFileBlockType.LARGE,
                 "GfxWorld.DpvsPlanes.Nodes");
             LinkStorageSymbol? sceneEntCellBits = Runtime(

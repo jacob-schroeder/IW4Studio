@@ -19,8 +19,7 @@ internal sealed class CompiledBspPreview
     internal IReadOnlyList<byte[]?> SunVisibilityLightmaps { get; }
     internal IReadOnlyList<IReadOnlyList<byte[]>?> ReflectionProbeRgbaMips { get; }
     internal string? ReflectionProbeDataError { get; }
-    internal Vector3 SunDirection { get; }
-    internal Vector3 SunColorLinear { get; }
+    internal IReadOnlyDictionary<byte, (Vector3 Direction, Vector3 ColorLinear)> DirectionalSuns { get; }
     internal IReadOnlyDictionary<byte, (bool IsSpotlight, Vector3 Origin, float Radius, Vector3 ColorLinear,
         Vector3 Direction, float OuterCos, float InnerCos, byte Exponent)> PrimaryLocalLights { get; }
     internal (string Material, int Start, int Count, int WireStart, int WireCount)[] Batches { get; }
@@ -47,7 +46,7 @@ internal sealed class CompiledBspPreview
     private CompiledBspPreview(SceneVertex[] vertices, Vector2[] lightmapUvs,
         IReadOnlyList<byte[]?> diffuseLightmaps, IReadOnlyList<byte[]?> sunVisibilityLightmaps,
         IReadOnlyList<IReadOnlyList<byte[]>?> reflectionProbeRgbaMips, string? reflectionProbeDataError,
-        Vector3 sunDirection, Vector3 sunColorLinear,
+        IReadOnlyDictionary<byte, (Vector3 Direction, Vector3 ColorLinear)> directionalSuns,
         IReadOnlyDictionary<byte, (bool IsSpotlight, Vector3 Origin, float Radius, Vector3 ColorLinear,
             Vector3 Direction, float OuterCos, float InnerCos, byte Exponent)> primaryLocalLights,
         (string Material, int Start, int Count, int WireStart, int WireCount)[] batches,
@@ -63,8 +62,7 @@ internal sealed class CompiledBspPreview
         SunVisibilityLightmaps = sunVisibilityLightmaps;
         ReflectionProbeRgbaMips = reflectionProbeRgbaMips;
         ReflectionProbeDataError = reflectionProbeDataError;
-        SunDirection = sunDirection;
-        SunColorLinear = sunColorLinear;
+        DirectionalSuns = directionalSuns;
         PrimaryLocalLights = primaryLocalLights;
         Batches = batches;
         BatchLightmapIndices = batchLightmapIndices;
@@ -125,38 +123,48 @@ internal sealed class CompiledBspPreview
         }
         var diffuseLightmaps = new byte[]?[planes.Count];
         var sunVisibilityLightmaps = new byte[]?[planes.Count];
-        Vector3 sunDirection = Vector3.Zero, sunColorLinear = Vector3.Zero;
+        var directionalSuns = new Dictionary<byte, (Vector3 Direction, Vector3 ColorLinear)>();
         var primaryLocalLights = new Dictionary<byte, (bool IsSpotlight, Vector3 Origin, float Radius,
             Vector3 ColorLinear, Vector3 Direction, float OuterCos, float InnerCos, byte Exponent)>();
         string? sunDataError = null;
         try
         {
             IReadOnlyList<ComPrimaryLight> lights = file.GetRenderPrimaryLights();
+            int lastSun = 0;
+            while (lastSun + 1 < lights.Count && lights[lastSun + 1].Type == GfxLightType.Directional)
+                lastSun++;
             if (lights.Count < 2 || lights.Count > byte.MaxValue ||
-                lights[0].Type != GfxLightType.None || lights[1].Type != GfxLightType.Directional ||
-                lights.Skip(2).Any(light => light.Type is not (GfxLightType.Omni or GfxLightType.Spot) ||
+                lights[0].Type != GfxLightType.None || lastSun == 0 || lastSun > 127 ||
+                lights.Count > 256 - lastSun ||
+                lights.Skip(lastSun + 1).Any(light => light.Type is not (GfxLightType.Omni or GfxLightType.Spot) ||
                     light.DefName != "light_point_linear" || light.CanUseShadowMapRaw != 0))
                 sunDataError = "The compiled primary-light table is outside Radiant's Sun and stationary local-light profile.";
             else
             {
-                var direction = lights[1].Dir;
-                var color = lights[1].Color;
-                sunDirection = new Vector3(direction.X, direction.Y, direction.Z);
-                Vector3 encodedColor = new(color.X, color.Y, color.Z);
-                float directionLengthSquared = sunDirection.LengthSquared();
-                if (!Finite(sunDirection) || !float.IsFinite(directionLengthSquared) ||
-                    directionLengthSquared <= 0 ||
-                    !Finite(encodedColor) || Vector3.Min(encodedColor, Vector3.Zero) != Vector3.Zero)
-                    sunDataError = "The compiled sun direction or color is invalid.";
-                else
+                for (int index = 1; index <= lastSun && sunDataError is null; index++)
                 {
-                    sunDirection = Vector3.Normalize(sunDirection);
-                    sunColorLinear = new Vector3(GfxColorCodec.GammaToLinear(encodedColor.X),
+                    var direction = lights[index].Dir;
+                    var color = lights[index].Color;
+                    Vector3 sunDirection = new(direction.X, direction.Y, direction.Z);
+                    Vector3 encodedColor = new(color.X, color.Y, color.Z);
+                    float directionLengthSquared = sunDirection.LengthSquared();
+                    if (!Finite(sunDirection) || !float.IsFinite(directionLengthSquared) ||
+                        directionLengthSquared <= 0 ||
+                        !Finite(encodedColor) || Vector3.Min(encodedColor, Vector3.Zero) != Vector3.Zero)
+                    {
+                        sunDataError = $"Compiled Sun {index} has an invalid direction or color.";
+                        break;
+                    }
+                    Vector3 sunColorLinear = new(GfxColorCodec.GammaToLinear(encodedColor.X),
                         GfxColorCodec.GammaToLinear(encodedColor.Y), GfxColorCodec.GammaToLinear(encodedColor.Z));
                     if (!Finite(sunColorLinear))
-                        sunDataError = "The compiled sun color exceeds the supported range.";
+                    {
+                        sunDataError = $"Compiled Sun {index} color exceeds the supported range.";
+                        break;
+                    }
+                    directionalSuns.Add(checked((byte)index), (Vector3.Normalize(sunDirection), sunColorLinear));
                 }
-                for (int index = 2; index < lights.Count && sunDataError is null; index++)
+                for (int index = lastSun + 1; index < lights.Count && sunDataError is null; index++)
                 {
                     ComPrimaryLight light = lights[index];
                     Vector3 origin = new(light.Origin.X, light.Origin.Y, light.Origin.Z);
@@ -222,7 +230,7 @@ internal sealed class CompiledBspPreview
                 index = UnsupportedLightmap;
             }
             byte primaryIndex = index >= 0 && index != NoLightmap && sunDataError is null &&
-                (surface.PrimaryLightIndex == 1 || primaryLocalLights.ContainsKey(surface.PrimaryLightIndex))
+                (directionalSuns.ContainsKey(surface.PrimaryLightIndex) || primaryLocalLights.ContainsKey(surface.PrimaryLightIndex))
                 ? surface.PrimaryLightIndex : (byte)0;
             if (index >= 0 && index != NoLightmap && primaryIndex == 0) sunOmitted++;
             return (Surface: surface, LightmapIndex: index, PrimaryIndex: primaryIndex,
@@ -259,7 +267,7 @@ internal sealed class CompiledBspPreview
         if (vertices.Count == 0)
             throw new InvalidDataException("The d3dbsp has no render triangles to preview.");
         var preview = new CompiledBspPreview(vertices.ToArray(), lightmapUvs.ToArray(), diffuseLightmaps,
-            sunVisibilityLightmaps, reflectionProbeRgbaMips, reflectionProbeDataError, sunDirection, sunColorLinear,
+            sunVisibilityLightmaps, reflectionProbeRgbaMips, reflectionProbeDataError, directionalSuns,
             primaryLocalLights, batches.ToArray(), batchLightmapIndices.ToArray(), batchPrimaryLightIndices.ToArray(),
             batchReflectionProbeIndices.ToArray(),
             missing, unsupported, unlightmapped, sunOmitted, lightmapDataError, sunDataError, (min, max));

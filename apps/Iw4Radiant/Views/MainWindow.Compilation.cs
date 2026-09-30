@@ -142,9 +142,10 @@ public partial class MainWindow
             .Distinct(StringComparer.Ordinal).ToArray();
         bool hasPrimaryLocalLights = document.Entities.Any(entity => entity.ClassName == "light" &&
             MapLight.TryCreate(entity, document.ResolveTargets(entity), out MapLight light, out _) && light.IsPrimary);
-        // Primary assignment needs every static model's bounds, independently
+        bool hasStages = document.Entities.Any(entity => entity.ClassName == "stage");
+        // Stage and local-primary assignment need every static model's bounds, independently
         // of whether its geometry participates in the shadow bake.
-        IEnumerable<string> modelNames = hasPrimaryLocalLights
+        IEnumerable<string> modelNames = hasStages || hasPrimaryLocalLights
             ? document.Entities.Where(entity => entity.ClassName == "misc_model")
                 .Select(entity => entity.Properties.GetValueOrDefault("model") ?? "").Distinct(StringComparer.Ordinal)
             : shadowModelNames;

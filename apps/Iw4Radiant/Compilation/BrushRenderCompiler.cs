@@ -15,21 +15,24 @@ namespace Iw4Radiant.Compilation;
 
 internal static class BrushRenderCompiler
 {
-    internal static ComWorldAsset CompilePrimaryLights(MapDocument document, string assetName)
+    internal static ComWorldAsset CompilePrimaryLights(MapDocument document, string assetName, MapStageLighting stages)
     {
-        if (!MapSunProperties.TryRead(document.World, out MapSunProperties? source, out string? error))
-            throw new InvalidDataException(error);
-        if (source is not { } sun)
-            throw new InvalidDataException("Compilation requires authored sunlight, suncolor and sundirection worldspawn keys.");
-        Vector3 color = sun.Color * sun.Intensity;
-        if (!BrushGeometry.IsFinite(color))
-            throw new InvalidDataException("The authored sun color and intensity exceed the supported numeric range.");
         var lights = new List<ComPrimaryLight>
         {
-            new() { Type = GfxLightType.None },
-            new() { Type = GfxLightType.Directional, Color = ToVec3(color), Dir = ToVec3(sun.Direction) }
+            new() { Type = GfxLightType.None }
         };
-        foreach (var (_, light, _) in MapLight.EnumeratePrimary(document))
+        for (byte index = 1; index <= stages.SunCount; index++)
+        {
+            MapSunProperties sun = stages.Sun(index);
+            Vector3 color = sun.Color * sun.Intensity;
+            if (!BrushGeometry.IsFinite(color))
+                throw new InvalidDataException("The authored sun color and intensity exceed the supported numeric range.");
+            lights.Add(new ComPrimaryLight
+            {
+                Type = GfxLightType.Directional, Color = ToVec3(color), Dir = ToVec3(sun.Direction)
+            });
+        }
+        foreach (var (_, light, _) in MapLight.EnumeratePrimary(document, stages.SunCount))
         {
             // Omni diffuse stays spherical. Its native shadow pass uses these stock
             // 120-degree outer / 90-degree inner cones with a fixed downward projection.
@@ -62,17 +65,17 @@ internal static class BrushRenderCompiler
     internal static GfxWorldAsset Compile(
         MapDocument document, string assetName, ClipMapAsset clip, ComWorldAsset com,
         IReadOnlyDictionary<string, MaterialSource> materialSources, IReadOnlyDictionary<string, XModelSource> models,
-        IReadOnlyList<Vector3> probeOrigins,
+        IReadOnlyList<Vector3> probeOrigins, MapStageLighting stages,
         CancellationToken cancellationToken, IProgress<string>? progress = null)
     {
         progress?.Report("Compiling render surfaces…");
-        MapRenderSurface[] polygons = MapSurfaceCompiler.Compile(document, materialSources);
+        MapRenderSurface[] polygons = MapSurfaceCompiler.Compile(document, materialSources, stages);
         Matrix4x4[] modelTransforms = [Matrix4x4.Identity, .. MapCompiler.BrushEntities(document).Select(entity =>
             Matrix4x4.CreateTranslation(-EditorSession.EntityOrigin(entity)) * Matrix4x4.Transpose(EntityOrientation.Rotation(entity)))];
         if (polygons.Length == 0)
             throw new InvalidDataException("Compilation requires at least one renderable brush face or mesh triangle.");
         progress?.Report("Preparing lighting and shadow geometry…");
-        var lightingScene = new BrushLightingScene(document, polygons, materialSources, models, cancellationToken);
+        var lightingScene = new BrushLightingScene(document, polygons, materialSources, models, stages, cancellationToken);
         var (lightmaps, faceUvs, faceLightmapIndices) = BrushLightmapCompiler.BakeLightmaps(lightingScene, progress);
         GfxLightGrid lightGrid = BrushLightGridCompiler.BakeLightGrid(lightingScene, progress);
         var (probeImages, probes) = BrushReflectionCompiler.CaptureProbes(lightingScene, probeOrigins, progress);
@@ -177,7 +180,7 @@ internal static class BrushRenderCompiler
             BaseName = Path.GetFileNameWithoutExtension(assetName),
             NodeCount = 1,
             SurfaceCount = surfaces.Length,
-            SunPrimaryLightIndex = 1,
+            SunPrimaryLightIndex = stages.SunCount,
             PrimaryLightCount = com.PrimaryLightCount,
             DpvsPlanes = new GfxWorldDpvsPlanes { CellCount = 1, Nodes = [1] },
             CellTreeCounts = [new GfxCellTreeCount(1)],

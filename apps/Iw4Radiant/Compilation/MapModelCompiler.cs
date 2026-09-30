@@ -14,7 +14,8 @@ namespace Iw4Radiant.Compilation;
 internal static class MapModelCompiler
 {
     internal static D3dbspFile Append(MapDocument document, D3dbspFile compiled,
-        IReadOnlyDictionary<string, XModelSource> modelSources, IReadOnlyList<ComPrimaryLight> primaryLights)
+        IReadOnlyDictionary<string, XModelSource> modelSources, IReadOnlyList<ComPrimaryLight> primaryLights,
+        MapStageLighting stages)
     {
         MapEntity[] models = document.Entities.Where(entity =>
             entity.ClassName is "misc_model" or RuntimePhysicsAuthoring.ClassName).ToArray();
@@ -56,15 +57,21 @@ internal static class MapModelCompiler
             normalized.Properties.Remove("modelscale_vec");
             normalized.Properties["angles"] = FormattableString.Invariant($"{angles.X:G9} {angles.Y:G9} {angles.Z:G9}");
             normalized.Properties["modelscale"] = scale.X.ToString("G9", CultureInfo.InvariantCulture);
-            if (source.ClassName == "misc_model" && primaryLights.Count > 2)
+            if (source.ClassName == "misc_model" && (stages.SunCount > 1 || primaryLights.Count > stages.SunCount + 1))
             {
                 if (!modelSources.TryGetValue(name, out XModelSource? model))
                     throw new InvalidDataException($"Static model '{name}' is unavailable for primary-light assignment.");
                 var (minimum, maximum) = XModelGeometry.Bounds(source, model);
                 if (!BrushGeometry.IsFinite(minimum) || !BrushGeometry.IsFinite(maximum))
                     throw new InvalidDataException($"Static model '{name}' has no finite render bounds.");
-                byte primaryIndex = 1;
-                for (int index = 2; index < primaryLights.Count; index++)
+                // Approximate the native lighting origin from the source model-bound center.
+                var (localMinimum, localMaximum) = model.Bounds;
+                Vector3 lightingOrigin = Vector3.Transform(localMinimum * 0.5f + localMaximum * 0.5f,
+                    XModelGeometry.Transform(source));
+                if (!BrushGeometry.IsFinite(lightingOrigin))
+                    throw new InvalidDataException($"Static model '{name}' has no finite lighting origin.");
+                byte primaryIndex = stages.SunIndexAt(lightingOrigin);
+                for (int index = stages.SunCount + 1; index < primaryLights.Count; index++)
                 {
                     ComPrimaryLight light = primaryLights[index];
                     Vector3 origin = new(light.Origin.X, light.Origin.Y, light.Origin.Z);

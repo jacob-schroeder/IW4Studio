@@ -142,6 +142,7 @@
                             </StackPanel>
                         </Expander>
                         <views:LightInspector x:Name="Lights" />
+                        <views:SunlightInspector x:Name="StageLighting" IsVisible="False" />
                         <Expander x:Name="PropertiesExpander" Header="Entity properties" IsExpanded="False">
                             <StackPanel Spacing="7" Margin="0,8,0,0">
                                 <TextBox x:Name="PropertiesBox" AcceptsReturn="True" MinHeight="180" TextWrapping="NoWrap"

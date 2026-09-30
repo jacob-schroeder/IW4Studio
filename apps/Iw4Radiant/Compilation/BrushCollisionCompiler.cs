@@ -24,8 +24,10 @@ internal static class BrushCollisionCompiler
         foreach (MapEntity entity in entities.Skip(1))
         {
             int first = sourceBrushes.Count;
-            Matrix4x4 local = Matrix4x4.CreateTranslation(-EditorSession.EntityOrigin(entity)) *
-                Matrix4x4.Transpose(EntityOrientation.Rotation(entity));
+            // Native Stage rows translate their triggers but have no rotation.
+            // Their world-space brush vertices already carry authored rotation.
+            Matrix4x4 local = Matrix4x4.CreateTranslation(-EditorSession.EntityOrigin(entity));
+            if (entity.ClassName != "stage") local *= Matrix4x4.Transpose(EntityOrientation.Rotation(entity));
             foreach (MapBrush brush in entity.Brushes)
             {
                 MapBrush copy = brush.Clone();
@@ -281,7 +283,7 @@ internal static class BrushCollisionCompiler
         ? (byte)count
         : throw new NotSupportedException($"Brush {brushIndex} exceeds the byte-sized collision adjacency offset range.");
 
-    private static int GetAxialSide(Vector3 normal)
+    internal static int GetAxialSide(Vector3 normal)
     {
         for (int axis = 0; axis < 3; axis++)
         {

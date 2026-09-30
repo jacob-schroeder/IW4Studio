@@ -57,6 +57,7 @@ uniform vec3 uSunDirection;
 uniform vec3 uSunColor;
 uniform mat4 uSunViewProjection;
 uniform sampler2D uSunShadow;
+uniform float uSunAmbientScale;
 
 out vec4 fragmentColor;
 
@@ -228,7 +229,7 @@ void main()
         vec3 normal = normalize(vNormal);
         if (!gl_FrontFacing)
             normal = -normal;
-        vec3 illumination = vec3(0.25);
+        vec3 illumination = vec3(0.25 * uSunAmbientScale);
         if (uSunEnabled)
         {
             float diffuse = max(dot(normal, uSunDirection), 0.0);

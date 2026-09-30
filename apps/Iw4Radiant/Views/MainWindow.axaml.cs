@@ -417,7 +417,7 @@ public partial class MainWindow : Window
         "This editor uses iwmap 4 source. Unrecognized primitives are preserved on save. " +
         "IW4 material JSON color maps, DDS and PNG/JPEG/BMP previews are supported; PS3 material programs are not executed. " +
         "Materials without a matching image remain unavailable. Unresolved ordinary map surfaces use a tiled DEFAULT fallback; unavailable skies remain omitted. " +
-        "Lighting previews light_point_linear point/spot lights and authored direct sunlight with shadows. Sky surfaces use available IW4 sky cubemaps. Custom falloff assets, ambient/diffuse sky lighting and bounced light are not previewed. " +
+        "Lighting previews light_point_linear point/spot lights and authored world/Stage sunlight with shadows. Stage ambient scales the editor's base fill; use compiled BSP preview for baked sky diffuse and bounced light. Select a Stage to edit its sunlight and ambient in the Entity inspector. Sky surfaces use available IW4 sky cubemaps. Custom falloff assets are not previewed. " +
         "Build → Build PS3 map compiles a saved map into .d3dbsp and .ff using D3dbspLinker. " +
         Compilation.MapCompiler.Scope);
 

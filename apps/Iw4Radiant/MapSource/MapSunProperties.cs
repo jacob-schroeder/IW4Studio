@@ -52,12 +52,35 @@ internal readonly record struct MapSunProperties
         return true;
     }
 
-    internal void ApplyTo(MapEntity world)
+    internal static bool TryReadStage(MapEntity stage, MapEntity world,
+        out MapSunProperties? properties, out string? error)
     {
-        if (world.ClassName != "worldspawn")
-            throw new ArgumentException("Sun properties can only be applied to worldspawn.", nameof(world));
+        var effective = new MapEntity();
+        effective.Properties["classname"] = "worldspawn";
+        foreach (string key in new[] { "sunlight", "suncolor", "sundirection" })
+            if (stage.Properties.TryGetValue(key, out string? value) || world.Properties.TryGetValue(key, out value))
+                effective.Properties[key] = value;
+        return TryRead(effective, out properties, out error);
+    }
+
+    internal static float ReadAmbient(MapEntity entity, float inherited)
+    {
+        if (!entity.Properties.TryGetValue("ambient", out string? text)) return inherited;
+        if (!ReadNumber(text, out float value) || value < 0)
+            throw new InvalidDataException($"{entity.ClassName} ambient must be a finite nonnegative multiplier.");
+        return value;
+    }
+
+    internal void ApplyTo(MapEntity world, MapEntity? inheritedWorld = null)
+    {
+        if (world.ClassName != "worldspawn" && (world.ClassName != "stage" || inheritedWorld is null))
+            throw new ArgumentException("Sun properties need worldspawn or a Stage with inherited world values.", nameof(world));
         if (Validate() is { } error) throw new ArgumentException(error);
-        TryRead(world, out MapSunProperties? previous, out _);
+        MapSunProperties? previous;
+        if (inheritedWorld is not null) TryReadStage(world, inheritedWorld, out previous, out _);
+        else TryRead(world, out previous, out _);
+        if (world.ClassName == "stage" && !new[] { "sunlight", "suncolor", "sundirection" }.Any(world.Properties.ContainsKey))
+            previous = null;
         if (previous is not { } saved || saved.Intensity != Intensity)
             world.Properties["sunlight"] = Number(Intensity);
         if (previous is not { } savedColor || savedColor.Color != Color)
@@ -68,8 +91,8 @@ internal readonly record struct MapSunProperties
 
     internal static void RemoveFrom(MapEntity world)
     {
-        if (world.ClassName != "worldspawn")
-            throw new ArgumentException("Sun properties can only be removed from worldspawn.", nameof(world));
+        if (world.ClassName is not ("worldspawn" or "stage"))
+            throw new ArgumentException("Sun properties can only be removed from worldspawn or a Stage.", nameof(world));
         world.Properties.Remove("sunlight");
         world.Properties.Remove("suncolor");
         world.Properties.Remove("sundirection");

@@ -60,17 +60,18 @@ internal static class MapSurfaceCompiler
             throw new InvalidDataException($"Mesh '{terrain.Material}' has no visible triangles.");
     }
 
-    internal static MapRenderSurface[] Compile(MapDocument document, IReadOnlyDictionary<string, MaterialSource> materials)
+    internal static MapRenderSurface[] Compile(MapDocument document, IReadOnlyDictionary<string, MaterialSource> materials,
+        MapStageLighting stages)
     {
         var shore = new WaterShoreGeometry(document, name => materials.GetValueOrDefault(name));
-        var surfaces = CompileEntity(document.World, materials, shore).ToList();
+        var surfaces = CompileEntity(document.World, materials, shore, stages).ToList();
         int index = 0;
         foreach (MapEntity entity in MapCompiler.BrushEntities(document))
         {
             index++;
             if (entity.ClassName != "script_brushmodel") continue;
             int first = surfaces.Count;
-            surfaces.AddRange(CompileEntity(entity, materials, null).Select(surface => surface with
+            surfaces.AddRange(CompileEntity(entity, materials, null, stages).Select(surface => surface with
             {
                 ModelIndex = index, SourceIndex = surface.SourceIndex + first
             }));
@@ -79,7 +80,7 @@ internal static class MapSurfaceCompiler
     }
 
     private static MapRenderSurface[] CompileEntity(MapEntity entity, IReadOnlyDictionary<string, MaterialSource> materials,
-        WaterShoreGeometry? shore)
+        WaterShoreGeometry? shore, MapStageLighting stages)
     {
         var surfaces = new List<MapRenderSurface>();
         foreach (MapPolygon boundary in entity.Brushes.Where(brush => !BrushGlass.IsGlass(brush)).SelectMany(brush => brush.GetPolygons()))
@@ -87,6 +88,9 @@ internal static class MapSurfaceCompiler
             if (ClipBrushMaterial.IsPlayerClip(boundary.Face.Material) || CaulkMaterial.IsCaulk(boundary.Face.Material)) continue;
             MaterialSource material = materials[boundary.Face.Material];
             if (!OceanSurfaceGeometry.IsVisibleSurface(boundary, material.IsWater)) continue;
+            Vector3 boundaryCenter = boundary.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) /
+                boundary.Vertices.Length;
+            byte sunIndex = stages.SunIndexAt(boundaryCenter);
             OceanWaveSettings? ocean = material.Ocean;
             var contacts = material.IsWater ? shore?.Contacts(boundary) ?? [] : [];
             foreach (MapPolygon polygon in OceanSurfaceGeometry.Subdivide(boundary, ocean, contacts, shore))
@@ -115,7 +119,8 @@ internal static class MapSurfaceCompiler
                     }).ToArray(), surfaces.Count)
                 {
                     Displacement = ocean is not null && OceanSurfaceGeometry.IsTop(boundary) ? ocean.Height : 0,
-                    ReflectionCenter = boundary.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) / boundary.Vertices.Length
+                    ReflectionCenter = boundaryCenter,
+                    SunPrimaryLightIndex = sunIndex
                 });
             }
         }
@@ -164,7 +169,8 @@ internal static class MapSurfaceCompiler
             {
                 // MapTerrain.LightmapSize is authored world-units-per-secondary-luxel. Preserve it
                 // on every terrain render triangle; brush surfaces intentionally leave this null.
-                LightmapSize = terrain.LightmapSize
+                LightmapSize = terrain.LightmapSize,
+                SunPrimaryLightIndex = stages.SunIndexAt((terrain.Vertices[a] + terrain.Vertices[b] + terrain.Vertices[c]) / 3)
             });
         }
         return surfaces.ToArray();

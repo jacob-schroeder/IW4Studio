@@ -4,10 +4,15 @@
              x:Class="Iw4Radiant.Views.SunlightInspector">
     <StackPanel Spacing="8">
         <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="Sunlight" Classes="panelTitle" VerticalAlignment="Center" />
+            <TextBlock x:Name="SunTitle" Text="Sunlight" Classes="panelTitle" VerticalAlignment="Center" />
             <CheckBox x:Name="SunEnabled" Grid.Column="1" Content="Enabled" ToolTip.Tip="Apply to author sunlight in worldspawn. Disabling removes only the three direct sunlight properties." />
         </Grid>
         <TextBlock x:Name="SourceError" Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
+        <Grid x:Name="StageOrder" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="5" IsVisible="False">
+            <TextBlock x:Name="StagePriority" Classes="caption" VerticalAlignment="Center" />
+            <Button x:Name="EarlierStage" Grid.Column="1" Content="↑" AutomationProperties.Name="Earlier stage" ToolTip.Tip="Give this Stage priority over the preceding Stage where they overlap." />
+            <Button x:Name="LaterStage" Grid.Column="2" Content="↓" AutomationProperties.Name="Later stage" ToolTip.Tip="Give the following Stage priority where it overlaps this Stage." />
+        </Grid>
         <Button x:Name="EditSourceButton" Content="Edit world properties" IsVisible="False" />
         <StackPanel x:Name="SunFields" Spacing="8">
             <Grid ColumnDefinitions="*,*,*,34" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4">
@@ -35,10 +40,16 @@
             <views:SunDirectionControl x:Name="DirectionPicker" Height="90"
                                        ToolTip.Tip="Drag to aim the sun. Left/right changes yaw; up/down changes elevation. Arrow keys adjust by one degree; Shift uses 15 degrees. Apply commits the direction." />
         </StackPanel>
+        <StackPanel x:Name="AmbientFields" Spacing="5" IsVisible="False">
+            <Grid ColumnDefinitions="*,100" ColumnSpacing="5">
+                <CheckBox x:Name="AmbientOverride" Content="Ambient" ToolTip.Tip="Override the inherited sky diffuse multiplier. This does not change direct light or the visible sky." />
+                <TextBox x:Name="AmbientBox" Grid.Column="1" Text="1" ToolTip.Tip="Nonnegative sky diffuse multiplier. World defaults to 1; stages inherit the world value." />
+            </Grid>
+        </StackPanel>
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
             <Button x:Name="ApplySunButton" Content="Apply sunlight" Classes="panelAction" HorizontalAlignment="Stretch" />
             <Button x:Name="RevertSunButton" Grid.Column="1" Content="Revert" ToolTip.Tip="Discard unapplied sunlight changes." />
         </Grid>
-        <TextBlock Text="Direct light and shadows preview after Apply. Bounced light is not baked in the editor." Classes="caption" TextWrapping="Wrap" />
+        <TextBlock x:Name="SunHint" Text="Direct light and shadows preview after Apply. Bounced light is not baked in the editor." Classes="caption" TextWrapping="Wrap" />
     </StackPanel>
 </UserControl>

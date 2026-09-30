@@ -24,7 +24,7 @@
                 <Button x:Name="CreateButton" Classes="panelAction" Content="Place entity" HorizontalAlignment="Stretch" />
             </StackPanel>
         </Expander>
-        <Expander Header="Gameplay fields and links" IsExpanded="True">
+        <Expander x:Name="GameplayFields" Header="Gameplay fields and links" IsExpanded="True">
             <StackPanel Spacing="7" Margin="0,8,0,0">
                 <TextBlock x:Name="FieldInfo" Classes="caption" TextWrapping="Wrap" Text="Select an entity to edit its gameplay fields." />
                 <Grid x:Name="Fields" ColumnDefinitions="76,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="5" RowSpacing="5">

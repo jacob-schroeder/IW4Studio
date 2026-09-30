@@ -68,6 +68,7 @@ public partial class SelectionInspector : UserControl
         Lights.InitializeActions(session, dialogs, finishGestures, authoredPreviewAvailable, enablePreviewLighting);
         Terrain.InitializeActions(session, dialogs, finishGestures, setStatus);
         Sunlight.InitializeActions(session, dialogs, finishGestures);
+        StageLighting.InitializeActions(session, dialogs, finishGestures, stage: true);
         Skies.InitializeActions(session, dialogs, finishGestures, materials);
         Geometry.InitializeActions(session, dialogs, finishGestures, editPlane, setStatus);
         Organization.InitializeActions(session, dialogs, finishGestures);
@@ -170,6 +171,7 @@ public partial class SelectionInspector : UserControl
             InspectorTabs.SelectedItem = EntityTab;
             PropertiesExpander.IsExpanded = true;
         };
+        StageLighting.EditSourceRequested += () => PropertiesExpander.IsExpanded = true;
         WorldButton.Click += (_, _) =>
         {
             if (dialogs.BlocksInput) return;
@@ -277,6 +279,7 @@ public partial class SelectionInspector : UserControl
             TerrainPaint.RefreshSelection(session);
             Decals.RefreshSelection(session);
             Sunlight.RefreshWorld(session);
+            StageLighting.RefreshStage(session, entity);
             Skies.RefreshSelection(session);
         }
         finally { _updating = false; }
