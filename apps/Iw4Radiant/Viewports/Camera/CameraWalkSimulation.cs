@@ -88,7 +88,7 @@ internal sealed class CameraWalkSimulation : IDisposable
 
         foreach (MapEntity entity in document.Entities)
         {
-            if (entity.ClassName.StartsWith("trigger_", StringComparison.Ordinal)) continue;
+            if (entity.ClassName == "stage" || entity.ClassName.StartsWith("trigger_", StringComparison.Ordinal)) continue;
             if (entity != document.World && (entity.Brushes.Count != 0 || entity.Terrains.Count != 0))
                 throw new NotSupportedException($"Walk collision supports static world/group geometry; brush entity '{entity.ClassName}' may move or use runtime collision rules. Convert it to world geometry before entering Walk.");
             foreach (MapBrush brush in entity.Brushes)

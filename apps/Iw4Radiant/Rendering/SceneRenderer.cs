@@ -603,6 +603,11 @@ internal sealed class SceneRenderer
             }
             if (_compiledPreview is null)
                 _lighting.UpdateSweep(gl, session.LightSweepPreviewEntity, session.LightSweepPreviewSeconds);
+            byte walkSunIndex = showWalkPlayer ? _stages?.SunIndexAt(eye) ?? (byte)1 : (byte)1;
+            // A Stage can contain the player without owning any visible geometry.
+            // Retain its shadow map after first use instead of rebuilding while walking.
+            if (_compiledPreview is null && previewLighting && showWalkPlayer && _usedSunIndices.Add(walkSunIndex))
+                _shadowsDirty = true;
             if (_compiledPreview is null && previewLighting && _shadowsDirty &&
                 (!session.DeferPreviewLighting || _physicsTransforms is not null))
             {
@@ -720,7 +725,7 @@ internal sealed class SceneRenderer
             if (_compiledPreview is null) _water.RenderUnderwater(gl, eye);
             if (showWalkPlayer && _walkPlayer is not null && !_walkPlayerFailed)
             {
-                try { RenderWalkPlayer(gl, size, eye, walkForward, previewLighting,
+                try { RenderWalkPlayer(gl, size, eye, walkForward, previewLighting, walkSunIndex,
                     walkPlayerSeconds, horizontalMotionAmount, running); }
                 catch (Exception exception) when (IsRenderException(exception) || exception is InvalidDataException or IndexOutOfRangeException)
                 {
@@ -821,7 +826,7 @@ internal sealed class SceneRenderer
     }
 
     private unsafe void RenderWalkPlayer(GL gl, PixelSize size, Vector3 eye, Vector3 forward,
-        bool previewLighting, double seconds, float horizontalMotionAmount, bool running)
+        bool previewLighting, byte sunIndex, double seconds, float horizontalMotionAmount, bool running)
     {
         if (_walkPlayer is not { } preview || _walkPlayerGl is not { } gpu) return;
         gpu.UploadFrame(gl, preview.Sample(seconds, horizontalMotionAmount, running, out Vector3 viewOrigin));
@@ -853,6 +858,7 @@ internal sealed class SceneRenderer
         gl.Uniform1(_hasWaterReflectionLocation, 0);
         gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
         gl.Uniform1(_texturedLocation, 1);
+        _sunlight.Bind(gl, sunIndex, enabled: _compiledPreview is null);
         gl.Uniform3(_eyeLocation, eye.X, eye.Y, eye.Z);
         gl.ColorMask(true, true, true, false);
         gl.DepthMask(true);
