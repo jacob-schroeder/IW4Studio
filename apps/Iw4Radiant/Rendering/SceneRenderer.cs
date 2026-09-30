@@ -23,9 +23,11 @@ internal readonly record struct FilmPreview(float Brightness, float Contrast, fl
     internal bool IsNeutral => this == Neutral;
 }
 
-internal readonly record struct FogPreview(bool Enabled, Vector3 Color, float StartDistance, float HalfDistance)
+internal readonly record struct FogPreview(bool Enabled, Vector3 Color, float StartDistance, float HalfDistance,
+    float MaxOpacity = 1)
 {
-    internal static FogPreview Disabled => new(false, new Vector3(0.55f, 0.62f, 0.68f), 512, 1024);
+    internal static FogPreview Disabled => new(false, MapFogProperties.Default.Color,
+        MapFogProperties.Default.StartDistance, MapFogProperties.Default.HalfDistance, MapFogProperties.Default.MaxOpacity);
 }
 
 internal sealed class SceneRenderer
@@ -44,7 +46,7 @@ internal sealed class SceneRenderer
     private int _viewProjectionLocation, _texturedLocation, _litLocation, _alphaTestLocation, _premultiplyAlphaLocation,
         _ignoreVertexColorLocation, _waterPreviewLocation, _eyeLocation, _linearCaptureLocation, _hasWaterReflectionLocation,
         _cubicClipLocation, _cubicClipCenterLocation, _cubicClipDistanceLocation, _modelLocation, _normalTransformLocation,
-        _fogEnabledLocation, _fogColorLocation, _fogStartLocation, _fogDensityLocation;
+        _fogEnabledLocation, _fogColorLocation, _fogStartLocation, _fogDensityLocation, _fogMaxOpacityLocation;
     private int _compiledLightmapModeLocation, _compiledSunDirectionLocation, _compiledSunColorLocation,
         _compiledPrimaryTypeLocation, _compiledLocalPositionRadiusLocation, _compiledLocalColorLocation,
         _compiledSpotDirectionOuterCosLocation, _compiledSpotInnerCosExponentLocation;
@@ -475,6 +477,7 @@ internal sealed class SceneRenderer
             _fogColorLocation = _gl.GetUniformLocation(_program, "uFogColor");
             _fogStartLocation = _gl.GetUniformLocation(_program, "uFogStart");
             _fogDensityLocation = _gl.GetUniformLocation(_program, "uFogDensity");
+            _fogMaxOpacityLocation = _gl.GetUniformLocation(_program, "uFogMaxOpacity");
             _lighting.Initialize(_gl, _program);
             _shadows.Initialize(_gl, _program, header);
             _sunlight.Initialize(_gl, _program, header);
@@ -660,6 +663,7 @@ internal sealed class SceneRenderer
             gl.Uniform3(_fogColorLocation, fogPreview.Color.X, fogPreview.Color.Y, fogPreview.Color.Z);
             gl.Uniform1(_fogStartLocation, fogPreview.StartDistance);
             gl.Uniform1(_fogDensityLocation, MathF.Log(2) / fogPreview.HalfDistance);
+            gl.Uniform1(_fogMaxOpacityLocation, fogPreview.MaxOpacity);
             _lighting.Bind(gl, _shadows.IsAvailable);
             _shadows.Bind(gl);
             _sunlight.Bind(gl, enabled: _compiledPreview is null);

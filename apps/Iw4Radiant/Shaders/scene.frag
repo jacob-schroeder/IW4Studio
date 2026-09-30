@@ -46,6 +46,7 @@ uniform bool uFogEnabled;
 uniform vec3 uFogColor;
 uniform float uFogStart;
 uniform float uFogDensity;
+uniform float uFogMaxOpacity;
 uniform int uLightCount;
 uniform sampler2D uLightData;
 uniform sampler2D uPrimaryFalloff;
@@ -65,7 +66,8 @@ vec3 previewFog(vec3 color)
 {
     if (!uFogEnabled) return color;
     float distancePastStart = max(length(vPosition - uEye) - uFogStart, 0.0);
-    float fog = 1.0 - exp(-distancePastStart * uFogDensity);
+    // Native fog clamps transmission to 1 - maxOpacity (it does not scale density).
+    float fog = min(1.0 - exp(-distancePastStart * uFogDensity), uFogMaxOpacity);
     return mix(color, uFogColor, fog);
 }
 

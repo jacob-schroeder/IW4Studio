@@ -86,6 +86,8 @@ internal static class MapCompiler
     {
         progress?.Report("Preparing prefabs and materials…");
         document = PrefabLibrary.ExpandForCompilation(document, sourcePath);
+        if (!MapFogProperties.TryRead(document.World, out _, out string? fogError))
+            throw new InvalidDataException(fogError);
         foreach (MapEntity group in document.Entities.Where(entity => entity.ClassName == "func_group").ToArray())
         {
             ValidateDirectives(group.Directives);
@@ -417,7 +419,12 @@ internal static class MapCompiler
             // primary lights receive native light controllers below.
             if (entity.ClassName is "light" or "info_null" or "fx_origin") continue;
             var point = new MapEntity();
-            foreach (var property in entity.Properties) point.Properties.Add(property.Key, property.Value);
+            foreach (var property in entity.Properties)
+            {
+                if (entity == document.World && property.Key is
+                    ("fog_color" or "fog_start" or "fog_half_distance" or "fog_max_opacity")) continue;
+                point.Properties.Add(property.Key, property.Value);
+            }
             if (entity.Brushes.Count > 0 && entity != document.World)
                 point.Properties["model"] = $"*{++brushModel}";
             source.Entities.Add(point);

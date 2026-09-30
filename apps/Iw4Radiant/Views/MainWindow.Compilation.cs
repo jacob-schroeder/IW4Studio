@@ -59,6 +59,11 @@ public partial class MainWindow
     {
         if (_dialogs.BlocksInput) return;
         FinishGestures();
+        if (!Workspace.TryApplyFogDraft(out string? fogError))
+        {
+            await _dialogs.MessageAsync("Cannot build map", fogError ?? "Global fog draft is invalid.");
+            return;
+        }
         if (!await _files.SaveAsync(false) || _session.FilePath is not { } sourcePath) return;
         try
         {

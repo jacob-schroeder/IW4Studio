@@ -182,6 +182,39 @@ internal static class D3dbspGfxCodec
         if (vertexCount == 0)
             throw new InvalidDataException("The d3dbsp has no render vertices.");
 
+        IReadOnlyList<GfxBrushModel> models = DecodeModels(
+            file.GetRequiredData(D3dbspLumpType.Models),
+            useUnlayeredGeometry,
+            surfaceCount);
+        int staticSurfaceCount = models.Count == 0 ? 0 : models[0].SurfaceCount;
+        int staticSurfaceStart = models.Count == 0 ? 0 : models[0].StartSurfIndex;
+        if (staticSurfaceCount > ushort.MaxValue)
+            throw new InvalidDataException("The world-model surface count exceeds the IW4 ushort range.");
+
+        int[] sourceSurfaceIndices = Enumerable.Range(0, surfaceCount).ToArray();
+        if (useSourceMaterials)
+        {
+            if (staticSurfaceStart != 0)
+            {
+                throw new InvalidDataException(
+                    "Native source-material draw ranges require the world-model surfaces to be a prefix.");
+            }
+            // Package opaque backing before alpha-blended water, before building
+            // contiguous index ranges and all surface-indexed native tables.
+            // Runtime material indices are assigned at registration; group by
+            // source material identity within each sort/light group until then.
+            var worldSurfaceOrder = new (byte Sort, byte Light, int Material, int Source)[staticSurfaceCount];
+            for (int index = 0; index < worldSurfaceOrder.Length; index++)
+            {
+                ReadOnlySpan<byte> row = triangleBytes.Slice(index * DiskTriangleSoupSize, DiskTriangleSoupSize);
+                int materialIndex = ReadTriangleMaterialIndex(row, index, materials.Count);
+                worldSurfaceOrder[index] = ((byte)materials[materialIndex].Info.SortKey, row[4], materialIndex, index);
+            }
+            Array.Sort(worldSurfaceOrder);
+            for (int index = 0; index < worldSurfaceOrder.Length; index++)
+                sourceSurfaceIndices[index] = worldSurfaceOrder[index].Source;
+        }
+
         var positions = new Vec3[vertexCount];
         var packedPositions = new byte[checked(vertexCount * PositionStride)];
         var packedLayers = new byte[checked(vertexCount * LayerStride)];
@@ -209,8 +242,9 @@ internal static class D3dbspGfxCodec
         var outputIndices = new List<ushort>(sourceIndexCount);
         BoundsAccumulator worldBounds = new();
         bool needsFullbrightLightmap = false;
-        for (int surfaceIndex = 0; surfaceIndex < surfaceCount; surfaceIndex++)
+        for (int outputIndex = 0; outputIndex < surfaceCount; outputIndex++)
         {
+            int surfaceIndex = sourceSurfaceIndices[outputIndex];
             ReadOnlySpan<byte> row = triangleBytes.Slice(
                 surfaceIndex * DiskTriangleSoupSize,
                 DiskTriangleSoupSize);
@@ -295,7 +329,7 @@ internal static class D3dbspGfxCodec
                     $"Render surface {surfaceIndex} references reflection probe {reflectionProbeIndex}; the table has {reflectionProbeImages.Count} rows.");
             }
 
-            surfaces[surfaceIndex] = new GfxSurface
+            surfaces[outputIndex] = new GfxSurface
             {
                 Triangles = new SrfTriangles
                 {
@@ -314,7 +348,7 @@ internal static class D3dbspGfxCodec
                     ? GfxSurfaceFlags.None
                     : GfxSurfaceFlags.CastsSunShadow
             };
-            surfaceBounds[surfaceIndex] = new GfxSurfaceBounds
+            surfaceBounds[outputIndex] = new GfxSurfaceBounds
             {
                 Bounds = decodedBounds,
                 Unknown18To1F = new byte[8]
@@ -389,15 +423,6 @@ internal static class D3dbspGfxCodec
                 world,
                 surfaceCount,
                 reflectionProbeImages.Count);
-        IReadOnlyList<GfxBrushModel> models = DecodeModels(
-            file.GetRequiredData(D3dbspLumpType.Models),
-            useUnlayeredGeometry,
-            surfaceCount);
-        int staticSurfaceCount = models.Count == 0 ? 0 : models[0].SurfaceCount;
-        int staticSurfaceStart = models.Count == 0 ? 0 : models[0].StartSurfIndex;
-        if (staticSurfaceCount > ushort.MaxValue)
-            throw new InvalidDataException("The world-model surface count exceeds the IW4 ushort range.");
-
         ushort[] sortedSurfaceIndices = Enumerable.Range(
                 staticSurfaceStart,
                 staticSurfaceCount)
@@ -407,11 +432,6 @@ internal static class D3dbspGfxCodec
         uint emissiveSurfaceBegin = checked((uint)staticSurfaceCount);
         if (useSourceMaterials)
         {
-            if (staticSurfaceStart != 0)
-            {
-                throw new InvalidDataException(
-                    "Native source-material draw ranges require the world-model surfaces to be a prefix.");
-            }
             litSurfaceEnd = 0;
             emissiveSurfaceBegin = 0;
             foreach (ushort surfaceIndex in sortedSurfaceIndices)
@@ -444,7 +464,7 @@ internal static class D3dbspGfxCodec
                 if (!isEmissive)
                     emissiveSurfaceBegin++;
             }
-            // PS3 sorts the physical world-surface prefix by material sort key.
+            // The physical world-surface prefix is already ordered by material sort key.
             // Opaque/sky ends at sortKeyLitDecal; lit decals/translucency ends
             // at sortKeyEffectDecal, followed by the emissive draw range.
         }

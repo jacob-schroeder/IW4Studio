@@ -34,6 +34,7 @@ public partial class MainWindow : Window
             name => ResolveMaterial(name)?.UsesVertexColor == true, SetStatus,
             () => Workspace.Camera.CompiledPreview is null, Workspace.EnablePreviewLights);
         Workspace.InitializeActions(_dialogs, FinishGestures);
+        Workspace.InitializeFogActions(_session);
         Workspace.LayoutChanged += RefreshLayoutControls;
         Workspace.Materials.InitializeActions(this, _session, _dialogs, FinishGestures, SetStatus, () =>
         {
@@ -98,7 +99,7 @@ public partial class MainWindow : Window
         RefreshEditor();
         SetStatus("Browse an asset folder and choose a material, then draw a brush or terrain in a grid view.");
         Closed += (_, _) => { Workspace.Camera.StopPhysicsPlacement(); Workspace.Camera.StopGlassShatter(); Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); Workspace.Models.ReleaseImages(); _previewAudio.Dispose(); };
-        Deactivated += (_, _) => { Workspace.Camera.PausePhysicsPlacement(); Workspace.Camera.FinishGesture(cancel: true); };
+        Deactivated += (_, _) => { Workspace.FinishFogEdit(); Workspace.Camera.PausePhysicsPlacement(); Workspace.Camera.FinishGesture(cancel: true); };
         AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
     }
 
@@ -113,6 +114,7 @@ public partial class MainWindow : Window
         }
         Title = $"{(_session.IsDirty ? "*" : "")}{Path.GetFileName(_session.FilePath ?? "Untitled.map")} — Iw4Radiant";
         Inspector.Painter.UpdateMapContext(_session.FilePath, _session.Prefabs);
+        Workspace.RefreshFog(_session);
         Workspace.Camera.RefreshScene();
         UndoMenu.IsEnabled = UndoToolbar.IsEnabled = _session.CanUndo;
         RedoMenu.IsEnabled = RedoToolbar.IsEnabled = _session.CanRedo;
@@ -166,6 +168,7 @@ public partial class MainWindow : Window
     private void SetStatus(string message) => StatusText.Text = message;
     private void FinishGestures()
     {
+        Workspace.FinishFogEdit();
         Workspace.Camera.StopPhysicsPlacement();
         Workspace.Camera.StopGlassShatter();
         Workspace.Camera.StopWalk();

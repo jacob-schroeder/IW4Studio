@@ -3,6 +3,9 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using System.Numerics;
+using System.Globalization;
+using Iw4Radiant.Editing;
+using Iw4Radiant.MapSource;
 using Iw4Radiant.Viewports.Camera;
 using Iw4Radiant.Viewports.Orthographic;
 using Iw4Radiant.Rendering;
@@ -19,6 +22,12 @@ public partial class ViewportWorkspace : UserControl
     private bool _fourViews, _maximized, _materialsVisible = true;
     private bool _updatingFilm;
     private bool _updatingFog;
+    private bool _editingFog;
+    private EditorSession? _fogSession;
+    private MapEntity? _fogSourceWorld;
+    private (string? Color, string? Start, string? Half, string? Opacity) _fogSourceKeys;
+    private MapFogProperties? _authoredFog;
+    private string? _fogSourceError;
     private bool _compiledPreviewVisible;
     private bool _updatingCameraControls;
     private string? _walkError;
@@ -75,15 +84,24 @@ public partial class ViewportWorkspace : UserControl
         FilmLightTint.SelectedColorChanged += UpdateFilmPreview;
         FilmDarkTint.SelectedColorChanged += UpdateFilmPreview;
         UpdateFilmPreview();
-        FogColor.SelectedColor = FogPreview.Disabled.Color;
-        foreach (var slider in new[] { FogStart, FogHalfDistance })
-            slider.PropertyChanged += (_, change) =>
+        FogColor.PreserveColorScale = true;
+        FogColor.SelectedColor = MapFogProperties.Default.Color;
+        FogColor.SelectedColorChanged += UpdateFogDraft;
+        foreach (var field in new[] { FogStart, FogHalfDistance, FogMaxOpacity })
+        {
+            field.LostFocus += (_, _) => FinishFogEdit();
+            field.KeyDown += (_, args) =>
             {
-                if (change.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty)
-                    UpdateFogPreview();
+                if (args.Key == Key.Enter) FinishFogEdit();
             };
-        FogColor.SelectedColorChanged += UpdateFogPreview;
-        UpdateFogPreview();
+        }
+        FogColor.AddHandler(PointerReleasedEvent, (_, _) => FinishFogEdit(),
+            RoutingStrategies.Bubble, handledEventsToo: true);
+        FogColor.AddHandler(KeyUpEvent, (_, _) => FinishFogEdit(),
+            RoutingStrategies.Bubble, handledEventsToo: true);
+        FogColor.AddHandler(LostFocusEvent, (_, _) => FinishFogEdit(),
+            RoutingStrategies.Bubble, handledEventsToo: true);
+        UpdateFogDraft();
         RefreshCameraControls();
         ApplyLayout();
     }
@@ -149,6 +167,33 @@ public partial class ViewportWorkspace : UserControl
     {
         _dialogs = dialogs;
         _finishGestures = finishGestures;
+    }
+
+    internal void InitializeFogActions(EditorSession session) => _fogSession = session;
+
+    internal void RefreshFog(EditorSession session)
+    {
+        MapEntity world = session.Document.World;
+        var keys = ReadFogKeys(world);
+        if (ReferenceEquals(world, _fogSourceWorld) && keys == _fogSourceKeys) return;
+        _editingFog = false;
+        _fogSourceWorld = world;
+        _fogSourceKeys = keys;
+        MapFogProperties.TryRead(world, out _authoredFog, out _fogSourceError);
+        LoadFogDraft(_authoredFog);
+    }
+
+    private static (string? Color, string? Start, string? Half, string? Opacity) ReadFogKeys(MapEntity world) =>
+        (world.Properties.GetValueOrDefault("fog_color"),
+         world.Properties.GetValueOrDefault("fog_start"),
+         world.Properties.GetValueOrDefault("fog_half_distance"),
+         world.Properties.GetValueOrDefault("fog_max_opacity"));
+
+    internal void FinishFogEdit()
+    {
+        if (!_editingFog) return;
+        _editingFog = false;
+        _fogSession?.CompleteEdit(true);
     }
 
     internal void SetFourViews(bool enabled)
@@ -357,6 +402,7 @@ public partial class ViewportWorkspace : UserControl
 
     private void FogPanel_Changed(object? sender, RoutedEventArgs e)
     {
+        if (FogToggle.IsChecked != true) FinishFogEdit();
         if (FogPreviewPanel is not null)
             FogPreviewPanel.IsVisible = FogToggle.IsChecked == true;
         if (FogToggle.IsChecked == true && FilmToggle is not null)
@@ -367,30 +413,100 @@ public partial class ViewportWorkspace : UserControl
     {
         if (FogControls is not null)
             FogControls.IsEnabled = FogEnabled.IsChecked == true;
-        UpdateFogPreview();
+        UpdateFogDraft();
+        if (!_updatingFog) FinishFogEdit();
     }
 
-    private void FogReset_Click(object? sender, RoutedEventArgs e)
+    private void FogDraft_Changed(object? sender, TextChangedEventArgs e) => UpdateFogDraft();
+
+    private void LoadFogDraft(MapFogProperties? properties)
     {
+        MapFogProperties values = properties ?? MapFogProperties.Default;
         _updatingFog = true;
         try
         {
-            FogEnabled.IsChecked = false;
-            FogStart.Value = FogPreview.Disabled.StartDistance;
-            FogHalfDistance.Value = FogPreview.Disabled.HalfDistance;
-            FogColor.SelectedColor = FogPreview.Disabled.Color;
+            FogEnabled.IsChecked = properties is not null;
+            FogStart.Text = values.StartDistance.ToString("R", CultureInfo.InvariantCulture);
+            FogHalfDistance.Text = values.HalfDistance.ToString("R", CultureInfo.InvariantCulture);
+            FogMaxOpacity.Text = values.MaxOpacity.ToString("R", CultureInfo.InvariantCulture);
+            FogColor.SelectedColor = values.Color;
         }
         finally { _updatingFog = false; }
-        UpdateFogPreview();
+        FogControls.IsEnabled = properties is not null;
+        CameraView.FogAdjustment = properties is { } authored
+            ? new FogPreview(true, authored.Color, authored.StartDistance, authored.HalfDistance, authored.MaxOpacity)
+            : FogPreview.Disabled;
+        UpdateFogDraft();
     }
 
-    private void UpdateFogPreview()
+    private bool TryGetFogDraft(out MapFogProperties? properties, out string? error)
     {
-        if (_updatingFog || CameraView is null) return;
-        FogStartValue.Text = $"{FogStart.Value:0}";
-        FogHalfDistanceValue.Text = $"{FogHalfDistance.Value:0}";
-        CameraView.FogAdjustment = new FogPreview(FogEnabled.IsChecked == true, FogColor.SelectedColor,
-            (float)FogStart.Value, (float)FogHalfDistance.Value);
+        properties = null;
+        error = null;
+        if (FogEnabled.IsChecked != true) return true;
+        if (!float.TryParse(FogStart.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float start) ||
+            !float.TryParse(FogHalfDistance.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float half) ||
+            !float.TryParse(FogMaxOpacity.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float opacity))
+        {
+            error = "Enter numeric fog start, half distance, and maximum opacity values.";
+            return false;
+        }
+        var values = new MapFogProperties
+        {
+            Color = FogColor.SelectedColor, StartDistance = start,
+            HalfDistance = half, MaxOpacity = opacity
+        };
+        error = values.Validate();
+        if (error is not null) return false;
+        properties = values;
+        return true;
+    }
+
+    private void UpdateFogDraft()
+    {
+        if (_updatingFog || CameraView is null || FogError is null) return;
+        bool valid = TryGetFogDraft(out MapFogProperties? draft, out string? draftError);
+        string? error = _fogSourceError ?? draftError;
+        if (valid && error is null && _fogSession is not null && _dialogs?.BlocksInput != true)
+            TryApplyFogDraft(out error);
+        FogError.Text = error;
+        FogError.IsVisible = error is not null;
+        if (valid && error is null)
+            CameraView.FogAdjustment = draft is { } values
+                ? new FogPreview(true, values.Color, values.StartDistance, values.HalfDistance, values.MaxOpacity)
+                : FogPreview.Disabled;
+    }
+
+    internal bool TryApplyFogDraft(out string? error)
+    {
+        error = null;
+        if (_fogSession is null || _fogSourceWorld is null ||
+            !ReferenceEquals(_fogSourceWorld, _fogSession.Document.World) ||
+            _fogSourceKeys != ReadFogKeys(_fogSourceWorld))
+        {
+            error = "Fog controls are out of sync with the current map. Refresh the editor before building.";
+            return false;
+        }
+        if (_fogSourceError is not null)
+        {
+            error = _fogSourceError;
+            return false;
+        }
+        if (!TryGetFogDraft(out MapFogProperties? draft, out error)) return false;
+        if (draft == _authoredFog) return true;
+        if (!_editingFog)
+        {
+            _finishGestures?.Invoke();
+            _fogSession.BeginEdit();
+            _editingFog = true;
+        }
+        MapEntity world = _fogSession.Document.World;
+        if (draft is { } values) values.ApplyTo(world);
+        else MapFogProperties.RemoveFrom(world);
+        // Keep the controls and caret intact when the completed edit refreshes the editor.
+        _fogSourceKeys = ReadFogKeys(world);
+        _authoredFog = draft;
+        return true;
     }
 
     private void FilmReset_Click(object? sender, RoutedEventArgs e)

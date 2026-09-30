@@ -17,8 +17,8 @@
                             <icons:MaterialIcon Kind="Filmstrip" Width="16" Height="16" />
                         </ToggleButton>
                         <ToggleButton x:Name="FogToggle" Grid.Column="2" Classes="viewportAction" Margin="0,0,3,0"
-                                      IsCheckedChanged="FogPanel_Changed" ToolTip.Tip="Fog preview controls · Camera fog is not saved in the map or compiled."
-                                      AutomationProperties.Name="Fog preview controls">
+                                      IsCheckedChanged="FogPanel_Changed" ToolTip.Tip="Edit global fog saved in the map. Camera preview approximates the in-game result."
+                                      AutomationProperties.Name="Global fog controls">
                             <icons:MaterialIcon Kind="WeatherFog" Width="16" Height="16" />
                         </ToggleButton>
                         <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="3" Margin="0,0,3,0">
@@ -144,31 +144,25 @@
                             VerticalAlignment="Top" HorizontalAlignment="Right">
                         <ScrollViewer MaxHeight="430" VerticalScrollBarVisibility="Auto">
                             <StackPanel Spacing="9">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Text="Fog preview" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                    <Button Grid.Column="1" Content="Reset" Classes="panelAction" Click="FogReset_Click"
-                                            AutomationProperties.Name="Reset fog preview" />
-                                </Grid>
-                                <TextBlock Text="Camera surfaces only · not saved or baked" Classes="caption" TextWrapping="Wrap" />
+                                <TextBlock Text="Global fog" FontWeight="SemiBold" />
                                 <CheckBox x:Name="FogEnabled" Content="Enable fog" IsCheckedChanged="FogEnabled_Changed"
-                                          AutomationProperties.Name="Enable fog preview" />
+                                          AutomationProperties.Name="Enable global fog" />
                                 <StackPanel x:Name="FogControls" Spacing="9" IsEnabled="False">
-                                    <Grid ColumnDefinitions="88,*,56" RowDefinitions="Auto,Auto" RowSpacing="7">
+                                    <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="7">
                                         <TextBlock Text="Start" Classes="fieldLabel" />
-                                        <Slider x:Name="FogStart" Grid.Column="1" Minimum="0" Maximum="8192" Value="512"
-                                                AutomationProperties.Name="Fog start distance" />
-                                        <TextBlock x:Name="FogStartValue" Grid.Column="2" TextAlignment="Right" VerticalAlignment="Center" />
+                                        <TextBox x:Name="FogStart" Grid.Column="1" Text="512" TextChanged="FogDraft_Changed"
+                                                 AutomationProperties.Name="Fog start distance" />
                                         <TextBlock Grid.Row="1" Text="Half distance" Classes="fieldLabel" />
-                                        <Slider x:Name="FogHalfDistance" Grid.Row="1" Grid.Column="1" Minimum="64" Maximum="8192" Value="1024"
-                                                AutomationProperties.Name="Fog half distance" />
-                                        <TextBlock x:Name="FogHalfDistanceValue" Grid.Row="1" Grid.Column="2" TextAlignment="Right" VerticalAlignment="Center" />
+                                        <TextBox x:Name="FogHalfDistance" Grid.Row="1" Grid.Column="1" Text="1024" TextChanged="FogDraft_Changed"
+                                                 AutomationProperties.Name="Fog half distance" />
+                                        <TextBlock Grid.Row="2" Text="Max opacity" Classes="fieldLabel" />
+                                        <TextBox x:Name="FogMaxOpacity" Grid.Row="2" Grid.Column="1" Text="1" TextChanged="FogDraft_Changed"
+                                                 AutomationProperties.Name="Fog maximum opacity" />
                                     </Grid>
-                                    <Expander Header="Fog color">
-                                        <views:LightColorPicker x:Name="FogColor" />
-                                    </Expander>
-                                    <TextBlock Text="Half distance: fog reaches 50% beyond Start. Uses camera distance in map units."
-                                               Classes="caption" TextWrapping="Wrap" />
+                                    <TextBlock Text="Fog color" Classes="fieldLabel" />
+                                    <views:LightColorPicker x:Name="FogColor" />
                                 </StackPanel>
+                                <TextBlock x:Name="FogError" Foreground="#FFB7A8" TextWrapping="Wrap" IsVisible="False" />
                             </StackPanel>
                         </ScrollViewer>
                     </Border>

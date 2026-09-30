@@ -482,10 +482,13 @@ internal static partial class FastFileConverter
         string mapScriptName = assetName[..^".d3dbsp".Length] + ".gsc";
         string mapFxScriptName = assetName[..^".d3dbsp".Length] + "_fx.gsc";
         string mapMovingLightsScriptName = assetName[..^".d3dbsp".Length] + "_lights.gsc";
+        string mapFogScriptName = assetName[..^".d3dbsp".Length] + "_fog.gsc";
         bool hasMapFxScript = rawFileOverrides.Any(rawFile =>
             string.Equals(rawFile.Name, mapFxScriptName, StringComparison.Ordinal));
         bool hasMapMovingLightsScript = rawFileOverrides.Any(rawFile =>
             string.Equals(rawFile.Name, mapMovingLightsScriptName, StringComparison.Ordinal));
+        bool hasMapFogScript = rawFileOverrides.Any(rawFile =>
+            string.Equals(rawFile.Name, mapFogScriptName, StringComparison.Ordinal));
         string[] destructiblePrecacheScripts = rawFileOverrides
             .Select(rawFile => rawFile.Name)
             .OfType<string>()
@@ -511,6 +514,7 @@ internal static partial class FastFileConverter
         RawFileAsset mapScript = rawFileOverrides.FirstOrDefault(rawFile =>
                 string.Equals(rawFile.Name, mapScriptName, StringComparison.Ordinal)) ??
             CreateMapScript(assetName, waterScript, hasMapFxScript, hasMapMovingLightsScript,
+                hasMapFogScript,
                 factions, destructiblePrecacheScripts);
         if (destructiblePrecacheScripts.Length != 0 && rawFileOverrides.Contains(mapScript))
             Console.WriteLine("Destructible animations: the custom map script must call " +
@@ -521,6 +525,8 @@ internal static partial class FastFileConverter
             Console.WriteLine($"FX and sounds: the custom map script must call {MapScriptStartup(mapFxScriptName)} in main() before maps\\mp\\_load::main(); so its emitters are registered before playback starts.");
         if (hasMapMovingLightsScript && rawFileOverrides.Contains(mapScript))
             Console.WriteLine($"Moving lights: the custom map script must call {MapScriptStartup(mapMovingLightsScriptName)} in main() before maps\\mp\\_load::main(); to start the authored light sweeps.");
+        if (hasMapFogScript && rawFileOverrides.Contains(mapScript))
+            Console.WriteLine($"Fog: the custom map script must call {MapScriptStartup(mapFogScriptName)} in main() after maps\\mp\\_load::main() to apply the authored map-wide fog.");
         if (waterScript is not null && rawFileOverrides.Contains(mapScript))
             Console.WriteLine($"Water effects: the custom map script must call {WaterVolumeScript.Startup(waterScript)} during main(). " +
                 "The water helper owns its HUD overlay and the level-priority reverb slot.");
@@ -1119,7 +1125,7 @@ internal static partial class FastFileConverter
         scriptName[..^".gsc".Length].Replace('/', '\\') + "::main();";
 
     private static RawFileAsset CreateMapScript(string assetName, RawFileAsset? waterScript,
-        bool hasMapFxScript, bool hasMapMovingLightsScript, MapFactionSettings factions,
+        bool hasMapFxScript, bool hasMapMovingLightsScript, bool hasMapFogScript, MapFactionSettings factions,
         IReadOnlyList<string> destructiblePrecacheScripts)
     {
         string scriptName = assetName[..^".d3dbsp".Length] + ".gsc";
@@ -1138,6 +1144,7 @@ internal static partial class FastFileConverter
             (hasMapFxScript ? "\t" + MapScriptStartup(assetName[..^".d3dbsp".Length] + "_fx.gsc") + "\r\n" : "") +
             (hasMapMovingLightsScript ? "\t" + MapScriptStartup(assetName[..^".d3dbsp".Length] + "_lights.gsc") + "\r\n" : "") +
             "\tmaps\\mp\\_load::main();\r\n" +
+            (hasMapFogScript ? "\t" + MapScriptStartup(assetName[..^".d3dbsp".Length] + "_fog.gsc") + "\r\n" : "") +
             $"\tgame[\"allies\"] = \"{factions.Allies}\";\r\n" +
             $"\tgame[\"axis\"] = \"{factions.Axis}\";\r\n" +
             "\tgame[\"attackers\"] = \"allies\";\r\n" +

@@ -51,6 +51,7 @@ internal static class MapBuildPipeline
         string mapName = Path.GetFileNameWithoutExtension(sourcePath);
         MapEmitterScripts? emitters = MapEmitterScriptAuthoring.Create(document, sourcePath, mapName);
         MapMovingLightScripts? movingLights = MapMovingLightScripts.Create(document, sourcePath, mapName);
+        MapFogScripts? fog = MapFogScripts.Create(document, mapName);
         if (string.IsNullOrWhiteSpace(emitterAssetDirectory) ||
             !Directory.Exists(emitterAssetDirectory))
             throw new DirectoryNotFoundException(
@@ -100,6 +101,7 @@ internal static class MapBuildPipeline
             }, cancellationToken);
             var mapRawFiles = new List<(string Name, string Path)>(emitters?.WriteTo(staging) ?? []);
             if (movingLights is not null) mapRawFiles.Add(movingLights.WriteTo(staging));
+            if (fog is not null) mapRawFiles.Add(fog.WriteTo(staging));
             if (emitters is not null)
             {
                 progress.Report($"Exported {emitters.FxNames.Length} FX references and {emitters.SoundNames.Length} sound aliases to map scripts.");
