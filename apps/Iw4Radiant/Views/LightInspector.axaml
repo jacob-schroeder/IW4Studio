@@ -52,7 +52,7 @@
             <StackPanel Spacing="6">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
                     <CheckBox x:Name="SweepBox" Content="Sweep" VerticalAlignment="Center"
-                              ToolTip.Tip="Apply the current light values and preview a vertical sweep around its aim target." />
+                              ToolTip.Tip="Apply the current light values and preview a sweep around its aim target." />
                     <Button x:Name="SweepPreviewButton" Grid.Column="1" Classes="toolbarButton" VerticalAlignment="Center"
                             ToolTip.Tip="Play sweep preview" AutomationProperties.Name="Play sweep preview">
                         <materialIcons:MaterialIcon x:Name="SweepPreviewIcon" Kind="Play" Width="16" Height="16" />
@@ -73,7 +73,7 @@
                         ToolTip.Tip="Restore this light's current values without editing the map." />
             </Grid>
             <TextBlock Classes="caption" TextWrapping="Wrap"
-                       Text="Enabling Sweep applies these values and starts preview. Drag the purple arc ends to adjust its range. Lighting changes require a rebuild." />
+                       Text="Enabling Sweep applies these values and starts preview. Drag the purple arc ends to adjust its range; Shift-drag left/right rotates the sweep plane. Lighting changes require a rebuild." />
         </StackPanel>
     </StackPanel>
 </UserControl>

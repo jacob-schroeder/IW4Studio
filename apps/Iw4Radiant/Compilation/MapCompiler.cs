@@ -374,7 +374,7 @@ internal static class MapCompiler
         foreach (string key in entity.Properties.Keys)
             if (key is not ("classname" or "origin" or "angles" or "angle" or "targetname" or "target" or
                 "def" or "radius" or "intensity" or "_color" or "fov_outer" or "fov_inner" or "exponent" or "spawnflags" or
-                "dynamic_shadows" or "sweep_angle" or "sweep_time"))
+                "dynamic_shadows" or "sweep_angle" or "sweep_time" or "sweep_plane"))
                 throw new NotSupportedException($"Light property '{key}' is not supported by light compilation.");
         if (!MapLightProperties.TryRead(entity, out MapLightProperties properties, out string? error))
             throw new InvalidDataException(error);

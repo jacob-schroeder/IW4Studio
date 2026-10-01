@@ -4,18 +4,39 @@ namespace Iw4Radiant.MapSource;
 
 internal readonly record struct MapLight(Vector3 Origin, float Radius, Vector3 Color, Vector3 Direction,
     float InnerAngle, float OuterAngle, float Exponent, bool IsSpotlight, bool IsPrimary, bool DynamicShadows,
-    float SweepAngle, float SweepSeconds)
+    float SweepAngle, float SweepSeconds, float SweepPlane)
 {
     internal const float SweepEaseFraction = 1f / 6f;
     internal const float SweepWarmupSeconds = 2;
     internal bool IsMoving => SweepAngle > 0;
     internal float CoverageAngle => OuterAngle + SweepAngle * (MathF.PI / 360);
-    internal Vector3 SweepStartAngles => AimAngles - new Vector3(SweepAngle / 2, 0, 0);
-    internal Vector3 SweepEndAngles => AimAngles + new Vector3(SweepAngle / 2, 0, 0);
-    internal Vector3 SweepStartDirection => FromAngles(SweepStartAngles);
-    internal Vector3 SweepEndDirection => FromAngles(SweepEndAngles);
+    internal Vector3 SweepStartAngles => SweepPlane == 0 ? AimAngles - new Vector3(SweepAngle / 2, 0, 0) :
+        SampleSweepAngles(true)[^1];
+    internal Vector3 SweepEndAngles => SweepPlane == 0 ? AimAngles + new Vector3(SweepAngle / 2, 0, 0) :
+        SampleSweepAngles(false)[^1];
+    internal Vector3 SweepStartDirection => SweepDirection(-SweepAngle / 2);
+    internal Vector3 SweepEndDirection => SweepDirection(SweepAngle / 2);
 
-    private Vector3 AimAngles => new(
+    internal Vector3 SweepTangent
+    {
+        get
+        {
+            float pitch = AimAngles.X * (MathF.PI / 180), yaw = AimAngles.Y * (MathF.PI / 180);
+            Vector3 pitchTangent = new(-MathF.Sin(pitch) * MathF.Cos(yaw),
+                -MathF.Sin(pitch) * MathF.Sin(yaw), -MathF.Cos(pitch));
+            float plane = SweepPlane * (MathF.PI / 180);
+            return MathF.Cos(plane) * pitchTangent + MathF.Sin(plane) * Vector3.Cross(Direction, pitchTangent);
+        }
+    }
+
+    internal Vector3 SweepDirection(float offsetDegrees)
+    {
+        if (SweepPlane == 0) return FromAngles(AimAngles + new Vector3(offsetDegrees, 0, 0));
+        float offset = offsetDegrees * (MathF.PI / 180);
+        return MathF.Cos(offset) * Direction + MathF.Sin(offset) * SweepTangent;
+    }
+
+    internal Vector3 AimAngles => new(
         MathF.Atan2(-Direction.Z, new Vector2(Direction.X, Direction.Y).Length()) * (180 / MathF.PI),
         MathF.Atan2(Direction.Y, Direction.X) * (180 / MathF.PI), 0);
 
@@ -24,6 +45,14 @@ internal readonly record struct MapLight(Vector3 Origin, float Radius, Vector3 C
         if (!IsMoving || elapsedSeconds <= SweepWarmupSeconds) return Direction;
         double elapsed = elapsedSeconds - SweepWarmupSeconds;
         double firstLeg = SweepSeconds / 2d;
+        if (SweepPlane != 0)
+        {
+            if (elapsed < firstLeg)
+                return InterpolateSamples(SampleSweepAngles(true), elapsed / firstLeg, false);
+            double legIndex = Math.Floor((elapsed - firstLeg) / SweepSeconds);
+            double legFraction = (elapsed - firstLeg) / SweepSeconds - legIndex;
+            return InterpolateSamples(SampleSweepAngles(false), legFraction, legIndex % 2 != 0);
+        }
         if (elapsed < firstLeg)
             return FromAngles(Vector3.Lerp(AimAngles, SweepStartAngles, Ease(elapsed / firstLeg)));
         double leg = (elapsed - firstLeg) / SweepSeconds;
@@ -32,6 +61,49 @@ internal readonly record struct MapLight(Vector3 Origin, float Radius, Vector3 C
             ? Vector3.Lerp(SweepStartAngles, SweepEndAngles, fraction)
             : Vector3.Lerp(SweepEndAngles, SweepStartAngles, fraction));
     }
+
+    // For a tilted plane, both the preview and generated script follow these same Euler waypoints.
+    internal Vector3[] SampleSweepAngles(bool approach)
+    {
+        float duration = approach ? SweepSeconds / 2 : SweepSeconds;
+        // The shortest segment is bounded by the existing 0.1-second sweep's half-leg.
+        int segments = Math.Clamp((int)Math.Floor(duration / (0.1d / 2)), 1, approach ? 8 : 16);
+        var angles = new Vector3[segments + 1];
+        angles[0] = approach ? AimAngles : SampleSweepAngles(true)[^1];
+        float halfArc = SweepAngle / 2;
+        for (int i = 1; i <= segments; i++)
+        {
+            float fraction = Ease((double)i / segments);
+            float offset = approach ? -halfArc * fraction : -halfArc + SweepAngle * fraction;
+            angles[i] = NearestAngles(SweepDirection(offset), angles[i - 1]);
+        }
+        return angles;
+    }
+
+    private static Vector3 InterpolateSamples(Vector3[] angles, double fraction, bool reverse)
+    {
+        double position = Math.Clamp(fraction, 0, 1) * (angles.Length - 1);
+        int segment = Math.Min((int)position, angles.Length - 2);
+        float blend = (float)(position - segment);
+        return FromAngles(reverse
+            ? Vector3.Lerp(angles[^(segment + 1)], angles[^(segment + 2)], blend)
+            : Vector3.Lerp(angles[segment], angles[segment + 1], blend));
+    }
+
+    private static Vector3 NearestAngles(Vector3 direction, Vector3 previous)
+    {
+        float horizontal = new Vector2(direction.X, direction.Y).Length();
+        float pitch = MathF.Atan2(-direction.Z, horizontal) * (180 / MathF.PI);
+        float yaw = horizontal < 1e-6f ? previous.Y : MathF.Atan2(direction.Y, direction.X) * (180 / MathF.PI);
+        Vector3 direct = new(NearestTurn(pitch, previous.X), NearestTurn(yaw, previous.Y), 0);
+        Vector3 alternate = new(NearestTurn(180 - pitch, previous.X), NearestTurn(yaw + 180, previous.Y), 0);
+        return Vector2.DistanceSquared(new Vector2(direct.X, direct.Y), new Vector2(previous.X, previous.Y)) <=
+            Vector2.DistanceSquared(new Vector2(alternate.X, alternate.Y), new Vector2(previous.X, previous.Y))
+            ? direct : alternate;
+    }
+
+    private static float NearestTurn(float angle, float previous) =>
+        previous + MathF.IEEERemainder(angle - previous, 360);
 
     private static float Ease(double fraction)
     {
@@ -146,7 +218,7 @@ internal readonly record struct MapLight(Vector3 Origin, float Radius, Vector3 C
         light = new MapLight(origin, properties.Radius, color, direction, innerAngle, outerAngle,
             properties.Exponent, properties.IsSpotlight,
             properties.SpawnFlags is MapLightDefaults.PrimaryOmni or MapLightDefaults.PrimarySpot,
-            properties.DynamicShadows, properties.SweepAngle, properties.SweepSeconds);
+            properties.DynamicShadows, properties.SweepAngle, properties.SweepSeconds, properties.SweepPlane);
         return true;
     }
 }

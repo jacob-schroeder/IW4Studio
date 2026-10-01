@@ -24,14 +24,11 @@ internal static class LightInfluenceGeometry
         if (light.IsMoving)
         {
             float distance = SweepHandleDistance(light);
-            float yaw = light.SweepStartAngles.Y * (MathF.PI / 180);
-            Vector3 horizontal = new(MathF.Cos(yaw), MathF.Sin(yaw), 0);
             Vector3 previous = default;
             for (int segment = 0; segment <= 24; segment++)
             {
-                float pitch = (light.SweepStartAngles.X + light.SweepAngle * segment / 24) * (MathF.PI / 180);
-                Vector3 point = light.Origin +
-                    (horizontal * MathF.Cos(pitch) - Vector3.UnitZ * MathF.Sin(pitch)) * distance;
+                float offset = -light.SweepAngle / 2 + light.SweepAngle * segment / 24;
+                Vector3 point = light.Origin + light.SweepDirection(offset) * distance;
                 if (segment > 0 && Finite(previous) && Finite(point)) yield return (previous, point, SweepColor);
                 previous = point;
             }

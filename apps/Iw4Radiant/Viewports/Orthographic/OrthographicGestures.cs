@@ -26,6 +26,7 @@ internal sealed class OrthographicGestures
     private bool _editStarted, _changed, _pointerInside, _changingSelection, _toggle, _paintSelecting, _panDragged;
     private SelectionVolumeMode _selectionVolumeMode;
     private MapEntity? _sweepEntity;
+    private float _sweepStartPlane;
 
     internal OrthographicGestures(Control viewport, OrthographicProjection projection)
     {
@@ -100,11 +101,15 @@ internal sealed class OrthographicGestures
             return;
         }
         if (_button != MouseButton.Left) _gesture = Gesture.Pan;
-        else if (!_toggle && session.Tool == EditorTool.Select && TryPickSweepHandle(session, _startScreen, out _sweepEntity))
+        else if (session.Tool == EditorTool.Select &&
+                 TryPickSweepHandle(session, _startScreen, _toggle, out _sweepEntity, out MapLight sweepLight))
         {
             session.StopLightSweepPreview();
             _gesture = Gesture.Sweep;
-            CursorStatusChanged?.Invoke("Drag to adjust the total sweep arc; both endpoints move together. Escape cancels.");
+            _sweepStartPlane = sweepLight.SweepPlane;
+            CursorStatusChanged?.Invoke(_toggle
+                ? "Drag left/right to rotate the sweep plane around the light aim. Escape cancels."
+                : "Drag to adjust the total sweep arc. Shift-drag rotates the sweep plane. Escape cancels.");
         }
         else if (_toggle && session.Tool is EditorTool.Select or EditorTool.Terrain or EditorTool.Clip)
         {
@@ -454,15 +459,16 @@ internal sealed class OrthographicGestures
         _editStarted = true;
     }
 
-    private bool TryPickSweepHandle(EditorSession session, Point point, out MapEntity? entity)
+    private bool TryPickSweepHandle(EditorSession session, Point point, bool rotatePlane,
+        out MapEntity? entity, out MapLight light)
     {
         entity = session.Selection.Active as MapEntity;
-        if (_projection.Plane == OrthoPlane.Top || entity?.ClassName != "light" ||
-            !MapLight.TryCreate(entity, session.Scene.ResolveTargets(entity), out MapLight light, out _) ||
+        light = default;
+        if (entity?.ClassName != "light" ||
+            !MapLight.TryCreate(entity, session.Scene.ResolveTargets(entity), out light, out _) ||
             !light.IsMoving) return false;
-        float yaw = MathF.Atan2(light.Direction.Y, light.Direction.X);
-        float component = _projection.Plane == OrthoPlane.Front ? MathF.Cos(yaw) : MathF.Sin(yaw);
-        if (MathF.Abs(component) < 0.1f) return false;
+        if (!rotatePlane && MathF.Abs(_projection.MissingAxis(Vector3.Cross(light.Direction, light.SweepTangent))) < 0.1f)
+            return false;
         foreach (Vector3 direction in new[] { light.SweepStartDirection, light.SweepEndDirection })
         {
             Point handle = _projection.ToScreen(light.Origin + direction * light.Radius);
@@ -475,13 +481,12 @@ internal sealed class OrthographicGestures
     private void UpdateHoverCursor(KeyModifiers modifiers)
     {
         bool hover = false;
-        if (_pointerInside && Session is { HasPlacement: false } session &&
-            !modifiers.HasFlag(KeyModifiers.Shift))
+        if (_pointerInside && Session is { HasPlacement: false } session)
         {
             if (session.Tool == EditorTool.Select &&
-                TryPickSweepHandle(session, _cursorScreen, out _))
+                TryPickSweepHandle(session, _cursorScreen, modifiers.HasFlag(KeyModifiers.Shift), out _, out _))
                 hover = true;
-            else if (session.Tool is EditorTool.Select or EditorTool.Vertex &&
+            else if (!modifiers.HasFlag(KeyModifiers.Shift) && session.Tool is EditorTool.Select or EditorTool.Vertex &&
                      (session.Tool != EditorTool.Select || session.SelectionVolumeMode == SelectionVolumeMode.None))
             {
                 if (session.Tool == EditorTool.Vertex &&
@@ -504,23 +509,36 @@ internal sealed class OrthographicGestures
         if (_sweepEntity is not { } entity ||
             !MapLight.TryCreate(entity, session.Scene.ResolveTargets(entity), out MapLight light, out _) ||
             !MapLightProperties.TryRead(entity, out MapLightProperties properties, out _)) return;
-        Vector3 origin = light.Origin;
-        float yaw = MathF.Atan2(light.Direction.Y, light.Direction.X);
-        float component = _projection.Plane == OrthoPlane.Front ? MathF.Cos(yaw) : MathF.Sin(yaw);
-        if (MathF.Abs(component) < 0.1f) return;
-        Vector2 projectedOrigin = _projection.Project(origin);
-        float horizontal = (world.X - projectedOrigin.X) / component;
-        float pitch = MathF.Atan2(-(world.Y - projectedOrigin.Y), horizontal) * (180 / MathF.PI);
-        float centerPitch = MathF.Atan2(-light.Direction.Z,
-            new Vector2(light.Direction.X, light.Direction.Y).Length()) * (180 / MathF.PI);
-        float maximum = MathF.Min(120, 180 - light.OuterAngle * (360 / MathF.PI) - 0.01f);
-        if (maximum < 0.1f) return;
-        float arc = Math.Clamp(2 * MathF.Abs(pitch - centerPitch), 0.1f, maximum);
-        if (MathF.Abs(arc - properties.SweepAngle) < 0.01f) return;
+        MapLightProperties updated;
+        string status;
+        if (_toggle)
+        {
+            float plane = MathF.IEEERemainder(_sweepStartPlane + (float)(_cursorScreen.X - _startScreen.X), 360);
+            if (MathF.Abs(MathF.IEEERemainder(plane - properties.SweepPlane, 360)) < 0.01f) return;
+            updated = properties with { SweepPlane = plane };
+            status = FormattableString.Invariant($"Sweep plane: {plane:0.##}°");
+        }
+        else
+        {
+            Vector2 aim = _projection.Project(light.Direction), tangent = _projection.Project(light.SweepTangent);
+            float determinant = aim.X * tangent.Y - aim.Y * tangent.X;
+            if (MathF.Abs(determinant) < 0.1f) return;
+            Vector2 offset = world - _projection.Project(light.Origin);
+            float alongAim = (offset.X * tangent.Y - offset.Y * tangent.X) / determinant;
+            float alongTangent = (aim.X * offset.Y - aim.Y * offset.X) / determinant;
+            float angle = MathF.Atan2(alongTangent, alongAim) * (180 / MathF.PI);
+            float maximum = MathF.Min(120, 180 - light.OuterAngle * (360 / MathF.PI) - 0.01f);
+            if (maximum < 0.1f) return;
+            float arc = Math.Clamp(2 * MathF.Abs(angle), 0.1f, maximum);
+            if (MathF.Abs(arc - properties.SweepAngle) < 0.01f) return;
+            updated = properties with { SweepAngle = arc };
+            status = FormattableString.Invariant($"Sweep arc: {arc:0.##}°");
+        }
         StartEdit();
-        (properties with { SweepAngle = arc }).ApplyTo(entity);
+        updated.ApplyTo(entity);
         _changed = true;
         session.RefreshLightInfluencePreview(entity);
+        CursorStatusChanged?.Invoke(status);
     }
 
     private void Fail(Exception exception)

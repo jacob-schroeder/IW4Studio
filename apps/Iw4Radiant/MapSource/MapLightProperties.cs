@@ -17,6 +17,7 @@ internal readonly record struct MapLightProperties
     public bool DynamicShadows { get; init; }
     public float SweepAngle { get; init; }
     public float SweepSeconds { get; init; }
+    public float SweepPlane { get; init; }
     public bool IsSpotlight => (SpawnFlags & MapLightDefaults.PrimaryOmni) == 0 &&
         (!string.IsNullOrWhiteSpace(Target) || (SpawnFlags & MapLightDefaults.PrimarySpot) != 0);
 
@@ -34,7 +35,8 @@ internal readonly record struct MapLightProperties
             !ReadScalar(entity, "fov_inner", MapLightDefaults.InnerFov, out float inner, out error) ||
             !ReadScalar(entity, "exponent", MapLightDefaults.Exponent, out float exponent, out error) ||
             !ReadScalar(entity, "sweep_angle", 0, out float sweepAngle, out error) ||
-            !ReadScalar(entity, "sweep_time", 3, out float sweepSeconds, out error))
+            !ReadScalar(entity, "sweep_time", 3, out float sweepSeconds, out error) ||
+            !ReadScalar(entity, "sweep_plane", 0, out float sweepPlane, out error))
             return false;
 
         float? outer = null;
@@ -70,7 +72,8 @@ internal readonly record struct MapLightProperties
             Radius = radius, Intensity = intensity, Color = new Vector3(red, green, blue),
             Target = entity.Properties.GetValueOrDefault("target", ""), OuterFov = outer,
             InnerFov = inner, Exponent = exponent, SpawnFlags = flags,
-            DynamicShadows = shadowText == "1", SweepAngle = sweepAngle, SweepSeconds = sweepSeconds
+            DynamicShadows = shadowText == "1", SweepAngle = sweepAngle, SweepSeconds = sweepSeconds,
+            SweepPlane = sweepPlane
         };
         error = properties.Validate();
         return error is null;
@@ -107,11 +110,14 @@ internal readonly record struct MapLightProperties
         {
             entity.Properties.Remove("sweep_angle");
             entity.Properties.Remove("sweep_time");
+            entity.Properties.Remove("sweep_plane");
         }
         else
         {
             if (!valid || SweepAngle != previous.SweepAngle) entity.Properties["sweep_angle"] = Number(SweepAngle);
             if (!valid || SweepSeconds != previous.SweepSeconds) entity.Properties["sweep_time"] = Number(SweepSeconds);
+            if (SweepPlane == 0) entity.Properties.Remove("sweep_plane");
+            else if (!valid || SweepPlane != previous.SweepPlane) entity.Properties["sweep_plane"] = Number(SweepPlane);
         }
     }
 
@@ -138,6 +144,8 @@ internal readonly record struct MapLightProperties
             return "Dynamic shadows require a Primary omni or Primary spot light.";
         if (!float.IsFinite(SweepAngle) || SweepAngle < 0 || SweepAngle > 120)
             return "The sweep arc must be between 0 and 120 degrees; zero keeps the light still.";
+        if (!float.IsFinite(SweepPlane) || SweepPlane < -180 || SweepPlane > 180)
+            return "The sweep plane must be between -180 and 180 degrees.";
         if (SweepAngle > 0)
         {
             if (SweepAngle < 0.1f) return "The sweep arc must be at least 0.1 degrees.";

@@ -206,6 +206,7 @@ public partial class LightInspector : UserControl
             Exponent = ReadNumber(ExponentBox, "exponent"), SpawnFlags = flags,
             SweepAngle = PrimarySpotBox.IsChecked == true && SweepBox.IsChecked == true
                 ? ReadNumber(SweepAngleBox, "sweep arc") : 0,
+            SweepPlane = previous.SweepPlane,
             SweepSeconds = PrimarySpotBox.IsChecked == true && SweepBox.IsChecked == true
                 ? ReadNumber(SweepSecondsBox, "sweep time") : previous.SweepSeconds,
             DynamicShadows = (flags is MapLightDefaults.PrimaryOmni or MapLightDefaults.PrimarySpot) &&

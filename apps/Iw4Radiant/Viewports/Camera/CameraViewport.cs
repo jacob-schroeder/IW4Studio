@@ -685,8 +685,8 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
                 return;
             }
             bool additive = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-            if (!additive && session.Tool == EditorTool.Select &&
-                CameraSweepGesture.TryBegin(session, _navigation, point, Bounds.Size,
+            if (session.Tool == EditorTool.Select &&
+                CameraSweepGesture.TryBegin(session, _navigation, point, Bounds.Size, additive,
                     out CameraSweepGesture? sweep, out string? sweepNotice))
             {
                 if (sweep is not null)
@@ -697,7 +697,9 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
                     _dragButton = MouseButton.Left;
                     Cursor = ViewportCursors.ClosedHand;
                     e.Pointer.Capture(this);
-                    InteractionStatusChanged?.Invoke("Drag to adjust both sweep endpoints. Escape cancels.");
+                    InteractionStatusChanged?.Invoke(additive
+                        ? "Drag left/right to rotate the sweep plane around the light aim. Escape cancels."
+                        : "Drag to adjust both sweep endpoints. Shift-drag rotates the sweep plane. Escape cancels.");
                 }
                 else if (sweepNotice is not null) InteractionStatusChanged?.Invoke(sweepNotice);
                 e.Handled = true;
@@ -819,17 +821,17 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
             !GlassShatterActive && !WalkMode && !session.HasPlacement &&
             !(FoliagePaintingEnabled && modifiers == KeyModifiers.None) &&
             !(MistPaintingEnabled && modifiers == KeyModifiers.None) &&
-            !modifiers.HasFlag(KeyModifiers.Shift) && new Rect(Bounds.Size).Contains(point))
+            new Rect(Bounds.Size).Contains(point))
         {
             if (session.Tool == EditorTool.Select &&
                 CameraSweepGesture.TryBegin(session, _navigation, point, Bounds.Size,
-                    out CameraSweepGesture? sweep, out _))
+                    modifiers.HasFlag(KeyModifiers.Shift), out CameraSweepGesture? sweep, out _))
                 hover = sweep is not null;
-            else if (session.Tool == EditorTool.Select &&
+            else if (!modifiers.HasFlag(KeyModifiers.Shift) && session.Tool == EditorTool.Select &&
                      CameraLightConeGesture.TryBegin(session, _navigation, point, Bounds.Size,
                          out CameraLightConeGesture? cone, out _))
                 hover = cone is not null;
-            else if (session.Tool is EditorTool.Select or EditorTool.Vertex &&
+            else if (!modifiers.HasFlag(KeyModifiers.Shift) && session.Tool is EditorTool.Select or EditorTool.Vertex &&
                      session.CanTransformSelection && session.SelectionBounds is { } bounds &&
                      (session.Tool != EditorTool.Vertex ||
                       CameraPicking.PickVertex(session, _navigation, point, Bounds.Size) is null))

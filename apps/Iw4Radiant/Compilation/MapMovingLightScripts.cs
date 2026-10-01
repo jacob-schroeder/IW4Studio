@@ -23,6 +23,11 @@ internal sealed record MapMovingLightScripts(string Name, string Source)
         script.Append("}\r\n");
         foreach (MovingLight light in lights)
         {
+            if (light.Light.SweepPlane != 0)
+            {
+                AppendTiltedSweep(script, light);
+                continue;
+            }
             float halfSeconds = light.Light.SweepSeconds / 2f;
             float easeSeconds = light.Light.SweepSeconds * MapLight.SweepEaseFraction;
             float halfEaseSeconds = halfSeconds * MapLight.SweepEaseFraction;
@@ -54,7 +59,9 @@ internal sealed record MapMovingLightScripts(string Name, string Source)
     {
         foreach (MovingLight light in Enumerate(document))
         {
-            Vector3 center = (light.Light.SweepStartAngles + light.Light.SweepEndAngles) / 2f;
+            Vector3 center = light.Light.SweepPlane == 0
+                ? (light.Light.SweepStartAngles + light.Light.SweepEndAngles) / 2f
+                : light.Light.AimAngles;
             var entity = new MapEntity();
             entity.Properties.Add("classname", "light");
             entity.Properties.Add("pl#", light.Index.ToString(CultureInfo.InvariantCulture));
@@ -88,6 +95,35 @@ internal sealed record MapMovingLightScripts(string Name, string Source)
             for (int suffix = 1; !usedNames.Add(name); suffix++) name = $"{baseName}_{suffix}";
             yield return new MovingLight(entity, light, index, name);
         }
+    }
+
+    private static void AppendTiltedSweep(StringBuilder script, MovingLight light)
+    {
+        Vector3[] approach = light.Light.SampleSweepAngles(true);
+        Vector3[] leg = light.Light.SampleSweepAngles(false);
+        float approachStep = light.Light.SweepSeconds / (2 * (approach.Length - 1));
+        float legStep = light.Light.SweepSeconds / (leg.Length - 1);
+        script.Append("\r\nsweep_").Append(light.Index).Append("()\r\n{\r\n")
+            .Append("\tspot = getent(\"").Append(light.TargetName).Append("\", \"targetname\");\r\n")
+            .Append("\tif (!isdefined(spot)) return;\r\n")
+            .Append("\twait ").Append(Number(MapLight.SweepWarmupSeconds)).Append(";\r\n")
+            .Append("\tif (!isdefined(spot)) return;\r\n");
+        for (int i = 1; i < approach.Length; i++)
+            AppendStep(script, approach[i], approachStep, "\t");
+        script.Append("\twhile (isdefined(spot))\r\n\t{\r\n");
+        for (int i = 1; i < leg.Length; i++)
+            AppendStep(script, leg[i], legStep, "\t\t");
+        for (int i = leg.Length - 2; i >= 0; i--)
+            AppendStep(script, leg[i], legStep, "\t\t");
+        script.Append("\t}\r\n}\r\n");
+    }
+
+    private static void AppendStep(StringBuilder script, Vector3 angles, float seconds, string indent)
+    {
+        script.Append(indent).Append("spot rotateTo(").Append(Angles(angles)).Append(", ")
+            .Append(Number(seconds)).Append(", 0, 0);\r\n")
+            .Append(indent).Append("wait ").Append(Number(seconds)).Append(";\r\n")
+            .Append(indent).Append("if (!isdefined(spot)) return;\r\n");
     }
 
     private static string Angles(Vector3 value) => "(" + Coordinates(value).Replace(' ', ',') + ")";

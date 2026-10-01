@@ -146,19 +146,12 @@ internal sealed class OrthographicDrawing
             if (session.Selection.Active is MapEntity { ClassName: "light" } selectedLight &&
                 MapLight.TryCreate(selectedLight, scene.ResolveTargets(selectedLight), out MapLight sweepLight, out _) && sweepLight.IsMoving)
             {
-                float yaw = MathF.Atan2(sweepLight.Direction.Y, sweepLight.Direction.X);
-                bool handlesEditable = _projection.Plane switch
-                {
-                    OrthoPlane.Front => MathF.Abs(MathF.Cos(yaw)) >= 0.1f,
-                    OrthoPlane.Side => MathF.Abs(MathF.Sin(yaw)) >= 0.1f,
-                    _ => false
-                };
                 foreach (Vector3 direction in new[] { sweepLight.SweepStartDirection, sweepLight.SweepEndDirection })
                 {
                     Point origin = _projection.ToScreen(sweepLight.Origin);
                     Point endpoint = _projection.ToScreen(sweepLight.Origin + direction * sweepLight.Radius);
                     context.DrawLine(SweepPen, origin, endpoint);
-                    if (handlesEditable) context.DrawEllipse(Brushes.Black, SweepPen, endpoint, 5, 5);
+                    context.DrawEllipse(Brushes.Black, SweepPen, endpoint, 5, 5);
                 }
             }
             if (selectedVehicle is not null) DrawVehiclePath(context, scene.Document, selectedVehicle);
