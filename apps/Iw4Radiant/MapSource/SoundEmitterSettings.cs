@@ -81,18 +81,19 @@ internal sealed record SoundEmitterSettings
         }
     }
 
-    internal SoundEmitterPlayback Resolve(SndAlias alias)
+    internal SoundEmitterPlayback Resolve(SndAlias alias, float volume, float pitch, bool spatial)
     {
         Validate();
         float min = DistanceMin ?? alias.DistanceMin;
         float max = DistanceMax ?? alias.DistanceMax;
-        float volume = Volume ?? (alias.VolumeMin * 0.5f + alias.VolumeMax * 0.5f);
-        float pitch = Pitch ?? (alias.PitchMin * 0.5f + alias.PitchMax * 0.5f);
-        if (!float.IsFinite(min) || !float.IsFinite(max) || min < 0 || max <= min)
+        volume = Volume ?? volume;
+        pitch = Pitch ?? pitch;
+        if (spatial && (!float.IsFinite(min) || !float.IsFinite(max) || min < 0 || max <= min))
             throw new ArgumentException("The sound's outer hearing range must exceed its inner range, including inherited defaults.");
         if (!float.IsFinite(volume) || volume < 0 || !float.IsFinite(pitch) || pitch <= 0)
             throw new ArgumentException("The sound has invalid default volume or pitch.");
-        return new SoundEmitterPlayback(Looping, Math.Clamp(volume, 0, 1), pitch, min, max,
+        bool looping = HasPlaybackOverride || !Looping ? Looping : alias.FlagBits.IsLooping;
+        return new SoundEmitterPlayback(looping, Math.Clamp(volume, 0, 1), pitch, min, max,
             Channel ?? alias.FlagBits.EntityChannelIndex, alias.FlagBits.EnforcesDistanceGate, alias.VolumeFalloffCurve);
     }
 

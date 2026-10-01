@@ -1,4 +1,5 @@
 using System.Numerics;
+using Avalonia.Threading;
 using Iw4Radiant.Audio;
 using Iw4Radiant.MapSource;
 
@@ -8,6 +9,7 @@ namespace Iw4Radiant.Views;
 internal sealed class MapSoundPreview : IDisposable
 {
     private readonly AudioPreviewEngine _engine;
+    private readonly DispatcherTimer _completionTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
     private readonly Dictionary<(string Name, SoundEmitterSettings Settings), SourceSound> _sources = [];
     private IReadOnlyDictionary<(string Name, SoundEmitterSettings Settings), PreparedPreview> _preparedSources =
         new Dictionary<(string Name, SoundEmitterSettings Settings), PreparedPreview>();
@@ -25,7 +27,50 @@ internal sealed class MapSoundPreview : IDisposable
 
     internal event Action<string, string?>? StatusChanged;
 
-    internal MapSoundPreview(AudioPreviewEngine engine) => _engine = engine;
+    internal MapSoundPreview(AudioPreviewEngine engine)
+    {
+        _engine = engine;
+        _completionTimer.Tick += OnCompletionTick;
+    }
+
+    private void OnCompletionTick(object? sender, EventArgs args)
+    {
+        if (_disposed || !_enabled || _suspended)
+        {
+            _completionTimer.Stop();
+            return;
+        }
+        bool changed = false;
+        foreach (Voice voice in _voices.Values)
+        {
+            if (voice.Player is not { HasPendingWork: true } player) continue;
+            bool audible = player.IsAudible;
+            bool delayed = player.HasPendingDelay;
+            bool channel = player.HasUnrecoveredChannel;
+            try
+            {
+                player.Update(voice.Distance, voice.Pan);
+                if (player.HasEnded)
+                {
+                    RetireVoice(voice);
+                    voice.Completed = true;
+                    changed = true;
+                }
+                else changed |= audible != player.IsAudible || delayed != player.HasPendingDelay ||
+                    channel != player.HasUnrecoveredChannel;
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidDataException or
+                InvalidOperationException or PlatformNotSupportedException or DllNotFoundException or
+                EntryPointNotFoundException or BadImageFormatException)
+            {
+                RetireVoice(voice);
+                voice.Error = exception.Message;
+                changed = true;
+            }
+        }
+        _completionTimer.IsEnabled = _voices.Values.Any(voice => voice.Player?.HasPendingWork == true);
+        if (changed) PublishPlaybackStatus();
+    }
 
     internal void SetPreparedSources(string? root,
         IReadOnlyDictionary<(string Name, SoundEmitterSettings Settings), PreparedPreview> sources)
@@ -87,9 +132,9 @@ internal sealed class MapSoundPreview : IDisposable
                 {
                     var source = new SourceSound();
                     _sources.Add(key, source);
-                    if (_preparedRoot == sourceDirectory && _preparedSources.TryGetValue(key, out PreparedPreview ready))
+                    if (_preparedRoot == sourceDirectory && _preparedSources.TryGetValue(key, out PreparedPreview? ready))
                         SetSource(source, ready);
-                    else if (_engine.TryGetPrepared(sourceDirectory, key.Name, key.Settings, out ready))
+                    else if (_engine.TryGetPrepared(sourceDirectory, key.Name, out ready))
                         SetSource(source, ready);
                     else
                         _ = LoadSourceAsync(sourceDirectory, key, source);
@@ -101,7 +146,7 @@ internal sealed class MapSoundPreview : IDisposable
     {
         // Reading alias graphs and audio stays off navigation and drag callbacks.
         // The entry identity prevents a late load from reviving an old map/library.
-        PreparedPreview loaded = await _engine.PrepareAsync(root, key.Name, key.Settings);
+        PreparedPreview loaded = await _engine.PrepareAsync(root, key.Name);
         if (_disposed || !_sources.TryGetValue(key, out SourceSound? current) || !ReferenceEquals(current, source))
             return;
         SetSource(source, loaded);
@@ -110,8 +155,7 @@ internal sealed class MapSoundPreview : IDisposable
 
     private static void SetSource(SourceSound source, PreparedPreview loaded)
     {
-        source.Sound = loaded.Sound;
-        source.Profile = loaded.Profile;
+        source.Prepared = loaded;
         source.Error = loaded.Error;
         source.Loading = false;
     }
@@ -128,10 +172,10 @@ internal sealed class MapSoundPreview : IDisposable
         if (_disposed) return;
         if (!_enabled || _suspended)
         {
+            _completionTimer.Stop();
             foreach (Voice voice in _voices.Values)
             {
                 voice.Player?.Pause();
-                voice.NeedsStart = true;
             }
             Publish(!_enabled ? "Map sounds off · use Sounds above the camera." : "Map sounds paused while you listen to one sound.");
             return;
@@ -147,45 +191,31 @@ internal sealed class MapSoundPreview : IDisposable
             return;
         }
 
-        int playing = 0;
         foreach (var emitter in _emitters)
         {
             if (emitter.Error is not null || !_sources.TryGetValue((emitter.Name, emitter.Settings), out SourceSound? source) ||
-                source.Loading || source.Error is not null || source.Profile is not { } profile)
+                source.Loading || source.Error is not null || source.Prepared is null)
                 continue;
             float distance = Vector3.Distance(_listener, emitter.Origin);
-            float gain = profile.Gain(distance);
             var key = (emitter.Owner, emitter.Slot);
             _voices.TryGetValue(key, out Voice? voice);
             if (voice is null) _voices.Add(key, voice = new Voice(emitter.Name, emitter.Settings));
             if (voice.Error is not null || voice.Completed) continue;
-            if (!profile.Looping && (voice.Player?.HasEnded == true || (voice.Player is null && gain <= 0)))
-            {
-                // A one-shot occurs once when map preview starts. Camera motion must not retrigger it.
-                RetireVoice(voice);
-                voice.Completed = true;
-                continue;
-            }
-            if (gain <= 0 && profile.Looping)
-            {
-                voice.Player?.Pause();
-                voice.NeedsStart = true;
-                continue;
-            }
             try
             {
-                if (voice.Player is null || voice.NeedsStart)
-                {
-                    if (source.Sound is null) continue;
-                    StartVoice(voice, source.Sound, profile.Looping, gain,
-                        distance > 0.001f ? Vector3.Dot((emitter.Origin - _listener) / distance, _right) : 0);
-                    playing++;
-                    continue;
-                }
-                voice.Player.SetVolume(gain);
                 // Editor stereo positioning, not a reconstruction of the game's speaker mixer.
-                voice.Player.SetPan(distance > 0.001f ? Vector3.Dot((emitter.Origin - _listener) / distance, _right) : 0);
-                if (gain > 0) playing++;
+                float pan = distance > 0.001f ? Vector3.Dot((emitter.Origin - _listener) / distance, _right) : 0;
+                voice.Distance = distance;
+                voice.Pan = pan;
+                if (voice.Player is null)
+                    voice.Player = _engine.Play(source.Prepared, emitter.Settings, distance, pan);
+                else voice.Player.Update(distance, pan);
+                if (voice.Player.HasEnded)
+                {
+                    // Rejected and finished one-shots never retrigger on camera movement.
+                    RetireVoice(voice);
+                    voice.Completed = true;
+                }
             }
             catch (Exception exception) when (exception is ArgumentException or InvalidDataException or
                                               InvalidOperationException or PlatformNotSupportedException or
@@ -196,7 +226,14 @@ internal sealed class MapSoundPreview : IDisposable
                 voice.Error = exception.Message;
             }
         }
+        // Advance queued delays and completion chains while idle; ready loop-only cues need no polling.
+        _completionTimer.IsEnabled = _voices.Values.Any(voice => voice.Player?.HasPendingWork == true);
+        PublishPlaybackStatus();
+    }
 
+    private void PublishPlaybackStatus()
+    {
+        int playing = _voices.Values.Count(voice => voice.Player?.IsAudible == true);
         string[] unavailable = _sources.Where(pair => pair.Value.Error is not null)
             .Select(pair => $"{pair.Key.Name}: {pair.Value.Error}")
             .Concat(_emitters.Where(emitter => emitter.Error is not null).Select(emitter => $"{emitter.Name}: {emitter.Error}"))
@@ -207,11 +244,12 @@ internal sealed class MapSoundPreview : IDisposable
             : _emitters.Length == 0 ? "Map sounds on · place a sound to hear it."
             : loading > 0 ? "Preparing placed sounds…"
             : unavailable.Length > 0 && _sources.Values.All(source => source.Error is not null) ? "No placed sounds can be previewed."
+            : _voices.Values.Any(voice => voice.Player?.HasPendingDelay == true) ? "Waiting for delayed sounds…"
             : _voices.Values.Any(voice => voice.Completed) ? "One-shot playback finished · toggle map sounds to replay."
             : "Map sounds on · move closer to a sound marker.";
         if (playing > 0 && loading > 0) message += $" Preparing {loading} more.";
         if (unavailable.Length > 0) message += $" {unavailable.Length} unavailable (details on hover).";
-        string previewScope = _sources.Values.Any(source => source.Profile is { Channel: not (3 or 24) })
+        string previewScope = _voices.Values.Any(voice => voice.Player?.HasUnrecoveredChannel == true)
             ? "This channel's spatial behavior is not yet reproduced; preview uses editor distance and stereo positioning."
             : "Editor distance and stereo preview; game channel mixing and voice priorities are applied in-game.";
         Publish(message, unavailable.Length == 0 ? previewScope : string.Join('\n', unavailable));
@@ -226,22 +264,9 @@ internal sealed class MapSoundPreview : IDisposable
 
     private void StopVoices()
     {
+        _completionTimer.Stop();
         foreach (Voice voice in _voices.Values) RetireVoice(voice);
         _voices.Clear();
-    }
-
-    private void StartVoice(Voice voice, PreparedSound sound,
-        bool looping, float gain, float pan)
-    {
-        if (voice.Player is null)
-            voice.Player = _engine.Play(sound, looping, gain, pan);
-        else
-        {
-            voice.Player.SetVolume(gain);
-            voice.Player.SetPan(pan);
-            voice.Player.Play();
-        }
-        voice.NeedsStart = false;
     }
 
     private static void RetireVoice(Voice voice)
@@ -254,6 +279,7 @@ internal sealed class MapSoundPreview : IDisposable
     {
         _disposed = true;
         StopVoices();
+        _completionTimer.Tick -= OnCompletionTick;
         _sources.Clear();
         _preparedSources = new Dictionary<(string Name, SoundEmitterSettings Settings), PreparedPreview>();
         _emitters = [];
@@ -262,8 +288,7 @@ internal sealed class MapSoundPreview : IDisposable
     private sealed class SourceSound
     {
         internal bool Loading = true;
-        internal PreparedSound? Sound;
-        internal SoundEmitterPlayback? Profile;
+        internal PreparedPreview? Prepared;
         internal string? Error;
     }
 
@@ -271,8 +296,9 @@ internal sealed class MapSoundPreview : IDisposable
     {
         internal string Name { get; } = name;
         internal SoundEmitterSettings Settings { get; } = settings;
-        internal PreviewVoice? Player;
-        internal bool NeedsStart;
+        internal SoundPreviewPlayback? Player;
+        internal float Distance;
+        internal float Pan;
         internal string? Error;
         internal bool Completed;
     }

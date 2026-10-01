@@ -11,6 +11,7 @@ internal sealed class AudioPreviewEngine : IDisposable
     private readonly object _sync = new();
     private readonly SemaphoreSlim _preparationSlots = new(2);
     private readonly IPreviewAudioBackend _backend;
+    private readonly SoundPreviewRandom _random = new();
     private readonly Dictionary<SourceKey, Task<PreparedPreview>> _preparations = [];
     private readonly LinkedList<SourceKey> _recent = [];
     private readonly Dictionary<string, FileSystemWatcher> _watchers = new(StringComparer.Ordinal);
@@ -29,11 +30,11 @@ internal sealed class AudioPreviewEngine : IDisposable
     internal int Generation { get { lock (_sync) return _generation; } }
 
     internal Task<PreparedPreview> PrepareAsync(string rawRoot, string exactAliasName,
-        SoundEmitterSettings? settings = null, CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default)
     {
         if (!IsSupported)
-            return Task.FromResult(new PreparedPreview(null, null, UnavailableReason));
-        SourceKey key = MakeKey(rawRoot, exactAliasName, settings);
+            return Task.FromResult(new PreparedPreview([], UnavailableReason));
+        SourceKey key = MakeKey(rawRoot, exactAliasName);
         Task<PreparedPreview> task;
         lock (_sync)
         {
@@ -43,7 +44,7 @@ internal sealed class AudioPreviewEngine : IDisposable
             {
                 while (_preparations.Count >= MaxPreparedSounds && EvictOldestCompleted()) { }
                 if (_preparations.Count >= MaxPreparedSounds)
-                    return Task.FromResult(new PreparedPreview(null, null,
+                    return Task.FromResult(new PreparedPreview([],
                         "Sound preview preparation is busy; try this sound again shortly."));
                 int generation = _generation;
                 task = PrepareCoreAsync(key, generation);
@@ -55,10 +56,10 @@ internal sealed class AudioPreviewEngine : IDisposable
         return cancellationToken.CanBeCanceled ? task.WaitAsync(cancellationToken) : task;
     }
 
-    internal bool TryGetPrepared(string rawRoot, string exactAliasName, SoundEmitterSettings? settings,
+    internal bool TryGetPrepared(string rawRoot, string exactAliasName,
         out PreparedPreview preview)
     {
-        SourceKey key = MakeKey(rawRoot, exactAliasName, settings);
+        SourceKey key = MakeKey(rawRoot, exactAliasName);
         lock (_sync)
         {
             if (!_disposed && _preparations.TryGetValue(key, out Task<PreparedPreview>? task) &&
@@ -70,7 +71,7 @@ internal sealed class AudioPreviewEngine : IDisposable
                 return true;
             }
         }
-        preview = default;
+        preview = new PreparedPreview([], null);
         return false;
     }
 
@@ -81,32 +82,71 @@ internal sealed class AudioPreviewEngine : IDisposable
         {
             return await Task.Run(() =>
             {
-                var loaded = SoundAliasAudition.LoadPlayback(key.Root, key.Name, key.Settings);
-                if (loaded.Error is not null)
-                    return new PreparedPreview(null, loaded.Profile, loaded.Error);
+                var catalogues = new Dictionary<string, PreparedPreview>(StringComparer.Ordinal);
+                var sounds = new List<PreparedSound>();
+                long decodedBytes = 0;
                 try
                 {
-                    PreparedSound sound = _backend.Prepare(loaded.Audio, loaded.Profile?.Pitch ?? 1);
+                    PreparedPreview PrepareAlias(string name)
+                    {
+                        if (catalogues.TryGetValue(name, out PreparedPreview? cached)) return cached;
+                        if (catalogues.Count >= MaxPreparedSounds)
+                            throw new InvalidDataException("This alias has too many secondary or chain references to preview.");
+                        var loaded = SoundAliasAudition.LoadVariants(key.Root, name);
+                        if (loaded.Error is not null) throw new InvalidDataException($"{name}: {loaded.Error}");
+                        PreparedPreview.Validate(loaded.Variants.Select(variant => variant.Alias));
+                        var variants = new List<PreparedVariant>();
+                        foreach (var variant in loaded.Variants)
+                        {
+                            if (sounds.Count >= MaxPreparedSounds)
+                                throw new InvalidDataException("This alias has more than the preview's 96 prepared variants and linked sounds.");
+                            PreparedSound sound = _backend.Prepare(variant.Audio);
+                            sounds.Add(sound);
+                            variants.Add(new PreparedVariant(variant.Alias, sound));
+                            decodedBytes += sound.DecodedBytes;
+                            if (decodedBytes > MaxDecodedBytes)
+                                throw new InvalidDataException("This alias's decoded variants exceed the preview's 128 MiB limit.");
+                        }
+                        var prepared = new PreparedPreview(variants.ToArray(), null);
+                        // Insert before following references; native secondary recursion has a playback depth limit.
+                        catalogues.Add(name, prepared);
+                        foreach (PreparedVariant variant in variants)
+                        {
+                            if (!string.IsNullOrEmpty(variant.Alias.SecondaryAliasName))
+                                variant.Secondary = PrepareAlias(variant.Alias.SecondaryAliasName);
+                            if (!string.IsNullOrEmpty(variant.Alias.ChainAliasName))
+                                variant.Chain = PrepareAlias(variant.Alias.ChainAliasName);
+                        }
+                        return prepared;
+                    }
+                    PreparedPreview preview = PrepareAlias(key.Name);
+                    preview.DecodedBytes = decodedBytes;
                     lock (_sync)
                     {
                         if (_disposed || generation != _generation)
                         {
-                            sound.DisposeNative();
-                            return new PreparedPreview(null, loaded.Profile,
-                                "Sound source changed during preparation; try again.");
+                            throw new InvalidOperationException("Sound source changed during preparation; try again.");
                         }
-                        while (_cachedBytes + sound.DecodedBytes > MaxDecodedBytes &&
+                        while (_cachedBytes + decodedBytes > MaxDecodedBytes &&
                             EvictOldestCompleted(key)) { }
-                        _cachedBytes += sound.DecodedBytes;
+                        if (_cachedBytes + decodedBytes > MaxDecodedBytes)
+                        {
+                            // A budget refusal must be retryable once the other preparation completes.
+                            _preparations.Remove(key);
+                            _recent.Remove(key);
+                            throw new InvalidOperationException("Sound preview preparation is busy; try this sound again shortly.");
+                        }
+                        _cachedBytes += decodedBytes;
                     }
-                    return new PreparedPreview(sound, loaded.Profile, null);
+                    return preview;
                 }
                 catch (Exception exception) when (exception is ArgumentException or InvalidDataException or
                     InvalidOperationException or PlatformNotSupportedException or DllNotFoundException or
                     EntryPointNotFoundException or BadImageFormatException or IOException or ObjectDisposedException or
                     UnauthorizedAccessException or OverflowException)
                 {
-                    return new PreparedPreview(null, loaded.Profile,
+                    foreach (PreparedSound sound in sounds) sound.DisposeNative();
+                    return new PreparedPreview([],
                         $"Cannot preview this sound: {exception.Message}");
                 }
             }).ConfigureAwait(false);
@@ -114,8 +154,24 @@ internal sealed class AudioPreviewEngine : IDisposable
         finally { _preparationSlots.Release(); }
     }
 
-    internal PreviewVoice Play(PreparedSound sound, bool looping, float volume, float pan) =>
-        _backend.Play(sound, looping, volume, pan);
+    internal PreviewVoice Play(PreparedSound sound, bool looping, float volume, float pan, float pitch) =>
+        _backend.Play(sound, looping, volume, pan, pitch);
+
+    internal SoundPreviewPlayback Play(PreparedPreview preview, SoundEmitterSettings? settings,
+        float? distance = null, float pan = 0)
+    {
+        return new SoundPreviewPlayback(this, Select(preview, settings), settings, distance, pan);
+    }
+
+    internal List<PreparedSelection> Select(PreparedPreview preview, SoundEmitterSettings? settings,
+        PreparedVariant? chainingFrom = null)
+    {
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return preview.Select(_random, settings, chainingFrom);
+        }
+    }
 
     /// <summary>Clears source identity after a library reload. Existing handles remain valid for active cues.</summary>
     internal void Invalidate()
@@ -136,7 +192,7 @@ internal sealed class AudioPreviewEngine : IDisposable
             if (node.Value == except || !_preparations[node.Value].IsCompleted) continue;
             Task<PreparedPreview> task = _preparations[node.Value];
             if (task.IsCompletedSuccessfully)
-                _cachedBytes -= task.Result.Sound?.DecodedBytes ?? 0;
+                _cachedBytes -= task.Result.DecodedBytes;
             _preparations.Remove(node.Value);
             _recent.Remove(node);
             return true;
@@ -180,10 +236,10 @@ internal sealed class AudioPreviewEngine : IDisposable
     private static bool IsSoundSource(string path) =>
         path.Split(Path.DirectorySeparatorChar).Contains("soundaliases", StringComparer.OrdinalIgnoreCase);
 
-    private static SourceKey MakeKey(string root, string name, SoundEmitterSettings? settings)
+    private static SourceKey MakeKey(string root, string name)
     {
         string fullRoot = string.IsNullOrWhiteSpace(root) ? root : Path.GetFullPath(root);
-        return new SourceKey(fullRoot ?? "", name, settings);
+        return new SourceKey(fullRoot ?? "", name);
     }
 
     public void Dispose()
@@ -202,10 +258,8 @@ internal sealed class AudioPreviewEngine : IDisposable
         _backend.Dispose();
     }
 
-    private sealed record SourceKey(string Root, string Name, SoundEmitterSettings? Settings);
+    private sealed record SourceKey(string Root, string Name);
 }
-
-internal readonly record struct PreparedPreview(PreparedSound? Sound, SoundEmitterPlayback? Profile, string? Error);
 
 internal sealed class PreparedSound
 {
@@ -246,16 +300,16 @@ internal interface IPreviewAudioBackend : IDisposable
 {
     bool IsSupported { get; }
     string? UnavailableReason { get; }
-    PreparedSound Prepare(byte[] audio, float pitch);
-    PreviewVoice Play(PreparedSound sound, bool looping, float volume, float pan);
+    PreparedSound Prepare(byte[] audio);
+    PreviewVoice Play(PreparedSound sound, bool looping, float volume, float pan, float pitch);
 }
 
 internal sealed class UnavailablePreviewBackend : IPreviewAudioBackend
 {
     public bool IsSupported => false;
     public string UnavailableReason => "Sound preview playback currently requires macOS or Windows.";
-    public PreparedSound Prepare(byte[] audio, float pitch) => throw new PlatformNotSupportedException(UnavailableReason);
-    public PreviewVoice Play(PreparedSound sound, bool looping, float volume, float pan) =>
+    public PreparedSound Prepare(byte[] audio) => throw new PlatformNotSupportedException(UnavailableReason);
+    public PreviewVoice Play(PreparedSound sound, bool looping, float volume, float pan, float pitch) =>
         throw new PlatformNotSupportedException(UnavailableReason);
     public void Dispose() { }
 }

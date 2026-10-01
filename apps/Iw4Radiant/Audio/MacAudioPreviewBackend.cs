@@ -24,11 +24,11 @@ internal sealed class MacAudioPreviewBackend : IPreviewAudioBackend
         ? "Sound preview playback currently requires macOS."
         : Support.IsValueCreated ? Support.Value : null;
 
-    public unsafe PreparedSound Prepare(byte[] audio, float pitch)
+    public unsafe PreparedSound Prepare(byte[] audio)
     {
         string? support = Support.Value;
         if (support is not null) throw new PlatformNotSupportedException(support);
-        SoundPreviewPitch.EnginePcm pcm = SoundPreviewPitch.DecodeForEngine(SoundPreviewPitch.Apply(audio, pitch));
+        SoundPreviewPitch.EnginePcm pcm = SoundPreviewPitch.DecodeForEngine(audio);
         // Subsequent preparations allocate only independent PCM buffers. The graph is fixed at first prepare.
         nint format;
         lock (_sync)
@@ -74,10 +74,12 @@ internal sealed class MacAudioPreviewBackend : IPreviewAudioBackend
         }
     }
 
-    public PreviewVoice Play(PreparedSound sound, bool looping, float volume, float pan)
+    public PreviewVoice Play(PreparedSound sound, bool looping, float volume, float pan, float pitch)
     {
         if (sound.NativeBuffer is not MacBuffer buffer)
             throw new ArgumentException("The sound belongs to another audio backend.", nameof(sound));
+        if (!float.IsFinite(pitch) || pitch is < 0.25f or > 4)
+            throw new ArgumentOutOfRangeException(nameof(pitch), "macOS sound preview pitch must be between 0.25 and 4.");
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -88,11 +90,12 @@ internal sealed class MacAudioPreviewBackend : IPreviewAudioBackend
             try
             {
                 ObjC.SendVoid(node.Handle, S.Stop);
+                ObjC.SendVoidFloat(node.Varispeed, S.SetRate, pitch);
                 ObjC.SendVoidFloat(node.Handle, S.SetVolume, Math.Clamp(volume, 0, 1));
                 ObjC.SendVoidFloat(node.Handle, S.SetPan, Math.Clamp(pan, -1, 1));
                 ObjC.SendSchedule(node.Handle, S.ScheduleBuffer, buffer.Handle, 0, (nuint)(looping ? 1 : 0), 0);
                 ObjC.SendVoid(node.Handle, S.Play);
-                return new MacVoice(this, node, sound, looping);
+                return new MacVoice(this, node, sound, looping, pitch);
             }
             catch { node.Busy = false; throw; }
         }
@@ -114,16 +117,26 @@ internal sealed class MacAudioPreviewBackend : IPreviewAudioBackend
             {
                 nint player = ObjC.SendPtr(ObjC.SendPtr(ObjC.Class("AVAudioPlayerNode"), S.Alloc), S.Init);
                 if (player == 0) throw new InvalidOperationException("AVAudioPlayerNode allocation failed.");
+                nint varispeed = 0;
+                bool playerAttached = false, varispeedAttached = false;
                 try
                 {
+                    varispeed = ObjC.SendPtr(ObjC.SendPtr(ObjC.Class("AVAudioUnitVarispeed"), S.Alloc), S.Init);
+                    if (varispeed == 0) throw new InvalidOperationException("AVAudioUnitVarispeed allocation failed.");
                     ObjC.SendVoidPtr(engine, S.AttachNode, player);
-                    ObjC.SendVoidPtrPtrPtr(engine, S.ConnectToFormat, player, mixer, format);
+                    playerAttached = true;
+                    ObjC.SendVoidPtr(engine, S.AttachNode, varispeed);
+                    varispeedAttached = true;
+                    ObjC.SendVoidPtrPtrPtr(engine, S.ConnectToFormat, player, varispeed, format);
+                    ObjC.SendVoidPtrPtrPtr(engine, S.ConnectToFormat, varispeed, mixer, format);
                     ObjC.SendVoidUInt(player, S.PrepareWithFrameCount, 4096);
-                    _nodes.Add(new Node(player));
+                    _nodes.Add(new Node(player, varispeed));
                 }
                 catch
                 {
-                    ObjC.SendVoidPtr(engine, S.DetachNode, player);
+                    if (varispeedAttached) ObjC.SendVoidPtr(engine, S.DetachNode, varispeed);
+                    if (playerAttached) ObjC.SendVoidPtr(engine, S.DetachNode, player);
+                    if (varispeed != 0) ObjC.SendVoid(varispeed, S.Release);
                     ObjC.SendVoid(player, S.Release);
                     throw;
                 }
@@ -138,7 +151,9 @@ internal sealed class MacAudioPreviewBackend : IPreviewAudioBackend
         {
             foreach (Node node in _nodes)
             {
+                ObjC.SendVoidPtr(engine, S.DetachNode, node.Varispeed);
                 ObjC.SendVoidPtr(engine, S.DetachNode, node.Handle);
+                ObjC.SendVoid(node.Varispeed, S.Release);
                 ObjC.SendVoid(node.Handle, S.Release);
             }
             _nodes.Clear();
@@ -157,7 +172,9 @@ internal sealed class MacAudioPreviewBackend : IPreviewAudioBackend
             foreach (Node node in _nodes)
             {
                 ObjC.SendVoid(node.Handle, S.Stop);
+                ObjC.SendVoidPtr(_engine, S.DetachNode, node.Varispeed);
                 ObjC.SendVoidPtr(_engine, S.DetachNode, node.Handle);
+                ObjC.SendVoid(node.Varispeed, S.Release);
                 ObjC.SendVoid(node.Handle, S.Release);
             }
             _nodes.Clear();
@@ -181,7 +198,8 @@ internal sealed class MacAudioPreviewBackend : IPreviewAudioBackend
         if (!NativeLibrary.TryLoad(AvfAudio, out s_framework))
             return "The macOS AVFAudio framework could not be loaded.";
         return ObjC.Class("AVAudioEngine") == 0 || ObjC.Class("AVAudioFormat") == 0 ||
-            ObjC.Class("AVAudioPlayerNode") == 0 || ObjC.Class("AVAudioPCMBuffer") == 0
+            ObjC.Class("AVAudioPlayerNode") == 0 || ObjC.Class("AVAudioUnitVarispeed") == 0 ||
+            ObjC.Class("AVAudioPCMBuffer") == 0
             ? "The macOS AVAudioEngine runtime is unavailable." : null;
     }
 
@@ -193,9 +211,10 @@ internal sealed class MacAudioPreviewBackend : IPreviewAudioBackend
         return Marshal.PtrToStringUTF8(chars) ?? "unknown native error";
     }
 
-    private sealed class Node(nint handle)
+    private sealed class Node(nint handle, nint varispeed)
     {
         internal nint Handle { get; } = handle;
+        internal nint Varispeed { get; } = varispeed;
         internal bool Busy;
     }
 
@@ -213,14 +232,14 @@ internal sealed class MacAudioPreviewBackend : IPreviewAudioBackend
     }
 
     private sealed class MacVoice(MacAudioPreviewBackend owner, Node node, PreparedSound sound,
-        bool looping) : PreviewVoice
+        bool looping, float pitch) : PreviewVoice
     {
         private readonly Stopwatch _clock = Stopwatch.StartNew();
         private double _elapsed;
         private bool _paused;
         private bool _disposed;
         internal override bool HasEnded => !_disposed && !looping && !_paused &&
-            _elapsed + _clock.Elapsed.TotalSeconds >= sound.Duration;
+            _elapsed + _clock.Elapsed.TotalSeconds >= sound.Duration / pitch;
         internal override void Play()
         {
             lock (owner._sync)
@@ -280,6 +299,7 @@ internal sealed class MacAudioPreviewBackend : IPreviewAudioBackend
             PrepareWithFrameCount = ObjC.Selector("prepareWithFrameCount:"), Prepare = ObjC.Selector("prepare"),
             Stop = ObjC.Selector("stop"), Play = ObjC.Selector("play"), Pause = ObjC.Selector("pause"),
             SetVolume = ObjC.Selector("setVolume:"), SetPan = ObjC.Selector("setPan:"),
+            SetRate = ObjC.Selector("setRate:"),
             ScheduleBuffer = ObjC.Selector("scheduleBuffer:atTime:options:completionHandler:"),
             LocalizedDescription = ObjC.Selector("localizedDescription"), Utf8String = ObjC.Selector("UTF8String");
     }

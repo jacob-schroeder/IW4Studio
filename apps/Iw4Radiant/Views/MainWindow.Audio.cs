@@ -67,7 +67,7 @@ public partial class MainWindow
             foreach (var dependency in dependencies)
             {
                 cancellation.Token.ThrowIfCancellationRequested();
-                await _previewAudio.PrepareAsync(root, dependency.Name, dependency.Settings, cancellation.Token);
+                await _previewAudio.PrepareAsync(root, dependency.Name, cancellation.Token);
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }

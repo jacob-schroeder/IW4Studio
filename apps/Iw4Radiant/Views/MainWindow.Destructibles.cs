@@ -192,7 +192,7 @@ public partial class MainWindow
             (string Name, bool Looping)[] soundsToPrepare = PreviewSoundNames(preset).Distinct().ToArray();
             Task<PreparedPreview[]> audio = soundRoot is null ? Task.FromResult(Array.Empty<PreparedPreview>()) :
                 Task.WhenAll(soundsToPrepare.Select(sound => _previewAudio.PrepareAsync(soundRoot, sound.Name,
-                    DestructibleSoundSettings(sound.Looping), cancellation.Token)));
+                    cancellation.Token)));
             Task<string?> rendering = Workspace.Camera.PrepareDestructibleRenderingAsync(entity, settings, materials, cancellation.Token);
             await Task.WhenAll(audio, rendering);
             bool current = request == _destructibleRequest && ReferenceEquals(document, _session.Document) &&

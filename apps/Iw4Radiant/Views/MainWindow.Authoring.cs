@@ -95,14 +95,14 @@ public partial class MainWindow
         {
             if (_previewAssetName is not null) StopEmitterPreview("Preview stopped.");
         };
-        _soundAudition.PlaybackEnded += () =>
+        _soundAudition.PlaybackEnded += error =>
         {
             if (!_previewIsSound) return;
             _previewAssetName = null;
             _previewMarker = null;
             _previewDocument = null;
             _previewIsSound = false;
-            Workspace.SoundBrowser.SetPreviewState(false, "Sound preview finished.");
+            Workspace.SoundBrowser.SetPreviewState(false, error ?? "Sound preview finished.");
             _mapSoundPreview.SetSuspended(false);
         };
         Workspace.MapFxPauseRequested += () =>

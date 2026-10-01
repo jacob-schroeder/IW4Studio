@@ -16,11 +16,9 @@ internal sealed unsafe class WindowsAudioPreviewBackend : IPreviewAudioBackend
     public bool IsSupported => OperatingSystem.IsWindows();
     public string? UnavailableReason => IsSupported ? null : "Sound preview playback requires Windows or macOS.";
 
-    public PreparedSound Prepare(byte[] audio, float pitch)
+    public PreparedSound Prepare(byte[] audio)
     {
         if (!IsSupported) throw new PlatformNotSupportedException(UnavailableReason);
-        if (!float.IsFinite(pitch) || pitch is < 0.001f or > 16)
-            throw new InvalidDataException("The sound pitch is outside the Windows preview range.");
         byte[] pcm = WindowsPreviewDecoder.Decode(audio);
         lock (_sync)
         {
@@ -31,12 +29,11 @@ internal sealed unsafe class WindowsAudioPreviewBackend : IPreviewAudioBackend
         try
         {
             Marshal.Copy(pcm, 0, data, pcm.Length);
-            var buffer = new PcmBuffer(data, pcm.Length, pitch);
+            var buffer = new PcmBuffer(data, pcm.Length);
             data = 0;
             try
             {
-                return new PreparedSound(buffer, pcm.Length,
-                    pcm.Length / (SampleRate * 8.0 * pitch));
+                return new PreparedSound(buffer, pcm.Length, pcm.Length / (SampleRate * 8.0));
             }
             catch
             {
@@ -47,10 +44,12 @@ internal sealed unsafe class WindowsAudioPreviewBackend : IPreviewAudioBackend
         finally { if (data != 0) Marshal.FreeHGlobal(data); }
     }
 
-    public PreviewVoice Play(PreparedSound sound, bool looping, float volume, float pan)
+    public PreviewVoice Play(PreparedSound sound, bool looping, float volume, float pan, float pitch)
     {
         if (sound.NativeBuffer is not PcmBuffer buffer)
             throw new ArgumentException("The sound belongs to another audio backend.", nameof(sound));
+        if (!float.IsFinite(pitch) || pitch is < 0.0005f or > 16)
+            throw new ArgumentOutOfRangeException(nameof(pitch), "Windows sound preview pitch must be between 0.0005 and 16.");
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -64,7 +63,7 @@ internal sealed unsafe class WindowsAudioPreviewBackend : IPreviewAudioBackend
                     throw new InvalidOperationException("The prepared sound was already released.");
                 Reset(voice.Handle);
                 Check(((delegate* unmanaged[Stdcall]<nint, float, uint, int>)Slot(voice.Handle, 26))
-                    (voice.Handle, buffer.Pitch, 0), "set sound pitch");
+                    (voice.Handle, pitch, 0), "set sound pitch");
                 SetVolume(voice.Handle, volume);
                 SetPan(voice.Handle, pan);
                 var submission = new XAudioBuffer
@@ -225,12 +224,11 @@ internal sealed unsafe class WindowsAudioPreviewBackend : IPreviewAudioBackend
         internal PreparedSound? Sound;
     }
 
-    private sealed class PcmBuffer(nint data, int length, float pitch) : IDisposable
+    private sealed class PcmBuffer(nint data, int length) : IDisposable
     {
         private nint _data = data;
         internal nint Data => _data;
         internal int Length { get; } = length;
-        internal float Pitch { get; } = pitch;
         ~PcmBuffer() => Dispose();
         public void Dispose()
         {
