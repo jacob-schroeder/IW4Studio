@@ -72,6 +72,8 @@ public partial class MainWindow
                 _buildEmitterAssetsPath = root;
                 if (!browser.IsSoundBrowser)
                 {
+                    StopMistPainting();
+                    RefreshPainterToolState();
                     Workspace.Camera.SetMapFxPreview(null, []);
                     _mapFxSource = null;
                     _mapFxEmitters = [];
@@ -190,12 +192,18 @@ public partial class MainWindow
         Workspace.Models.CatalogReset += Inspector.Painter.MarkModelsUnavailable;
         Workspace.Models.FoliageModelRequested += model =>
         {
+            StopMistPainting();
+            _mistModeSelected = false;
+            RefreshPainterToolState();
             Inspector.Painter.AddModel(model);
             Inspector.Painter.StartPainting();
             ShowInspectorSection(Inspector.ShowPainter);
         };
         Workspace.Prefabs.PainterPrefabRequested += path =>
         {
+            StopMistPainting();
+            _mistModeSelected = false;
+            RefreshPainterToolState();
             FoliagePaletteModel item = Inspector.Painter.AddPrefab(path);
             if (item.IsAvailable) Inspector.Painter.StartPainting();
             ShowInspectorSection(Inspector.ShowPainter);
@@ -550,7 +558,7 @@ public partial class MainWindow
 
     private void BeginPlacement(string label, Action<Vector3, Vector3?> place)
     {
-        Inspector.Painter.StopPainting();
+        StopPainters();
         SetTool(EditorTool.Select);
         _session.BeginPlacement(label, place);
         SetStatus($"Place {label} · Click a surface or grid · Shift repeats · Esc cancels");
@@ -561,7 +569,11 @@ public partial class MainWindow
     {
         var painter = Inspector.Painter;
         var camera = Workspace.Camera;
-        PainterButton.IsChecked = painter.IsPainting;
+        if (painter.IsPainting)
+        {
+            StopMistPainting();
+            _mistModeSelected = false;
+        }
         camera.FoliageModels = painter.Models;
         camera.FoliageRadius = painter.BrushRadius;
         camera.FoliageDensity = painter.BrushDensity;
@@ -581,7 +593,7 @@ public partial class MainWindow
             SetStatus("Paint the brush in the camera · drag over map surfaces · Esc cancels a stroke");
         }
         camera.FoliagePaintingEnabled = painter.IsPainting;
-        if (_ready) RefreshToolOptions();
+        RefreshPainterToolState();
     }
 
     private async void DropModels()

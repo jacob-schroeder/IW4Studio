@@ -510,10 +510,11 @@ internal sealed class SceneRenderer
             _gl.BindVertexArray(_fxVertexArray);
             _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _fxVertexBuffer);
             for (uint attribute = 0; attribute < 4; attribute++) _gl.EnableVertexAttribArray(attribute);
-            _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)0);
-            _gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)12);
-            _gl.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)24);
-            _gl.VertexAttribPointer(3, 4, VertexAttribPointerType.Float, false, (uint)sizeof(SceneVertex), (void*)32);
+            // FX vertices omit the scene-only sunlight index.
+            _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, (uint)sizeof(FxPreviewVertex), (void*)0);
+            _gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, (uint)sizeof(FxPreviewVertex), (void*)12);
+            _gl.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, (uint)sizeof(FxPreviewVertex), (void*)24);
+            _gl.VertexAttribPointer(3, 4, VertexAttribPointerType.Float, false, (uint)sizeof(FxPreviewVertex), (void*)32);
             _gl.BindVertexArray(0);
             _framebuffer = _gl.GenFramebuffer();
             _colorTexture = _gl.GenTexture();

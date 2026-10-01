@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="using:Material.Icons.Avalonia"
+             x:Class="Iw4Radiant.Views.MistPainterInspector">
+    <StackPanel Spacing="12">
+        <TextBlock Text="Local mist" Classes="panelTitle" />
+        <TextBlock Text="Click for one patch. Drag to place spaced patches; existing mist is skipped."
+                   Classes="caption" TextWrapping="Wrap" />
+        <StackPanel Orientation="Horizontal" Spacing="6">
+            <ToggleButton x:Name="PaintMode" IsChecked="True" Click="Paint_Click" Classes="toolbarButton"
+                          ToolTip.Tip="Paint mist" AutomationProperties.Name="Paint mist">
+                <icons:MaterialIcon Kind="Cloud" Width="16" Height="16" />
+            </ToggleButton>
+            <ToggleButton x:Name="EraseMode" Click="Erase_Click" Classes="toolbarButton"
+                          ToolTip.Tip="Erase painted mist" AutomationProperties.Name="Erase painted mist">
+                <icons:MaterialIcon Kind="Eraser" Width="16" Height="16" />
+            </ToggleButton>
+        </StackPanel>
+        <StackPanel Spacing="4">
+            <TextBlock Text="Spacing" Classes="caption" />
+            <NumericUpDown x:Name="Spacing" Value="160" Minimum="1" Increment="8"
+                           AutomationProperties.Name="Mist spacing"
+                           ToolTip.Tip="Minimum distance between mist placements, in map units." />
+        </StackPanel>
+        <StackPanel Spacing="4">
+            <TextBlock Text="Erase radius" Classes="caption" />
+            <NumericUpDown x:Name="Radius" Value="80" Minimum="1" Increment="8"
+                           AutomationProperties.Name="Mist erase radius" />
+        </StackPanel>
+        <TextBlock Text="The camera FX toggle controls mist preview. Erase affects only mist made with this tool. Each stroke is one undoable edit."
+                   Classes="caption" TextWrapping="Wrap" />
+        <Button x:Name="LibraryButton" Content="FX library…" Classes="panelAction" HorizontalAlignment="Left" />
+        <TextBlock Text="Uses Dense mist from the selected FX library. The preset is created from room_smoke_200 when first needed; the stock effect is preserved."
+                   Classes="caption" TextWrapping="Wrap" />
+    </StackPanel>
+</UserControl>

@@ -57,9 +57,9 @@ public sealed partial class CameraViewport
     {
         if (PhysicsPlacementActive || _session is not { } session || CompiledPreview is not null || CanWalk?.Invoke() == false) return;
         StopGlassShatter();
-        if (session.HasPlacement || FoliagePaintingEnabled)
+        if (session.HasPlacement || FoliagePaintingEnabled || MistPaintingEnabled)
         {
-            InteractionStatusChanged?.Invoke("Finish asset placement or stop Painter before entering Physics placement.");
+            InteractionStatusChanged?.Invoke("Finish asset placement or stop painting before entering Physics placement.");
             return;
         }
         StopWalk();

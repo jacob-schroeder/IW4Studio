@@ -217,8 +217,16 @@ internal sealed class SceneGeometry
         foreach (var entity in document.Entities.Where(entity => PointEntityGeometry.IsPointEntity(entity) &&
                      (!XModelGeometry.IsModel(entity) || editor.ResolveModel?.Invoke(entity.Properties["model"]) is null)))
         {
+            bool selected = selectedObjects.Contains(entity);
+            if (MistPainting.IsPainted(entity) && !selected)
+            {
+                if (editor.MistPaintingActive)
+                    foreach (var line in PointEntityGeometry.GetMistGuideLines(entity))
+                        AddLine(outlines, line.A, line.B, new Vector3(0.55f, 0.78f, 0.82f));
+                continue;
+            }
             bool missingModel = XModelGeometry.IsModel(entity);
-            bool moving = movePreview && selectedObjects.Contains(entity);
+            bool moving = movePreview && selected;
             int glyphStart = all.Count, outlineStart = outlines.Count;
             Vector3 color = missingModel ? Vector3.UnitX :
                 entity.ClassName == "light" ? new(1, 0.85f, 0.35f) :

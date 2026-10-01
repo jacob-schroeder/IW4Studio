@@ -28,9 +28,9 @@ public sealed partial class CameraViewport
         if (WalkMode || _session is not { } session || CompiledPreview is not null || CanWalk?.Invoke() == false) return;
         StopGlassShatter();
         StopPhysicsPlacement();
-        if (session.HasPlacement || FoliagePaintingEnabled)
+        if (session.HasPlacement || FoliagePaintingEnabled || MistPaintingEnabled)
         {
-            InteractionStatusChanged?.Invoke("Finish asset placement or stop Painter before entering Walk.");
+            InteractionStatusChanged?.Invoke("Finish asset placement or stop painting before entering Walk.");
             NavigationModeChanged?.Invoke();
             return;
         }

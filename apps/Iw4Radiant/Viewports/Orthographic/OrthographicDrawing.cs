@@ -28,6 +28,7 @@ internal sealed class OrthographicDrawing
     private static readonly Pen EntityPen = new(Brush("#A29AAE"), 1.5);
     private static readonly Pen FxMarkerPen = new(Brush("#E8B66A"), 1.8);
     private static readonly Pen SoundMarkerPen = new(Brush("#79BCE0"), 1.8);
+    private static readonly Pen MistGuidePen = new(Brush("#8CC7D1"), 1.4);
     private static readonly Pen MissingModelPen = new(Brush("#7A0000"), 1.5);
     private static readonly Pen TargetPen = new(Brush("#6DB8C4"), 1.2);
     private static readonly Pen VehiclePathPen = new(VehiclePathBrush, 2);
@@ -86,6 +87,17 @@ internal sealed class OrthographicDrawing
             {
                 Vector3 origin = EditorSession.EntityOrigin(entity);
                 bool selected = scene.Selection.Contains(entity);
+                if (MistPainting.IsPainted(entity) && !selected)
+                {
+                    if (scene.MistPaintingActive)
+                    {
+                        Point guide = _projection.ToScreen(origin);
+                        context.DrawEllipse(null, MistGuidePen, guide, 3, 3);
+                        context.DrawLine(MistGuidePen, guide - new Vector(5, 0), guide + new Vector(5, 0));
+                        context.DrawLine(MistGuidePen, guide - new Vector(0, 5), guide + new Vector(0, 5));
+                    }
+                    continue;
+                }
                 bool missingModel = false;
                 if (XModelGeometry.IsModel(entity))
                 {

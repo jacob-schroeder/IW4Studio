@@ -30,6 +30,7 @@ internal sealed class EditorScene(EditorSession session)
     private DestructiblePreviewSettings? _destructiblePreviewSettings;
     internal Func<string, XModelSource?>? ResolveModel { get; set; }
     internal Func<string, MaterialSource?>? ResolveMaterial { get; set; }
+    internal bool MistPaintingActive { get; set; }
     internal string? Notice { get; private set; }
     internal long ModelPreviewRevision { get; private set; }
     internal MapDocument Document { get { EnsureCurrent(); return _document ?? throw new InvalidOperationException("Scene is unavailable."); } }

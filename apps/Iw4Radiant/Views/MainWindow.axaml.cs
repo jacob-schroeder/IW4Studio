@@ -42,6 +42,7 @@ public partial class MainWindow : Window
             return linker is null ? null : Path.Combine(Path.GetDirectoryName(linker)!, "bootstrap", "ps3");
         });
         InitializeAuthoring();
+        InitializePainterTools();
         var gridViews = Workspace.GridViews;
         foreach (var view in gridViews)
         {
@@ -148,8 +149,13 @@ public partial class MainWindow : Window
 
     private void RefreshToolOptions()
     {
-        bool painting = Inspector.Painter.IsPainting;
+        bool painting = Inspector.Painter.IsPainting || Workspace.Camera.MistPaintingEnabled;
         PainterOptions.IsVisible = painting;
+        PainterOptions.Text = Workspace.Camera.MistPaintingEnabled
+            ? Inspector.MistPainter.IsErasing
+                ? "Mist · Drag to erase painted patches · Esc cancels a stroke"
+                : "Mist · Click for one patch, drag for spaced patches · Esc cancels a stroke"
+            : "Painter · Drag over camera surfaces to paint · Esc cancels a stroke";
         CreationOptions.IsVisible = !painting && (_session.Tool is EditorTool.Terrain or EditorTool.Select);
         CreationOptions.IsEnabled = _session.Tool == EditorTool.Terrain ||
             _session.SelectionVolumeMode != SelectionVolumeMode.None || _session.Selection.Count == 0;
@@ -182,7 +188,7 @@ public partial class MainWindow : Window
     }
     private void SetTool(EditorTool tool)
     {
-        if (!_activatingFoliage) Inspector.Painter.StopPainting();
+        if (!_activatingFoliage) StopPainters();
         FinishGestures();
         if (_session.HasPlacement) _session.CancelPlacement();
         if (tool != EditorTool.Select) _session.SelectionVolumeMode = SelectionVolumeMode.None;
@@ -212,7 +218,8 @@ public partial class MainWindow : Window
     private void ToggleTool(EditorTool tool) => SetTool(_session.Tool == tool ? EditorTool.Select : tool);
     private void ActivateTool(EditorTool tool)
     {
-        if (_session.Tool != tool || _session.HasPlacement || Workspace.Camera.FoliagePaintingEnabled) SetTool(tool);
+        if (_session.Tool != tool || _session.HasPlacement || Workspace.Camera.FoliagePaintingEnabled ||
+            Workspace.Camera.MistPaintingEnabled) SetTool(tool);
     }
     private void Undo_Click(object? sender, RoutedEventArgs e) { FinishGestures(); _session.Undo(); }
     private void Redo_Click(object? sender, RoutedEventArgs e) { FinishGestures(); _session.Redo(); }
@@ -314,10 +321,16 @@ public partial class MainWindow : Window
     private void Console_Click(object? sender, RoutedEventArgs e) => Workspace.ShowConsole();
     private void Painter_Click(object? sender, RoutedEventArgs e)
     {
-        if (_dialogs.BlocksInput) return;
-        if (PainterButton.IsChecked == true) Inspector.Painter.StartPainting(Workspace.Models.SelectedModel);
-        else Inspector.Painter.StopPainting();
-        PainterButton.IsChecked = Inspector.Painter.IsPainting;
+        if (_dialogs.BlocksInput || _painterHoldOpened)
+        {
+            _painterHoldOpened = false;
+            RefreshPainterToolState();
+            return;
+        }
+        if (PainterButton.IsChecked != true) StopPainters();
+        else if (_mistModeSelected) StartMistPainting();
+        else Inspector.Painter.StartPainting(Workspace.Models.SelectedModel);
+        RefreshPainterToolState();
         ShowInspectorSection(Inspector.ShowPainter);
     }
     private void Prefabs_Click(object? sender, RoutedEventArgs e) => Workspace.ShowPrefabs();
@@ -493,11 +506,11 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
-        if (e.Key == Key.Escape && Workspace.Camera.FoliagePaintingEnabled)
+        if (e.Key == Key.Escape && (Workspace.Camera.FoliagePaintingEnabled || Workspace.Camera.MistPaintingEnabled))
         {
             Workspace.Camera.FinishGesture(cancel: true);
-            Inspector.Painter.StopPainting();
-            SetStatus("Foliage painting cancelled.");
+            StopPainters();
+            SetStatus("Painter stroke cancelled.");
             e.Handled = true;
             return;
         }

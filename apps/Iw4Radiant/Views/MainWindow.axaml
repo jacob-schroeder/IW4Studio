@@ -178,9 +178,30 @@
                 <ToggleButton x:Name="SculptTool" Classes="toolbarButton" Click="SculptTool_Click" ToolTip.Tip="Sculpt terrain (V)" AutomationProperties.Name="Sculpt terrain">
                     <materialIcons:MaterialIcon Kind="Brush" Width="16" Height="16" />
                 </ToggleButton>
-                <ToggleButton x:Name="PainterButton" Classes="toolbarButton" Click="Painter_Click" ToolTip.Tip="Painter brush · paint models and prefabs across camera surfaces" AutomationProperties.Name="Painter brush">
-                    <materialIcons:MaterialIcon Kind="Spray" Width="16" Height="16" />
-                </ToggleButton>
+                <StackPanel Orientation="Horizontal">
+                    <ToggleButton x:Name="PainterButton" Classes="toolbarButton" Click="Painter_Click"
+                                  ToolTip.Tip="Paint models and prefabs · hold for painter tools" AutomationProperties.Name="Paint models and prefabs">
+                        <materialIcons:MaterialIcon x:Name="PainterIcon" Kind="Spray" Width="16" Height="16" />
+                        <FlyoutBase.AttachedFlyout>
+                            <Flyout Placement="Bottom">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Button Classes="toolbarButton" Click="ModelPainter_Click" ToolTip.Tip="Paint models and prefabs"
+                                            AutomationProperties.Name="Paint models and prefabs">
+                                        <materialIcons:MaterialIcon Kind="Spray" Width="16" Height="16" />
+                                    </Button>
+                                    <Button Classes="toolbarButton" Click="MistPainter_Click" ToolTip.Tip="Paint local mist"
+                                            AutomationProperties.Name="Paint local mist">
+                                        <materialIcons:MaterialIcon Kind="Cloud" Width="16" Height="16" />
+                                    </Button>
+                                </StackPanel>
+                            </Flyout>
+                        </FlyoutBase.AttachedFlyout>
+                    </ToggleButton>
+                    <Button Classes="toolbarButton" Click="PainterTools_Click" ToolTip.Tip="Painter tools"
+                            AutomationProperties.Name="Painter tools">
+                        <materialIcons:MaterialIcon Kind="ChevronDown" Width="12" Height="16" />
+                    </Button>
+                </StackPanel>
                 <Border Classes="toolbarSeparator" />
                </StackPanel>
                <StackPanel Classes="toolbarGroup">

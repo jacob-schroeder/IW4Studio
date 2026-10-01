@@ -289,7 +289,7 @@ public partial class MainWindow
             if (!ReferenceEquals(_destructibleEntity, entity))
             {
                 if (!Workspace.Camera.WalkMode) FinishGestures();
-                Inspector.Painter.StopPainting();
+                StopPainters();
                 if (_session.HasPlacement) _session.CancelPlacement();
                 StopEmitterPreview("Destructible preview · map unchanged.");
                 _destructiblePlaying = false;

@@ -26,9 +26,9 @@ public sealed partial class CameraViewport
     {
         if (_session is not { } session || CompiledPreview is not null || CanWalk?.Invoke() == false) return;
         StopGlassShatter();
-        if (session.HasPlacement || FoliagePaintingEnabled)
+        if (session.HasPlacement || FoliagePaintingEnabled || MistPaintingEnabled)
         {
-            InteractionStatusChanged?.Invoke("Finish asset placement or stop Painter before Shatter.");
+            InteractionStatusChanged?.Invoke("Finish asset placement or stop painting before Shatter.");
             return;
         }
         if (!CameraGlassShatterSimulation.CanStart(session))

@@ -26,6 +26,14 @@ public partial class FxSoundBrowser : UserControl
     internal event Action? PreviewStopRequested;
     internal event Action<string>? SourceLoaded;
 
+    internal void IncludeFx(string name)
+    {
+        if (IsSoundBrowser || SourceDirectory is null || _assets.Any(asset => !asset.IsSound && asset.Name == name)) return;
+        _assets = _assets.Append(new FxSoundAsset(name, false))
+            .OrderBy(asset => asset.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+        FilterAssets(force: true);
+    }
+
     internal void ShowReference(string name, bool browseAlternatives = false)
     {
         SearchBox.Text = browseAlternatives ? "" : name;

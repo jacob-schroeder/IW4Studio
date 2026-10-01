@@ -58,7 +58,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         PointerReleased += OnPointerReleased;
         PointerExited += (_, _) =>
         {
-            if (!_paintingFoliage) FoliageBrushChanged?.Invoke(null);
+            if (!_paintingFoliage && !_paintingMist) FoliageBrushChanged?.Invoke(null);
             if (_dragPointer is null) Cursor = null;
         };
         PointerCaptureLost += (_, _) => { if (_dragPointer is not null) FinishGesture(cancel: true); };
@@ -207,6 +207,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         {
             if (_foliagePaintingEnabled == value) return;
             if (_paintingFoliage) FinishGesture(cancel: true);
+            if (value && MistPaintingEnabled) MistPaintingEnabled = false;
             _foliagePaintingEnabled = value;
             if (_dragPointer is null) Cursor = null;
             if (!value) FoliageBrushChanged?.Invoke(null);
@@ -536,6 +537,8 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         var pointer = _dragPointer;
         bool paintingFoliage = _paintingFoliage;
         bool foliageChanged = _foliageChanged;
+        bool paintingMist = _paintingMist;
+        bool mistChanged = _mistChanged;
         _transform = null;
         _sweep = null;
         _cone = null;
@@ -545,6 +548,9 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         _foliagePrefabsNeedRefresh = false;
         _foliageSurfaceDocument = null;
         _lastFoliageStamp = null;
+        _paintingMist = _mistChanged = false;
+        _mistSurfaceDocument = null;
+        _lastMistStep = null;
         _foliagePreview.Clear();
         _renderer.SetFoliagePreview(_foliagePreview);
         _painted.Clear();
@@ -561,6 +567,13 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
             else session.CompleteEdit(foliageChanged);
             InteractionStatusChanged?.Invoke(cancel ? "Painter stroke cancelled." :
                 foliageChanged ? "Painter stroke completed." : "No assets were placed.");
+        }
+        if (paintingMist && _session is { } mistSession)
+        {
+            if (cancel) mistSession.CancelEdit();
+            else mistSession.CompleteEdit(mistChanged);
+            InteractionStatusChanged?.Invoke(cancel ? "Mist stroke cancelled." :
+                mistChanged ? "Mist stroke completed." : "No mist patches changed.");
         }
     }
 
@@ -647,6 +660,12 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         _flyMovement.Stop();
         try
         {
+            if (MistPaintingEnabled && e.KeyModifiers == KeyModifiers.None)
+            {
+                BeginMistStroke(session, e.Pointer, point);
+                e.Handled = true;
+                return;
+            }
             if (FoliagePaintingEnabled && e.KeyModifiers == KeyModifiers.None)
             {
                 BeginFoliageStroke(session, e.Pointer, point);
@@ -746,14 +765,20 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         try
         {
             Point position = e.GetPosition(this);
-            if (!WalkMode) UpdateFoliageBrush(position);
+            if (!WalkMode)
+            {
+                if (MistPaintingEnabled) UpdateMistBrush(position);
+                else UpdateFoliageBrush(position);
+            }
             if (_dragPointer is null)
             {
                 UpdateHoverCursor(position, e.KeyModifiers);
                 return;
             }
             if (!ReferenceEquals(e.Pointer, _dragPointer)) return;
-            if (_paintingFoliage)
+            if (_paintingMist)
+                ContinueMistStroke(position);
+            else if (_paintingFoliage)
                 ContinueFoliageStroke(position);
             else if (_sweep is { } sweep)
                 UpdateSweep(sweep, position);
@@ -793,6 +818,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         if (_session is { } session && CompiledPreview is null && !PhysicsPlacementActive &&
             !GlassShatterActive && !WalkMode && !session.HasPlacement &&
             !(FoliagePaintingEnabled && modifiers == KeyModifiers.None) &&
+            !(MistPaintingEnabled && modifiers == KeyModifiers.None) &&
             !modifiers.HasFlag(KeyModifiers.Shift) && new Rect(Bounds.Size).Contains(point))
         {
             if (session.Tool == EditorTool.Select &&
@@ -823,7 +849,8 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
             Avalonia.Vector fromPress = point - _pressPoint;
             bool showMenu = !WalkMode && _dragButton == MouseButton.Right &&
                 !_navigationMoved && fromPress.SquaredLength < 16;
-            if (_paintingFoliage) ContinueFoliageStroke(point);
+            if (_paintingMist) ContinueMistStroke(point);
+            else if (_paintingFoliage) ContinueFoliageStroke(point);
             else if (_sweep is { } sweep) UpdateSweep(sweep, point);
             else if (_cone is { } cone) UpdateCone(cone, point);
             else if (_transform is { } transform) UpdateTransform(transform, point);
@@ -1082,7 +1109,8 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     {
         hit = normal = default;
         if (_session is not { } session || !new Rect(Bounds.Size).Contains(point)) return false;
-        MapDocument surfaces = includeModels ? session.Scene.Document : _foliageSurfaceDocument ?? session.Scene.Document;
+        MapDocument surfaces = includeModels ? session.Scene.Document :
+            _mistSurfaceDocument ?? _foliageSurfaceDocument ?? session.Scene.Document;
         var (origin, direction) = _navigation.PickRay((float)(point.X / Math.Max(1, Bounds.Width) * 2 - 1),
             (float)(1 - point.Y / Math.Max(1, Bounds.Height) * 2), Aspect);
         bool found = includeModels

@@ -264,7 +264,7 @@ internal static class CameraObjectMenu
 
         bool CanStartPhysics()
         {
-            if (session.HasPlacement || viewport.FoliagePaintingEnabled) return false;
+            if (session.HasPlacement || viewport.FoliagePaintingEnabled || viewport.MistPaintingEnabled) return false;
             return CameraPrefabPlacementSimulation.CanStart(session) &&
                 session.Selection.Items.OfType<MapEntity>().All(entity => entity.ClassName is "misc_model" or "script_model");
         }

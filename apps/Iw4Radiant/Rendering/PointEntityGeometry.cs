@@ -15,6 +15,22 @@ internal static class PointEntityGeometry
         return MapBrush.CreateBox(bounds.Min, bounds.Max, "");
     }
 
+    internal static IEnumerable<(Vector3 A, Vector3 B)> GetMistGuideLines(MapEntity entity)
+    {
+        Vector3 origin = EditorSession.EntityOrigin(entity);
+        const float radius = 5;
+        yield return (origin - Vector3.UnitX * radius, origin + Vector3.UnitX * radius);
+        yield return (origin - Vector3.UnitY * radius, origin + Vector3.UnitY * radius);
+        yield return (origin - Vector3.UnitZ * radius, origin + Vector3.UnitZ * radius);
+        for (int index = 0; index < 8; index++)
+        {
+            float angle = index * MathF.Tau / 8;
+            float nextAngle = (index + 1) * MathF.Tau / 8;
+            yield return (origin + new Vector3(MathF.Cos(angle), MathF.Sin(angle), 0) * radius,
+                origin + new Vector3(MathF.Cos(nextAngle), MathF.Sin(nextAngle), 0) * radius);
+        }
+    }
+
     internal static bool TryRadiusBounds(MapEntity entity, out (Vector3 Min, Vector3 Max) bounds)
     {
         bounds = default;
