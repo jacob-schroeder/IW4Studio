@@ -19,7 +19,7 @@
             </MenuItem>
             <MenuItem Header="_Edit">
                 <MenuItem x:Name="UndoMenu" Header="_Undo" Click="Undo_Click" InputGesture="Ctrl+Z" />
-                <MenuItem x:Name="RedoMenu" Header="_Redo" Click="Redo_Click" InputGesture="Ctrl+Shift+Z" />
+                <MenuItem x:Name="RedoMenu" Header="_Redo" Click="Redo_Click" InputGesture="Ctrl+Y" />
                 <Separator />
                 <MenuItem Header="_Duplicate selection" Click="Duplicate_Click" InputGesture="Space" />
                 <MenuItem Header="_Delete selection" Click="Delete_Click" InputGesture="Delete" />
@@ -129,7 +129,8 @@
                 <MenuItem Header="Open .d3dbsp preview" Click="OpenBspPreview_Click" />
             </MenuItem>
             <MenuItem Header="_Help">
-                <MenuItem Header="_Controls and prototype scope" Click="Help_Click" />
+                <MenuItem Header="_User Guide" Click="UserGuide_Click" />
+                <MenuItem Header="_Controls" Click="Help_Click" />
             </MenuItem>
         </Menu>
         <Border x:Name="EditorToolbar" Grid.Row="1" BorderBrush="#404247" BorderThickness="0,0,0,1" Padding="6,4">
@@ -151,7 +152,7 @@
                 <Button x:Name="UndoToolbar" Classes="toolbarButton" Click="Undo_Click" ToolTip.Tip="Undo (Ctrl/Cmd+Z)" AutomationProperties.Name="Undo">
                     <materialIcons:MaterialIcon Kind="Undo" Width="16" Height="16" />
                 </Button>
-                <Button x:Name="RedoToolbar" Classes="toolbarButton" Click="Redo_Click" ToolTip.Tip="Redo (Ctrl/Cmd+Shift+Z)" AutomationProperties.Name="Redo">
+                <Button x:Name="RedoToolbar" Classes="toolbarButton" Click="Redo_Click" ToolTip.Tip="Redo (Ctrl/Cmd+Y)" AutomationProperties.Name="Redo">
                     <materialIcons:MaterialIcon Kind="Redo" Width="16" Height="16" />
                 </Button>
                 <Button Classes="toolbarButton" Click="Duplicate_Click" ToolTip.Tip="Duplicate selection (Space)" AutomationProperties.Name="Duplicate selection">
@@ -163,6 +164,9 @@
                 <Border Classes="toolbarSeparator" />
                </StackPanel>
                <StackPanel Classes="toolbarGroup">
+                <ToggleButton x:Name="BrushTool" Classes="toolbarButton" Click="BrushTool_Click" ToolTip.Tip="Create brush (Q)" AutomationProperties.Name="Create brush">
+                    <materialIcons:MaterialIcon Kind="Brush" Width="16" Height="16" />
+                </ToggleButton>
                 <ToggleButton x:Name="FaceTool" Classes="toolbarButton" Click="FaceTool_Click" ToolTip.Tip="Select faces (S)" AutomationProperties.Name="Select faces">
                     <materialIcons:MaterialIcon Kind="VectorPolygon" Width="16" Height="16" />
                 </ToggleButton>
@@ -176,7 +180,7 @@
                     <materialIcons:MaterialIcon Kind="Terrain" Width="16" Height="16" />
                 </ToggleButton>
                 <ToggleButton x:Name="SculptTool" Classes="toolbarButton" Click="SculptTool_Click" ToolTip.Tip="Sculpt terrain (V)" AutomationProperties.Name="Sculpt terrain">
-                    <materialIcons:MaterialIcon Kind="Brush" Width="16" Height="16" />
+                    <materialIcons:MaterialIcon Kind="Shovel" Width="16" Height="16" />
                 </ToggleButton>
                 <StackPanel Orientation="Horizontal">
                     <ToggleButton x:Name="PainterButton" Classes="toolbarButton" Click="Painter_Click"

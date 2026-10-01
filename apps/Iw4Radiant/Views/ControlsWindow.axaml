@@ -1,0 +1,141 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="Iw4Radiant.Views.ControlsWindow"
+        Title="Controls" Width="704" Height="710" MinWidth="680" MinHeight="460"
+        Background="#22252A" Foreground="#E6E9EE" FontSize="12"
+        WindowStartupLocation="CenterOwner" KeyDown="Window_KeyDown">
+    <Window.Styles>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Foreground" Value="#AFB7C2" />
+        </Style>
+        <Style Selector="TextBlock.sectionTitle">
+            <Setter Property="Foreground" Value="#AFB7C2" />
+            <Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="Margin" Value="0,0,0,11" />
+        </Style>
+        <Style Selector="Border.keycap">
+            <Setter Property="Background" Value="#353C46" />
+            <Setter Property="BorderBrush" Value="#3D444E" />
+            <Setter Property="BorderThickness" Value="1,1,1,2" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="MinWidth" Value="23" />
+            <Setter Property="MinHeight" Value="25" />
+        </Style>
+        <Style Selector="Border.keycap > TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TabItem.controlMode">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="13,8" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#E6E9EE" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter x:Name="PART_ContentPresenter"
+                                          Content="{TemplateBinding Header}"
+                                          ContentTemplate="{TemplateBinding HeaderTemplate}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="TabItem.controlMode:pointerover">
+            <Setter Property="Background" Value="#363E49" />
+        </Style>
+        <Style Selector="TabItem.controlMode:selected">
+            <Setter Property="Background" Value="#344962" />
+            <Setter Property="Foreground" Value="#B4D3FF" />
+            <Setter Property="FontWeight" Value="Medium" />
+        </Style>
+        <Style Selector="TabItem.controlMode:focus-visible">
+            <Setter Property="BorderBrush" Value="#B4D3FF" />
+        </Style>
+    </Window.Styles>
+    <Grid RowDefinitions="Auto,*,Auto">
+        <Border BorderBrush="#3D444E" BorderThickness="0,0,0,1" Padding="24,20,24,17">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Border Width="34" Height="34" CornerRadius="8" Background="#292E35"
+                        VerticalAlignment="Center">
+                    <materialIcons:MaterialIcon Kind="KeyboardOutline" Width="20" Height="20" />
+                </Border>
+                <StackPanel Spacing="3">
+                    <TextBlock Text="Controls" FontSize="19" FontWeight="Medium" />
+                    <TextBlock Text="Keyboard and mouse reference" Classes="muted" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+        <TabControl Grid.Row="1" SelectedIndex="0" AutomationProperties.Name="Control mode">
+            <TabControl.Template>
+                <ControlTemplate>
+                    <Grid RowDefinitions="Auto,*">
+                        <Border Padding="24,18,24,0">
+                            <ItemsPresenter x:Name="PART_ItemsPresenter"
+                                            ItemsPanel="{TemplateBinding ItemsPanel}" />
+                        </Border>
+                        <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Row="1"
+                                          HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                                          Content="{TemplateBinding SelectedContent}"
+                                          ContentTemplate="{TemplateBinding SelectedContentTemplate}" />
+                    </Grid>
+                </ControlTemplate>
+            </TabControl.Template>
+            <TabControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" Spacing="4" />
+                </ItemsPanelTemplate>
+            </TabControl.ItemsPanel>
+            <TabItem Classes="controlMode" AutomationProperties.Name="Editor">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <materialIcons:MaterialIcon Kind="CursorDefaultOutline" Width="15" Height="15" />
+                        <TextBlock Text="Editor" />
+                    </StackPanel>
+                </TabItem.Header>
+                <ScrollViewer x:Name="EditorContent" HorizontalScrollBarVisibility="Disabled"
+                              Foreground="#E6E9EE" FontSize="12" FontWeight="Normal"
+                              VerticalScrollBarVisibility="Auto" />
+            </TabItem>
+            <TabItem Classes="controlMode" AutomationProperties.Name="Fly">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <materialIcons:MaterialIcon Kind="AxisArrow" Width="15" Height="15" />
+                        <TextBlock Text="Fly" />
+                    </StackPanel>
+                </TabItem.Header>
+                <ScrollViewer x:Name="FlyContent" HorizontalScrollBarVisibility="Disabled"
+                              Foreground="#E6E9EE" FontSize="12" FontWeight="Normal"
+                              VerticalScrollBarVisibility="Auto" />
+            </TabItem>
+            <TabItem Classes="controlMode" AutomationProperties.Name="Walk">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <materialIcons:MaterialIcon Kind="ShoePrint" Width="15" Height="15" />
+                        <TextBlock Text="Walk" />
+                    </StackPanel>
+                </TabItem.Header>
+                <ScrollViewer x:Name="WalkContent" HorizontalScrollBarVisibility="Disabled"
+                              Foreground="#E6E9EE" FontSize="12" FontWeight="Normal"
+                              VerticalScrollBarVisibility="Auto" />
+            </TabItem>
+        </TabControl>
+        <Border Grid.Row="2" BorderBrush="#3D444E" BorderThickness="0,1,0,0" Padding="24,12">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="15">
+                <TextBlock Text="Shortcuts follow the active view." Classes="muted" />
+                <TextBlock x:Name="PlatformLabel" Grid.Column="1" Classes="muted" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

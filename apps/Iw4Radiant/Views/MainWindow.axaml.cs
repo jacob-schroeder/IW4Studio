@@ -150,6 +150,8 @@ public partial class MainWindow : Window
     private void RefreshToolOptions()
     {
         bool painting = Inspector.Painter.IsPainting || Workspace.Camera.MistPaintingEnabled;
+        BrushTool.IsChecked = !painting && !_session.HasPlacement && _session.Tool == EditorTool.Select &&
+            _session.SelectionVolumeMode == SelectionVolumeMode.None;
         PainterOptions.IsVisible = painting;
         PainterOptions.Text = Workspace.Camera.MistPaintingEnabled
             ? Inspector.MistPainter.IsErasing
@@ -210,6 +212,7 @@ public partial class MainWindow : Window
             _ => "Drag in a grid to create a brush when nothing is selected. Shift-click or Shift-drag to select/deselect; Esc clears selection."
         });
     }
+    private void BrushTool_Click(object? sender, RoutedEventArgs e) => SetTool(EditorTool.Select);
     private void TerrainTool_Click(object? sender, RoutedEventArgs e) => ToggleTool(EditorTool.Terrain);
     private void SculptTool_Click(object? sender, RoutedEventArgs e) => ToggleTool(EditorTool.Sculpt);
     private void FaceTool_Click(object? sender, RoutedEventArgs e) => ToggleTool(EditorTool.Face);
@@ -406,36 +409,11 @@ public partial class MainWindow : Window
     private async void Save_Click(object? sender, RoutedEventArgs e) => await _files.SaveAsync(false);
     private async void SaveAs_Click(object? sender, RoutedEventArgs e) => await _files.SaveAsync(true);
 
-    private async void Help_Click(object? sender, RoutedEventArgs e) => await _dialogs.MessageAsync("Iw4Radiant controls",
-        "Workspace: use View for two/four views and XY/XZ/YZ. Ctrl/Cmd+Tab cycles the 2D plane; Ctrl/Cmd+Space maximizes/restores the active view. Toolbar toggles show materials and the inspector. Drag dividers to resize.\n" +
-        "Inspector: Selection, Surface and Entity tabs keep related controls together. Terrain appears for terrain tools or selections. Revert discards un-applied field changes; Apply edits the map.\n" +
-        "Q/Esc: default brush workflow · S: faces · E: vertices · X: clipper · T: terrain · V: sculpt. Click an active tool again to leave it.\n" +
-        "Selection: Shift-click selects/deselects. Shift-drag paints selection or deselection, starting with the first object. Plain left-drag draws a brush when nothing is selected; otherwise it moves the selected geometry. Escape clears selection.\n" +
-        "Surfaces: choose Face and Shift-click in the camera. Surface adjusts shift, repeat size, rotation and skew; Fit, Axial and Auto Caulk apply immediately. Texture lock follows brush transforms.\n" +
-        "Vertices: drag projected corner or edge-midpoint handles in any grid view. Overlapping depth vertices move together and the hidden axis stays fixed. Shift-click toggles handle vertices. Invalid/collapsed brush edits are rejected.\n" +
-        "Clipper: select brushes, drag a line in a grid view, choose Split/Keep left/Keep right, then Apply or Enter. Cancel or Escape discards the preview.\n" +
-        "Terrain: create/sculpt in XY; choose Raise/lower, Smooth or Flatten. Shift lowers. Select vertices for exact Smooth/Flatten, or two whole patches to Stitch their adjoining edges.\n" +
-        "Camera: Shift-click selects; right-click lists overlapping objects and their materials. Right-drag orbits; Shift+right-drag or middle-drag pans; scroll zooms. Hold right and use WASD to move, Q/E down/up. End frames selection in camera and 2D views.\n" +
-        "Fly: enable Fly in the camera header, then use WASD to move, Q/E down/up, right-drag to look, and Shift for speed. Scroll moves forward/back. Escape returns to orbit. Movement keys apply only while the camera is focused.\n" +
-        "Walk: enable Walk for approximate standing player traversal. WASD moves, right-drag looks, Space jumps, R/Reset returns to entry, and Escape restores the editor camera. Losing focus pauses; click the camera to resume. Editing the scene leaves Walk. Brushes, player clips and solid terrain/patches collide, including hidden geometry; models require authored player clips. Swimming, stance changes, sprint, mantle, ladders and moving entities are unsupported.\n" +
-        "Lights: select a light and open Entity for color, radius and intensity. Expand Target and cone to create a spotlight target. The camera bulb button toggles lighting and shadows.\n" +
-        "Environment: open the sun tab to author sunlight with Apply/Revert and to assign different sky materials to world brush faces. Drag the sun direction control to aim; Apply commits. Skies can enclose selected geometry and remain independent materials.\n" +
-        "Materials: click a thumbnail to repaint selected faces or geometry immediately and use it for new geometry. Explicit face selections take priority over whole brushes. In Use combines map materials with search. Preview shows image details and Size adjusts the tiles.\n" +
-        "Grid: [ decreases and ] increases. Keys 1–9 choose 1, 2, 4, 8, 16, 32, 64, 256 and 512. The grid list also includes 0.25, 0.5 and 128. F opens visibility filters; M opens map statistics.\n" +
-        "Classic toolbar: Modify mirrors flip/rotate, texture projection, CSG and patch commands. CT/PT select through the map; Touching/Inside use Base and Depth as a finite selection volume. Axis locks constrain movement. Cubic clipping, alpha preview and quick category visibility affect only the editor view.\n" +
-        "Space duplicates; Delete removes; Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z redoes.\n\n" +
-        "Models and prefabs: open Create or the asset browser tabs. Choose Place, then click a camera surface or grid; Shift repeats and Escape cancels. Models support surface alignment, Drop, Find and Replace. Prefabs use native .map files with Edit source, Reload, Make unique and Explode.\n" +
-        "Player collision: select model props and use right-click → Create player clip from models, or Create → Player clip, to fit editable brushes to solid collision geometry in one undoable edit. Where the mesh supports it, smaller sections follow bends more closely. Models without native collision source use an outer visual hull. Dense hulls are simplified automatically. Review and adjust the resulting brushes; existing clips are not replaced. The same Create menu still draws custom clip brushes or converts selected world brushes. Magenta outlines mark clip volumes. Choose a material thumbnail to resume ordinary brush creation.\n" +
-        "Geometry: Create opens native patches, bevels, caps, cylinders, arches and stairs; select a curve to refine or edit its control points.\n" +
-        "Organization: use Layers for native layer/group authoring, hide/freeze/isolate and restore. Hidden objects are excluded from viewports; frozen objects cannot be selected or edited.\n" +
-        "Terrain detail: fill or brush-paint vertex color and alpha, add a blend overlay with an available alpha material, or project a native mesh decal from a selected brush face.\n" +
-        "Gameplay: Entity contains verified IW4 spawns, triggers and script objects. Select a source and destination to connect target to targetname; links are visible in the viewports.\n\n" +
-        "This editor uses iwmap 4 source. Unrecognized primitives are preserved on save. " +
-        "IW4 material JSON color maps, DDS and PNG/JPEG/BMP previews are supported; PS3 material programs are not executed. " +
-        "Materials without a matching image remain unavailable. Unresolved ordinary map surfaces use a tiled DEFAULT fallback; unavailable skies remain omitted. " +
-        "Lighting previews light_point_linear point/spot lights and authored world/Stage sunlight with shadows. Stage ambient scales the editor's base fill; use compiled BSP preview for baked sky diffuse and bounced light. Select a Stage to edit its sunlight and ambient in the Entity inspector. Sky surfaces use available IW4 sky cubemaps. Custom falloff assets are not previewed. " +
-        "Build → Build PS3 map compiles a saved map into .d3dbsp and .ff using D3dbspLinker. " +
-        Compilation.MapCompiler.Scope);
+    private async void UserGuide_Click(object? sender, RoutedEventArgs e) =>
+        await _dialogs.MessageAsync("User Guide", "TBD");
+
+    private async void Help_Click(object? sender, RoutedEventArgs e) =>
+        await _dialogs.ShowModalAsync(() => new ControlsWindow().ShowDialog<object?>(this));
 
     private void OnEditorKeyDown(object? sender, KeyEventArgs e)
     {
@@ -529,8 +507,8 @@ public partial class MainWindow : Window
         if (e.Source is Control focused && IsTextEntry(focused)) return;
         if (command && e.Key == Key.Space) { Workspace.ToggleMaximize(); e.Handled = true; return; }
         if (command && e.Key == Key.Tab) { Workspace.CyclePlane(); e.Handled = true; return; }
-        if (command && e.Key == Key.Z) { if (shift) Redo_Click(this, e); else Undo_Click(this, e); e.Handled = true; return; }
-        if (command && e.Key == Key.Y) { Redo_Click(this, e); e.Handled = true; return; }
+        if (command && !shift && e.Key == Key.Z) { Undo_Click(this, e); e.Handled = true; return; }
+        if (command && !shift && e.Key == Key.Y) { Redo_Click(this, e); e.Handled = true; return; }
         if (command || e.KeyModifiers.HasFlag(KeyModifiers.Alt)) return;
         if (e.Key == Key.Space && e.Source is Control source && IsButtonInput(source)) return;
         switch (e.Key)
