@@ -158,12 +158,18 @@ float waterHeight(vec2 uv)
 
 void main()
 {
-    // Derivatives must precede alpha discard and divergent lighting branches.
-    vec3 sunCoordinate = (uSunViewProjection * vec4(vPosition, 1.0)).xyz * 0.5 + 0.5;
-    vec3 receiverPlane = cross(dFdx(sunCoordinate), dFdy(sunCoordinate));
-    vec2 sunDepthGradient = abs(receiverPlane.z) > 1e-20
-        ? -receiverPlane.xy / receiverPlane.z : vec2(0.0);
-    vec3 localReceiverPlane = cross(dFdx(vPosition), dFdy(vPosition));
+    // Lit draws calculate derivatives before any discard or divergent lighting branch.
+    vec3 sunCoordinate = vec3(0.0);
+    vec2 sunDepthGradient = vec2(0.0);
+    vec3 localReceiverPlane = vec3(0.0);
+    if (uLit)
+    {
+        sunCoordinate = (uSunViewProjection * vec4(vPosition, 1.0)).xyz * 0.5 + 0.5;
+        vec3 receiverPlane = cross(dFdx(sunCoordinate), dFdy(sunCoordinate));
+        sunDepthGradient = abs(receiverPlane.z) > 1e-20
+            ? -receiverPlane.xy / receiverPlane.z : vec2(0.0);
+        localReceiverPlane = cross(dFdx(vPosition), dFdy(vPosition));
+    }
     if (uCubicClip && any(greaterThan(abs(vPosition - uCubicClipCenter), vec3(uCubicClipDistance))))
         discard;
     vec4 surface = uTextured && uIgnoreVertexColor ? vec4(1.0) : vColor;

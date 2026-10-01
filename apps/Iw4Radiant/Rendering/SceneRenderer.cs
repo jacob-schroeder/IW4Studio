@@ -1,6 +1,7 @@
 using IW4.Render.EditorPreview;
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Avalonia;
 using Avalonia.OpenGL;
@@ -86,6 +87,10 @@ internal sealed class SceneRenderer
     private string? _mapFxAssetRoot;
     private string? _mapFxSourceNotice, _mapFxPreviewNotice;
     private readonly Dictionary<string, MaterialSource?> _fxMaterials = new(StringComparer.Ordinal);
+    private readonly List<FxPreviewVertex> _mapFxFrameVertices = [];
+    private readonly List<(MaterialSource Source, uint Texture, int Start, int Count)> _mapFxFrameDraws = [];
+    private readonly Dictionary<string, (MaterialSource? Source, uint Texture, string? Notice)> _mapFxFrameMaterials =
+        new(StringComparer.Ordinal);
     private bool _mapFxPaused;
     private readonly List<string> _waterMaterials = [];
     private readonly Dictionary<string, (Vector3 Min, Vector3 Max)> _waterMaterialBounds = new(StringComparer.Ordinal);
@@ -347,6 +352,9 @@ internal sealed class SceneRenderer
     {
         _sceneDirty = true;
         _mapFxPreviews.Clear();
+        _mapFxFrameVertices.Clear();
+        _mapFxFrameDraws.Clear();
+        _mapFxFrameMaterials.Clear();
         _fxMaterials.Clear();
         _mapFxSourceNotice = _mapFxPreviewNotice = null;
         if (_mapFxAssetRoot != sourceDirectory || emitters.Count == 0)
@@ -1018,11 +1026,13 @@ internal sealed class SceneRenderer
         Vector3 eye, Matrix4x4 viewProjection)
     {
         if (_mapFxPreviews.Count == 0) return;
+        _mapFxFrameVertices.Clear();
+        _mapFxFrameDraws.Clear();
+        _mapFxFrameMaterials.Clear();
         const int maximumSprites = 512;
         int remaining = maximumSprites;
         bool capped = false;
         string? materialNotice = null;
-        var materials = new Dictionary<string, MaterialSource?>(StringComparer.Ordinal);
         var ordered = _mapFxPreviews
             .OrderByDescending(item => IsNearView(item.Origin, viewProjection))
             .ThenBy(item => Vector3.DistanceSquared(item.Origin, eye)).ToArray();
@@ -1047,39 +1057,49 @@ internal sealed class SceneRenderer
                          variationSeed: (uint)System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(owner)))
             {
                 remaining = Math.Max(0, remaining - (vertices.Length + 5) / 6);
-                if (!materials.TryGetValue(material, out MaterialSource? source))
+                if (!_mapFxFrameMaterials.TryGetValue(material, out var prepared))
                 {
-                    source = ResolveFxMaterial(material, resolveMaterial);
+                    MaterialSource? source = ResolveFxMaterial(material, resolveMaterial);
+                    uint texture = 0;
+                    string? notice = null;
                     if (source is null)
-                    {
-                        source = null;
-                        materialNotice ??= $"FX material '{material}' is unavailable; load its materials/images catalog.";
-                    }
-                    materials.Add(material, source);
+                        notice = $"FX material '{material}' is unavailable; load its materials/images catalog.";
+                    // Distortion pixels encode scene offsets, not visible RGBA.
+                    else if (source.Surface.SortKey == (int)MaterialSortKey.Distortion)
+                        notice = "Heat distortion is omitted from this preview.";
+                    else
+                        texture = _materialTextures.GetFxTexture(gl, material, resolveMaterial, out notice);
+                    prepared = (source, texture, texture == 0 ? notice : null);
+                    _mapFxFrameMaterials.Add(material, prepared);
                 }
-                if (source is null) continue;
-                // Distortion colorMap pixels encode offsets into the resolved scene,
-                // not visible color. Drawing them as RGBA paints red/green over the FX.
-                if (source.Surface.SortKey == (int)MaterialSortKey.Distortion)
+                materialNotice ??= prepared.Notice;
+                if (prepared.Source is not { } drawSource || prepared.Texture == 0) continue;
+                int start = _mapFxFrameVertices.Count;
+                _mapFxFrameVertices.AddRange(vertices);
+                // Merge only adjacent identical draws: translucent ordering stays intact.
+                if (_mapFxFrameDraws.Count > 0 && _mapFxFrameDraws[^1] is var previous &&
+                    ReferenceEquals(previous.Source, drawSource) && previous.Texture == prepared.Texture)
                 {
-                    materialNotice ??= "Heat distortion is omitted from this preview.";
-                    continue;
+                    _mapFxFrameDraws[^1] = (previous.Source, previous.Texture, previous.Start,
+                        previous.Count + vertices.Length);
                 }
-                uint texture = _materialTextures.GetFxTexture(gl, material, resolveMaterial, out string? textureNotice);
-                if (texture == 0)
-                {
-                    materialNotice ??= textureNotice;
-                    continue;
-                }
+                else _mapFxFrameDraws.Add((drawSource, prepared.Texture, start, vertices.Length));
+            }
+        }
+        if (_mapFxFrameVertices.Count > 0)
+        {
+            // Upload once for the map FX pass; reuse the staging lists next frame.
+            fixed (FxPreviewVertex* pointer = CollectionsMarshal.AsSpan(_mapFxFrameVertices))
+                gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(_mapFxFrameVertices.Count * sizeof(FxPreviewVertex)),
+                    pointer, BufferUsageARB.DynamicDraw);
+            foreach (var (source, texture, start, count) in _mapFxFrameDraws)
+            {
                 SceneMaterialDrawing.Apply(gl, source.Surface, _alphaTestLocation, _premultiplyAlphaLocation,
                     _ignoreVertexColorLocation);
                 gl.Disable(EnableCap.CullFace);
                 gl.Uniform1(_ignoreVertexColorLocation, 0);
                 gl.BindTexture(TextureTarget.Texture2D, texture);
-                fixed (FxPreviewVertex* pointer = vertices)
-                    gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(FxPreviewVertex)), pointer,
-                        BufferUsageARB.DynamicDraw);
-                gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)vertices.Length);
+                gl.DrawArrays(PrimitiveType.Triangles, start, (uint)count);
             }
         }
         _mapFxPreviewNotice = string.Join("; ", new[]
