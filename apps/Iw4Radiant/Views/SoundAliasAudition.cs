@@ -129,10 +129,9 @@ internal sealed class SoundAliasAudition : IDisposable
         try
         {
             SoundEmitterPlayback? profile = settings?.Resolve(alias);
-            return (SoundPreviewPitch.Apply(audio, profile?.Pitch ?? 1), profile, null);
+            return (audio, profile, null);
         }
-        catch (Exception exception) when (FileOperationErrors.IsExpected(exception) ||
-            exception is PlatformNotSupportedException or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
         {
             return ([], null, $"Cannot preview this sound: {exception.Message}");
         }

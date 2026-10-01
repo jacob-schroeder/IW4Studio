@@ -19,7 +19,8 @@ internal sealed class AudioPreviewEngine : IDisposable
     private bool _disposed;
 
     internal AudioPreviewEngine() : this(OperatingSystem.IsMacOS()
-        ? new MacAudioPreviewBackend() : new UnavailablePreviewBackend()) { }
+        ? new MacAudioPreviewBackend()
+        : OperatingSystem.IsWindows() ? new WindowsAudioPreviewBackend() : new UnavailablePreviewBackend()) { }
 
     private AudioPreviewEngine(IPreviewAudioBackend backend) => _backend = backend;
 
@@ -85,7 +86,7 @@ internal sealed class AudioPreviewEngine : IDisposable
                     return new PreparedPreview(null, loaded.Profile, loaded.Error);
                 try
                 {
-                    PreparedSound sound = _backend.Prepare(loaded.Audio);
+                    PreparedSound sound = _backend.Prepare(loaded.Audio, loaded.Profile?.Pitch ?? 1);
                     lock (_sync)
                     {
                         if (_disposed || generation != _generation)
@@ -102,7 +103,8 @@ internal sealed class AudioPreviewEngine : IDisposable
                 }
                 catch (Exception exception) when (exception is ArgumentException or InvalidDataException or
                     InvalidOperationException or PlatformNotSupportedException or DllNotFoundException or
-                    EntryPointNotFoundException or BadImageFormatException or IOException or ObjectDisposedException)
+                    EntryPointNotFoundException or BadImageFormatException or IOException or ObjectDisposedException or
+                    UnauthorizedAccessException or OverflowException)
                 {
                     return new PreparedPreview(null, loaded.Profile,
                         $"Cannot preview this sound: {exception.Message}");
@@ -244,15 +246,15 @@ internal interface IPreviewAudioBackend : IDisposable
 {
     bool IsSupported { get; }
     string? UnavailableReason { get; }
-    PreparedSound Prepare(byte[] audio);
+    PreparedSound Prepare(byte[] audio, float pitch);
     PreviewVoice Play(PreparedSound sound, bool looping, float volume, float pan);
 }
 
 internal sealed class UnavailablePreviewBackend : IPreviewAudioBackend
 {
     public bool IsSupported => false;
-    public string UnavailableReason => "Sound preview playback currently requires macOS.";
-    public PreparedSound Prepare(byte[] audio) => throw new PlatformNotSupportedException(UnavailableReason);
+    public string UnavailableReason => "Sound preview playback currently requires macOS or Windows.";
+    public PreparedSound Prepare(byte[] audio, float pitch) => throw new PlatformNotSupportedException(UnavailableReason);
     public PreviewVoice Play(PreparedSound sound, bool looping, float volume, float pan) =>
         throw new PlatformNotSupportedException(UnavailableReason);
     public void Dispose() { }

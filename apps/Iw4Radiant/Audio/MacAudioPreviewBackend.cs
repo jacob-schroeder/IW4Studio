@@ -24,11 +24,11 @@ internal sealed class MacAudioPreviewBackend : IPreviewAudioBackend
         ? "Sound preview playback currently requires macOS."
         : Support.IsValueCreated ? Support.Value : null;
 
-    public unsafe PreparedSound Prepare(byte[] audio)
+    public unsafe PreparedSound Prepare(byte[] audio, float pitch)
     {
         string? support = Support.Value;
         if (support is not null) throw new PlatformNotSupportedException(support);
-        SoundPreviewPitch.EnginePcm pcm = SoundPreviewPitch.DecodeForEngine(audio);
+        SoundPreviewPitch.EnginePcm pcm = SoundPreviewPitch.DecodeForEngine(SoundPreviewPitch.Apply(audio, pitch));
         // Subsequent preparations allocate only independent PCM buffers. The graph is fixed at first prepare.
         nint format;
         lock (_sync)
