@@ -558,8 +558,11 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         _paintingMist = _mistChanged = false;
         _mistSurfaceDocument = null;
         _lastMistStep = null;
-        _foliagePreview.Clear();
-        _renderer.SetFoliagePreview(_foliagePreview);
+        if (_foliagePreview.Count != 0)
+        {
+            _foliagePreview.Clear();
+            _renderer.SetFoliagePreview(_foliagePreview);
+        }
         _painted.Clear();
         _paintSelecting = null;
         // Clear ownership before releasing capture or refreshing the editor: either
