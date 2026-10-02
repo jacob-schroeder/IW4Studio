@@ -1,0 +1,12 @@
+{
+  "id": "workspace.overview",
+  "title": "Find your way around the workspace",
+  "summary": "Use the camera, grid views, asset browser, and inspector together while editing a source map.",
+  "outcome": "You can choose a working view, find a selected object, and reach the controls for its current tool.",
+  "keywords": ["workspace", "camera", "grid", "inspector", "four views"],
+  "sections": [
+    {"id": "views", "title": "Choose a view", "paragraphs": ["The Camera shows the map in 3D. Top (XY), Front (XZ), and Side (YZ) are editable grid views. The active view receives view commands."], "steps": [{"title": "Arrange the views", "text": "Choose View > Two views or Four views. Click the view you want to work in, then use View > Maximize / restore active view for more room.", "keys": ["{mod}+Space"]}, {"title": "Change a grid plane", "text": "Click a grid view's plane label to cycle XY, XZ, and YZ, or choose a plane from View > 2D plane."}, {"title": "Find geometry", "text": "Select an object and choose View > Frame selection in all views. Use Frame all views if the selection is empty or off screen.", "keys": ["End"]}], "image": "Images/workspace/workspace.png", "caption": "The camera and grid views share the current map and selection."},
+    {"id": "panels", "title": "Use the panels", "paragraphs": ["The asset browser supplies the active material. The inspector changes with the selected object and tool; it contains context controls such as geometry, terrain, surface, and organization settings."], "steps": [{"title": "Show a panel", "text": "Use View > Show / hide asset browser or View > Show / hide inspector. Select an object or activate a tool to expose its relevant inspector controls."}], "tips": ["If a field is disabled, select the kind of object named in that panel's hint or switch to the appropriate editing tool."]}
+  ],
+  "related": ["files.maps", "camera.navigation", "selection.basics", "reference.controls"]
+}

@@ -1,0 +1,98 @@
+{
+  "topics": [
+    {
+      "id": "getting-started",
+      "title": "Getting started",
+      "articles": [
+        "Articles/getting-started/workspace-overview.json",
+        "Articles/getting-started/files-maps.json",
+        "Articles/getting-started/camera-navigation.json",
+        "Articles/getting-started/selection-basics.json",
+        "Articles/getting-started/organization-visibility.json"
+      ]
+    },
+    {
+      "id": "geometry",
+      "title": "Geometry",
+      "articles": [
+        "Articles/geometry/brush-create.json",
+        "Articles/geometry/brush-clip.json",
+        "Articles/geometry/brush-vertices.json",
+        "Articles/geometry/brush-csg.json",
+        "Articles/geometry/terrain-create.json",
+        "Articles/geometry/terrain-sculpt.json",
+        "Articles/geometry/terrain-paint.json",
+        "Articles/geometry/geometry-curves.json",
+        "Articles/geometry/geometry-bridge.json"
+      ]
+    },
+    {
+      "id": "materials",
+      "title": "Materials & surfaces",
+      "articles": [
+        "Articles/materials/materials-browse.json",
+        "Articles/materials/materials-surfaces.json",
+        "Articles/materials/materials-decals.json"
+      ]
+    },
+    {
+      "id": "entities",
+      "title": "Entities & objects",
+      "articles": [
+        "Articles/entities/models.json",
+        "Articles/entities/prefabs.json",
+        "Articles/entities/gameplay.json",
+        "Articles/entities/player-clip.json",
+        "Articles/entities/factions.json",
+        "Articles/entities/foliage.json",
+        "Articles/entities/destructibles.json",
+        "Articles/entities/weapons.json"
+      ]
+    },
+    {
+      "id": "environment",
+      "title": "Lighting & environment",
+      "articles": [
+        "Articles/environment/lighting.json",
+        "Articles/environment/sun-sky.json",
+        "Articles/environment/fog-preview.json",
+        "Articles/environment/water.json",
+        "Articles/environment/audio.json",
+        "Articles/environment/effects.json"
+      ]
+    },
+    {
+      "id": "scripting",
+      "title": "Map scripts",
+      "articles": [
+        "Articles/scripting/generated.json"
+      ]
+    },
+    {
+      "id": "building",
+      "title": "Build & troubleshoot",
+      "articles": [
+        "Articles/building/bsp.json",
+        "Articles/building/fastfile.json",
+        "Articles/building/preview.json",
+        "Articles/building/troubleshooting.json"
+      ]
+    },
+    {
+      "id": "reference",
+      "title": "Reference",
+      "articles": [
+        "Articles/reference/reference-controls.json",
+        "Articles/reference/reference-glossary.json"
+      ]
+    }
+  ],
+  "paths": [
+    "Paths/first-session.json",
+    "Paths/detail-map.json",
+    "Paths/build-map.json"
+  ],
+  "tours": [
+    "Tours/workspace.json"
+  ]
+}

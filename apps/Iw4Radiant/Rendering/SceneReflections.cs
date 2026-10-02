@@ -180,11 +180,11 @@ internal sealed class SceneReflections
         }
     }
 
-    internal bool Bind(GL gl, int probe)
+    internal bool Bind(GL gl, int probe, uint fallbackCube)
     {
         uint texture = probe > 0 && probe < _textures.Count ? _textures[probe] : 0;
         gl.ActiveTexture(TextureUnit.Texture5);
-        gl.BindTexture(TextureTarget.TextureCubeMap, texture);
+        gl.BindTexture(TextureTarget.TextureCubeMap, texture != 0 ? texture : fallbackCube);
         gl.ActiveTexture(TextureUnit.Texture0);
         return texture != 0;
     }

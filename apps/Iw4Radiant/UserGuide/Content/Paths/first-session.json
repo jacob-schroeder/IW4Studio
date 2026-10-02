@@ -1,0 +1,16 @@
+{
+  "id": "first-session",
+  "title": "Your first session",
+  "summary": "Learn the workspace, make a brush, and find the build workflow. Keep the guide beside your editor.",
+  "steps": [
+    {"id":"workspace","title":"Find your way","article":"workspace.overview","checkpoint":"I can find the camera, grid, asset browser, and inspector."},
+    {"id":"files","title":"Start and save a map","article":"files.maps","checkpoint":"I have saved an editable .map file."},
+    {"id":"assets","title":"Load materials","article":"materials.browse","checkpoint":"I can find and choose a material from my library."},
+    {"id":"brush","title":"Draw your first brush","article":"brush.create","checkpoint":"I can see my brush in both the grid and camera."},
+    {"id":"camera","title":"Move around your map","article":"camera.navigation","checkpoint":"I can enter Fly and return to Editor mode."},
+    {"id":"selection","title":"Select and transform","article":"selection.basics","checkpoint":"I can select, move, duplicate, and undo a change."},
+    {"id":"surfaces","title":"Work with surfaces","article":"materials.surfaces","checkpoint":"I can select a face and adjust its texture."},
+    {"id":"light","title":"Add a light","article":"environment.lighting","section":"local","checkpoint":"I have placed and configured a light."},
+    {"id":"build","title":"Build and read output","article":"building.bsp","checkpoint":"I can find the build output and identify any reported errors."}
+  ]
+}

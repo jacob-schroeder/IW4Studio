@@ -12,6 +12,7 @@ namespace Iw4Radiant.Views;
 public partial class MainWindow : Window
 {
     private readonly EditorSession _session = new();
+    private readonly RadiantSettings _settings = RadiantSettings.Load();
     private readonly EditorDialogs _dialogs;
     private readonly MapFileCommands _files;
     private bool _ready;
@@ -102,7 +103,7 @@ public partial class MainWindow : Window
         RefreshEditor();
         InitializePlatformMenu();
         SetStatus("Browse an asset folder and choose a material, then draw a brush or terrain in a grid view.");
-        Closed += (_, _) => { _mapScriptsWindow?.Close(); Workspace.Camera.StopPhysicsPlacement(); Workspace.Camera.StopGlassShatter(); Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); Workspace.Models.ReleaseImages(); _previewAudio.Dispose(); };
+        Closed += (_, _) => { _userGuideWindow?.Close(); _mapScriptsWindow?.Close(); Workspace.Camera.StopPhysicsPlacement(); Workspace.Camera.StopGlassShatter(); Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); Workspace.Models.ReleaseImages(); _previewAudio.Dispose(); };
         Deactivated += (_, _) => { Workspace.FinishFogEdit(); Workspace.Camera.PausePhysicsPlacement(); Workspace.Camera.FinishGesture(cancel: true); };
         AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
     }
@@ -412,9 +413,6 @@ public partial class MainWindow : Window
     private async void Open_Click(object? sender, RoutedEventArgs e) => await _files.OpenAsync();
     private async void Save_Click(object? sender, RoutedEventArgs e) => await _files.SaveAsync(false);
     private async void SaveAs_Click(object? sender, RoutedEventArgs e) => await _files.SaveAsync(true);
-
-    private async void UserGuide_Click(object? sender, RoutedEventArgs e) =>
-        await _dialogs.MessageAsync("User Guide", "TBD");
 
     private async void Help_Click(object? sender, RoutedEventArgs e) =>
         await _dialogs.ShowModalAsync(() => new ControlsWindow().ShowDialog<object?>(this));

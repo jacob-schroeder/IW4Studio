@@ -1,0 +1,6 @@
+{
+  "id": "materials.decals", "title": "Project decals onto brush faces", "summary": "Place an alpha-blended decal on selected faces without replacing their base material.", "outcome": "A clipped, editable decal mesh appears on each selected face.", "keywords": ["decal", "project", "face", "alpha", "material"],
+  "sections": [
+    {"id": "project", "title": "Project a decal", "steps": [{"title": "Select target faces", "text": "Activate Face mode (S) and select one or more brush faces where the decal should appear.", "keys": ["S"]}, {"title": "Choose the decal material", "text": "In the material browser choose an alpha-blended material. Open Project decal in the inspector and confirm the chosen material is shown."}, {"title": "Set placement", "text": "Enter Width, Height, Rotation, and horizontal or vertical offset, then click Project onto selected faces. A decal is centered on each face and clipped at its edges."}, {"title": "Inspect and adjust", "text": "Check Camera. The resulting mesh remains selectable, transformable, and editable; Undo if the material or projection was wrong.", "keys": ["{mod}+Z"]}], "tips": ["If projection is unavailable, verify that Face mode has brush faces selected and the active material supports alpha blending."]}
+  ], "related": ["materials.browse", "materials.surfaces", "terrain.paint", "brush.vertices"]
+}

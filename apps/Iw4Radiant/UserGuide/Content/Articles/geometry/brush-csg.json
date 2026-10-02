@@ -1,0 +1,6 @@
+{
+  "id": "brush.csg", "title": "Merge or hollow brushes", "summary": "Use the Modify menu's constructive solid geometry commands on selected brushes.", "outcome": "Selected brushes are merged or hollowed, and the result is checked before further editing.", "keywords": ["CSG", "merge", "hollow", "brush"],
+  "sections": [
+    {"id": "commands", "title": "Apply CSG", "steps": [{"title": "Select whole brushes", "text": "Use Editor selection rather than Face or Vertex mode. Select two adjacent brushes for Merge, or one box brush for Hollow."}, {"title": "Run a command", "text": "Choose Modify > CSG > Merge to combine the adjacent brushes into one convex brush, or Hollow to turn the selected box into enclosing brush geometry. Hollow uses the current Grid size for wall thickness."}, {"title": "Inspect the result", "text": "Check the new faces in Camera and the grid views. If the result is not the enclosure or combined shape you wanted, Undo, adjust the source brushes, and retry.", "keys": ["{mod}+Z"]}], "tips": ["Merge needs a convex result. If it cannot merge, choose two adjacent boxes that form a convex shape."]}
+  ], "related": ["brush.create", "brush.clip", "selection.basics"]
+}

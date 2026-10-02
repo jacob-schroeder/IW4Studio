@@ -1,0 +1,13 @@
+{
+  "id":"detail-map","title":"Develop your map","summary":"Shape geometry, add objects, and give the scene atmosphere. Work on a saved practice map.",
+  "steps":[
+    {"id":"shape","title":"Shape and clip brushes","article":"brush.clip","checkpoint":"I can preview and commit a cut, then undo it."},
+    {"id":"terrain","title":"Create and sculpt terrain","article":"terrain.sculpt","checkpoint":"I can reshape terrain using the available sculpt tools."},
+    {"id":"models","title":"Place models","article":"entities.models","checkpoint":"I can place a loaded model and adjust its transform."},
+    {"id":"prefabs","title":"Reuse prefabs","article":"entities.prefabs","checkpoint":"I understand how to place and inspect a prefab."},
+    {"id":"gameplay","title":"Add gameplay entities","article":"entities.gameplay","checkpoint":"I can place a supported gameplay entity and find its properties."},
+    {"id":"sky","title":"Set sunlight and sky","article":"environment.sun-sky","checkpoint":"I can find the sunlight and sky settings for my map."},
+    {"id":"audio","title":"Place sound","article":"environment.audio","checkpoint":"I can configure a sound emitter and understand preview limits."},
+    {"id":"organize","title":"Organize the scene","article":"organization.visibility","checkpoint":"I can use groups, layers, and visibility to focus my work."}
+  ]
+}

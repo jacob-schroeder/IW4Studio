@@ -1,0 +1,40 @@
+{
+  "id": "entities.player-clip",
+  "title": "Author player collision",
+  "summary": "Create invisible, editable brushes that block player movement.",
+  "outcome": "Clip brushes shaped around playable space.",
+  "keywords": [
+    "player clip",
+    "collision",
+    "invisible",
+    "models"
+  ],
+  "sections": [
+    {
+      "id": "create",
+      "title": "Choose a clip workflow",
+      "steps": [
+        {
+          "title": "Fit around models",
+          "text": "Select model instances and choose Create → Player clip → Create player clip from models. Review the selected generated brushes: dense hulls may be simplified, and models without native collision use an outer visual hull."
+        },
+        {
+          "title": "Draw manually",
+          "text": "Choose Draw player-clip brush, drag a brush in a grid view, set Base and Depth, then shape it around obstacles or boundaries."
+        },
+        {
+          "title": "Convert existing brushes",
+          "text": "Select world brushes and choose Make selected brushes player clip. Their faces become invisible player collision while the brushes remain editable."
+        }
+      ],
+      "tips": [
+        "If automatic fitting reports that the physics library could not initialize, draw clip manually.",
+        "Check clip outlines and walkable gaps before building; a broad outer hull may block more space than intended."
+      ]
+    }
+  ],
+  "related": [
+    "entities.models",
+    "brush.create"
+  ]
+}

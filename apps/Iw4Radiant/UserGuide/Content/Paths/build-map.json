@@ -1,0 +1,12 @@
+{
+  "id":"build-map","title":"Prepare a map build","summary":"Save source, review scripts and collision, build, and inspect the compiled result.",
+  "steps":[
+    {"id":"save","title":"Save the map source","article":"files.maps","section":"save","checkpoint":"My editable map is saved at the intended path."},
+    {"id":"collision","title":"Review player collision","article":"entities.player-clip","checkpoint":"I have reviewed collision around the placed models."},
+    {"id":"scripts","title":"Inspect generated scripts","article":"scripting.generated","checkpoint":"I can find the scripts generated from my map."},
+    {"id":"bsp","title":"Compile a .d3dbsp","article":"building.bsp","checkpoint":"I have reviewed the compilation output."},
+    {"id":"preview","title":"Inspect the compiled map","article":"building.preview","checkpoint":"I understand the distinction between source editing and compiled preview."},
+    {"id":"package","title":"Package a fastfile","article":"building.fastfile","checkpoint":"I know which asset library and output folder the build uses."},
+    {"id":"recover","title":"Resolve build problems","article":"building.troubleshooting","checkpoint":"I can follow a build error back to its source."}
+  ]
+}

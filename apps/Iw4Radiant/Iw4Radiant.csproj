@@ -32,6 +32,7 @@
 
   <ItemGroup>
     <AvaloniaResource Include="../../Resources/iw4radiant_logo.png" Link="Resources/iw4radiant_logo.png" />
+    <AvaloniaResource Include="UserGuide/Content/**/*" />
     <None Update="Shaders/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="../../src/Authoring/IW4.Formats/SourceFormat/Material/Shaders/ocean-waves.hlsl" Link="Shaders/ocean-waves.hlsl" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="../../src/Authoring/IW4.Formats/SourceFormat/Material/Shaders/ocean-surface.hlsl" Link="Shaders/ocean-surface.hlsl" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

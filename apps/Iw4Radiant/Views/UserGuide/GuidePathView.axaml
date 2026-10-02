@@ -1,0 +1,15 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Iw4Radiant.Views.UserGuide.GuidePathView">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Margin="12,18">
+    <TextBlock Text="LEARNING PATH" Classes="guideMuted" FontSize="11" Margin="8,0,0,10" />
+    <ComboBox Grid.Row="1" x:Name="PathPicker" HorizontalAlignment="Stretch" SelectionChanged="Path_Changed"
+              AutomationProperties.Name="Learning path" />
+    <TextBlock Grid.Row="2" x:Name="PathSummary" TextWrapping="Wrap" Classes="guideMuted" Margin="8,12" />
+    <StackPanel Grid.Row="3" Spacing="7" Margin="8,0,8,14">
+      <ProgressBar x:Name="Progress" Height="4" Minimum="0" Foreground="#8CAEDB" Background="#3A414B" />
+      <TextBlock x:Name="ProgressLabel" Classes="guideMuted" FontSize="11" />
+    </StackPanel>
+    <ListBox Grid.Row="4" x:Name="Steps" Classes="guideList" SelectionChanged="Step_Changed"
+             AutomationProperties.Name="Lesson steps" />
+  </Grid>
+</UserControl>

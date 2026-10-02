@@ -1,0 +1,37 @@
+{
+  "id": "environment.fog-preview",
+  "title": "Use fog and camera previews",
+  "summary": "Author global map fog and use temporary camera image, light, FX, and sound previews.",
+  "outcome": "Map fog is saved while temporary previews help judge the scene without changing it.",
+  "keywords": ["fog", "film", "camera preview", "lights", "fx", "sounds"],
+  "sections": [
+    {
+      "id": "fog",
+      "title": "Author global fog",
+      "steps": [
+        {"title": "Open fog controls", "text": "Choose the fog button above the camera and check Enable fog. Set Start, Half distance, Max opacity, and Fog color while watching the camera approximation."},
+        {"title": "Commit valid values", "text": "The editor applies valid fog changes to the map as you edit. Press Enter or leave a number field to finish that edit; finish color selection by releasing the pointer or leaving the picker. Disable fog to remove the authored global fog values."},
+        {"title": "Resolve an error", "text": "If the panel shows a field or source error, correct the value before building. If controls are out of sync with the current map, refresh the editor before trying again."}
+      ],
+      "tips": ["The camera fog preview approximates the in-game result; Build .ff also checks pending fog values before opening its build window."]
+    },
+    {
+      "id": "film",
+      "title": "Try a temporary film look",
+      "steps": [
+        {"title": "Open Film preview", "text": "Choose the film button above the camera. Adjust Brightness, Contrast, and Desaturation, then use Highlights and Shadows to tint bright and dark image regions."},
+        {"title": "Return to neutral", "text": "Choose Reset in Film preview to restore the default camera image. Film controls affect only the camera view; they are not saved in the map or baked into the build."}
+      ]
+    },
+    {
+      "id": "scene",
+      "title": "Control other scene previews",
+      "steps": [
+        {"title": "Review lights and FX", "text": "Use Lights above the camera to toggle sunlight, point, and spot light preview. Use FX to show placed supported effects; pause or restart their preview with the transport buttons when available."},
+        {"title": "Listen to placed sounds", "text": "Use Sounds above the camera to hear nearby placed sounds as the camera moves. The preview uses camera distance and direction; supported loaded sounds play on macOS."}
+      ],
+      "tips": ["The FX and sound toggles are preview controls and do not edit placed markers. The Lights toggle is unavailable in compiled BSP preview."]
+    }
+  ],
+  "related": ["environment.effects", "environment.audio", "environment.lighting", "building.preview"]
+}

@@ -1,0 +1,54 @@
+{
+  "id": "building.troubleshooting",
+  "title": "Resolve build errors and leak paths",
+  "summary": "Use build diagnostics and imported Radiant pointfiles to locate problems.",
+  "outcome": "A corrected map ready for another build.",
+  "keywords": [
+    "build error",
+    "console",
+    "leak",
+    "lin",
+    "asset"
+  ],
+  "sections": [
+    {
+      "id": "errors",
+      "title": "Follow a build error",
+      "steps": [
+        {
+          "title": "Read the log",
+          "text": "Keep the build window open and read the first actionable error in Build log. Use View → Console output for editor diagnostics. When an object location appears, choose Show in map to select and frame it."
+        },
+        {
+          "title": "Fix the cited input",
+          "text": "Correct the reported brush, entity field, material, model, or missing raw asset. Reopen the build and compile again after changing the map."
+        }
+      ],
+      "tips": [
+        "If Show in map says the object is no longer selectable, inspect visibility and rebuild; the diagnostic refers to the document state used by that build.",
+        "Native glass limits may require smaller panes or fewer distinct glass combinations."
+      ]
+    },
+    {
+      "id": "leaks",
+      "title": "Inspect an existing leak pointfile",
+      "steps": [
+        {
+          "title": "Import evidence",
+          "text": "Choose View → Import leak path (.lin)… and select a Radiant pointfile with one X Y Z position per line."
+        },
+        {
+          "title": "Trace the route",
+          "text": "Use the leak controls to step between points and frame the current point. Inspect nearby sealing geometry and correct the opening."
+        }
+      ],
+      "tips": [
+        "Import displays a supplied leak path; the editor does not detect leaks by itself."
+      ]
+    }
+  ],
+  "related": [
+    "building.bsp",
+    "building.fastfile"
+  ]
+}

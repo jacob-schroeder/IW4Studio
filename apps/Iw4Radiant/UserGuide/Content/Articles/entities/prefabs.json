@@ -1,0 +1,52 @@
+{
+  "id": "entities.prefabs",
+  "title": "Reuse map prefabs",
+  "summary": "Save selected geometry as a prefab, place linked instances, and update their source.",
+  "outcome": "A reusable prefab instance placed in the map.",
+  "keywords": [
+    "prefab",
+    "instance",
+    "reload",
+    "explode"
+  ],
+  "sections": [
+    {
+      "id": "create",
+      "title": "Save and place",
+      "steps": [
+        {
+          "title": "Save reusable content",
+          "text": "Select the map objects, open Create → Prefabs, and choose Save selection…. Name the .map source in the prefab library."
+        },
+        {
+          "title": "Find and place",
+          "text": "Use Folder… if the source library is elsewhere, search for the prefab, then choose Place in view. Click a grid or camera surface; hold Shift for copies and Escape to end placement."
+        }
+      ],
+      "tips": [
+        "Save the map before placing prefab instances so their source can be referenced from the map path."
+      ]
+    },
+    {
+      "id": "maintain",
+      "title": "Edit an instance",
+      "steps": [
+        {
+          "title": "Update linked content",
+          "text": "Select an instance and choose Edit source. Return to the map and choose Reload to refresh the instance from that source."
+        },
+        {
+          "title": "Separate a copy",
+          "text": "Choose Unique… to save a separate source for this instance, or Explode to turn it into editable map objects."
+        }
+      ],
+      "tips": [
+        "If a prefab is missing from the browser, check Folder… and the search filter."
+      ]
+    }
+  ],
+  "related": [
+    "entities.foliage",
+    "files.maps"
+  ]
+}

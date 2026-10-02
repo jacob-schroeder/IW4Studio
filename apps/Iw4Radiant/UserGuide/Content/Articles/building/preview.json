@@ -1,0 +1,40 @@
+{
+  "id": "building.preview",
+  "title": "Inspect compiled map preview",
+  "summary": "Open a built .d3dbsp and compare its compiled surfaces with the current editor map.",
+  "outcome": "A compiled preview with understood visual limits.",
+  "keywords": [
+    "preview",
+    "bsp",
+    "lightmap",
+    "water"
+  ],
+  "sections": [
+    {
+      "id": "open",
+      "title": "Enter compiled preview",
+      "steps": [
+        {
+          "title": "Open compiled data",
+          "text": "Choose Build → Preview last built .d3dbsp after a successful build in this editor session, or Open .d3dbsp preview to choose a local file."
+        },
+        {
+          "title": "Read the banner",
+          "text": "Inspect the preview banner for the BSP filename, relationship to the open map, and any asset, lightmap, water, or renderer notice."
+        },
+        {
+          "title": "Compare deliberately",
+          "text": "Look at BSP surfaces, baked lighting, placed local XModels, sky cubemaps, and supported baked water reflections. Leave compiled preview to resume map editing."
+        }
+      ],
+      "tips": [
+        "The preview does not show compiled model lighting, all material reflections, or PS3 runtime shaders.",
+        "If there is no successful BSP in this session, use Open .d3dbsp preview or build one first."
+      ]
+    }
+  ],
+  "related": [
+    "building.bsp",
+    "environment.water"
+  ]
+}

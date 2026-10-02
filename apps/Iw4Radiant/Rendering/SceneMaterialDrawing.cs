@@ -12,7 +12,7 @@ internal static class SceneMaterialDrawing
         MaterialPreviewDrawing.Apply(gl, state, alphaTestLocation, premultiplyAlphaLocation, ignoreVertexColorLocation);
 
     internal static bool BindShadow(GL gl, int alphaTestLocation, string material,
-        Func<string, MaterialSource?>? resolveMaterial, SceneMaterialTextures textures)
+        Func<string, MaterialSource?>? resolveMaterial, SceneMaterialTextures textures, uint fallbackTexture)
     {
         MaterialSource? source = resolveMaterial?.Invoke(material);
         if (source?.IsWater == true) return false;
@@ -20,13 +20,18 @@ internal static class SceneMaterialDrawing
         if (state is not { HasShadowMapTechnique: true }) return false;
         MaterialPreviewDrawing.ApplyCull(gl, state.ShadowCullFace);
         gl.Uniform1(alphaTestLocation, MaterialPreviewDrawing.AlphaTestCode(state.ShadowAlphaTest));
+        gl.ActiveTexture(TextureUnit.Texture0);
+        uint texture = fallbackTexture;
         if (state.ShadowAlphaTest is not null)
         {
-            gl.ActiveTexture(TextureUnit.Texture0);
-            uint texture = textures.GetTexture(gl, material, resolveMaterial);
-            if (texture == 0) return false;
-            gl.BindTexture(TextureTarget.Texture2D, texture);
+            texture = textures.GetTexture(gl, material, resolveMaterial);
+            if (texture == 0)
+            {
+                gl.BindTexture(TextureTarget.Texture2D, fallbackTexture);
+                return false;
+            }
         }
+        gl.BindTexture(TextureTarget.Texture2D, texture);
         return true;
     }
 

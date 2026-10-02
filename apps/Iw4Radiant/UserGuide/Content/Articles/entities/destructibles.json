@@ -1,0 +1,77 @@
+{
+  "id": "entities.destructibles",
+  "title": "Place destructibles and breakable glass",
+  "summary": "Use supported destructible presets, runtime physics, and brush glass.",
+  "outcome": "Destructible objects with assets and geometry ready for compilation.",
+  "keywords": [
+    "destructible",
+    "glass",
+    "runtime physics",
+    "soccer_ball"
+  ],
+  "sections": [
+    {
+      "id": "presets",
+      "title": "Place a preset",
+      "steps": [
+        {
+          "title": "Load assets",
+          "text": "Open the Destructibles browser and Choose library… with extracted XModels. Search or filter categories; Show unavailable reveals presets that still lack required assets."
+        },
+        {
+          "title": "Place and inspect",
+          "text": "Select an available preset and variant, choose Place destructible, and click a viewport. Select the instance and open Destructible preview in the Entities inspector to choose appearance, Play destruction, or Reset."
+        },
+        {
+          "title": "Inspect supported parts",
+          "text": "Expand Parts to select a part and its Condition when the preset offers them. If the panel says parts do not affect this appearance, choose another appearance; tire deformation requires stock animations and is unavailable in the map model preview."
+        }
+      ],
+      "tips": [
+        "Play destruction changes the editor's appearance preview without editing the map. This preview does not simulate stock animation or physics; that limit does not describe the compiled game's destructible behavior. Review missing assets… for unavailable presets."
+      ]
+    },
+    {
+      "id": "physics",
+      "title": "Use the supported runtime model",
+      "steps": [
+        {
+          "title": "Enable runtime physics",
+          "text": "Place the soccer_ball model from Models, select it, then turn on Runtime physics in the Entities inspector. The selected model compiles as a runtime physics model; uncheck to return to static placement."
+        },
+        {
+          "title": "Keep a simulated position",
+          "text": "When Physics placement is active in the camera, use Drop to start the placement, Reset to return to starting positions, or Keep placement to save the settled positions as one undoable edit. Cancel discards the preview."
+        }
+      ],
+      "tips": [
+        "The current runtime physics control names soccer_ball as its supported preset."
+      ]
+    },
+    {
+      "id": "glass",
+      "title": "Make a breakable pane",
+      "steps": [
+        {
+          "title": "Shape world glass",
+          "text": "Create a thin world brush for the pane and give its visible face an appropriate glass material."
+        },
+        {
+          "title": "Configure breakage",
+          "text": "Select the world brush and choose Brush type → Breakable glass. The existing visible face supplies the intact material; choose a shattered material and physics preset in the dialog."
+        },
+        {
+          "title": "Resolve build errors",
+          "text": "If compilation reports missing materials, load the native material and image in the asset library. If a pane exceeds native geometry limits, split it into smaller panes or adjust its texture scale or shift as reported."
+        }
+      ],
+      "tips": [
+        "Breakable glass requires world brushes; entity-owned brushes are rejected."
+      ]
+    }
+  ],
+  "related": [
+    "entities.models",
+    "building.troubleshooting"
+  ]
+}

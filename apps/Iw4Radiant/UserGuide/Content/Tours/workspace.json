@@ -1,0 +1,11 @@
+{
+  "id":"workspace","title":"A place for every task","summary":"Select a numbered area to learn what it does and open the relevant guide. This diagram summarizes the workspace; your panel arrangement may differ.","image":"Images/workspace/workspace.png",
+  "hotspots":[
+    {"title":"Camera view","description":"Inspect your map in 3D. Editor, Fly, and Walk have different controls; start by learning how to switch between them.","article":"camera.navigation","x":0.22,"y":0.43},
+    {"title":"Grid views","description":"Draw and position geometry in Top, Front, or Side views. A grid footprint and the brush depth together define the solid shape.","article":"brush.create","x":0.61,"y":0.44},
+    {"title":"Inspector","description":"Review the active selection and edit its transforms, surfaces, entity properties, and other tool-specific settings.","article":"selection.basics","x":0.9,"y":0.49},
+    {"title":"Asset browser","description":"Load your material and model libraries, then find assets to use in the map. Related browser tabs cover prefabs and other object types.","article":"materials.browse","x":0.38,"y":0.85},
+    {"title":"Editing tools","description":"Choose brush, face, vertex, clipping, terrain, or painter tools. Keep the active tool and camera mode in mind when using shortcuts.","article":"reference.controls","x":0.283,"y":0.116},
+    {"title":"Build menu","description":"Compile the saved map, inspect the build output, and open a compiled preview. The editable source and compiled result serve different purposes.","article":"building.bsp","x":0.611,"y":0.032}
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "id": "entities.gameplay",
+  "title": "Create gameplay entities and links",
+  "summary": "Place native spawn, trigger, script, and lighting entities and edit their fields.",
+  "outcome": "Gameplay markers and volumes with meaningful links.",
+  "keywords": [
+    "spawn",
+    "trigger",
+    "targetname",
+    "entity",
+    "vehicle"
+  ],
+  "sections": [
+    {
+      "id": "create",
+      "title": "Choose the right entity",
+      "steps": [
+        {
+          "title": "Open the catalog",
+          "text": "Choose Create → Gameplay entities or the Entities inspector tab, expand Create gameplay entity, and search native IW4 entity types."
+        },
+        {
+          "title": "Place a spawn or point",
+          "text": "Pick a mode-specific spawn such as mp_dm_spawn or mp_tdm_spawn, then choose Place entity and click the map. Set Angles to control facing."
+        },
+        {
+          "title": "Create a volume",
+          "text": "For brush triggers such as trigger_multiple or trigger_hurt, first select suitable world brushes, then choose the entity type and Place entity. For trigger_radius, place its bottom-center origin and set positive Radius and Height."
+        }
+      ]
+    },
+    {
+      "id": "fields",
+      "title": "Connect and inspect",
+      "steps": [
+        {
+          "title": "Edit fields",
+          "text": "Select the entity in the Entities tab. Set Name (native targetname), Target (another entity’s targetname), Angles, and any required Spawnflags. Set Damage for trigger_hurt, then Apply gameplay fields."
+        },
+        {
+          "title": "Link selected sources",
+          "text": "Select the source entities, add the destination last as the active selection, then choose Connect to active. Use Disconnect to clear selected source links."
+        }
+      ],
+      "tips": [
+        "Vehicle nodes use Name and Target for route links; select a node to preview the route. Speed and lookahead remain native Entity properties.",
+        "Script-specific fields can be entered in Entity properties as unique key=value lines; keep classname present."
+      ]
+    }
+  ],
+  "related": [
+    "scripting.generated",
+    "entities.factions"
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "id": "entities.models",
+  "title": "Place and manage models",
+  "summary": "Load XModels, place instances, and fit player collision where needed.",
+  "outcome": "A positioned model with deliberate alignment and collision.",
+  "keywords": [
+    "xmodel",
+    "models",
+    "collision",
+    "align",
+    "drop"
+  ],
+  "sections": [
+    {
+      "id": "place",
+      "title": "Choose and position a model",
+      "steps": [
+        {
+          "title": "Load a model library",
+          "text": "Open Create → Models and use Browse raw… to choose the extracted raw asset library. Search XModels and select the model. If Place model is disabled, load a library containing that asset."
+        },
+        {
+          "title": "Place an instance",
+          "text": "Drag the model into a viewport, or choose Place model and click a grid or camera surface. Turn on Align to surface before placement when the model should follow the hit surface."
+        },
+        {
+          "title": "Refine placement",
+          "text": "Select the instance and use the selection transform controls. Drop selection moves selected instances onto a surface; Find instances helps locate copies and Find / replace… changes a chosen model across matching instances."
+        }
+      ]
+    },
+    {
+      "id": "collision",
+      "title": "Add player collision when needed",
+      "steps": [
+        {
+          "title": "Generate editable clip",
+          "text": "Select one or more placed models and choose Create → Player clip → Create player clip from models. Inspect the resulting magenta brush volumes and reshape them to fit play space."
+        },
+        {
+          "title": "Recover from missing collision",
+          "text": "If a model has no native collision source, the tool uses an outer visual hull. If physics cannot initialize, use Draw player-clip brush and shape the volume manually."
+        }
+      ],
+      "tips": [
+        "Visual model placement alone does not guarantee player blocking."
+      ]
+    }
+  ],
+  "related": [
+    "entities.player-clip",
+    "entities.foliage",
+    "selection.basics"
+  ]
+}

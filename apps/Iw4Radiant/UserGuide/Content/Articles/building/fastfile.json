@@ -1,0 +1,40 @@
+{
+  "id": "building.fastfile",
+  "title": "Build a PS3 fastfile",
+  "summary": "Package a saved map and its raw assets into a PS3 map build.",
+  "outcome": "An output folder containing the .ff and matching .pak.",
+  "keywords": [
+    "fastfile",
+    "ff",
+    "pak",
+    "ps3",
+    "build"
+  ],
+  "sections": [
+    {
+      "id": "build",
+      "title": "Package the map",
+      "steps": [
+        {
+          "title": "Save and open build",
+          "text": "Choose Build → Build .ff. The editor applies valid pending fog values and saves the map before opening the build window."
+        },
+        {
+          "title": "Set inputs",
+          "text": "Confirm Asset library points to raw models, materials, textures, FX, and sounds. Choose an Output folder; the builder creates a folder containing the .ff and matching .pak."
+        },
+        {
+          "title": "Run and review",
+          "text": "Choose Build PS3 fastfile. Read the build log and use Show in map if an error identifies a selectable object. After success, choose Preview compiled map for the generated .d3dbsp."
+        }
+      ],
+      "tips": [
+        "If fog fields are invalid, correct them before the build window opens. If the asset library is wrong, choose the raw folder used by your placed assets."
+      ]
+    }
+  ],
+  "related": [
+    "building.bsp",
+    "building.troubleshooting"
+  ]
+}

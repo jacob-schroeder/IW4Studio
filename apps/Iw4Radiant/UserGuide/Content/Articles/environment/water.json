@@ -1,0 +1,54 @@
+{
+  "id": "environment.water",
+  "title": "Create and tune water volumes",
+  "summary": "Draw a water brush from an available appearance and edit its surface motion.",
+  "outcome": "A complete water volume with chosen appearance and motion.",
+  "keywords": [
+    "water",
+    "ocean",
+    "waves",
+    "ripple"
+  ],
+  "sections": [
+    {
+      "id": "draw",
+      "title": "Create a water volume",
+      "steps": [
+        {
+          "title": "Choose an appearance",
+          "text": "Choose Create → Water volume…. If prompted, load an asset library containing water appearances; select one in the picker."
+        },
+        {
+          "title": "Draw the volume",
+          "text": "Drag in the top grid view. Set Base for the bottom and Depth for the water level above it, then inspect the brush in camera and side views."
+        },
+        {
+          "title": "Complete an existing brush",
+          "text": "For a brush with a water face that is not yet a full volume, select it and choose Apply to entire brush in the Surfaces inspector."
+        }
+      ]
+    },
+    {
+      "id": "motion",
+      "title": "Adjust the surface",
+      "steps": [
+        {
+          "title": "Tune appearance",
+          "text": "Select the water volume, open Surfaces → Water, choose Change… for appearance, and adjust tint, Ripple strength, and Ripple speed."
+        },
+        {
+          "title": "Author ocean motion",
+          "text": "Enable Ocean waves if needed, then set wave Height, Wavelength, Speed, and Direction. Choose Apply water to save these material settings."
+        }
+      ],
+      "tips": [
+        "Ripple strength changes shading, not water geometry height. Short ocean wavelengths require more vertices.",
+        "Advanced → Reflection controls the minimum and maximum reflection and its falloff exponent. Use Revert to discard unapplied water field changes."
+      ]
+    }
+  ],
+  "related": [
+    "materials.surfaces",
+    "building.preview"
+  ]
+}

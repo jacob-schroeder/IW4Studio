@@ -1,0 +1,62 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Style Selector="TextBlock.guideMuted, SelectableTextBlock.guideMuted">
+    <Setter Property="Foreground" Value="#AFB7C2" />
+  </Style>
+  <Style Selector="TextBlock.guideHeading">
+    <Setter Property="FontSize" Value="24" /><Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="TextBlock.guideSection">
+    <Setter Property="FontSize" Value="16" /><Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Margin" Value="0,18,0,4" /><Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="Button.guideButton">
+    <Setter Property="Background" Value="#303238" /><Setter Property="BorderBrush" Value="#454850" />
+    <Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="4" />
+    <Setter Property="Padding" Value="10,6" /><Setter Property="MinHeight" Value="30" />
+    <Setter Property="Foreground" Value="#E6E9EE" /><Setter Property="FontSize" Value="12" />
+  </Style>
+  <Style Selector="Button.guideNav, Button.guideMode">
+    <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="4" /><Setter Property="Foreground" Value="#E6E9EE" />
+    <Setter Property="Padding" Value="10,8" /><Setter Property="MinHeight" Value="34" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+  </Style>
+  <Style Selector="Button.guideNav">
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Button.guideNav:pointerover, Button.guideMode:pointerover">
+    <Setter Property="Background" Value="#363E49" />
+  </Style>
+  <Style Selector="Button.guidePrimary, Button.guideNav.active, Button.guideMode.active">
+    <Setter Property="Background" Value="#344962" /><Setter Property="Foreground" Value="#B4D3FF" />
+  </Style>
+  <Style Selector="Border.guideCallout">
+    <Setter Property="Background" Value="#2B333D" /><Setter Property="BorderBrush" Value="#7898C0" />
+    <Setter Property="BorderThickness" Value="2,0,0,0" /><Setter Property="Padding" Value="12" />
+    <Setter Property="CornerRadius" Value="0,4,4,0" /><Setter Property="Margin" Value="0,5,0,5" />
+  </Style>
+  <Style Selector="Border.guideKeycap">
+    <Setter Property="Background" Value="#353C46" /><Setter Property="BorderBrush" Value="#3D444E" />
+    <Setter Property="BorderThickness" Value="1,1,1,2" /><Setter Property="CornerRadius" Value="5" />
+    <Setter Property="Padding" Value="6,4" /><Setter Property="Margin" Value="0,0,5,3" />
+  </Style>
+  <Style Selector="Border.guideKeycap > TextBlock">
+    <Setter Property="FontSize" Value="11" /><Setter Property="FontWeight" Value="Medium" />
+  </Style>
+  <Style Selector="Expander.guideTopic">
+    <Setter Property="Padding" Value="0" /><Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Margin" Value="0,0,0,6" /><Setter Property="HorizontalAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="ListBox.guideList">
+    <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+  </Style>
+  <Style Selector="ListBox.guideList ListBoxItem">
+    <Setter Property="Padding" Value="9,10" /><Setter Property="Margin" Value="0,2" />
+    <Setter Property="CornerRadius" Value="4" />
+  </Style>
+  <Style Selector="ListBox.guideList ListBoxItem:selected">
+    <Setter Property="Background" Value="#344962" /><Setter Property="Foreground" Value="#B4D3FF" />
+  </Style>
+</Styles>

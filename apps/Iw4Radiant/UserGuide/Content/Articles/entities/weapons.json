@@ -1,0 +1,34 @@
+{
+  "id": "entities.weapons",
+  "title": "Place the mounted weapon",
+  "summary": "Place the supported mounted minigun and edit its native fields.",
+  "outcome": "A mounted minigun entity in the map.",
+  "keywords": [
+    "weapon",
+    "turret",
+    "minigun"
+  ],
+  "sections": [
+    {
+      "id": "place",
+      "title": "Place and orient",
+      "steps": [
+        {
+          "title": "Open Weapons",
+          "text": "Choose Create → Weapons and select the mounted minigun. Use Place mounted minigun and click a viewport surface."
+        },
+        {
+          "title": "Set behavior fields",
+          "text": "Select the placed entity, adjust Angles in Gameplay fields, and use Entity properties for native leftarc/rightarc or script fields needed by your map."
+        }
+      ],
+      "tips": [
+        "The Weapons browser currently exposes the mounted minigun placement workflow. A missing preview does not establish that other weapon placement is available."
+      ]
+    }
+  ],
+  "related": [
+    "entities.gameplay",
+    "scripting.generated"
+  ]
+}

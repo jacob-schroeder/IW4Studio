@@ -1,0 +1,12 @@
+{
+  "id": "files.maps",
+  "title": "Create, open, and save source maps",
+  "summary": "Work with editable Radiant .map files and keep source separate from compiled previews.",
+  "outcome": "You have an editable .map saved at the intended path.",
+  "keywords": ["new", "open", "save", "map", "source", "import"],
+  "sections": [
+    {"id": "source", "title": "Start from a source map", "steps": [{"title": "Create or open", "text": "Choose File > New map for an empty document, or File > Open .map… and pick a local Radiant source file.", "keys": ["{mod}+N", "{mod}+O"]}, {"title": "Check the result", "text": "After opening, the views frame the map. If the status reports unsupported primitives, they remain in the document and are preserved on save but are not displayed for editing."}], "tips": ["Opening or creating another map prompts you to save, discard, or cancel when the current document has unsaved changes."]},
+    {"id": "save", "title": "Save the editable map", "steps": [{"title": "Save the document", "text": "Choose File > Save. On the first save, choose a .map path; use Save As… to write a different path.", "keys": ["{mod}+S", "{mod}+Shift+S"]}, {"title": "Resolve a save error", "text": "Read the Cannot save map dialog, correct the path or map content it identifies, and save again. A failed save does not mark the document as saved."}], "paragraphs": ["Build > Open .d3dbsp preview opens a compiled read-only preview; it is not an editable .map import. View > Import leak path (.lin)… overlays a diagnostic leak path and does not add map geometry."]}
+  ],
+  "related": ["workspace.overview", "building.bsp", "building.fastfile", "building.troubleshooting"]
+}

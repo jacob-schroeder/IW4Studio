@@ -1,0 +1,41 @@
+{
+  "id": "scripting.generated",
+  "title": "Read generated map scripts",
+  "summary": "Inspect generated GSC sources, navigate back to authored entities, and find animation helpers.",
+  "outcome": "A clear view of the scripts the map contributes to a build.",
+  "keywords": [
+    "script",
+    "gsc",
+    "source",
+    "animation",
+    "find"
+  ],
+  "sections": [
+    {
+      "id": "inspect",
+      "title": "Read current generated source",
+      "steps": [
+        {
+          "title": "Open scripts",
+          "text": "Choose View → Map Scripts…. Choose a file under Generated files; expand Animation helpers when the map has generated animation sources."
+        },
+        {
+          "title": "Refresh after edits",
+          "text": "Choose Refresh to regenerate source from the current map without compiling or saving. Use Find or Go to line to inspect the read-only source."
+        },
+        {
+          "title": "Return to map",
+          "text": "Select a source location and choose Show in map, or select an entity in the map and choose Entity → Show script. This selects and frames linked source entities when they remain visible and selectable."
+        }
+      ],
+      "tips": [
+        "If Show in map reports a stale map, Refresh first. If an entity is hidden or locked, make it selectable and retry.",
+        "Copy source exports text for inspection; this window does not edit generated GSC."
+      ]
+    }
+  ],
+  "related": [
+    "entities.gameplay",
+    "building.fastfile"
+  ]
+}

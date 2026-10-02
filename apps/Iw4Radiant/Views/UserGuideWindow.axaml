@@ -1,0 +1,82 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:guide="clr-namespace:Iw4Radiant.Views.UserGuide"
+        xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="Iw4Radiant.Views.UserGuideWindow" Title="IW4Radiant · User Guide"
+        Width="1080" Height="820" MinWidth="780" MinHeight="540"
+        Background="#22252A" Foreground="#E6E9EE" FontSize="13" WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <StyleInclude Source="avares://Iw4Radiant/Views/UserGuide/GuideStyles.axaml" />
+  </Window.Styles>
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <Border BorderBrush="#3D444E" BorderThickness="0,0,0,1" Padding="24,20,24,17">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+        <Border Width="34" Height="34" CornerRadius="8" Background="#303741" VerticalAlignment="Center">
+          <icons:MaterialIcon Kind="BookOpenVariant" Width="20" Height="20" Foreground="#B4D3FF" />
+        </Border>
+        <StackPanel Grid.Column="1" Spacing="3">
+          <TextBlock Text="User Guide" FontSize="19" FontWeight="Medium" />
+          <TextBlock Text="Find your way. Build your first map. Keep learning." Classes="guideMuted" FontSize="12" />
+        </StackPanel>
+        <Button Grid.Column="2" Content="Controls" Classes="guideButton" Click="Controls_Click" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+    <Border Grid.Row="1" BorderBrush="#3D444E" BorderThickness="0,0,0,1" Padding="14,10">
+      <Grid ColumnDefinitions="Auto,*,230" ColumnSpacing="12">
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <Button x:Name="LearnButton" Classes="guideMode" Content="Start learning" Tag="learn" Click="Mode_Click" />
+          <Button x:Name="TopicsButton" Classes="guideMode" Content="Topics" Tag="topics" Click="Mode_Click" />
+          <Button x:Name="ExploreButton" Classes="guideMode" Content="Explore workspace" Tag="explore" Click="Mode_Click" />
+        </StackPanel>
+        <TextBox Grid.Column="2" x:Name="SearchBox" PlaceholderText="Search guides…" TextChanged="Search_Changed"
+                 Background="#1C1E23" BorderBrush="#3D444E" FontSize="12" VerticalContentAlignment="Center"
+                 AutomationProperties.Name="Search all guide articles" />
+      </Grid>
+    </Border>
+    <Grid Grid.Row="2" ColumnDefinitions="230,*">
+      <Border Background="#24272D" BorderBrush="#3D444E" BorderThickness="0,0,1,0">
+        <Grid>
+          <Grid x:Name="TopicsPanel" RowDefinitions="Auto,*" IsVisible="False">
+            <CheckBox x:Name="SavedOnly" Content="Saved articles only" Margin="18,10,12,3" FontSize="12"
+                      IsCheckedChanged="SavedOnly_Changed" />
+            <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel x:Name="TopicTree" Spacing="3" Margin="10,6,10,16" />
+            </ScrollViewer>
+          </Grid>
+          <guide:GuidePathView x:Name="PathView" IsVisible="False" />
+          <ScrollViewer x:Name="ExplorePanel" IsVisible="False" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="AreaList" Spacing="5" Margin="12,18" />
+          </ScrollViewer>
+        </Grid>
+      </Border>
+      <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
+        <Border x:Name="ArticleToolbar" BorderBrush="#3D444E" BorderThickness="0,0,0,1" Padding="16,8">
+          <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6">
+            <Button x:Name="BackButton" Content="←" Classes="guideButton" Click="Back_Click" AutomationProperties.Name="Previous article" />
+            <Button x:Name="ForwardButton" Grid.Column="1" Content="→" Classes="guideButton" Click="Forward_Click" AutomationProperties.Name="Next article in history" />
+            <Button x:Name="BookmarkButton" Grid.Column="3" Content="Save article" Classes="guideButton" Click="Bookmark_Click" />
+          </Grid>
+        </Border>
+        <guide:GuideArticleView x:Name="ArticleView" Grid.Row="1" />
+        <guide:GuideWorkspaceView x:Name="WorkspaceView" Grid.Row="1" IsVisible="False" />
+        <Border x:Name="LessonFooter" Grid.Row="2" Background="#282E35" BorderBrush="#3D444E" BorderThickness="0,1,0,0" Padding="20,12" IsVisible="False">
+          <Grid RowDefinitions="Auto,Auto" RowSpacing="10">
+            <CheckBox x:Name="Checkpoint" IsCheckedChanged="Checkpoint_Changed">
+              <TextBlock x:Name="CheckpointText" TextWrapping="Wrap" FontSize="12" />
+            </CheckBox>
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+              <Button x:Name="PreviousStep" Content="← Previous step" Classes="guideButton" Click="PreviousStep_Click" />
+              <TextBlock Grid.Column="1" Text="Mark progress as you try each step in the editor." Classes="guideMuted" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center" />
+              <Button x:Name="NextStep" Grid.Column="2" Content="Next step →" Classes="guideButton guidePrimary" Click="NextStep_Click" />
+            </Grid>
+          </Grid>
+        </Border>
+      </Grid>
+    </Grid>
+    <Border Grid.Row="3" Background="#26292F" BorderBrush="#3D444E" BorderThickness="0,1,0,0" Padding="24,10">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="15">
+        <TextBlock x:Name="StatusText" Classes="guideMuted" FontSize="11" TextWrapping="Wrap" />
+        <TextBlock x:Name="VersionText" Grid.Column="1" Classes="guideMuted" FontSize="11" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

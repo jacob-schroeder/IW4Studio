@@ -1,0 +1,50 @@
+{
+  "id": "environment.audio",
+  "title": "Place and configure map sounds",
+  "summary": "Assign sound aliases to placed markers and control preview and game playback.",
+  "outcome": "Sound emitters with intentional timing and range.",
+  "keywords": [
+    "sound",
+    "audio",
+    "alias",
+    "loop",
+    "range"
+  ],
+  "sections": [
+    {
+      "id": "place",
+      "title": "Choose and assign a sound",
+      "steps": [
+        {
+          "title": "Load the sound library",
+          "text": "Open the Sounds browser and choose the raw library. Search assets and use Preview to audition an available alias."
+        },
+        {
+          "title": "Assign to a marker",
+          "text": "Drag an alias from the Sounds browser into a viewport to place a sound marker. To change an existing marker, select it and choose Set Selected Sound; in the Entities inspector, confirm the reference and Apply reference."
+        }
+      ]
+    },
+    {
+      "id": "playback",
+      "title": "Set game behavior",
+      "steps": [
+        {
+          "title": "Configure playback",
+          "text": "Choose Loop or Play once at map start, then adjust Volume, Pitch, inner and outer hearing ranges, and Channel as needed. Choose Apply sound settings."
+        },
+        {
+          "title": "Review preview",
+          "text": "Enable Sounds above the camera to hear placed emitters; use Reset to discard sound overrides when defaults are preferable."
+        }
+      ],
+      "tips": [
+        "Use the same raw library for sounds and the PS3 fastfile build. An unavailable preview may reflect a missing source alias or unsupported preview asset."
+      ]
+    }
+  ],
+  "related": [
+    "environment.effects",
+    "building.fastfile"
+  ]
+}

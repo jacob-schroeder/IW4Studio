@@ -1,0 +1,69 @@
+{
+  "id": "environment.effects",
+  "title": "Place effects, mist, and fog",
+  "summary": "Assign FX markers, paint local mist, and tune global fog.",
+  "outcome": "Effects and atmospheric settings attached to the map.",
+  "keywords": [
+    "fx",
+    "mist",
+    "fog",
+    "effect"
+  ],
+  "sections": [
+    {
+      "id": "fx",
+      "title": "Place an effect marker",
+      "steps": [
+        {
+          "title": "Choose an effect",
+          "text": "Open the FX browser, Choose library… if needed, search an asset, and drag it into a viewport to place an FX marker."
+        },
+        {
+          "title": "Set playback",
+          "text": "Select the marker in the Entities inspector. Browse… or enter the exact asset name, choose Apply reference, then select At map start or When called from a map script and Apply playback."
+        },
+        {
+          "title": "Link a scripted effect",
+          "text": "For script playback, give the marker a unique script key. After map FX startup, call the generated map FX trigger with that key from your script."
+        }
+      ],
+      "tips": [
+        "Use the camera FX toggle to preview map effects. Trigger keys must be unique, including those inside prefabs."
+      ]
+    },
+    {
+      "id": "mist",
+      "title": "Paint local mist",
+      "steps": [
+        {
+          "title": "Choose mist",
+          "text": "Open the Painter inspector’s Local mist tool and its FX library. The tool uses the Dense mist preset, creating it from room_smoke_200 when first needed."
+        },
+        {
+          "title": "Paint or erase",
+          "text": "Click a camera surface for one patch or drag for spaced patches. Switch to Erase and set Erase radius to remove mist placed with this tool."
+        }
+      ],
+      "tips": [
+        "Erase affects only mist made by this painter. Each stroke is one undoable edit."
+      ]
+    },
+    {
+      "id": "fog",
+      "title": "Tune global fog",
+      "steps": [
+        {
+          "title": "Open camera fog controls",
+          "text": "Use the fog button above the camera, enable fog, and set start distance, half distance, maximum opacity, and color. Review any field error before building."
+        }
+      ],
+      "tips": [
+        "Camera fog is an approximation of the in-game result."
+      ]
+    }
+  ],
+  "related": [
+    "scripting.generated",
+    "environment.sun-sky"
+  ]
+}

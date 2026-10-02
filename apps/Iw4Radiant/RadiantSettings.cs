@@ -8,6 +8,7 @@ internal sealed class RadiantSettings
     public string? XModelFolder { get; set; }
     public List<MaterialFavoriteCollection> MaterialFavorites { get; set; } = [];
     public List<FoliagePainterPreset> FoliagePresets { get; set; } = [];
+    public UserGuide.GuideProgress UserGuide { get; set; } = new();
 
     private static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "IW4Studio", "Iw4Radiant", "appsettings.json");
@@ -19,6 +20,8 @@ internal sealed class RadiantSettings
         {
             string path = File.Exists(FilePath) ? FilePath : PreviousFilePath;
             var settings = JsonSerializer.Deserialize<RadiantSettings>(File.ReadAllText(path)) ?? new RadiantSettings();
+            settings.UserGuide ??= new();
+            settings.UserGuide.Normalize();
             settings.MaterialFavorites ??= [];
             settings.MaterialFavorites.RemoveAll(collection => collection is null);
             foreach (MaterialFavoriteCollection collection in settings.MaterialFavorites)

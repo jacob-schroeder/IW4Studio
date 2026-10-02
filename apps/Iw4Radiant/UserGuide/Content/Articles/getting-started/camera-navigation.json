@@ -1,0 +1,13 @@
+{
+  "id": "camera.navigation",
+  "title": "Navigate in Editor, Fly, and Walk",
+  "summary": "Move between orbit editing, free flight, and a player-scale walk preview.",
+  "outcome": "You can return to the object you were editing after exploring the scene.",
+  "keywords": ["camera", "orbit", "fly", "walk", "navigation"],
+  "sections": [
+    {"id": "editor", "title": "Navigate while editing", "steps": [{"title": "Orbit, pan, and zoom", "text": "In Editor mode, right-drag to orbit, middle-drag to pan, and scroll to zoom. Shift plus right-drag also pans."}, {"title": "Recover your view", "text": "Select an object and use Frame selection in all views; use Frame all views when nothing is selected.", "keys": ["End"]}]},
+    {"id": "fly", "title": "Fly through the map", "steps": [{"title": "Enter Fly", "text": "Turn on Fly in the Camera header and click the camera to focus it."}, {"title": "Move and return", "text": "Use W/S forward and back, A/D sideways, Q/E down and up, right-drag to look, and Shift for faster movement. Press Esc to return to Editor orbit.", "keys": ["W/A/S/D", "Q/E", "Shift", "Esc"]}], "tips": ["If movement keys seem inactive, click the camera to restore focus."]},
+    {"id": "walk", "title": "Walk at player scale", "steps": [{"title": "Enter Walk", "text": "Turn on Walk in the Camera header and click the camera. Use W/A/S/D to move, Space to jump, and right-drag to look."}, {"title": "Pause or reset", "text": "If focus leaves the camera, click it to resume. Press R or use Reset to return to the walk entry position; Esc exits Walk.", "keys": ["W/A/S/D", "Space", "R", "Esc"]}], "tips": ["Walk depends on available collision; read the Camera status if it pauses or asks for a reset."]}
+  ],
+  "related": ["workspace.overview", "reference.controls", "terrain.create"]
+}

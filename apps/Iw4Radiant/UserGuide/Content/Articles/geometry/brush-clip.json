@@ -1,0 +1,6 @@
+{
+  "id": "brush.clip", "title": "Clip a brush", "summary": "Cut selected brushes with a line drawn in a grid view.", "outcome": "The selected brush is cut on the intended side of a plane.", "keywords": ["clip", "cut", "brush", "plane"],
+  "sections": [
+    {"id": "cut", "title": "Preview and apply a cut", "steps": [{"title": "Select and enter Clip", "text": "Select one or more whole brushes, then activate Clip brushes (X).", "keys": ["X"]}, {"title": "Draw the cut", "text": "Left-drag a line through the brush in an orthographic view. The line previews a cutting plane through the view; left and right follow the direction in which you drew the line."}, {"title": "Choose the result", "text": "Choose Split both, Keep left, or Keep right in the Clip control, then click Apply or press Enter. Inspect the result in Camera and Undo if the side was wrong.", "keys": ["Enter", "{mod}+Z"]}], "tips": ["Click Cancel or press Esc to discard a preview before applying. A zero-length drag gives no cut; draw a clear line through the selected brush."]}
+  ], "related": ["brush.create", "brush.csg", "selection.basics"]
+}

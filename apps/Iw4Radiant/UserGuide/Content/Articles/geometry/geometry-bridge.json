@@ -1,0 +1,6 @@
+{
+  "id": "geometry.bridge", "title": "Bridge two surfaces", "summary": "Fill a gap between two compatible world surfaces with editable terrain.", "outcome": "A solid, editable terrain bridge spans the selected boundaries while source surfaces remain intact.", "keywords": ["bridge", "surface", "terrain", "boundary"],
+  "sections": [
+    {"id": "bridge", "title": "Connect the surfaces", "steps": [{"title": "Select two surfaces in order", "text": "Choose Create > Bridge between surfaces…. Select the start and end world surfaces: curved patches, terrain, or brushes. A whole brush uses its top face; Face mode lets you choose another face."}, {"title": "Set the shape", "text": "Review the suggested nearest compatible boundaries and change either if needed. Set Rows across the gap and Center rise; positive rise makes a hump and negative rise a dip."}, {"title": "Create and inspect", "text": "Click Create bridge. The source surfaces remain and one new solid terrain surface spans them. Check its boundary alignment and Undo if it bridges the wrong edges.", "keys": ["{mod}+Z"]}], "tips": ["If Create bridge is unavailable, reselect two supported world surfaces in order and choose compatible boundaries."]}
+  ], "related": ["geometry.curves", "terrain.create", "selection.basics"]
+}

@@ -1,0 +1,6 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Iw4Radiant.Views.UserGuide.GuideArticleView">
+  <ScrollViewer x:Name="ArticleScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel x:Name="ArticleBody" Spacing="12" Margin="26,22,26,26" />
+  </ScrollViewer>
+</UserControl>

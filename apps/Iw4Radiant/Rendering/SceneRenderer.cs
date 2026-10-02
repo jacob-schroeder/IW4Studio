@@ -42,7 +42,7 @@ internal sealed class SceneRenderer
     private uint _framebuffer, _colorTexture, _depthBuffer, _filmProgram, _filmVertexArray;
     private int _filmSizeLocation, _filmBrightnessLocation, _filmContrastLocation, _filmDesaturationLocation,
         _filmLightTintLocation, _filmDarkTintLocation;
-    private uint _lineTexture;
+    private uint _lineTexture, _fallbackCube;
     private PixelSize _renderSize;
     private int _viewProjectionLocation, _texturedLocation, _litLocation, _alphaTestLocation, _premultiplyAlphaLocation,
         _ignoreVertexColorLocation, _waterPreviewLocation, _eyeLocation, _linearCaptureLocation, _hasWaterReflectionLocation,
@@ -517,6 +517,20 @@ internal sealed class SceneRenderer
                 Silk.NET.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, &white);
             _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
             _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            _fallbackCube = _gl.GenTexture();
+            _gl.ActiveTexture(TextureUnit.Texture5);
+            _gl.BindTexture(TextureTarget.TextureCubeMap, _fallbackCube);
+            uint black = 0xff000000;
+            for (int face = 0; face < 6; face++)
+                _gl.TexImage2D((TextureTarget)((int)TextureTarget.TextureCubeMapPositiveX + face), 0,
+                    InternalFormat.Rgba8, 1, 1, 0, Silk.NET.OpenGL.PixelFormat.Rgba,
+                    PixelType.UnsignedByte, &black);
+            _gl.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            _gl.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            _gl.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            _gl.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            _gl.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureWrapR, (int)TextureWrapMode.ClampToEdge);
+            _gl.ActiveTexture(TextureUnit.Texture0);
             _vertexArray = _gl.GenVertexArray();
             _vertexBuffer = _gl.GenBuffer();
             _fxVertexArray = _gl.GenVertexArray();
@@ -629,9 +643,10 @@ internal sealed class SceneRenderer
             if (_compiledPreview is null && previewLighting && _shadowsDirty &&
                 (!session.DeferPreviewLighting || _physicsTransforms is not null))
             {
-                _shadows.Update(gl, _lighting.Lights, _vertexArray, _surfaceBatches, resolveMaterial, _materialTextures);
+                _shadows.Update(gl, _lighting.Lights, _vertexArray, _surfaceBatches, resolveMaterial, _materialTextures,
+                    _lineTexture);
                 _sunlight.Update(gl, document.World, _stages, _usedSunIndices, _surfaceBounds, _vertexArray, _surfaceBatches,
-                    resolveMaterial, _materialTextures);
+                    resolveMaterial, _materialTextures, _lineTexture);
                 _shadowsDirty = false;
             }
             var visibleWater = new List<string>();
@@ -663,6 +678,7 @@ internal sealed class SceneRenderer
             // Materials blend inside an opaque viewport, never against the desktop behind it.
             gl.ColorMask(true, true, true, false);
             gl.UseProgram(_program);
+            BindOptionalSamplers(gl);
             gl.UniformMatrix4(_viewProjectionLocation, 1, false, (float*)&viewProjection);
             Matrix4x4 identity = Matrix4x4.Identity;
             gl.UniformMatrix4(_modelLocation, 1, false, (float*)&identity);
@@ -681,7 +697,7 @@ internal sealed class SceneRenderer
             gl.Uniform1(_fogMaxOpacityLocation, fogPreview.MaxOpacity);
             _lighting.Bind(gl, _shadows.IsAvailable);
             _shadows.Bind(gl);
-            _sunlight.Bind(gl, enabled: _compiledPreview is null);
+            _sunlight.Bind(gl, _lineTexture, enabled: _compiledPreview is null);
             gl.BindVertexArray(_vertexArray);
             gl.ActiveTexture(TextureUnit.Texture0);
             gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
@@ -760,6 +776,8 @@ internal sealed class SceneRenderer
             gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture7);
             gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture6);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture0);
             gl.UseProgram(0);
             if (filmPreview.IsNeutral)
@@ -806,6 +824,8 @@ internal sealed class SceneRenderer
             gl.ActiveTexture(TextureUnit.Texture8);
             gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture7);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture6);
             gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture5);
             gl.BindTexture(TextureTarget.TextureCubeMap, 0);
@@ -877,7 +897,7 @@ internal sealed class SceneRenderer
         gl.Uniform1(_hasWaterReflectionLocation, 0);
         gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
         gl.Uniform1(_texturedLocation, 1);
-        _sunlight.Bind(gl, sunIndex, enabled: _compiledPreview is null);
+        _sunlight.Bind(gl, _lineTexture, sunIndex, enabled: _compiledPreview is null);
         gl.Uniform3(_eyeLocation, eye.X, eye.Y, eye.Z);
         gl.ColorMask(true, true, true, false);
         gl.DepthMask(true);
@@ -1247,7 +1267,7 @@ internal sealed class SceneRenderer
             var (minimum, maximum) = model.Bounds;
             byte sunIndex = _stages?.SunIndexAt(Vector3.Transform(
                 minimum * 0.5f + maximum * 0.5f, transform)) ?? (byte)1;
-            _sunlight.Bind(gl, sunIndex);
+            _sunlight.Bind(gl, _lineTexture, sunIndex);
         }
         gl.BindVertexArray(mesh.VertexArray);
         foreach (var batch in mesh.Batches)
@@ -1420,7 +1440,7 @@ internal sealed class SceneRenderer
         {
             var range = _sourceSunRanges[index];
             int first = Math.Max(start, range.Start), last = Math.Min(end, range.End);
-            _sunlight.Bind(gl, range.SunIndex);
+            _sunlight.Bind(gl, _lineTexture, range.SunIndex);
             DrawStaticRange(gl, PrimitiveType.Triangles, first, last - first, capture);
         }
     }
@@ -1445,7 +1465,7 @@ internal sealed class SceneRenderer
     private void RenderSurfaces(GL gl, Func<string, MaterialSource?>? resolveMaterial, bool previewLighting,
         bool previewAlpha, Vector3 eye, Matrix4x4 viewProjection, bool transparent, bool capture = false)
     {
-        if (_compiledPreview is null) _sunlight.Bind(gl);
+        if (_compiledPreview is null) _sunlight.Bind(gl, _lineTexture);
         var textures = new Dictionary<string, uint>(StringComparer.Ordinal);
         MapEntity? drawnOwner = null;
         void UseOwner(MapEntity? owner)
@@ -1563,7 +1583,7 @@ internal sealed class SceneRenderer
                 BindCompiledLightmap(gl, _compiledPreview?.LightingAt(triangle.Start) ??
                     (CompiledBspPreview.NoLightmap, (byte)0));
                 if (_compiledPreview is null && _stages?.SunCount > 1)
-                    _sunlight.Bind(gl, _transformPreviewVertices[triangle.Start].SunIndex);
+                    _sunlight.Bind(gl, _lineTexture, _transformPreviewVertices[triangle.Start].SunIndex);
                 if ((_compiledPreview is not null && _waterMaterials.Contains(triangle.Material)) ||
                     _waterProbes.ContainsKey(triangle.Start)) BindWaterReflection(gl, triangle.Start);
                 gl.DrawArrays(PrimitiveType.Triangles, triangle.Start, 3);
@@ -1649,16 +1669,35 @@ internal sealed class SceneRenderer
         gl.Uniform1(_compiledLightmapModeLocation, index == CompiledBspPreview.NoLightmap
             ? 0 : texture == 0 ? 2 : primaryType != 0 ? 3 : 1);
         gl.ActiveTexture(TextureUnit.Texture7);
-        gl.BindTexture(TextureTarget.Texture2D, texture);
+        gl.BindTexture(TextureTarget.Texture2D, texture != 0 ? texture : _lineTexture);
         gl.ActiveTexture(TextureUnit.Texture8);
-        gl.BindTexture(TextureTarget.Texture2D, sunVisibility);
+        gl.BindTexture(TextureTarget.Texture2D, sunVisibility != 0 ? sunVisibility : _lineTexture);
+        gl.ActiveTexture(TextureUnit.Texture0);
+    }
+
+    private void BindOptionalSamplers(GL gl)
+    {
+        // Drivers validate active samplers even when their shader branches are disabled.
+        // Start with complete textures; feature-specific binds replace these before drawing.
+        gl.ActiveTexture(TextureUnit.Texture3);
+        gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
+        gl.ActiveTexture(TextureUnit.Texture4);
+        gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
+        gl.ActiveTexture(TextureUnit.Texture5);
+        gl.BindTexture(TextureTarget.TextureCubeMap, _fallbackCube);
+        gl.ActiveTexture(TextureUnit.Texture6);
+        gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
+        gl.ActiveTexture(TextureUnit.Texture7);
+        gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
+        gl.ActiveTexture(TextureUnit.Texture8);
+        gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
         gl.ActiveTexture(TextureUnit.Texture0);
     }
 
     private void BindWaterReflection(GL gl, int start)
     {
         int probe = _compiledPreview?.ReflectionProbeAt(start) ?? _waterProbes.GetValueOrDefault(start);
-        bool available = _reflections.Bind(gl, probe);
+        bool available = _reflections.Bind(gl, probe, _fallbackCube);
         gl.Uniform1(_hasWaterReflectionLocation, available ? 1 : 0);
     }
 
@@ -1700,6 +1739,7 @@ internal sealed class SceneRenderer
         Func<string, MaterialSource?>? resolveMaterial, bool previewLighting)
     {
         gl.UseProgram(_program);
+        BindOptionalSamplers(gl);
         Matrix4x4 identity = Matrix4x4.Identity;
         gl.UniformMatrix4(_modelLocation, 1, false, (float*)&identity);
         gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&identity);
@@ -1710,7 +1750,7 @@ internal sealed class SceneRenderer
         gl.Uniform1(_fogEnabledLocation, 0);
         _lighting.Bind(gl, _shadows.IsAvailable);
         _shadows.Bind(gl);
-        _sunlight.Bind(gl);
+        _sunlight.Bind(gl, _lineTexture);
         gl.ActiveTexture(TextureUnit.Texture0);
         gl.BindVertexArray(_vertexArray);
         gl.FrontFace(FrontFaceDirection.Ccw);
@@ -2312,6 +2352,7 @@ internal sealed class SceneRenderer
             if (_colorTexture != 0) gl.DeleteTexture(_colorTexture);
             if (_depthBuffer != 0) gl.DeleteRenderbuffer(_depthBuffer);
             if (_lineTexture != 0) gl.DeleteTexture(_lineTexture);
+            if (_fallbackCube != 0) gl.DeleteTexture(_fallbackCube);
             gl.Dispose();
         }
         _gl = null;
@@ -2320,7 +2361,7 @@ internal sealed class SceneRenderer
 
     private void ResetResources()
     {
-        _program = _vertexArray = _vertexBuffer = _framebuffer = _colorTexture = _depthBuffer = _lineTexture =
+        _program = _vertexArray = _vertexBuffer = _framebuffer = _colorTexture = _depthBuffer = _lineTexture = _fallbackCube =
             _filmProgram = _filmVertexArray = 0;
         _fxVertexArray = _fxVertexBuffer = 0;
         _compiledLightmapUvBuffer = 0;

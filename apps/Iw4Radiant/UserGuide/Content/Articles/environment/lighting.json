@@ -1,0 +1,71 @@
+{
+  "id": "environment.lighting",
+  "title": "Add local, moving, and stage lighting",
+  "summary": "Place local lights, aim spotlights, preview sweeps, and override sunlight in Stage volumes.",
+  "outcome": "Lighting sources and volumes ready for a lighting build.",
+  "keywords": [
+    "light",
+    "spot",
+    "sweep",
+    "stage",
+    "shadow"
+  ],
+  "sections": [
+    {
+      "id": "local",
+      "title": "Place and aim a local light",
+      "steps": [
+        {
+          "title": "Add light",
+          "text": "Choose Entity → Add light or create light from Gameplay entities, then place it and select it in the Entities inspector."
+        },
+        {
+          "title": "Set shape",
+          "text": "Adjust color, Radius, and Intensity. For a spotlight, expand Target & cone, choose Create aim target, move the target to aim, and set outer and inner FOV plus a whole-number Cone exponent (0–255); keep outer FOV below 180 degrees."
+        },
+        {
+          "title": "Choose light flags",
+          "text": "Expand Definition & flags to inspect the light definition and choose Primary omni or Primary spot. Dynamic shadows lets a Primary spot cast moving-object shadows in game, subject to the game's active shadow-map limit."
+        },
+        {
+          "title": "Apply and inspect",
+          "text": "Choose Apply light. Use Revert to discard uncommitted field changes; rebuild to incorporate lighting changes into compiled output."
+        }
+      ]
+    },
+    {
+      "id": "motion",
+      "title": "Preview a sweep",
+      "steps": [
+        {
+          "title": "Configure motion",
+          "text": "Enable Sweep and set Total arc and Seconds each way. Use Play sweep preview to review motion, drag the purple arc ends to adjust range, and Shift-drag left/right to rotate the sweep plane."
+        }
+      ],
+      "tips": [
+        "Sweep applies the current light values when enabled. Preview shadows remain baked; rebuild to apply changed lighting and game dynamic-shadow flags."
+      ]
+    },
+    {
+      "id": "stage",
+      "title": "Override lighting in a volume",
+      "steps": [
+        {
+          "title": "Create a Stage",
+          "text": "Select convex brushes, search for stage in Gameplay entities, and create it. In the Environment inspector, set only the sunlight or Ambient values this volume should override; unchecked values inherit world lighting."
+        },
+        {
+          "title": "Resolve overlaps",
+          "text": "Reshape or rotate Stage brushes to cover the intended region. Use Earlier stage and Later stage to change priority where Stage volumes overlap."
+        }
+      ],
+      "tips": [
+        "The first Stage in entity order wins in overlapping regions."
+      ]
+    }
+  ],
+  "related": [
+    "environment.sun-sky",
+    "building.bsp"
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "id": "entities.foliage",
+  "title": "Paint models and prefabs",
+  "summary": "Build a weighted palette and stamp repeated assets on camera surfaces.",
+  "outcome": "A repeatable distribution of placed models or prefabs.",
+  "keywords": [
+    "painter",
+    "foliage",
+    "palette",
+    "density",
+    "prefab"
+  ],
+  "sections": [
+    {
+      "id": "palette",
+      "title": "Build a paint brush",
+      "steps": [
+        {
+          "title": "Add assets",
+          "text": "Open the Painter inspector. Choose Models… or Prefabs… from the empty state, select an asset, and choose Add to brush. Add more assets as needed."
+        },
+        {
+          "title": "Set distribution",
+          "text": "Give each asset a relative Weight. Set brush Radius, Density, Spacing, scale range, Random yaw, and Align to surface. Use custom placement on an asset when it needs its own scale, yaw, alignment, or offset."
+        },
+        {
+          "title": "Paint",
+          "text": "Turn on Paint brush and drag across camera surfaces. Save current… under Saved palettes to reuse the combination later."
+        }
+      ],
+      "tips": [
+        "A zero or blank weight skips that asset; if every weight is zero, nothing is painted.",
+        "Positive surface offset moves an asset away from the painted surface."
+      ]
+    }
+  ],
+  "related": [
+    "entities.models",
+    "entities.prefabs"
+  ]
+}

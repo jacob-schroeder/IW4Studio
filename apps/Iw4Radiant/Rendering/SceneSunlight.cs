@@ -47,7 +47,7 @@ internal sealed class SceneSunlight
     internal unsafe void Update(GL gl, MapEntity world, MapStageLighting? stages,
         IReadOnlyCollection<byte> usedSunIndices, (Vector3 Min, Vector3 Max)? worldBounds, uint vertexArray,
         IReadOnlyList<(string Material, int Start, int Count, int WireStart, int WireCount)> batches,
-        Func<string, MaterialSource?>? resolveMaterial, SceneMaterialTextures textures)
+        Func<string, MaterialSource?>? resolveMaterial, SceneMaterialTextures textures, uint fallbackTexture)
     {
         IsAvailable = false;
         Notice = null;
@@ -111,7 +111,7 @@ internal sealed class SceneSunlight
                 gl.UniformMatrix4(_shadowProjectionLocation, 1, false, (float*)&projection);
                 foreach (var batch in batches)
                     if (resolveMaterial?.Invoke(batch.Material)?.IsSky != true &&
-                        SceneMaterialDrawing.BindShadow(gl, _alphaTestLocation, batch.Material, resolveMaterial, textures))
+                        SceneMaterialDrawing.BindShadow(gl, _alphaTestLocation, batch.Material, resolveMaterial, textures, fallbackTexture))
                         gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
                 shadow.Available = true;
                 IsAvailable = true;
@@ -136,7 +136,7 @@ internal sealed class SceneSunlight
         }
     }
 
-    internal unsafe void Bind(GL gl, byte sunIndex = 1, bool enabled = true)
+    internal unsafe void Bind(GL gl, uint fallbackTexture, byte sunIndex = 1, bool enabled = true)
     {
         _shadows.TryGetValue(sunIndex, out SunShadow? shadow);
         gl.Uniform1(_enabledLocation, enabled && shadow?.Available == true ? 1 : 0);
@@ -149,7 +149,7 @@ internal sealed class SceneSunlight
         gl.UniformMatrix4(_sceneProjectionLocation, 1, false, (float*)&projection);
         gl.Uniform1(_textureLocation, 3);
         gl.ActiveTexture(TextureUnit.Texture3);
-        gl.BindTexture(TextureTarget.Texture2D, shadow?.Texture ?? 0);
+        gl.BindTexture(TextureTarget.Texture2D, shadow is { Texture: > 0 } ? shadow.Texture : fallbackTexture);
         gl.ActiveTexture(TextureUnit.Texture0);
     }
 

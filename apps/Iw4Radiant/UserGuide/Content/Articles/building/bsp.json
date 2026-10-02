@@ -1,0 +1,40 @@
+{
+  "id": "building.bsp",
+  "title": "Build a compiled .d3dbsp",
+  "summary": "Compile the current map to a chosen .d3dbsp path.",
+  "outcome": "A compiled BSP ready for preview or fastfile packaging.",
+  "keywords": [
+    "bsp",
+    "d3dbsp",
+    "compile",
+    "lighting"
+  ],
+  "sections": [
+    {
+      "id": "build",
+      "title": "Compile geometry",
+      "steps": [
+        {
+          "title": "Choose output",
+          "text": "Choose Build → Build .d3dbsp and select a local filename ending in .d3dbsp."
+        },
+        {
+          "title": "Read build progress",
+          "text": "The build window compiles a copy of the current map. Review its log and game-mode summary; if it identifies an object, choose Show in map to select and frame it."
+        },
+        {
+          "title": "Preview the result",
+          "text": "After a successful build, choose Preview compiled map in the build window or Build → Preview last built .d3dbsp."
+        }
+      ],
+      "tips": [
+        "This command uses the current document; Build .ff saves the map and packages more assets.",
+        "A .d3dbsp preview is an editor view of compiled data, not PS3 runtime rendering."
+      ]
+    }
+  ],
+  "related": [
+    "building.preview",
+    "building.troubleshooting"
+  ]
+}

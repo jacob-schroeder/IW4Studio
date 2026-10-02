@@ -154,7 +154,7 @@ public partial class MainWindow
         };
         Workspace.Materials.CatalogChanged += RefreshAssets;
         Workspace.Models.CatalogChanged += RefreshAssets;
-        var settings = RadiantSettings.Load();
+        var settings = _settings;
         Workspace.Materials.InitializeFavorites(settings);
         Inspector.Painter.InitializePresets(settings, Workspace.Models.ResolveModel);
         Inspector.Painter.UpdateMapContext(_session.FilePath, _session.Prefabs);

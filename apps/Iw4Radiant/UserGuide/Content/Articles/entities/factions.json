@@ -1,0 +1,40 @@
+{
+  "id": "entities.factions",
+  "title": "Choose map factions",
+  "summary": "Set the default Allies and Axis teams and review their player appearance.",
+  "outcome": "Saved team defaults for the map.",
+  "keywords": [
+    "allies",
+    "axis",
+    "factions",
+    "player models"
+  ],
+  "sections": [
+    {
+      "id": "assign",
+      "title": "Select teams",
+      "steps": [
+        {
+          "title": "Open faction settings",
+          "text": "Choose Create → Factions…. Choose Allies and Axis defaults from their selectors."
+        },
+        {
+          "title": "Inspect appearance",
+          "text": "Search player variants and inspect the body, head, hands, and detail preview. These choices help judge appearance before saving."
+        },
+        {
+          "title": "Save changes",
+          "text": "Choose Apply to save team choices and any replacement appearances."
+        }
+      ],
+      "tips": [
+        "The walk preview represents Allies, Assault, class 1; other variants are appearance previews.",
+        "If importing a Blender replacement, use the window’s Save Blender kit… and Import Blender model… workflow; the current importer supports color-only materials."
+      ]
+    }
+  ],
+  "related": [
+    "entities.gameplay",
+    "building.fastfile"
+  ]
+}

@@ -45,7 +45,7 @@ internal sealed class SceneShadows
 
     internal unsafe void Update(GL gl, IReadOnlyList<MapLight> lights, uint vertexArray,
         IReadOnlyList<(string Material, int Start, int Count, int WireStart, int WireCount)> batches,
-        Func<string, MaterialSource?>? resolveMaterial, SceneMaterialTextures textures)
+        Func<string, MaterialSource?>? resolveMaterial, SceneMaterialTextures textures, uint fallbackTexture)
     {
         IsAvailable = false;
         Notice = null;
@@ -90,7 +90,7 @@ internal sealed class SceneShadows
                     Matrix4x4 viewProjection = ViewProjection(light, face);
                     gl.UniformMatrix4(_viewProjectionLocation, 1, false, (float*)&viewProjection);
                     foreach (var batch in batches)
-                        if (SceneMaterialDrawing.BindShadow(gl, _alphaTestLocation, batch.Material, resolveMaterial, textures))
+                        if (SceneMaterialDrawing.BindShadow(gl, _alphaTestLocation, batch.Material, resolveMaterial, textures, fallbackTexture))
                             gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
                 }
             }

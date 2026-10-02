@@ -1,0 +1,19 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Iw4Radiant.Views.UserGuide.GuideWorkspaceView">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="14" Margin="26,22,26,26">
+      <TextBlock Text="Getting started  ›  Explore the workspace" Classes="guideMuted" />
+      <TextBlock x:Name="TourTitle" Classes="guideHeading" />
+      <TextBlock x:Name="TourSummary" TextWrapping="Wrap" Classes="guideMuted" />
+      <Grid x:Name="TourSurface" Height="320" SizeChanged="Surface_Changed" ClipToBounds="True">
+        <Image x:Name="Diagram" Stretch="Fill" />
+        <Canvas x:Name="Hotspots" />
+      </Grid>
+      <TextBlock Text="Workspace schematic · choose a numbered area or use the list" Classes="guideMuted" FontSize="11" />
+      <TextBlock x:Name="AreaTitle" Classes="guideSection" />
+      <TextBlock x:Name="AreaDescription" TextWrapping="Wrap" LineHeight="21" />
+      <Button x:Name="ReadGuide" Content="Read this guide →" Classes="guideButton guidePrimary"
+              HorizontalAlignment="Left" Click="ReadGuide_Click" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

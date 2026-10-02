@@ -1,0 +1,52 @@
+{
+  "id": "environment.sun-sky",
+  "title": "Set sunlight and sky",
+  "summary": "Author direct sunlight, ambient sky contribution, and visible sky faces.",
+  "outcome": "A map with chosen sun direction and enclosed sky surfaces.",
+  "keywords": [
+    "sun",
+    "sky",
+    "ambient",
+    "enclosure"
+  ],
+  "sections": [
+    {
+      "id": "sun",
+      "title": "Set world sunlight",
+      "steps": [
+        {
+          "title": "Open world environment",
+          "text": "Select World in the Entities inspector and open Environment. Enable Sunlight, set Color and Intensity, and aim with Pitch and Yaw or the direction control. Its arrow keys adjust one degree; Shift uses 15 degrees. Choose Apply sunlight to commit."
+        },
+        {
+          "title": "Tune ambient",
+          "text": "Enable Ambient when you need to override the inherited sky diffuse multiplier, and choose Apply sunlight. Open RGB values for exact channel brightness; values above 1 brighten that channel. Ambient does not change direct light or the visible sky."
+        }
+      ],
+      "tips": [
+        "Pitch −90 points the sun straight overhead; 0 is at the horizon. Direct light and shadows preview after Apply; bounced light is not baked in the editor."
+      ]
+    },
+    {
+      "id": "sky",
+      "title": "Apply a sky",
+      "steps": [
+        {
+          "title": "Choose a sky",
+          "text": "Select an authored sky in Skies. Select world brush faces, then choose Apply to selected faces; selecting whole world brushes applies to all their faces."
+        },
+        {
+          "title": "Make an enclosure",
+          "text": "Select geometry, expand Create enclosure, set Padding at least as large as the grid size, and choose Create around selection. Inspect the six resulting world brushes."
+        }
+      ],
+      "tips": [
+        "Sky application leaves terrain and entity-owned brushes unchanged. Use Select faces under Used in world to find existing sky faces."
+      ]
+    }
+  ],
+  "related": [
+    "environment.lighting",
+    "building.bsp"
+  ]
+}
