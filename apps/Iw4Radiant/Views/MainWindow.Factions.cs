@@ -12,8 +12,7 @@ public partial class MainWindow
         try
         {
             MapFactionSettings before = MapFactionAuthoring.Read(_session.Document.World.Properties);
-            var window = new FactionsWindow(before, FindBootstrapAssets(), _session.FilePath,
-                _buildLinkerPath ?? FindBuildLinker());
+            var window = new FactionsWindow(before, FindBootstrapAssets(), _session.FilePath);
             MapFactionSettings? selected = await _dialogs.ShowModalAsync(() => window.ShowDialog<MapFactionSettings?>(this));
             if (selected is null || selected == before) return;
             _session.Edit(() => MapFactionAuthoring.Write(_session.Document.World.Properties, selected));
@@ -30,11 +29,6 @@ public partial class MainWindow
     {
         string local = Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3");
         if (Directory.Exists(Path.Combine(local, "xmodel_native"))) return local;
-        if ((_buildLinkerPath ?? FindBuildLinker()) is { } linker)
-        {
-            string candidate = Path.Combine(Path.GetDirectoryName(linker) ?? "", "bootstrap", "ps3");
-            if (Directory.Exists(Path.Combine(candidate, "xmodel_native"))) return candidate;
-        }
         for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {
             string candidate = Path.Combine(directory.FullName, "Resources", "Bootstrap", "ps3");

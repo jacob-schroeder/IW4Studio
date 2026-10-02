@@ -73,10 +73,6 @@ internal static class MapCompiler
             "Free-for-all spawns are required before building.";
     }
 
-    internal const string Scope = "Structural, detail, noncolliding, weapon-clip and player-clip world brushes; native all-face water volumes and GPU ocean tops; solid terrain, painted overlays, decals, cutouts, static glass and rectangular breakable glass with native materials, skies and static models. " +
-        "Bakes static point/targeted spot lights, sky ambient, one diffuse bounce from opaque world surfaces and reflections; primary omni/spot lights use native runtime direct lighting with baked occlusion. Primary spots support fixed-position sweeps. Requires authored sunlight and a reflection probe. " +
-        "Native multiplayer points, script entities, stock soccer-ball runtime physics, brush/trigger models, groups and unambiguous prefabs. Full map builds write FX and sound source markers to scripts; standalone BSP output omits them. Quadratic curves with 3–15 odd controls per direction are compiled at eight samples per span. One render cell; ordered convex-brush Stages with local sunlight and ambient scale. Runtime local shadow maps are not compiled yet.";
-
     internal static IEnumerable<MapEntity> BrushEntities(MapDocument document) =>
         document.Entities.Where(entity => entity != document.World && entity.Brushes.Count > 0);
 

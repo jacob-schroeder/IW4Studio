@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using IW4.Formats.SourceFormat.Character;
+using Iw4Radiant.Compilation;
 
 namespace Iw4Radiant.Views;
 
@@ -20,9 +21,9 @@ public partial class FactionsWindow
             ImportStatus.Text = "Save the map first so its character assets have a home beside it.";
             return;
         }
-        if (_bootstrapRoot is null || _linkerPath is null || !File.Exists(_linkerPath))
+        if (_bootstrapRoot is null)
         {
-            ImportStatus.Text = "The bundled player assets or D3dbspLinker are unavailable. Restore them to import a character.";
+            ImportStatus.Text = "The bundled player assets are unavailable. Reinstall Iw4Radiant to import a character.";
             return;
         }
         bool targetAxis = _axis;
@@ -46,7 +47,7 @@ public partial class FactionsWindow
                     Directory.CreateDirectory(characters);
                     _createdCharacterDirectory = true;
                 }
-                await RunImporterAsync(body, hands, _bootstrapRoot, output, prefix, _linkerPath);
+                await RunImporterAsync(body, hands, _bootstrapRoot, output, prefix);
                 if (!File.Exists(Path.Combine(output, "xmodel_native", prefix + "_body.json")) ||
                     !File.Exists(Path.Combine(output, "xmodel_native", prefix + "_viewhands.json")))
                     throw new InvalidDataException("The character importer did not create both native models.");
@@ -128,19 +129,9 @@ public partial class FactionsWindow
     }
 
     private static async Task RunImporterAsync(string body, string hands, string bootstrap,
-        string output, string prefix, string linker)
+        string output, string prefix)
     {
-        bool managed = Path.GetExtension(linker).Equals(".dll", StringComparison.OrdinalIgnoreCase);
-        var start = new ProcessStartInfo
-        {
-            FileName = managed ? "dotnet" : linker,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            WorkingDirectory = Path.GetDirectoryName(linker) ?? "."
-        };
-        if (managed) start.ArgumentList.Add(linker);
+        var start = BundledLinker.CreateStartInfo();
         foreach (string argument in new[] { "import-character", body, hands, bootstrap, output, prefix })
             start.ArgumentList.Add(argument);
         using var process = new Process { StartInfo = start };
@@ -150,9 +141,7 @@ public partial class FactionsWindow
         }
         catch (Win32Exception exception)
         {
-            throw new InvalidOperationException(managed
-                ? "Cannot start dotnet. Install the .NET runtime to use D3dbspLinker."
-                : "Cannot start D3dbspLinker on this computer.", exception);
+            throw new InvalidOperationException("Cannot start the bundled D3dbspLinker.", exception);
         }
         Task<string> standardOutput = process.StandardOutput.ReadToEndAsync();
         Task<string> standardError = process.StandardError.ReadToEndAsync();

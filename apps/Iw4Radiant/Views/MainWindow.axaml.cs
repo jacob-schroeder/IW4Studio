@@ -36,11 +36,7 @@ public partial class MainWindow : Window
         Workspace.InitializeActions(_dialogs, FinishGestures);
         Workspace.InitializeFogActions(_session);
         Workspace.LayoutChanged += RefreshLayoutControls;
-        Workspace.Materials.InitializeActions(this, _session, _dialogs, FinishGestures, SetStatus, () =>
-        {
-            string? linker = _buildLinkerPath ?? FindBuildLinker();
-            return linker is null ? null : Path.Combine(Path.GetDirectoryName(linker)!, "bootstrap", "ps3");
-        });
+        Workspace.Materials.InitializeActions(this, _session, _dialogs, FinishGestures, SetStatus, FindBootstrapAssets);
         InitializeAuthoring();
         InitializePainterTools();
         var gridViews = Workspace.GridViews;

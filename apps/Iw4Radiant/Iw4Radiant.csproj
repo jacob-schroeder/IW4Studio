@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../tools/D3dbspLinker/D3dbspLinker.csproj" />
     <ProjectReference Include="../../src/Authoring/IW4.Formats/IW4.Formats.csproj" />
     <ProjectReference Include="../../src/Authoring/IW4.Gsc/IW4.Gsc.csproj" />
     <ProjectReference Include="../../src/Authoring/IW4.Unlinker/IW4.Unlinker.csproj" />
@@ -31,7 +32,6 @@
 
   <ItemGroup>
     <AvaloniaResource Include="../../Resources/iw4radiant_logo.png" Link="Resources/iw4radiant_logo.png" />
-    <Content Include="../../Resources/Bootstrap/ps3/**/*" Link="bootstrap/ps3/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="Shaders/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="../../src/Authoring/IW4.Formats/SourceFormat/Material/Shaders/ocean-waves.hlsl" Link="Shaders/ocean-waves.hlsl" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="../../src/Authoring/IW4.Formats/SourceFormat/Material/Shaders/ocean-surface.hlsl" Link="Shaders/ocean-surface.hlsl" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

@@ -3,478 +3,481 @@ using IW4.Formats.D3dbsp;
 using D3dbspLinker.Conversion;
 using D3dbspLinker.Inspection;
 
-return Run(args);
+namespace D3dbspLinker;
 
-static int Run(string[] args)
+public static class Program
 {
-    try
+    public static int Main(string[] args)
     {
-        return args switch
+        try
         {
-            ["inspect", string input] => Inspect(input),
-            ["inspect-fastfile", string input] => InspectFastFile(input),
-            ["find-fastfile-assets", string input, string contains] =>
-                FindFastFileAssets(input, contains),
-            ["list-emitter-assets", string input] => ListEmitterAssets(input),
-            ["inspect-pair", string d3dbsp, string fastFile] => InspectPair(d3dbsp, fastFile),
-            ["to-d3dbsp", string fastFile, string output] => ToD3dbsp(fastFile, output),
-            ["to-fastfile", string d3dbsp, string template, string assetName, string output,
-                .. string[] optionsAndDependencies] =>
-                ToFastFile(d3dbsp, template, assetName, output, optionsAndDependencies),
-            ["build", string d3dbsp, string assetName, string output, .. string[] options] =>
-                ToFastFile(d3dbsp, Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3"), assetName, output, options, diskBuild: true),
-            ["export-bootstrap", string input, string library, string output] => ExportBootstrap(input, library, output),
-            ["export-assets", string input, string library, string output, .. string[] names] => ExportAssets(input, library, output, names),
-            ["import-character", string body, string hands, string bootstrap, string output, string prefix] =>
-                CharacterImportCommand.Import(body, hands, bootstrap, output, prefix),
-            ["rewrite", string input, string output] => Rewrite(input, output),
-            _ => Usage()
-        };
-    }
-    catch (Exception exception) when (exception is
-        ArgumentException or
-        InvalidDataException or
-        NotSupportedException or
-        IOException or
-        UnauthorizedAccessException)
-    {
-        Console.Error.WriteLine($"error: {exception.Message}");
-        return 1;
-    }
-}
-
-static int ExportAssets(string input, string library, string output, IReadOnlyList<string> names)
-{
-    var models = new List<string>();
-    var materials = new List<string>();
-    var effects = new List<string>();
-    var weapons = new List<string>();
-    var rawFiles = new List<string>();
-    var animations = new List<string>();
-    var nativeAnimations = new List<string>();
-    string? dependency = null;
-    for (int index = 0; index < names.Count; index += 2)
-    {
-        if (index + 1 >= names.Count || names[index] is not ("--xmodel" or "--material" or "--fx" or "--weapon" or "--rawfile" or "--xanim" or "--xanim-native" or "--dependencies"))
-            throw new ArgumentException("export-assets expects --xmodel, --material, --fx, --weapon, --rawfile, --xanim, --xanim-native <name>, or --dependencies <official.ff> pairs.");
-        if (names[index] == "--dependencies")
-        {
-            if (dependency is not null) throw new ArgumentException("export-assets accepts one --dependencies fastfile.");
-            dependency = names[index + 1];
-        }
-        else (names[index] switch
-        {
-            "--xmodel" => models,
-            "--material" => materials,
-            "--fx" => effects,
-            "--weapon" => weapons,
-            "--rawfile" => rawFiles,
-            "--xanim-native" => nativeAnimations,
-            _ => animations
-        }).Add(names[index + 1]);
-    }
-    if (models.Count + materials.Count + effects.Count + weapons.Count + rawFiles.Count + animations.Count + nativeAnimations.Count == 0)
-        throw new ArgumentException("Choose at least one asset to export.");
-    FastFileConverter.ExportSourceAssets(input, library, output, models, materials, dependencyFastFile: dependency, fxNames: effects, weaponNames: weapons, xanimNames: animations, nativeXanimNames: nativeAnimations, rawFileNames: rawFiles);
-    return 0;
-}
-
-static int ExportBootstrap(string input, string library, string output)
-{
-    FastFileConverter.ExportBootstrap(input, library, output);
-    return 0;
-}
-
-static int InspectPair(string d3dbsp, string fastFile)
-{
-    MapPairInspector.Inspect(d3dbsp, fastFile);
-    return 0;
-}
-
-static int ToFastFile(
-    string d3dbsp,
-    string template,
-    string assetName,
-    string output,
-    IReadOnlyList<string> optionsAndDependencies, bool diskBuild = false)
-{
-    bool forceFullbright = false;
-    bool useCompiledLighting = false;
-    bool worldOnly = false;
-    bool useSourceMaterials = false;
-    bool stockBootstrap = false;
-    var lightmapImageNames = new List<(string PrimaryImageName, string SecondaryImageName)>();
-    string? outdoorImageName = null;
-    float[]? outdoorLookupMatrix = null;
-    var dependencies = new List<string>();
-    var providerFastFiles = new List<string>();
-    var distinctProviderFastFiles = new HashSet<string>(StringComparer.Ordinal);
-    var additionalXModelNames = new List<string>();
-    var distinctXModelNames = new HashSet<string>(StringComparer.Ordinal);
-    var staticScriptModelNames = new HashSet<string>(StringComparer.Ordinal);
-    var additionalMaterialNames = new List<string>();
-    var distinctMaterialNames = new HashSet<string>(StringComparer.Ordinal);
-    var additionalFxNames = new List<string>();
-    var distinctFxNames = new HashSet<string>(StringComparer.Ordinal);
-    var additionalXAnimNames = new List<string>();
-    var distinctXAnimNames = new HashSet<string>(StringComparer.Ordinal);
-    var additionalSoundNames = new List<string>();
-    var distinctSoundNames = new HashSet<string>(StringComparer.Ordinal);
-    var soundDefinitionPaths = new Dictionary<string, string>(StringComparer.Ordinal);
-    string? assetLibraryDirectory = null;
-    string? characterAssetsDirectory = null;
-    var rawFilePaths = new Dictionary<string, string>(StringComparer.Ordinal);
-    for (int index = 0; index < optionsAndDependencies.Count; index++)
-    {
-        string value = optionsAndDependencies[index];
-        if (string.Equals(value, "--fullbright", StringComparison.Ordinal))
-        {
-            if (forceFullbright)
-                throw new ArgumentException("The --fullbright option may be supplied only once.");
-            forceFullbright = true;
-            continue;
-        }
-        if (string.Equals(value, "--compiled-lighting", StringComparison.Ordinal))
-        {
-            if (useCompiledLighting)
-                throw new ArgumentException("The --compiled-lighting option may be supplied only once.");
-            useCompiledLighting = true;
-            continue;
-        }
-        if (string.Equals(value, "--world-only", StringComparison.Ordinal))
-        {
-            if (worldOnly)
-                throw new ArgumentException("The --world-only option may be supplied only once.");
-            worldOnly = true;
-            continue;
-        }
-        if (string.Equals(value, "--source-materials", StringComparison.Ordinal))
-        {
-            if (useSourceMaterials)
-                throw new ArgumentException("The --source-materials option may be supplied only once.");
-            useSourceMaterials = true;
-            continue;
-        }
-        if (string.Equals(value, "--character-assets", StringComparison.Ordinal))
-        {
-            if (!diskBuild || characterAssetsDirectory is not null)
-                throw new ArgumentException("The --character-assets option is accepted once by build only.");
-            characterAssetsDirectory = ReadRequiredOptionValue(
-                optionsAndDependencies, ref index, "--character-assets", "a map character asset directory");
-            continue;
-        }
-        if (string.Equals(value, "--stock-bootstrap", StringComparison.Ordinal))
-        {
-            if (stockBootstrap)
-                throw new ArgumentException("The --stock-bootstrap option may be supplied only once.");
-            stockBootstrap = true;
-            continue;
-        }
-        if (string.Equals(value, "--lightmap", StringComparison.Ordinal))
-        {
-            string primary = ReadRequiredOptionValue(
-                optionsAndDependencies, ref index, "--lightmap", "a primary image name and a secondary image name");
-            string secondary = ReadRequiredOptionValue(
-                optionsAndDependencies, ref index, "--lightmap", "a secondary image name");
-            lightmapImageNames.Add((primary, secondary));
-            continue;
-        }
-        if (string.Equals(value, "--outdoor-image", StringComparison.Ordinal))
-        {
-            if (outdoorImageName is not null)
-                throw new ArgumentException("The --outdoor-image option may be supplied only once.");
-            outdoorImageName = ReadRequiredOptionValue(
-                optionsAndDependencies, ref index, "--outdoor-image", "an exact image name");
-            continue;
-        }
-        if (string.Equals(value, "--outdoor-lookup-matrix", StringComparison.Ordinal))
-        {
-            if (outdoorLookupMatrix is not null)
-                throw new ArgumentException("The --outdoor-lookup-matrix option may be supplied only once.");
-            string matrix = ReadRequiredOptionValue(
-                optionsAndDependencies, ref index, "--outdoor-lookup-matrix", "16 comma-separated finite floats");
-            outdoorLookupMatrix = matrix.Split(',').Select(component =>
+            return args switch
             {
-                if (!float.TryParse(component, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed) ||
-                    !float.IsFinite(parsed))
+                ["inspect", string input] => Inspect(input),
+                ["inspect-fastfile", string input] => InspectFastFile(input),
+                ["find-fastfile-assets", string input, string contains] =>
+                    FindFastFileAssets(input, contains),
+                ["list-emitter-assets", string input] => ListEmitterAssets(input),
+                ["inspect-pair", string d3dbsp, string fastFile] => InspectPair(d3dbsp, fastFile),
+                ["to-d3dbsp", string fastFile, string output] => ToD3dbsp(fastFile, output),
+                ["to-fastfile", string d3dbsp, string template, string assetName, string output,
+                    .. string[] optionsAndDependencies] =>
+                    ToFastFile(d3dbsp, template, assetName, output, optionsAndDependencies),
+                ["build", string d3dbsp, string assetName, string output, .. string[] options] =>
+                    ToFastFile(d3dbsp, Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3"), assetName, output, options, diskBuild: true),
+                ["export-bootstrap", string input, string library, string output] => ExportBootstrap(input, library, output),
+                ["export-assets", string input, string library, string output, .. string[] names] => ExportAssets(input, library, output, names),
+                ["import-character", string body, string hands, string bootstrap, string output, string prefix] =>
+                    CharacterImportCommand.Import(body, hands, bootstrap, output, prefix),
+                ["rewrite", string input, string output] => Rewrite(input, output),
+                _ => Usage()
+            };
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or
+            InvalidDataException or
+            NotSupportedException or
+            IOException or
+            UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"error: {exception.Message}");
+            return 1;
+        }
+    }
+
+    static int ExportAssets(string input, string library, string output, IReadOnlyList<string> names)
+    {
+        var models = new List<string>();
+        var materials = new List<string>();
+        var effects = new List<string>();
+        var weapons = new List<string>();
+        var rawFiles = new List<string>();
+        var animations = new List<string>();
+        var nativeAnimations = new List<string>();
+        string? dependency = null;
+        for (int index = 0; index < names.Count; index += 2)
+        {
+            if (index + 1 >= names.Count || names[index] is not ("--xmodel" or "--material" or "--fx" or "--weapon" or "--rawfile" or "--xanim" or "--xanim-native" or "--dependencies"))
+                throw new ArgumentException("export-assets expects --xmodel, --material, --fx, --weapon, --rawfile, --xanim, --xanim-native <name>, or --dependencies <official.ff> pairs.");
+            if (names[index] == "--dependencies")
+            {
+                if (dependency is not null) throw new ArgumentException("export-assets accepts one --dependencies fastfile.");
+                dependency = names[index + 1];
+            }
+            else (names[index] switch
+            {
+                "--xmodel" => models,
+                "--material" => materials,
+                "--fx" => effects,
+                "--weapon" => weapons,
+                "--rawfile" => rawFiles,
+                "--xanim-native" => nativeAnimations,
+                _ => animations
+            }).Add(names[index + 1]);
+        }
+        if (models.Count + materials.Count + effects.Count + weapons.Count + rawFiles.Count + animations.Count + nativeAnimations.Count == 0)
+            throw new ArgumentException("Choose at least one asset to export.");
+        FastFileConverter.ExportSourceAssets(input, library, output, models, materials, dependencyFastFile: dependency, fxNames: effects, weaponNames: weapons, xanimNames: animations, nativeXanimNames: nativeAnimations, rawFileNames: rawFiles);
+        return 0;
+    }
+
+    static int ExportBootstrap(string input, string library, string output)
+    {
+        FastFileConverter.ExportBootstrap(input, library, output);
+        return 0;
+    }
+
+    static int InspectPair(string d3dbsp, string fastFile)
+    {
+        MapPairInspector.Inspect(d3dbsp, fastFile);
+        return 0;
+    }
+
+    static int ToFastFile(
+        string d3dbsp,
+        string template,
+        string assetName,
+        string output,
+        IReadOnlyList<string> optionsAndDependencies, bool diskBuild = false)
+    {
+        bool forceFullbright = false;
+        bool useCompiledLighting = false;
+        bool worldOnly = false;
+        bool useSourceMaterials = false;
+        bool stockBootstrap = false;
+        var lightmapImageNames = new List<(string PrimaryImageName, string SecondaryImageName)>();
+        string? outdoorImageName = null;
+        float[]? outdoorLookupMatrix = null;
+        var dependencies = new List<string>();
+        var providerFastFiles = new List<string>();
+        var distinctProviderFastFiles = new HashSet<string>(StringComparer.Ordinal);
+        var additionalXModelNames = new List<string>();
+        var distinctXModelNames = new HashSet<string>(StringComparer.Ordinal);
+        var staticScriptModelNames = new HashSet<string>(StringComparer.Ordinal);
+        var additionalMaterialNames = new List<string>();
+        var distinctMaterialNames = new HashSet<string>(StringComparer.Ordinal);
+        var additionalFxNames = new List<string>();
+        var distinctFxNames = new HashSet<string>(StringComparer.Ordinal);
+        var additionalXAnimNames = new List<string>();
+        var distinctXAnimNames = new HashSet<string>(StringComparer.Ordinal);
+        var additionalSoundNames = new List<string>();
+        var distinctSoundNames = new HashSet<string>(StringComparer.Ordinal);
+        var soundDefinitionPaths = new Dictionary<string, string>(StringComparer.Ordinal);
+        string? assetLibraryDirectory = null;
+        string? characterAssetsDirectory = null;
+        var rawFilePaths = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (int index = 0; index < optionsAndDependencies.Count; index++)
+        {
+            string value = optionsAndDependencies[index];
+            if (string.Equals(value, "--fullbright", StringComparison.Ordinal))
+            {
+                if (forceFullbright)
+                    throw new ArgumentException("The --fullbright option may be supplied only once.");
+                forceFullbright = true;
+                continue;
+            }
+            if (string.Equals(value, "--compiled-lighting", StringComparison.Ordinal))
+            {
+                if (useCompiledLighting)
+                    throw new ArgumentException("The --compiled-lighting option may be supplied only once.");
+                useCompiledLighting = true;
+                continue;
+            }
+            if (string.Equals(value, "--world-only", StringComparison.Ordinal))
+            {
+                if (worldOnly)
+                    throw new ArgumentException("The --world-only option may be supplied only once.");
+                worldOnly = true;
+                continue;
+            }
+            if (string.Equals(value, "--source-materials", StringComparison.Ordinal))
+            {
+                if (useSourceMaterials)
+                    throw new ArgumentException("The --source-materials option may be supplied only once.");
+                useSourceMaterials = true;
+                continue;
+            }
+            if (string.Equals(value, "--character-assets", StringComparison.Ordinal))
+            {
+                if (!diskBuild || characterAssetsDirectory is not null)
+                    throw new ArgumentException("The --character-assets option is accepted once by build only.");
+                characterAssetsDirectory = ReadRequiredOptionValue(
+                    optionsAndDependencies, ref index, "--character-assets", "a map character asset directory");
+                continue;
+            }
+            if (string.Equals(value, "--stock-bootstrap", StringComparison.Ordinal))
+            {
+                if (stockBootstrap)
+                    throw new ArgumentException("The --stock-bootstrap option may be supplied only once.");
+                stockBootstrap = true;
+                continue;
+            }
+            if (string.Equals(value, "--lightmap", StringComparison.Ordinal))
+            {
+                string primary = ReadRequiredOptionValue(
+                    optionsAndDependencies, ref index, "--lightmap", "a primary image name and a secondary image name");
+                string secondary = ReadRequiredOptionValue(
+                    optionsAndDependencies, ref index, "--lightmap", "a secondary image name");
+                lightmapImageNames.Add((primary, secondary));
+                continue;
+            }
+            if (string.Equals(value, "--outdoor-image", StringComparison.Ordinal))
+            {
+                if (outdoorImageName is not null)
+                    throw new ArgumentException("The --outdoor-image option may be supplied only once.");
+                outdoorImageName = ReadRequiredOptionValue(
+                    optionsAndDependencies, ref index, "--outdoor-image", "an exact image name");
+                continue;
+            }
+            if (string.Equals(value, "--outdoor-lookup-matrix", StringComparison.Ordinal))
+            {
+                if (outdoorLookupMatrix is not null)
+                    throw new ArgumentException("The --outdoor-lookup-matrix option may be supplied only once.");
+                string matrix = ReadRequiredOptionValue(
+                    optionsAndDependencies, ref index, "--outdoor-lookup-matrix", "16 comma-separated finite floats");
+                outdoorLookupMatrix = matrix.Split(',').Select(component =>
                 {
-                    throw new ArgumentException("The --outdoor-lookup-matrix option requires finite floats.");
+                    if (!float.TryParse(component, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed) ||
+                        !float.IsFinite(parsed))
+                    {
+                        throw new ArgumentException("The --outdoor-lookup-matrix option requires finite floats.");
+                    }
+                    return parsed;
+                }).ToArray();
+                continue;
+            }
+            if (string.Equals(value, "--xmodel", StringComparison.Ordinal))
+            {
+                string name = ReadRequiredOptionValue(
+                    optionsAndDependencies,
+                    ref index,
+                    "--xmodel",
+                    "an exact XModel name");
+                if (!distinctXModelNames.Add(name))
+                {
+                    throw new ArgumentException(
+                        $"The --xmodel option names XModel '{name}' more than once.");
                 }
-                return parsed;
-            }).ToArray();
-            continue;
-        }
-        if (string.Equals(value, "--xmodel", StringComparison.Ordinal))
-        {
-            string name = ReadRequiredOptionValue(
-                optionsAndDependencies,
-                ref index,
-                "--xmodel",
-                "an exact XModel name");
-            if (!distinctXModelNames.Add(name))
-            {
-                throw new ArgumentException(
-                    $"The --xmodel option names XModel '{name}' more than once.");
+                additionalXModelNames.Add(name);
+                continue;
             }
-            additionalXModelNames.Add(name);
-            continue;
-        }
-        if (string.Equals(value, "--static-script-model", StringComparison.Ordinal))
-        {
-            string name = ReadRequiredOptionValue(
-                optionsAndDependencies, ref index, "--static-script-model", "an exact script_model XModel name");
-            if (!staticScriptModelNames.Add(name))
-                throw new ArgumentException($"The --static-script-model option names '{name}' more than once.");
-            continue;
-        }
-        if (string.Equals(value, "--material", StringComparison.Ordinal))
-        {
-            string name = ReadRequiredOptionValue(
-                optionsAndDependencies,
-                ref index,
-                "--material",
-                "an exact Material name");
-            if (!distinctMaterialNames.Add(name))
+            if (string.Equals(value, "--static-script-model", StringComparison.Ordinal))
             {
-                throw new ArgumentException(
-                    $"The --material option names Material '{name}' more than once.");
+                string name = ReadRequiredOptionValue(
+                    optionsAndDependencies, ref index, "--static-script-model", "an exact script_model XModel name");
+                if (!staticScriptModelNames.Add(name))
+                    throw new ArgumentException($"The --static-script-model option names '{name}' more than once.");
+                continue;
             }
-            additionalMaterialNames.Add(name);
-            continue;
-        }
-        if (string.Equals(value, "--provider-fastfile", StringComparison.Ordinal))
-        {
-            string path = ReadRequiredOptionValue(
-                optionsAndDependencies,
-                ref index,
-                "--provider-fastfile",
-                "a provider-only fastfile path");
-            if (!distinctProviderFastFiles.Add(path))
+            if (string.Equals(value, "--material", StringComparison.Ordinal))
             {
-                throw new ArgumentException(
-                    $"The --provider-fastfile option names '{path}' more than once.");
+                string name = ReadRequiredOptionValue(
+                    optionsAndDependencies,
+                    ref index,
+                    "--material",
+                    "an exact Material name");
+                if (!distinctMaterialNames.Add(name))
+                {
+                    throw new ArgumentException(
+                        $"The --material option names Material '{name}' more than once.");
+                }
+                additionalMaterialNames.Add(name);
+                continue;
             }
-            providerFastFiles.Add(path);
-            continue;
-        }
-        if (string.Equals(value, "--fx", StringComparison.Ordinal))
-        {
-            string name = ReadRequiredOptionValue(
-                optionsAndDependencies,
-                ref index,
-                "--fx",
-                "an exact FxEffectDef name");
-            if (!distinctFxNames.Add(name))
+            if (string.Equals(value, "--provider-fastfile", StringComparison.Ordinal))
             {
-                throw new ArgumentException(
-                    $"The --fx option names FxEffectDef '{name}' more than once.");
+                string path = ReadRequiredOptionValue(
+                    optionsAndDependencies,
+                    ref index,
+                    "--provider-fastfile",
+                    "a provider-only fastfile path");
+                if (!distinctProviderFastFiles.Add(path))
+                {
+                    throw new ArgumentException(
+                        $"The --provider-fastfile option names '{path}' more than once.");
+                }
+                providerFastFiles.Add(path);
+                continue;
             }
-            additionalFxNames.Add(name);
-            continue;
-        }
-        if (string.Equals(value, "--xanim", StringComparison.Ordinal))
-        {
-            string name = ReadRequiredOptionValue(optionsAndDependencies, ref index, "--xanim", "an exact XAnim name");
-            if (!distinctXAnimNames.Add(name))
-                throw new ArgumentException($"The --xanim option names XAnim '{name}' more than once.");
-            additionalXAnimNames.Add(name);
-            continue;
-        }
-        if (string.Equals(value, "--sound", StringComparison.Ordinal))
-        {
-            string argument = ReadRequiredOptionValue(
-                optionsAndDependencies,
-                ref index,
-                "--sound",
-                "an exact Sound alias name");
-            int assignment = argument.IndexOf('=');
-            string name = assignment < 0 ? argument : argument[..assignment];
-            if (string.IsNullOrWhiteSpace(name) ||
-                assignment >= 0 && (assignment == argument.Length - 1 || !Path.IsPathFullyQualified(argument[(assignment + 1)..])))
-                throw new ArgumentException("The --sound option expects an alias name or name=absolute-source-json.");
-            if (!distinctSoundNames.Add(name))
+            if (string.Equals(value, "--fx", StringComparison.Ordinal))
             {
-                throw new ArgumentException(
-                    $"The --sound option names Sound '{name}' more than once.");
+                string name = ReadRequiredOptionValue(
+                    optionsAndDependencies,
+                    ref index,
+                    "--fx",
+                    "an exact FxEffectDef name");
+                if (!distinctFxNames.Add(name))
+                {
+                    throw new ArgumentException(
+                        $"The --fx option names FxEffectDef '{name}' more than once.");
+                }
+                additionalFxNames.Add(name);
+                continue;
             }
-            additionalSoundNames.Add(name);
-            if (assignment >= 0)
-                soundDefinitionPaths.Add(name, argument[(assignment + 1)..]);
-            continue;
-        }
-        if (string.Equals(value, "--asset-library", StringComparison.Ordinal))
-        {
-            if (assetLibraryDirectory is not null)
-                throw new ArgumentException("The --asset-library option may be supplied only once.");
-            assetLibraryDirectory = ReadRequiredOptionValue(
-                optionsAndDependencies, ref index, "--asset-library", "a raw asset library directory");
-            continue;
-        }
-        if (string.Equals(value, "--rawfile", StringComparison.Ordinal))
-        {
-            string mapping = ReadRequiredOptionValue(
-                optionsAndDependencies,
-                ref index,
-                "--rawfile",
-                "a wire-name=source-path mapping");
-            int separator = mapping.IndexOf('=');
-            if (separator <= 0 || separator == mapping.Length - 1)
+            if (string.Equals(value, "--xanim", StringComparison.Ordinal))
             {
-                throw new ArgumentException(
-                    "The --rawfile option requires a wire-name=source-path mapping.");
+                string name = ReadRequiredOptionValue(optionsAndDependencies, ref index, "--xanim", "an exact XAnim name");
+                if (!distinctXAnimNames.Add(name))
+                    throw new ArgumentException($"The --xanim option names XAnim '{name}' more than once.");
+                additionalXAnimNames.Add(name);
+                continue;
             }
-            string name = mapping[..separator];
-            string path = mapping[(separator + 1)..];
-            if (!rawFilePaths.TryAdd(name, path))
+            if (string.Equals(value, "--sound", StringComparison.Ordinal))
             {
-                throw new ArgumentException(
-                    $"The --rawfile option maps RawFile '{name}' more than once.");
+                string argument = ReadRequiredOptionValue(
+                    optionsAndDependencies,
+                    ref index,
+                    "--sound",
+                    "an exact Sound alias name");
+                int assignment = argument.IndexOf('=');
+                string name = assignment < 0 ? argument : argument[..assignment];
+                if (string.IsNullOrWhiteSpace(name) ||
+                    assignment >= 0 && (assignment == argument.Length - 1 || !Path.IsPathFullyQualified(argument[(assignment + 1)..])))
+                    throw new ArgumentException("The --sound option expects an alias name or name=absolute-source-json.");
+                if (!distinctSoundNames.Add(name))
+                {
+                    throw new ArgumentException(
+                        $"The --sound option names Sound '{name}' more than once.");
+                }
+                additionalSoundNames.Add(name);
+                if (assignment >= 0)
+                    soundDefinitionPaths.Add(name, argument[(assignment + 1)..]);
+                continue;
             }
-            continue;
+            if (string.Equals(value, "--asset-library", StringComparison.Ordinal))
+            {
+                if (assetLibraryDirectory is not null)
+                    throw new ArgumentException("The --asset-library option may be supplied only once.");
+                assetLibraryDirectory = ReadRequiredOptionValue(
+                    optionsAndDependencies, ref index, "--asset-library", "a raw asset library directory");
+                continue;
+            }
+            if (string.Equals(value, "--rawfile", StringComparison.Ordinal))
+            {
+                string mapping = ReadRequiredOptionValue(
+                    optionsAndDependencies,
+                    ref index,
+                    "--rawfile",
+                    "a wire-name=source-path mapping");
+                int separator = mapping.IndexOf('=');
+                if (separator <= 0 || separator == mapping.Length - 1)
+                {
+                    throw new ArgumentException(
+                        "The --rawfile option requires a wire-name=source-path mapping.");
+                }
+                string name = mapping[..separator];
+                string path = mapping[(separator + 1)..];
+                if (!rawFilePaths.TryAdd(name, path))
+                {
+                    throw new ArgumentException(
+                        $"The --rawfile option maps RawFile '{name}' more than once.");
+                }
+                continue;
+            }
+            dependencies.Add(value);
         }
-        dependencies.Add(value);
+
+        if (diskBuild && (assetLibraryDirectory is null || dependencies.Count != 0 || providerFastFiles.Count != 0 || stockBootstrap))
+            throw new ArgumentException("build requires --asset-library and does not accept fastfile inputs or --stock-bootstrap.");
+        if (soundDefinitionPaths.Count != 0 && assetLibraryDirectory is null)
+            throw new ArgumentException("A --sound source JSON requires --asset-library for its audio payloads.");
+        if (assetLibraryDirectory is not null)
+            useSourceMaterials = true;
+        if (useCompiledLighting && (forceFullbright || lightmapImageNames.Count != 0))
+            throw new ArgumentException("The --compiled-lighting option cannot be combined with --fullbright or --lightmap.");
+        if (staticScriptModelNames.Count != 0 && (!worldOnly || !useSourceMaterials))
+            throw new ArgumentException("The --static-script-model option requires --world-only and --source-materials.");
+
+        FastFileConverter.FromD3dbsp(
+            d3dbsp,
+            template,
+            assetName,
+            output,
+            forceFullbright,
+            useCompiledLighting,
+            worldOnly,
+            useSourceMaterials,
+            stockBootstrap,
+            dependencies,
+            providerFastFiles,
+            additionalXModelNames,
+            additionalMaterialNames,
+            additionalFxNames,
+            additionalXAnimNames,
+            additionalSoundNames,
+            soundDefinitionPaths,
+            assetLibraryDirectory,
+            rawFilePaths,
+            lightmapImageNames,
+            outdoorImageName,
+            outdoorLookupMatrix ?? [],
+            staticScriptModelNames,
+            bootstrapDirectory: diskBuild ? template : null,
+            characterAssetsDirectory: characterAssetsDirectory);
+        return 0;
     }
 
-    if (diskBuild && (assetLibraryDirectory is null || dependencies.Count != 0 || providerFastFiles.Count != 0 || stockBootstrap))
-        throw new ArgumentException("build requires --asset-library and does not accept fastfile inputs or --stock-bootstrap.");
-    if (soundDefinitionPaths.Count != 0 && assetLibraryDirectory is null)
-        throw new ArgumentException("A --sound source JSON requires --asset-library for its audio payloads.");
-    if (assetLibraryDirectory is not null)
-        useSourceMaterials = true;
-    if (useCompiledLighting && (forceFullbright || lightmapImageNames.Count != 0))
-        throw new ArgumentException("The --compiled-lighting option cannot be combined with --fullbright or --lightmap.");
-    if (staticScriptModelNames.Count != 0 && (!worldOnly || !useSourceMaterials))
-        throw new ArgumentException("The --static-script-model option requires --world-only and --source-materials.");
-
-    FastFileConverter.FromD3dbsp(
-        d3dbsp,
-        template,
-        assetName,
-        output,
-        forceFullbright,
-        useCompiledLighting,
-        worldOnly,
-        useSourceMaterials,
-        stockBootstrap,
-        dependencies,
-        providerFastFiles,
-        additionalXModelNames,
-        additionalMaterialNames,
-        additionalFxNames,
-        additionalXAnimNames,
-        additionalSoundNames,
-        soundDefinitionPaths,
-        assetLibraryDirectory,
-        rawFilePaths,
-        lightmapImageNames,
-        outdoorImageName,
-        outdoorLookupMatrix ?? [],
-        staticScriptModelNames,
-        bootstrapDirectory: diskBuild ? template : null,
-        characterAssetsDirectory: characterAssetsDirectory);
-    return 0;
-}
-
-static string ReadRequiredOptionValue(
-    IReadOnlyList<string> arguments,
-    ref int index,
-    string option,
-    string valueDescription)
-{
-    if (++index >= arguments.Count ||
-        arguments[index].StartsWith("--", StringComparison.Ordinal))
+    static string ReadRequiredOptionValue(
+        IReadOnlyList<string> arguments,
+        ref int index,
+        string option,
+        string valueDescription)
     {
-        throw new ArgumentException(
-            $"The {option} option requires {valueDescription}.");
+        if (++index >= arguments.Count ||
+            arguments[index].StartsWith("--", StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $"The {option} option requires {valueDescription}.");
+        }
+
+        return arguments[index];
     }
 
-    return arguments[index];
-}
-
-static int ToD3dbsp(string fastFile, string output)
-{
-    FastFileConverter.ToD3dbsp(fastFile, output);
-    return 0;
-}
-
-static int InspectFastFile(string input)
-{
-    FastFileInspector.Inspect(input);
-    return 0;
-}
-
-static int FindFastFileAssets(string input, string contains)
-{
-    FastFileInspector.FindAssets(input, contains);
-    return 0;
-}
-
-static int ListEmitterAssets(string input)
-{
-    FastFileInspector.ListEmitterAssets(input);
-    return 0;
-}
-
-static int Inspect(string input)
-{
-    string path = Path.GetFullPath(input);
-    D3dbspFile file = D3dbspFile.Read(path);
-
-    Console.WriteLine($"file: {path}");
-    Console.WriteLine("ident: IBSP");
-    Console.WriteLine("version: 22");
-    Console.WriteLine($"chunks: {file.Lumps.Count}");
-    Console.WriteLine();
-    Console.WriteLine("index  id    type                         offset       length       unit       count");
-
-    for (int index = 0; index < file.Lumps.Count; index++)
+    static int ToD3dbsp(string fastFile, string output)
     {
-        D3dbspLump lump = file.Lumps[index];
-        int? elementSize = D3dbspLumpFacts.GetV22ElementSize(lump.Type);
-        string count = elementSize is { } size && lump.Data.Length % size == 0
-            ? (lump.Data.Length / size).ToString()
-            : "-";
-        string type = Enum.IsDefined(lump.Type) ? lump.Type.ToString() : "Unknown";
-
-        Console.WriteLine(
-            $"{index,5}  0x{(uint)lump.Type:X2}  {type,-28} " +
-            $"0x{file.GetPayloadOffset(index),8:X8}  {lump.Length,11}  " +
-            $"{elementSize?.ToString() ?? "-",9}  {count,10}");
+        FastFileConverter.ToD3dbsp(fastFile, output);
+        return 0;
     }
 
-    return 0;
-}
+    static int InspectFastFile(string input)
+    {
+        FastFileInspector.Inspect(input);
+        return 0;
+    }
 
-static int Rewrite(string input, string output)
-{
-    string inputPath = Path.GetFullPath(input);
-    string outputPath = Path.GetFullPath(output);
-    if (string.Equals(inputPath, outputPath, StringComparison.Ordinal))
-        throw new ArgumentException("Input and output paths must be different.");
+    static int FindFastFileAssets(string input, string contains)
+    {
+        FastFileInspector.FindAssets(input, contains);
+        return 0;
+    }
 
-    D3dbspFile.Read(inputPath).Write(outputPath);
-    Console.WriteLine($"wrote: {outputPath}");
-    return 0;
-}
+    static int ListEmitterAssets(string input)
+    {
+        FastFileInspector.ListEmitterAssets(input);
+        return 0;
+    }
 
-static int Usage()
-{
-    Console.Error.WriteLine("usage:");
-    Console.Error.WriteLine("  D3dbspLinker build <input.d3dbsp> <map-asset-name> <output.ff> --asset-library <raw-root> [--xanim <exact-name>]... [--character-assets <map-characters-root>] [--compiled-lighting] [asset options]");
-    Console.Error.WriteLine("  D3dbspLinker import-character <body.glb> <hands.glb> <bootstrap-root> <new-output-root> <unique-model-prefix>");
-    Console.Error.WriteLine("  D3dbspLinker export-assets <official.ff> <exported-raw-root> <new-output-directory> [--xmodel <name>] [--material <name>] [--fx <name>] [--weapon <name>] [--rawfile <name>] [--xanim <name>] [--xanim-native <name>] [--dependencies <official.ff>]  (offline extraction)");
-    Console.Error.WriteLine("  D3dbspLinker export-bootstrap <official-map.ff> <exported-raw-root> <new-output-directory>  (offline extraction)");
-    Console.Error.WriteLine("  D3dbspLinker inspect <input.d3dbsp>");
-    Console.Error.WriteLine("  D3dbspLinker inspect-fastfile <input.ff>");
-    Console.Error.WriteLine("  D3dbspLinker find-fastfile-assets <input.ff> <name-contains>");
-    Console.Error.WriteLine("  D3dbspLinker list-emitter-assets <input.ff>  (JSON array of target-owned Fx and Sound names)");
-    Console.Error.WriteLine("  D3dbspLinker inspect-pair <input.d3dbsp> <input.ff>");
-    Console.Error.WriteLine("  D3dbspLinker to-d3dbsp <input.ff> <output.d3dbsp>");
-    Console.Error.WriteLine(
-        "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright | --compiled-lighting] [--world-only] [--source-materials] [--stock-bootstrap] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--xanim <exact-name>]... [--sound <exact-name[=absolute-source-json]>]... [--asset-library <raw-root>] [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
-    Console.Error.WriteLine("  Lighting images compile from --asset-library when supplied; otherwise --provider-fastfile inputs must own them. --lightmap order defines atlas indices. Supplied lighting cannot use --fullbright.");
-    Console.Error.WriteLine("  --compiled-lighting preserves the BSP's baked lightmaps and requires at least one lightmap array.");
-    Console.Error.WriteLine("  --stock-bootstrap loads the template's native startup dependencies and requires resident images or installed PS3 imagefile1.pak through imagefile4.pak before writing output.");
-    Console.Error.WriteLine("  D3dbspLinker rewrite <input.d3dbsp> <output.d3dbsp>");
-    return 2;
+    static int Inspect(string input)
+    {
+        string path = Path.GetFullPath(input);
+        D3dbspFile file = D3dbspFile.Read(path);
+
+        Console.WriteLine($"file: {path}");
+        Console.WriteLine("ident: IBSP");
+        Console.WriteLine("version: 22");
+        Console.WriteLine($"chunks: {file.Lumps.Count}");
+        Console.WriteLine();
+        Console.WriteLine("index  id    type                         offset       length       unit       count");
+
+        for (int index = 0; index < file.Lumps.Count; index++)
+        {
+            D3dbspLump lump = file.Lumps[index];
+            int? elementSize = D3dbspLumpFacts.GetV22ElementSize(lump.Type);
+            string count = elementSize is { } size && lump.Data.Length % size == 0
+                ? (lump.Data.Length / size).ToString()
+                : "-";
+            string type = Enum.IsDefined(lump.Type) ? lump.Type.ToString() : "Unknown";
+
+            Console.WriteLine(
+                $"{index,5}  0x{(uint)lump.Type:X2}  {type,-28} " +
+                $"0x{file.GetPayloadOffset(index),8:X8}  {lump.Length,11}  " +
+                $"{elementSize?.ToString() ?? "-",9}  {count,10}");
+        }
+
+        return 0;
+    }
+
+    static int Rewrite(string input, string output)
+    {
+        string inputPath = Path.GetFullPath(input);
+        string outputPath = Path.GetFullPath(output);
+        if (string.Equals(inputPath, outputPath, StringComparison.Ordinal))
+            throw new ArgumentException("Input and output paths must be different.");
+
+        D3dbspFile.Read(inputPath).Write(outputPath);
+        Console.WriteLine($"wrote: {outputPath}");
+        return 0;
+    }
+
+    static int Usage()
+    {
+        Console.Error.WriteLine("usage:");
+        Console.Error.WriteLine("  D3dbspLinker build <input.d3dbsp> <map-asset-name> <output.ff> --asset-library <raw-root> [--xanim <exact-name>]... [--character-assets <map-characters-root>] [--compiled-lighting] [asset options]");
+        Console.Error.WriteLine("  D3dbspLinker import-character <body.glb> <hands.glb> <bootstrap-root> <new-output-root> <unique-model-prefix>");
+        Console.Error.WriteLine("  D3dbspLinker export-assets <official.ff> <exported-raw-root> <new-output-directory> [--xmodel <name>] [--material <name>] [--fx <name>] [--weapon <name>] [--rawfile <name>] [--xanim <name>] [--xanim-native <name>] [--dependencies <official.ff>]  (offline extraction)");
+        Console.Error.WriteLine("  D3dbspLinker export-bootstrap <official-map.ff> <exported-raw-root> <new-output-directory>  (offline extraction)");
+        Console.Error.WriteLine("  D3dbspLinker inspect <input.d3dbsp>");
+        Console.Error.WriteLine("  D3dbspLinker inspect-fastfile <input.ff>");
+        Console.Error.WriteLine("  D3dbspLinker find-fastfile-assets <input.ff> <name-contains>");
+        Console.Error.WriteLine("  D3dbspLinker list-emitter-assets <input.ff>  (JSON array of target-owned Fx and Sound names)");
+        Console.Error.WriteLine("  D3dbspLinker inspect-pair <input.d3dbsp> <input.ff>");
+        Console.Error.WriteLine("  D3dbspLinker to-d3dbsp <input.ff> <output.d3dbsp>");
+        Console.Error.WriteLine(
+            "  D3dbspLinker to-fastfile <input.d3dbsp> <template.ff> <map-asset-name> <output.ff> [--fullbright | --compiled-lighting] [--world-only] [--source-materials] [--stock-bootstrap] [--provider-fastfile <provider-only.ff>]... [--lightmap <primary-image> <secondary-image>]... [--outdoor-image <image> --outdoor-lookup-matrix <16-comma-separated-floats>] [--xmodel <exact-name>]... [--static-script-model <exact-name>]... [--material <exact-name>]... [--fx <exact-name>]... [--xanim <exact-name>]... [--sound <exact-name[=absolute-source-json]>]... [--asset-library <raw-root>] [--rawfile <wire-name=source-path>]... [dependency.ff ...]");
+        Console.Error.WriteLine("  Lighting images compile from --asset-library when supplied; otherwise --provider-fastfile inputs must own them. --lightmap order defines atlas indices. Supplied lighting cannot use --fullbright.");
+        Console.Error.WriteLine("  --compiled-lighting preserves the BSP's baked lightmaps and requires at least one lightmap array.");
+        Console.Error.WriteLine("  --stock-bootstrap loads the template's native startup dependencies and requires resident images or installed PS3 imagefile1.pak through imagefile4.pak before writing output.");
+        Console.Error.WriteLine("  D3dbspLinker rewrite <input.d3dbsp> <output.d3dbsp>");
+        return 2;
+    }
 }

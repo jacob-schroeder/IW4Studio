@@ -41,11 +41,10 @@ internal static class MapBuildPipeline
 
     internal static async Task<string> BuildAsync(MapDocument document, string sourcePath,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
-        string linkerPath, string emitterAssetDirectory, string outputFolder, IProgress<string> progress,
+        string emitterAssetDirectory, string outputFolder, IProgress<string> progress,
         CancellationToken cancellationToken)
     {
         sourcePath = Path.GetFullPath(sourcePath);
-        linkerPath = RequireFile(linkerPath, "D3dbspLinker");
         outputFolder = Path.GetFullPath(outputFolder);
         if (!Directory.Exists(outputFolder)) throw new DirectoryNotFoundException("Choose an existing output folder.");
         string mapName = Path.GetFileNameWithoutExtension(sourcePath);
@@ -66,7 +65,7 @@ internal static class MapBuildPipeline
                 return DestructiblePresets.Find(entity.Properties);
             }).OfType<DestructiblePreset>().Distinct().ToArray();
             if (presets.Length == 0) return;
-            string bootstrap = Path.Combine(Path.GetDirectoryName(linkerPath) ?? AppContext.BaseDirectory, "bootstrap", "ps3");
+            string bootstrap = Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3");
             var readiness = DestructibleAssets.Check(emitterAssetDirectory, presets, cancellationToken, bootstrap);
             string[] issues = readiness.Where(pair => !pair.Value.IsReady)
                 .SelectMany(pair => pair.Value.Issues.Select(issue => $"{pair.Key.Name}: {issue}")).ToArray();
@@ -107,7 +106,7 @@ internal static class MapBuildPipeline
                 progress.Report($"Exported {emitters.FxNames.Length} FX references and {emitters.SoundNames.Length} sound aliases to map scripts.");
             }
             progress.Report("Compiling source assets and included startup assets; linking the PS3 fastfile…");
-            await RunLinkerAsync(linkerPath, bspPath, assetName, fastFilePath,
+            await RunLinkerAsync(bspPath, assetName, fastFilePath,
                 emitters, emitterAssetDirectory, mapRawFiles, soundVariantPaths,
                 sourcePath, progress, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
@@ -126,7 +125,7 @@ internal static class MapBuildPipeline
         }
     }
 
-    private static async Task RunLinkerAsync(string linkerPath, string bspPath,
+    private static async Task RunLinkerAsync(string bspPath,
         string assetName, string fastFilePath,
         MapEmitterScripts? emitters, string emitterAssetDirectory,
         IReadOnlyList<(string Name, string Path)> mapRawFiles,
@@ -135,15 +134,7 @@ internal static class MapBuildPipeline
         IProgress<string> progress,
         CancellationToken cancellationToken)
     {
-        bool managed = Path.GetExtension(linkerPath).Equals(".dll", StringComparison.OrdinalIgnoreCase);
-        var start = new ProcessStartInfo
-        {
-            FileName = managed ? "dotnet" : linkerPath,
-            UseShellExecute = false, CreateNoWindow = true,
-            RedirectStandardOutput = true, RedirectStandardError = true,
-            WorkingDirectory = Path.GetDirectoryName(linkerPath) ?? "."
-        };
-        if (managed) start.ArgumentList.Add(linkerPath);
+        var start = BundledLinker.CreateStartInfo();
         foreach (string value in new[] { "build", bspPath, assetName, fastFilePath, "--compiled-lighting" }) start.ArgumentList.Add(value);
         var entities = IW4.Formats.D3dbsp.D3dbspFile.Read(bspPath).GetEntities();
         DestructiblePreset[] destructibles = entities.Select(DestructiblePresets.Find)
@@ -182,8 +173,7 @@ internal static class MapBuildPipeline
             .OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
         if (precacheRawFiles.Length != 0)
         {
-            string bootstrap = Path.Combine(Path.GetDirectoryName(linkerPath) ?? AppContext.BaseDirectory,
-                "bootstrap", "ps3");
+            string bootstrap = Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3");
             foreach (string name in precacheRawFiles.Append("animtrees/destructibles.atr"))
             {
                 string source = Path.Combine(emitterAssetDirectory, name);
@@ -213,9 +203,7 @@ internal static class MapBuildPipeline
         }
         catch (Win32Exception exception)
         {
-            throw new InvalidOperationException(managed
-                ? "Cannot start dotnet. Install the .NET runtime or select the D3dbspLinker executable instead of its DLL."
-                : "Cannot start D3dbspLinker. Select its executable for this operating system.", exception);
+            throw new InvalidOperationException("Cannot start the bundled D3dbspLinker.", exception);
         }
         var errors = new Queue<string>();
         Task output = ReadLinesAsync(process.StandardOutput, false);
@@ -249,13 +237,5 @@ internal static class MapBuildPipeline
                 errors.Enqueue(line);
             }
         }
-    }
-
-    private static string RequireFile(string path, string label)
-    {
-        if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException($"Choose the {label} file.");
-        string fullPath = Path.GetFullPath(path);
-        if (!File.Exists(fullPath)) throw new FileNotFoundException($"{label} was not found: {fullPath}", fullPath);
-        return fullPath;
     }
 }

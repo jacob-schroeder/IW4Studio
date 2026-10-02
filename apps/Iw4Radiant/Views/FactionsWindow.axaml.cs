@@ -39,7 +39,7 @@ public partial class FactionsWindow : Window
         new(MapFactionAuthoring.OpforceAirborne, "Spetsnaz")
     ];
     private readonly string? _bootstrapRoot;
-    private readonly string? _mapFilePath, _linkerPath;
+    private readonly string? _mapFilePath;
     private readonly FactionModelPreview? _preview;
     private readonly DispatcherTimer _settleTimer = new() { Interval = TimeSpan.FromMilliseconds(120) };
     private ModelChoice[] _models = [];
@@ -57,10 +57,9 @@ public partial class FactionsWindow : Window
     public FactionsWindow() => InitializeComponent();
 
     internal FactionsWindow(MapFactionSettings settings, string? bootstrapRoot,
-        string? mapFilePath, string? linkerPath) : this()
+        string? mapFilePath) : this()
     {
         _mapFilePath = mapFilePath;
-        _linkerPath = linkerPath;
         _alliesAssaultA = settings.AlliesAssaultA;
         _axisAssaultA = settings.AxisAssaultA;
         _bootstrapRoot = bootstrapRoot;

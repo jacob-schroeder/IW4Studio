@@ -1,50 +1,43 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Iw4Radiant.Views.MapBuildWindow"
-        Title="Build PS3 FF" Width="760" Height="830"
-        MinWidth="640" MinHeight="740" WindowStartupLocation="CenterOwner">
-    <Grid Margin="20" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="14">
-        <StackPanel Spacing="6">
+        Title="Build PS3 FF" Width="720" Height="560"
+        MinWidth="600" MinHeight="480" WindowStartupLocation="CenterOwner">
+    <Grid Margin="18" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
+        <StackPanel Spacing="4">
             <TextBlock x:Name="SourceName" FontSize="17" FontWeight="SemiBold" />
             <TextBlock x:Name="GameModesText" Classes="caption" FontWeight="SemiBold" IsVisible="False" />
-            <TextBlock x:Name="ScopeText" Classes="caption" TextWrapping="Wrap" />
         </StackPanel>
-        <StackPanel x:Name="BuildInputs" Grid.Row="1" Spacing="10">
-            <StackPanel Spacing="4">
-                <TextBlock Text="D3dbspLinker tool" Classes="panelTitle" />
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                    <TextBox x:Name="LinkerPathBox" PlaceholderText="Select D3dbspLinker.dll or the executable"
-                             AutomationProperties.Name="D3dbspLinker path" />
-                    <Button Grid.Column="1" Content="Browse…" Click="BrowseLinker_Click" />
-                </Grid>
-            </StackPanel>
+        <StackPanel x:Name="BuildInputs" Grid.Row="1" Spacing="12">
             <StackPanel Spacing="4">
                 <TextBlock Text="Asset library" Classes="panelTitle" />
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                    <TextBox x:Name="EmitterAssetDirectoryBox" PlaceholderText="Choose the raw folder containing your source assets"
+                    <TextBox x:Name="EmitterAssetDirectoryBox" PlaceholderText="Select raw asset folder"
+                             ToolTip.Tip="Source models, materials, textures, FX, and sounds."
                              AutomationProperties.Name="Asset library folder" />
                     <Button Grid.Column="1" Content="Browse…" Click="BrowseEmitterAssets_Click" />
                 </Grid>
-                <TextBlock Text="Your models, materials, textures, FX and sounds come from this folder. Startup assets are included with the linker."
-                           Classes="caption" TextWrapping="Wrap" />
             </StackPanel>
             <StackPanel Spacing="4">
                 <TextBlock Text="Output folder" Classes="panelTitle" />
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                    <TextBox x:Name="OutputFolderBox" AutomationProperties.Name="Build output folder" />
+                    <TextBox x:Name="OutputFolderBox" ToolTip.Tip="Each build creates a folder with the .ff and matching .pak."
+                             AutomationProperties.Name="Build output folder" />
                     <Button Grid.Column="1" Content="Browse…" Click="BrowseOutput_Click" />
                 </Grid>
-                <TextBlock Text="Each build creates a new folder with your compiled map and its texture package. Keep the .ff and matching .pak together."
-                           Classes="caption" TextWrapping="Wrap" />
             </StackPanel>
         </StackPanel>
-        <Grid Grid.Row="2" RowDefinitions="Auto,*,Auto" RowSpacing="6">
-            <TextBlock x:Name="BuildStatus" Text="Ready to build the saved map." Classes="panelTitle" TextWrapping="Wrap" />
-            <TextBox x:Name="ProgressOutput" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True"
+        <Grid Grid.Row="2" RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="6">
+            <TextBlock x:Name="BuildStatus" Text="Ready to build the saved map." FontSize="14"
+                       FontWeight="SemiBold" TextWrapping="Wrap" />
+            <ProgressBar x:Name="BuildProgress" Grid.Row="1" Height="4" IsIndeterminate="True"
+                         IsVisible="False" AutomationProperties.Name="Build in progress" />
+            <TextBlock Grid.Row="2" Text="Build log" Classes="caption" />
+            <TextBox x:Name="ProgressOutput" Grid.Row="3" IsReadOnly="True" AcceptsReturn="True"
                      TextWrapping="Wrap" FontFamily="Menlo,Consolas,monospace" FontSize="11"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     AutomationProperties.Name="Build progress" />
-            <Grid x:Name="ErrorLocation" Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="10"
+                     AutomationProperties.Name="Build log" />
+            <Grid x:Name="ErrorLocation" Grid.Row="4" ColumnDefinitions="*,Auto" ColumnSpacing="10"
                   IsVisible="False">
                 <TextBlock x:Name="ErrorLocationText" VerticalAlignment="Center" TextWrapping="Wrap"
                            Classes="caption" />

@@ -25,7 +25,6 @@ public partial class MapBuildWindow : Window
     {
         InitializeComponent();
         BuildButton.IsEnabled = false;
-        ScopeText.Text = MapCompiler.Scope;
         Closing += (_, e) =>
         {
             if (_buildCancellation is null) return;
@@ -64,13 +63,12 @@ public partial class MapBuildWindow : Window
 
     internal MapBuildWindow(MapDocument document, string sourcePath,
         IReadOnlyDictionary<string, MaterialSource> materials, IReadOnlyDictionary<string, XModelSource> models,
-        string linkerPath, string emitterAssetDirectory, string outputFolder,
+        string emitterAssetDirectory, string outputFolder,
         Func<SelectionPath, bool> navigate) : this(document, materials, models)
     {
         _navigate = navigate;
         _sourcePath = sourcePath;
         SourceName.Text = Path.GetFileName(sourcePath);
-        LinkerPathBox.Text = linkerPath;
         EmitterAssetDirectoryBox.Text = emitterAssetDirectory;
         OutputFolderBox.Text = outputFolder;
         BuildButton.IsEnabled = true;
@@ -79,23 +77,8 @@ public partial class MapBuildWindow : Window
     internal string? CompletedDirectory { get; private set; }
     internal string? CompletedBspPath { get; private set; }
     internal bool PreviewRequested { get; private set; }
-    internal string LinkerPath => LinkerPathBox.Text?.Trim() ?? "";
     internal string EmitterAssetDirectory => EmitterAssetDirectoryBox.Text?.Trim() ?? "";
     internal string OutputFolder => OutputFolderBox.Text?.Trim() ?? "";
-
-    private async void BrowseLinker_Click(object? sender, RoutedEventArgs e)
-    {
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "Select D3dbspLinker", AllowMultiple = false,
-            FileTypeFilter =
-            [
-                new FilePickerFileType("D3dbspLinker") { Patterns = ["D3dbspLinker", "D3dbspLinker.exe", "D3dbspLinker.dll"] },
-                FilePickerFileTypes.All
-            ]
-        });
-        if (files.Count != 0 && files[0].TryGetLocalPath() is { } path) LinkerPathBox.Text = path;
-    }
 
     private async void BrowseOutput_Click(object? sender, RoutedEventArgs e)
     {
@@ -125,6 +108,7 @@ public partial class MapBuildWindow : Window
         BuildInputs.IsEnabled = BuildButton.IsEnabled = false;
         CloseButton.Content = "Cancel build";
         BuildStatus.Text = "Building…";
+        BuildProgress.IsVisible = true;
         ProgressOutput.Text = "";
         _buildClock.Restart();
         ErrorLocation.IsVisible = false;
@@ -140,7 +124,7 @@ public partial class MapBuildWindow : Window
             }
             else if (_sourcePath is { } sourcePath)
                 CompletedDirectory = await MapBuildPipeline.BuildAsync(_document, sourcePath, _materials, _models,
-                    LinkerPath, EmitterAssetDirectory, OutputFolder,
+                    EmitterAssetDirectory, OutputFolder,
                     progress, cancellation.Token);
             BuildStatus.Text = "Build complete";
             AppendProgress($"Build complete: {CompletedBspPath ?? CompletedDirectory}");
@@ -179,6 +163,7 @@ public partial class MapBuildWindow : Window
         {
             _buildClock.Stop();
             _buildCancellation = null;
+            BuildProgress.IsVisible = false;
             BuildInputs.IsEnabled = BuildButton.IsEnabled = CompletedDirectory is null && CompletedBspPath is null;
             CloseButton.IsEnabled = true;
             CloseButton.Content = "Close";

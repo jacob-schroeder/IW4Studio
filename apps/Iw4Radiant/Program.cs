@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.OpenGL;
+using Iw4Radiant.Compilation;
 
 namespace Iw4Radiant;
 
@@ -8,6 +9,11 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args is [BundledLinker.CommandLineSwitch, .. var linkerArguments])
+        {
+            Environment.ExitCode = D3dbspLinker.Program.Main(linkerArguments);
+            return;
+        }
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 
