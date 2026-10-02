@@ -91,7 +91,7 @@ internal sealed class EditorSession
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
     public event EventHandler? Changed;
-    internal event Action<bool>? PointEntityPreviewChanged;
+    internal event Action<Matrix4x4>? PointEntityPreviewChanged;
     internal event Action<MapEntity>? LightInfluencePreviewChanged;
     internal event EventHandler? LightSweepPlaybackChanged;
 
@@ -134,15 +134,16 @@ internal sealed class EditorSession
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    internal bool RefreshPointEntityPreview()
+    internal bool RefreshPointEntityPreview(TransformMode mode, Matrix4x4 delta)
     {
-        if (!Scene.UpdatePointEntities(Selection.Items.OfType<MapEntity>(), out bool modelsChanged)) return false;
-        PointEntityPreviewChanged?.Invoke(modelsChanged);
+        if (!Scene.CanPreviewPointEntityTransform(mode) ||
+            !Scene.UpdatePointEntities(Selection.Items.OfType<MapEntity>())) return false;
+        PointEntityPreviewChanged?.Invoke(delta);
         return true;
     }
     internal void RefreshLightInfluencePreview(MapEntity entity)
     {
-        if (!Scene.UpdatePointEntities([entity], out _))
+        if (!Scene.UpdatePointEntities([entity]))
         {
             Refresh();
             return;

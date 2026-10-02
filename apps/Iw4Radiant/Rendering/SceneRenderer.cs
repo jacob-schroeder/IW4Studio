@@ -104,14 +104,14 @@ internal sealed class SceneRenderer
     private int _glyphStart, _glyphCount, _gridStart, _gridCount, _highlightStart, _highlightCount,
         _outlineStart, _outlineCount, _axesStart, _axesCount, _leakPathStart, _leakPathCount;
     private bool _sceneDirty = true, _texturesDirty = true, _shadowsDirty = true;
-    private SceneVertex[] _movePreviewVertices = [];
-    private readonly List<(int Start, int Count)> _movePreviewRanges = [];
-    private readonly List<(MapEntity Source, MapEntity Target, int Start, int Count)> _moveConnectionRanges = [];
+    private SceneVertex[] _transformPreviewVertices = [];
+    private readonly List<(int Start, int Count, MapEntity? PointEntity, bool SpawnArrow, Vector3 Origin)> _transformPreviewRanges = [];
+    private readonly List<(MapEntity Source, MapEntity Target, int Start, int Count)> _transformConnectionRanges = [];
     private readonly Dictionary<MapEntity, (int Start, int Count)> _lightInfluenceRanges = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<MapEntity> _lightInfluencePreviewSources = new(ReferenceEqualityComparer.Instance);
-    private MapEntity? _movePreviewSource;
-    private Vector3 _movePreviewOrigin, _movePreviewApplied;
-    private bool _movePreviewDirty;
+    private Matrix4x4 _transformPreviewDelta = Matrix4x4.Identity;
+    private readonly List<int> _transformTransparentTriangles = [];
+    private bool _transformPreviewDirty;
     private readonly Dictionary<XModelSource, PreviewModelMesh> _previewMeshes = new(ReferenceEqualityComparer.Instance);
     private readonly List<(MapEntity Source, string Material, int Start, int Count, int WireStart, int WireCount)> _destructibleRanges = [];
     private readonly List<(MapEntity Source, int Start, int Count)> _destructibleOutlines = [];
@@ -230,7 +230,12 @@ internal sealed class SceneRenderer
         _walkPlayerNotice = null;
         // OpenGL deletion is deferred until Render or ReleaseResources has a current context.
     }
-    internal void PreviewPointEntityMove() => _movePreviewDirty = true;
+    internal void PreviewPointEntityTransform(Matrix4x4 delta)
+    {
+        // Pointer events can arrive faster than render frames; apply their deltas in order.
+        _transformPreviewDelta *= delta;
+        _transformPreviewDirty = true;
+    }
     internal void ReloadTextures()
     {
         _texturesDirty = _sceneDirty = true;
@@ -608,7 +613,7 @@ internal sealed class SceneRenderer
                 _shadowsDirty = _reflectionsDirty = true;
                 _worldTextureUploaded = false;
             }
-            if ((_movePreviewDirty && !UpdatePointEntityMove(gl, session.Scene)) ||
+            if ((_transformPreviewDirty && !UpdatePointEntityTransform(gl, session.Scene)) ||
                 (_compiledPreview is null && !UpdateLightInfluence(gl, session.Scene)))
             {
                 _sceneDirty = true;
@@ -1459,9 +1464,9 @@ internal sealed class SceneRenderer
             bool drawTransparent = previewAlpha && (state.IsBlended || !state.DepthWrite);
             if (drawTransparent != transparent) continue;
             if (capture && water) continue;
-            // Water can move beyond its resting bounds. Point-entity drags stream new positions
-            // into the buffer; resume bounds culling after the committed scene is uploaded.
-            if (!capture && !water && batch.Owner is null && _movePreviewRanges.Count == 0 &&
+            // Water can move beyond its resting bounds. Editable model batches omit cached bounds
+            // while their vertices can change; other batches retain normal offscreen culling.
+            if (!capture && !water && batch.Owner is null &&
                 _surfaceBatchBounds.TryGetValue((batch.Start, batch.Count, batch.WireStart, batch.WireCount), out var bounds) &&
                 !IntersectsClip(bounds, viewProjection)) continue;
             uint texture = water ? (_water.IsAvailable(batch.Material) ? _lineTexture : 0) : _materialTextures.GetTexture(gl, batch.Material, resolveMaterial);
@@ -1558,7 +1563,7 @@ internal sealed class SceneRenderer
                 BindCompiledLightmap(gl, _compiledPreview?.LightingAt(triangle.Start) ??
                     (CompiledBspPreview.NoLightmap, (byte)0));
                 if (_compiledPreview is null && _stages?.SunCount > 1)
-                    _sunlight.Bind(gl, _movePreviewVertices[triangle.Start].SunIndex);
+                    _sunlight.Bind(gl, _transformPreviewVertices[triangle.Start].SunIndex);
                 if ((_compiledPreview is not null && _waterMaterials.Contains(triangle.Material)) ||
                     _waterProbes.ContainsKey(triangle.Start)) BindWaterReflection(gl, triangle.Start);
                 gl.DrawArrays(PrimitiveType.Triangles, triangle.Start, 3);
@@ -1803,25 +1808,29 @@ internal sealed class SceneRenderer
         _destructibleRanges.AddRange(scene.DestructibleRanges);
         _destructibleOutlines.Clear();
         _destructibleOutlines.AddRange(scene.DestructibleOutlines);
-        _movePreviewVertices = scene.Vertices;
-        _movePreviewRanges.Clear();
-        _movePreviewRanges.AddRange(scene.MovePreviewRanges);
-        _moveConnectionRanges.Clear();
-        _moveConnectionRanges.AddRange(scene.MoveConnectionRanges);
+        _transformPreviewVertices = scene.Vertices;
+        _transformPreviewRanges.Clear();
+        foreach (var range in scene.TransformPreviewRanges)
+            _transformPreviewRanges.Add((range.Start, range.Count, range.PointEntity, range.SpawnArrow,
+                range.PointEntity is null ? Vector3.Zero : EditorSession.EntityOrigin(range.PointEntity)));
+        _transformConnectionRanges.Clear();
+        _transformConnectionRanges.AddRange(scene.TransformConnectionRanges);
         _lightInfluenceRanges.Clear();
         foreach (var range in scene.LightInfluenceRanges)
             _lightInfluenceRanges.Add(range.Source, (range.Start, range.Count));
         _lightInfluencePreviewSources.Clear();
-        _movePreviewSource = session.Selection.Items.OfType<MapEntity>().FirstOrDefault();
-        _movePreviewOrigin = _movePreviewSource is null ? Vector3.Zero : EditorSession.EntityOrigin(_movePreviewSource);
-        _movePreviewApplied = Vector3.Zero;
-        _movePreviewDirty = false;
+        _transformPreviewDelta = Matrix4x4.Identity;
+        _transformPreviewDirty = false;
         if (!session.DeferPreviewLighting) _lighting.Update(gl, session.Scene);
         _batches.Clear();
         _batches.AddRange(scene.Batches);
         _surfaceBatches.Clear();
         _surfaceBatches.AddRange(scene.Batches.Where(batch => resolveMaterial?.Invoke(batch.Material)?.IsSky != true));
         CacheSurfaceBatchBounds(scene.Vertices);
+        foreach (var batch in _surfaceBatches)
+            if (_transformPreviewRanges.Any(range =>
+                    range.Start >= batch.Start && range.Start < batch.WireStart + batch.WireCount))
+                _surfaceBatchBounds.Remove((batch.Start, batch.Count, batch.WireStart, batch.WireCount));
         _usedSunIndices.Clear();
         _usedSunIndices.Add(1);
         foreach (var batch in _surfaceBatches)
@@ -1918,6 +1927,13 @@ internal sealed class SceneRenderer
                 for (int index = batch.Start; index < batch.Start + batch.Count; index += 3)
                     _transparentTriangles.Add((batch.Material, index,
                         data[index].Position / 3 + data[index + 1].Position / 3 + data[index + 2].Position / 3));
+        _transformTransparentTriangles.Clear();
+        for (int index = 0; index < _transparentTriangles.Count; index++)
+        {
+            int start = _transparentTriangles[index].Start;
+            if (_transformPreviewRanges.Any(range => start >= range.Start && start < range.Start + range.Count))
+                _transformTransparentTriangles.Add(index);
+        }
         foreach (var batch in scene.PhysicsBatches)
             if (_surfaceStates[batch.Material] is { } state && (state.IsBlended || !state.DepthWrite))
                 for (int index = batch.Start; index < batch.Start + batch.Count; index += 3)
@@ -1994,27 +2010,68 @@ internal sealed class SceneRenderer
         return true;
     }
 
-    private unsafe bool UpdatePointEntityMove(GL gl, EditorScene scene)
+    private unsafe bool UpdatePointEntityTransform(GL gl, EditorScene scene)
     {
-        _movePreviewDirty = false;
-        if (_movePreviewSource is null || _movePreviewRanges.Count == 0) return true;
-        Vector3 desired = EditorSession.EntityOrigin(_movePreviewSource) - _movePreviewOrigin;
-        Vector3 delta = desired - _movePreviewApplied;
-        if (delta == Vector3.Zero) return true;
-        gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vertexBuffer);
-        foreach (var (start, count) in _movePreviewRanges)
+        _transformPreviewDirty = false;
+        Matrix4x4 delta = _transformPreviewDelta;
+        _transformPreviewDelta = Matrix4x4.Identity;
+        if (_transformPreviewRanges.Count == 0 || delta == Matrix4x4.Identity) return true;
+        Vector3 translation = delta.Translation;
+        bool translationOnly = delta == Matrix4x4.CreateTranslation(translation);
+        Matrix4x4 normalTransform = Matrix4x4.Identity;
+        if (!translationOnly)
         {
+            if (!Matrix4x4.Invert(delta, out Matrix4x4 inverse)) return false;
+            normalTransform = Matrix4x4.Transpose(inverse);
+        }
+        gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vertexBuffer);
+        for (int rangeIndex = 0; rangeIndex < _transformPreviewRanges.Count; rangeIndex++)
+        {
+            var range = _transformPreviewRanges[rangeIndex];
+            int start = range.Start, count = range.Count;
+            Vector3 rangeTranslation = translation;
+            bool translateRange = translationOnly;
+            if (range.PointEntity is { } entity)
+            {
+                if (range.SpawnArrow)
+                {
+                    var vertices = new List<SceneVertex>(count);
+                    SceneGeometry.AddSpawnArrow(vertices, entity);
+                    if (!UploadPreviewRange(gl, (start, count), vertices)) return false;
+                    continue;
+                }
+                // Point markers and radius guides stay axis aligned, even when a group
+                // rotation moves their origins. Only the authored heading arrow rotates.
+                Vector3 origin = EditorSession.EntityOrigin(entity);
+                rangeTranslation = origin - range.Origin;
+                translateRange = true;
+                _transformPreviewRanges[rangeIndex] = (start, count, entity, false, origin);
+                if (rangeTranslation == Vector3.Zero) continue;
+            }
             for (int index = start; index < start + count; index++)
             {
-                SceneVertex vertex = _movePreviewVertices[index];
-                _movePreviewVertices[index] = new SceneVertex(vertex.Position + delta, vertex.Normal, vertex.Uv,
-                    vertex.Color, vertex.SunIndex);
+                SceneVertex vertex = _transformPreviewVertices[index];
+                Vector3 position = vertex.Position + rangeTranslation, normal = vertex.Normal;
+                if (!translateRange)
+                {
+                    position = Vector3.Transform(vertex.Position, delta);
+                    normal = Vector3.TransformNormal(vertex.Normal, normalTransform);
+                    if (normal.LengthSquared() > 0.000001f) normal = Vector3.Normalize(normal);
+                }
+                _transformPreviewVertices[index] = new SceneVertex(position, normal, vertex.Uv, vertex.Color, vertex.SunIndex);
             }
-            fixed (SceneVertex* vertices = &_movePreviewVertices[start])
+            fixed (SceneVertex* vertices = &_transformPreviewVertices[start])
                 gl.BufferSubData(BufferTargetARB.ArrayBuffer, (nint)(start * sizeof(SceneVertex)),
                     (nuint)(count * sizeof(SceneVertex)), vertices);
         }
-        _movePreviewApplied = desired;
+        foreach (int index in _transformTransparentTriangles)
+        {
+            var triangle = _transparentTriangles[index];
+            int start = triangle.Start;
+            _transparentTriangles[index] = (triangle.Material, start,
+                _transformPreviewVertices[start].Position / 3 + _transformPreviewVertices[start + 1].Position / 3 +
+                _transformPreviewVertices[start + 2].Position / 3);
+        }
         // Moving a spotlight changes its aim as well as its origin. Rebuild only its guides;
         // lighting/shadows stay at the committed pose until the transform finishes.
         foreach (var (source, range) in _lightInfluenceRanges)
@@ -2023,7 +2080,7 @@ internal sealed class SceneRenderer
             SceneGeometry.AddLightInfluence(vertices, scene, source);
             if (!UploadPreviewRange(gl, range, vertices)) return false;
         }
-        foreach (var connection in _moveConnectionRanges)
+        foreach (var connection in _transformConnectionRanges)
         {
             var vertices = new List<SceneVertex>(connection.Count);
             SceneGeometry.AddEntityConnection(vertices, scene, connection.Source, connection.Target);
@@ -2040,8 +2097,8 @@ internal sealed class SceneRenderer
         // reallocating scene geometry; the reserved range is reused when it becomes valid.
         var empty = new SceneVertex(Vector3.Zero, Vector3.UnitZ, Vector2.Zero, Vector3.Zero);
         for (int index = 0; index < range.Count; index++)
-            _movePreviewVertices[range.Start + index] = index < vertices.Count ? vertices[index] : empty;
-        fixed (SceneVertex* pointer = &_movePreviewVertices[range.Start])
+            _transformPreviewVertices[range.Start + index] = index < vertices.Count ? vertices[index] : empty;
+        fixed (SceneVertex* pointer = &_transformPreviewVertices[range.Start])
             gl.BufferSubData(BufferTargetARB.ArrayBuffer, (nint)(range.Start * sizeof(SceneVertex)),
                 (nuint)(range.Count * sizeof(SceneVertex)), pointer);
         return true;
@@ -2054,13 +2111,14 @@ internal sealed class SceneRenderer
         _destructibleRanges.Clear();
         _destructibleOutlines.Clear();
         UploadCompiledLightmaps(gl, preview);
-        _movePreviewVertices = [];
-        _movePreviewRanges.Clear();
-        _moveConnectionRanges.Clear();
+        _transformPreviewVertices = [];
+        _transformPreviewRanges.Clear();
+        _transformConnectionRanges.Clear();
         _lightInfluenceRanges.Clear();
         _lightInfluencePreviewSources.Clear();
-        _movePreviewSource = null;
-        _movePreviewDirty = false;
+        _transformPreviewDelta = Matrix4x4.Identity;
+        _transformTransparentTriangles.Clear();
+        _transformPreviewDirty = false;
         _batches.Clear();
         _batches.AddRange(preview.Batches);
         _surfaceBatches.Clear();
@@ -2293,13 +2351,14 @@ internal sealed class SceneRenderer
         _transparentTriangles.Clear();
         _physicsTransparentTriangles.Clear();
         _sortedTransparentTriangles.Clear();
-        _movePreviewVertices = [];
-        _movePreviewRanges.Clear();
-        _moveConnectionRanges.Clear();
+        _transformPreviewVertices = [];
+        _transformPreviewRanges.Clear();
+        _transformConnectionRanges.Clear();
         _lightInfluenceRanges.Clear();
         _lightInfluencePreviewSources.Clear();
-        _movePreviewSource = null;
-        _movePreviewDirty = false;
+        _transformPreviewDelta = Matrix4x4.Identity;
+        _transformTransparentTriangles.Clear();
+        _transformPreviewDirty = false;
         _previewMeshes.Clear();
         _activeDestructibleSource = null;
         _destructibleRanges.Clear();

@@ -123,8 +123,15 @@ internal sealed class OrthographicDrawing
                 if (selected && isSoundMarker)
                     foreach (var line in PointEntityGeometry.GetSoundRangeLines(entity))
                         context.DrawLine(SoundMarkerPen, _projection.ToScreen(line.A), _projection.ToScreen(line.B));
-                context.DrawLine(markerPen, center - new Vector(4, 0), center + new Vector(4, 0));
-                context.DrawLine(markerPen, center - new Vector(0, 4), center + new Vector(0, 4));
+                Vector3[] spawnArrow = _projection.Plane == OrthoPlane.Top
+                    ? PointEntityGeometry.GetSpawnArrow(entity) : [];
+                if (spawnArrow.Length != 0)
+                    DrawPolygon(context, spawnArrow.Select(_projection.ToScreen).ToArray(), markerPen.Brush, null);
+                else
+                {
+                    context.DrawLine(markerPen, center - new Vector(4, 0), center + new Vector(4, 0));
+                    context.DrawLine(markerPen, center - new Vector(0, 4), center + new Vector(0, 4));
+                }
                 // FX and sound can share X/Y while differing in height. Keep their labels
                 // in separate screen-space rows in Top view instead of drawing over each other.
                 double labelY = rect.Top + (isSoundMarker && _projection.Plane == OrthoPlane.Top ? 12 : -2);
@@ -132,7 +139,7 @@ internal sealed class OrthographicDrawing
                     new Point(rect.Right + 5, labelY),
                     isSoundMarker ? SoundMarkerPen.Brush ?? MutedBrush :
                     isFxMarker ? FxMarkerPen.Brush ?? MutedBrush : MutedBrush);
-                if (!VehiclePathPreview.IsNode(entity) &&
+                if (spawnArrow.Length == 0 && !VehiclePathPreview.IsNode(entity) &&
                     (entity.Properties.ContainsKey("angles") || entity.Properties.ContainsKey("angle")))
                     try
                     {

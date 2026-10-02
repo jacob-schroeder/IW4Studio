@@ -74,11 +74,10 @@ internal sealed class OrthographicTransform
         if (!Matrix4x4.Invert(_applied, out Matrix4x4 inverse))
             throw new InvalidOperationException("The previous transform cannot be inverted.");
         beginEdit();
-        SelectionTransforms.Apply(session, inverse * transform);
+        Matrix4x4 delta = inverse * transform;
+        SelectionTransforms.Apply(session, delta);
         _applied = transform;
-        bool pointEntityMove = _mode == TransformMode.Move && session.Selection.Items.All(item =>
-            item is MapEntity entity && PointEntityGeometry.IsPointEntity(entity));
-        if (!pointEntityMove || !session.RefreshPointEntityPreview()) session.Refresh();
+        if (!session.RefreshPointEntityPreview(_mode, delta)) session.Refresh();
         return transform != Matrix4x4.Identity;
     }
 

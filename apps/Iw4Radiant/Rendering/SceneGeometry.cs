@@ -25,8 +25,8 @@ internal sealed class SceneGeometry
     internal int AxesCount { get; }
     internal int LeakPathStart { get; }
     internal int LeakPathCount { get; }
-    internal List<(int Start, int Count)> MovePreviewRanges { get; } = [];
-    internal List<(MapEntity Source, MapEntity Target, int Start, int Count)> MoveConnectionRanges { get; } = [];
+    internal List<(int Start, int Count, MapEntity? PointEntity, bool SpawnArrow)> TransformPreviewRanges { get; } = [];
+    internal List<(MapEntity Source, MapEntity Target, int Start, int Count)> TransformConnectionRanges { get; } = [];
     internal List<(MapEntity Source, int Start, int Count)> LightInfluenceRanges { get; } = [];
     internal List<(MapEntity Source, string Material, int Start, int Count, int WireStart, int WireCount)> DestructibleRanges { get; } = [];
     internal List<(MapEntity Source, int Start, int Count)> DestructibleOutlines { get; } = [];
@@ -51,12 +51,11 @@ internal sealed class SceneGeometry
         }
         var selectedFaces = selection.Items.OfType<BrushFaceSelection>().Select(face => face.Face).ToHashSet();
         IReadOnlyDictionary<MapEntity, MapEntity>? physicsPoses = editor.PhysicsPlacementPreview;
-        bool movePreview = physicsPoses is null && selection.Count > 0 && selection.Items.All(item =>
-            item is MapEntity entity && (entity.ClassName is "fx_origin" or "light" or "info_null" || XModelGeometry.IsModel(entity)));
+        bool transformPreview = editor.CanPreviewPointEntityTransform(transformMode);
         var modelPreviewRanges = new List<(string Material, int TriangleStart, int TriangleCount, int WireStart, int WireCount)>();
         var destructibleRanges = new List<(MapEntity Source, string Material, int TriangleStart, int TriangleCount, int WireStart, int WireCount)>();
         var destructibleOutlines = new List<(MapEntity Source, int Start, int Count)>();
-        var outlinePreviewRanges = new List<(int Start, int Count)>();
+        var outlinePreviewRanges = new List<(int Start, int Count, MapEntity? PointEntity)>();
         var materials = new Dictionary<string, (List<SceneVertex> Triangles, List<SceneVertex> Lines, List<(int Start, int Count, Vector3 Center)> Surfaces)>(StringComparer.Ordinal);
         var physicsMaterials = new Dictionary<MapEntity, Dictionary<string, (List<SceneVertex> Triangles, List<SceneVertex> Lines,
             List<(int Start, int Count, Vector3 Center)> Surfaces)>>(ReferenceEqualityComparer.Instance);
@@ -141,7 +140,7 @@ internal sealed class SceneGeometry
                 MapEntity? destructibleSource = physicsOwner is null && editor.Owner(entity) is MapEntity source &&
                     DestructiblePresets.HasDiscoveryName(source) ? source : null;
                 List<SceneVertex> ownerOutlines = physicsOwner is null ? outlines : GetPhysicsOutlines(physicsOwner);
-                bool moving = movePreview && selectedObjects.Contains(entity);
+                bool moving = transformPreview && selectedObjects.Contains(entity);
                 var starts = new Dictionary<string, (int Triangles, int Lines)>(StringComparer.Ordinal);
                 int outlineStart = ownerOutlines.Count;
                 byte modelSunIndex = stages?.SunIndexAt(Vector3.Transform(
@@ -194,8 +193,8 @@ internal sealed class SceneGeometry
             Batches.Add((material.Key, start, material.Value.Triangles.Count, wireStart, material.Value.Lines.Count));
             foreach (var range in modelPreviewRanges.Where(range => range.Material == material.Key))
             {
-                AddMovePreviewRange(start + range.TriangleStart, range.TriangleCount);
-                AddMovePreviewRange(wireStart + range.WireStart, range.WireCount);
+                AddTransformPreviewRange(start + range.TriangleStart, range.TriangleCount);
+                AddTransformPreviewRange(wireStart + range.WireStart, range.WireCount);
             }
             foreach (var range in destructibleRanges.Where(range => range.Material == material.Key))
                 DestructibleRanges.Add((range.Source, material.Key, start + range.TriangleStart,
@@ -226,7 +225,8 @@ internal sealed class SceneGeometry
                 continue;
             }
             bool missingModel = XModelGeometry.IsModel(entity);
-            bool moving = movePreview && selected;
+            bool moving = transformPreview && selected;
+            MapEntity? rotatingMarker = moving && transformMode == TransformMode.Rotate ? entity : null;
             int glyphStart = all.Count, outlineStart = outlines.Count;
             Vector3 color = missingModel ? Vector3.UnitX :
                 entity.ClassName == "light" ? new(1, 0.85f, 0.35f) :
@@ -237,6 +237,7 @@ internal sealed class SceneGeometry
             {
                 foreach (var line in PointEntityGeometry.GetRadiusLines(entity))
                     AddLine(outlines, line.A, line.B, selectedObjects.Contains(entity) ? highlight : color);
+                if (moving) AddOutlinePreviewRange(outlineStart, outlines.Count - outlineStart, rotatingMarker);
                 continue;
             }
             if (selectedObjects.Contains(entity))
@@ -254,10 +255,17 @@ internal sealed class SceneGeometry
                 }
                 else AddPolygon(polygon, all, color, selectedObjects.Contains(entity) ? highlight : color * 0.6f);
             }
+            int arrowStart = all.Count;
+            AddSpawnArrow(all, entity);
             if (moving)
             {
-                AddMovePreviewRange(glyphStart, all.Count - glyphStart);
-                AddOutlinePreviewRange(outlineStart, outlines.Count - outlineStart);
+                if (rotatingMarker is null) AddTransformPreviewRange(glyphStart, all.Count - glyphStart);
+                else
+                {
+                    AddTransformPreviewRange(glyphStart, arrowStart - glyphStart, rotatingMarker);
+                    AddTransformPreviewRange(arrowStart, all.Count - arrowStart, rotatingMarker, spawnArrow: true);
+                }
+                AddOutlinePreviewRange(outlineStart, outlines.Count - outlineStart, rotatingMarker);
             }
         }
         GlyphCount = all.Count - GlyphStart;
@@ -280,7 +288,7 @@ internal sealed class SceneGeometry
         foreach (var range in destructibleOutlines)
             DestructibleOutlines.Add((range.Source, OutlineStart + range.Start, range.Count));
         foreach (var range in outlinePreviewRanges)
-            AddMovePreviewRange(OutlineStart + range.Start, range.Count);
+            AddTransformPreviewRange(OutlineStart + range.Start, range.Count, range.PointEntity);
         foreach (var owner in physicsOutlines)
         {
             int start = all.Count;
@@ -290,8 +298,7 @@ internal sealed class SceneGeometry
         }
         AxesStart = all.Count;
         MapEntity? selectedVehicle = selection.Items.OfType<MapEntity>().FirstOrDefault(VehiclePathPreview.IsNode);
-        AddEntityConnections(all, document, selection, editor, selectedVehicle is not null,
-            movePreview && selection.Items.OfType<MapEntity>().Any(entity => entity.ClassName is "light" or "info_null"));
+        AddEntityConnections(all, document, selection, editor, selectedVehicle is not null, transformPreview);
         if (selectedVehicle is not null) AddVehiclePathPreview(all, document, selectedVehicle);
         foreach (MapEntity light in selection.Items.OfType<MapEntity>().Where(entity => entity.ClassName == "light"))
         {
@@ -318,7 +325,9 @@ internal sealed class SceneGeometry
             selection.Items.All(SelectionGeometry.CanTransform) && editor.Bounds(selection.Items) is { } selectionBounds)
             foreach (var line in TransformGizmoGeometry.GetLines(selectionBounds, transformMode))
                 AddLine(all, line.A, line.B, line.Color);
-        if (movePreview) AddMovePreviewRange(gizmoStart, all.Count - gizmoStart);
+        // Rotation rings stay on the world axes around the gesture's pivot.
+        if (transformPreview && transformMode == TransformMode.Move)
+            AddTransformPreviewRange(gizmoStart, all.Count - gizmoStart);
         AxesCount = all.Count - AxesStart;
         LeakPathStart = all.Count;
         if (leakPath is { } path)
@@ -341,14 +350,14 @@ internal sealed class SceneGeometry
                 vertices[index] = vertices[index].WithSunIndex(sunIndex);
         }
 
-        void AddMovePreviewRange(int start, int count)
+        void AddTransformPreviewRange(int start, int count, MapEntity? pointEntity = null, bool spawnArrow = false)
         {
-            if (count > 0) MovePreviewRanges.Add((start, count));
+            if (count > 0) TransformPreviewRanges.Add((start, count, pointEntity, spawnArrow));
         }
 
-        void AddOutlinePreviewRange(int start, int count)
+        void AddOutlinePreviewRange(int start, int count, MapEntity? pointEntity = null)
         {
-            if (count > 0) outlinePreviewRanges.Add((start, count));
+            if (count > 0) outlinePreviewRanges.Add((start, count, pointEntity));
         }
 
         bool TryAddGlassPane(MapBrush brush)
@@ -481,6 +490,17 @@ internal sealed class SceneGeometry
 
     }
 
+    internal static void AddSpawnArrow(List<SceneVertex> vertices, MapEntity entity)
+    {
+        Vector3[] arrow = PointEntityGeometry.GetSpawnArrow(entity);
+        if (arrow.Length == 0) return;
+        // Filled head and shaft sit just above the cube's top, with the same depth occlusion.
+        ReadOnlySpan<int> indices = [0, 1, 6, 2, 3, 4, 2, 4, 5];
+        foreach (int index in indices)
+            vertices.Add(new SceneVertex(arrow[index], Vector3.UnitZ, Vector2.Zero,
+                new Vector3(0.035f, 0.065f, 0.1f)));
+    }
+
     internal static void AddLightInfluence(List<SceneVertex> vertices, EditorScene scene, MapEntity light)
     {
         foreach (var line in LightInfluenceGeometry.GetLines(scene, light))
@@ -505,7 +525,7 @@ internal sealed class SceneGeometry
                 int start = vertices.Count;
                 AddEntityConnection(vertices, editor, source, destination);
                 if (trackMove && vertices.Count > start)
-                    MoveConnectionRanges.Add((source, destination, start, vertices.Count - start));
+                    TransformConnectionRanges.Add((source, destination, start, vertices.Count - start));
             }
         }
     }

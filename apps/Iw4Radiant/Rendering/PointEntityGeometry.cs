@@ -6,6 +6,9 @@ namespace Iw4Radiant.Rendering;
 
 internal static class PointEntityGeometry
 {
+    private static readonly HashSet<string> SpawnClasses = GameplayEntityEditing.Types
+        .Where(type => type.Category == "Spawns").Select(type => type.Name).ToHashSet(StringComparer.Ordinal);
+
     internal static bool IsPointEntity(MapEntity entity) => entity.ClassName != "worldspawn" &&
         entity.Brushes.Count == 0 && entity.Terrains.Count == 0 && entity.PreservedPrimitives.Count == 0;
 
@@ -13,6 +16,32 @@ internal static class PointEntityGeometry
     {
         var bounds = EditorSession.EntityBounds(entity);
         return MapBrush.CreateBox(bounds.Min, bounds.Max, "");
+    }
+
+    internal static Vector3[] GetSpawnArrow(MapEntity entity)
+    {
+        if (!SpawnClasses.Contains(entity.ClassName)) return [];
+        Vector3 angles;
+        try { angles = EntityOrientation.Read(entity); }
+        catch (ArgumentException) { return []; }
+        var (min, max) = EditorSession.EntityBounds(entity);
+        float radius = MathF.Min(max.X - min.X, max.Y - min.Y) * 0.5f;
+        // The top-face marker shows heading (yaw), keeping pitch and roll out of its flat footprint.
+        Vector3 forward = EntityOrientation.Forward(new Vector3(0, angles.Y, 0));
+        Vector3 side = new(-forward.Y, forward.X, 0);
+        Vector3 center = new((min.X + max.X) * 0.5f, (min.Y + max.Y) * 0.5f, max.Z + 0.05f);
+        Vector3 neck = center + forward * (radius * 0.1f);
+        Vector3 tail = center - forward * (radius * 0.65f);
+        return
+        [
+            center + forward * (radius * 0.85f),
+            neck + side * (radius * 0.5f),
+            neck + side * (radius * 0.18f),
+            tail + side * (radius * 0.18f),
+            tail - side * (radius * 0.18f),
+            neck - side * (radius * 0.18f),
+            neck - side * (radius * 0.5f)
+        ];
     }
 
     internal static IEnumerable<(Vector3 A, Vector3 B)> GetMistGuideLines(MapEntity entity)

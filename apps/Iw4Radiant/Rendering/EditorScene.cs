@@ -166,12 +166,17 @@ internal sealed class EditorScene(EditorSession session)
             ? entity : null;
     }
 
-    internal bool UpdatePointEntities(IEnumerable<MapEntity> sources, out bool modelsChanged)
+    internal bool CanPreviewPointEntityTransform(TransformMode mode) =>
+        mode is (TransformMode.Move or TransformMode.Rotate) &&
+        _physicsPlacementPreview is null && session.Selection.Count > 0 && session.Selection.Items.All(item =>
+            item is MapEntity entity && PointEntityGeometry.IsPointEntity(entity) &&
+            !PrefabLibrary.IsPrefab(entity) && !VehiclePathPreview.IsNode(entity));
+
+    internal bool UpdatePointEntities(IEnumerable<MapEntity> sources)
     {
-        modelsChanged = false;
         if (_document is null) return false;
         var remaining = new HashSet<MapEntity>(sources, ReferenceEqualityComparer.Instance);
-        modelsChanged = remaining.Any(XModelGeometry.IsModel);
+        bool modelsChanged = remaining.Any(XModelGeometry.IsModel);
         foreach (MapEntity visible in _document.Entities)
         {
             if (!_owners.TryGetValue(visible, out object? owner) || owner is not MapEntity source ||

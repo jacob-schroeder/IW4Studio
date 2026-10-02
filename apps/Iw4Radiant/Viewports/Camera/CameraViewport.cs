@@ -109,21 +109,17 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         }
     }
 
-    private void OnPointEntityPreviewChanged(bool modelsChanged)
+    private void OnPointEntityPreviewChanged(Matrix4x4 delta)
     {
         StopPhysicsPlacement();
         StopGlassShatter();
         StopWalk();
-        if (_session is { } session && session.DeferPreviewLighting && session.TransformMode == TransformMode.Move &&
-            session.Selection.Count > 0 && session.Selection.Items.All(item => item is MapEntity entity &&
-                (entity.ClassName is "fx_origin" or "light" or "info_null" || XModelGeometry.IsModel(entity))))
+        if (_session is { DeferPreviewLighting: true })
         {
-            _renderer.PreviewPointEntityMove();
+            _renderer.PreviewPointEntityTransform(delta);
             RequestNextFrameRendering();
         }
-        else if (modelsChanged || _transform is not null ||
-            _session is { DeferPreviewLighting: true } movingSession &&
-            movingSession.Selection.Items.OfType<MapEntity>().Any(entity => entity.ClassName == "light")) RefreshScene();
+        else RefreshScene();
     }
 
     private void OnLightInfluencePreviewChanged(MapEntity entity)

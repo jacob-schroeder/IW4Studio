@@ -103,11 +103,10 @@ internal sealed class CameraTransformGesture
         if (target == _applied) return null;
         if (!Matrix4x4.Invert(_applied, out Matrix4x4 inverse))
             throw new ArgumentException("The transform would collapse the selection.");
-        SelectionTransforms.Apply(_session, inverse * target);
+        Matrix4x4 delta = inverse * target;
+        SelectionTransforms.Apply(_session, delta);
         _applied = target;
-        bool pointEntityMove = _mode == TransformMode.Move && _selection.All(item =>
-            item is MapEntity entity && PointEntityGeometry.IsPointEntity(entity));
-        if (!pointEntityMove || !_session.RefreshPointEntityPreview()) _session.Refresh();
+        if (!_session.RefreshPointEntityPreview(_mode, delta)) _session.Refresh();
         string axisName = _axis == 1 ? "X" : _axis == 2 ? "Y" : _axis == 3 ? "Z" : "uniform";
         return $"{_mode} {axisName}: {amount.ToString("0.###", CultureInfo.InvariantCulture)}{units}";
     }

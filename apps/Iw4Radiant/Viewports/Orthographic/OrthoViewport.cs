@@ -139,7 +139,7 @@ public sealed class OrthoViewport : Control
         _gestures.SessionChanged();
     }
 
-    private void PointEntityPreviewChanged(bool _) => InvalidateVisual();
+    private void PointEntityPreviewChanged(Matrix4x4 _) => InvalidateVisual();
     private void LightInfluencePreviewChanged(MapEntity _) => InvalidateVisual();
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
