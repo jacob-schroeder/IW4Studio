@@ -18,7 +18,7 @@
             <TextBlock Text="Color" Classes="fieldLabel" />
             <views:LightColorPicker x:Name="ColorPicker" ToolTip.Tip="Adjust sunlight color channels or choose a swatch. RGB values control the exact brightness." />
             <Expander Header="RGB values" IsExpanded="False">
-                <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4" Margin="0,8,0,0">
+                <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4">
                     <TextBlock Text="Red" Classes="caption" />
                     <TextBlock Text="Green" Grid.Column="1" Classes="caption" />
                     <TextBlock Text="Blue" Grid.Column="2" Classes="caption" />

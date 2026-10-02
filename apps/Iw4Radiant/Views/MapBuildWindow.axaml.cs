@@ -51,7 +51,7 @@ public partial class MapBuildWindow : Window
         _navigate = navigate;
         _bspPath = bspPath;
         _sourcePath = sourcePath;
-        Title = "Build .d3dbsp";
+        Title = "Compile BSP (.d3dbsp)";
         MinWidth = 500;
         MinHeight = 320;
         Width = 600;
@@ -77,6 +77,10 @@ public partial class MapBuildWindow : Window
     internal string? CompletedDirectory { get; private set; }
     internal string? CompletedBspPath { get; private set; }
     internal bool PreviewRequested { get; private set; }
+    internal bool BuildAttempted { get; private set; }
+    internal string BuildOutput => ProgressOutput.Text ?? "";
+    internal string? BuildProblem { get; private set; }
+    internal SelectionPath? BuildErrorLocation => _errorLocation;
     internal string EmitterAssetDirectory => EmitterAssetDirectoryBox.Text?.Trim() ?? "";
     internal string OutputFolder => OutputFolderBox.Text?.Trim() ?? "";
 
@@ -105,6 +109,8 @@ public partial class MapBuildWindow : Window
             _document is null || (_sourcePath is null && _bspPath is null) || _materials is null || _models is null) return;
         using var cancellation = new CancellationTokenSource();
         _buildCancellation = cancellation;
+        BuildAttempted = true;
+        BuildProblem = null;
         BuildInputs.IsEnabled = BuildButton.IsEnabled = false;
         CloseButton.Content = "Cancel build";
         BuildStatus.Text = "Building…";
@@ -139,6 +145,7 @@ public partial class MapBuildWindow : Window
         catch (Exception exception)
         {
             BuildStatus.Text = "Build failed";
+            BuildProblem = exception.Message;
             AppendProgress(exception.Message);
             if (exception is MapBuildLocationException located &&
                 ReferenceEquals(located.Document, _document) && _navigate is not null)

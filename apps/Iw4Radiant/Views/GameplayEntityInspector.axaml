@@ -4,7 +4,7 @@
              x:Class="Iw4Radiant.Views.GameplayEntityInspector">
     <StackPanel Spacing="8">
         <Expander x:Name="VehiclePathPanel" Header="Vehicle path preview" IsExpanded="True" IsVisible="False">
-            <StackPanel Spacing="6" Margin="0,8,0,0">
+            <StackPanel Spacing="6">
                 <TextBlock x:Name="VehiclePathSummary" TextWrapping="Wrap" />
                 <TextBlock x:Name="VehiclePathMetrics" Classes="caption" TextWrapping="Wrap" />
                 <TextBlock x:Name="VehiclePathIssues" Foreground="#EA7774" TextWrapping="Wrap" IsVisible="False" />
@@ -12,7 +12,7 @@
             </StackPanel>
         </Expander>
         <Expander Header="Create gameplay entity" IsExpanded="False">
-            <StackPanel Spacing="6" Margin="0,8,0,0">
+            <StackPanel Spacing="6">
                 <TextBox x:Name="EntityFilter" PlaceholderText="Search native IW4 entity types" />
                 <ComboBox x:Name="Category" HorizontalAlignment="Stretch" />
                 <ListBox x:Name="EntityTypes" MaxHeight="150" MinHeight="72" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
@@ -25,7 +25,7 @@
             </StackPanel>
         </Expander>
         <Expander x:Name="GameplayFields" Header="Gameplay fields and links" IsExpanded="True">
-            <StackPanel Spacing="7" Margin="0,8,0,0">
+            <StackPanel Spacing="7">
                 <TextBlock x:Name="FieldInfo" Classes="caption" TextWrapping="Wrap" Text="Select an entity to edit its gameplay fields." />
                 <Grid x:Name="Fields" ColumnDefinitions="76,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="5" RowSpacing="5">
                     <TextBlock Text="Name" Classes="fieldLabel" /><TextBox x:Name="TargetName" Grid.Column="1" ToolTip.Tip="Native targetname; renaming a unique name updates incoming target links." />

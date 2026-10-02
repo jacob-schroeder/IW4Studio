@@ -58,6 +58,8 @@ internal sealed class OrthographicDrawing
     internal OrthographicDrawing(OrthographicProjection projection) => _projection = projection;
     internal LeakPath? LeakPath { get; set; }
     internal int LeakPointIndex { get; set; }
+    internal EntityLabelMode LabelMode { get; set; }
+    internal Point? HoverPosition { get; set; }
 
     internal void Draw(DrawingContext context, EditorSession? session, OrthographicGestures gestures, bool focused)
     {
@@ -83,10 +85,26 @@ internal sealed class OrthographicDrawing
             foreach (var terrain in scene.Document.Terrains)
                 DrawTerrain(context, terrain.GetSurface(), IsWholeSelected(session, terrain), !terrain.IsCurve);
             DrawModelWireframes(context, scene, session.DeferPreviewLighting);
+            var labels = new List<(string Text, Point Position, IBrush Brush, bool Priority)>();
+            MapEntity? hovered = null;
+            double hoverDistance = double.PositiveInfinity;
+            if (HoverPosition is { } pointer && !gestures.IsActive)
+                foreach (MapEntity entity in scene.Document.Entities.Where(PointEntityGeometry.IsPointEntity))
+                {
+                    if (!scene.CanSelect(entity) || scene.Bounds(entity) is not { } hoverBounds ||
+                        !_projection.ScreenBounds(hoverBounds.Min, hoverBounds.Max).Inflate(5).Contains(pointer)) continue;
+                    double distance = OrthographicGeometry.Distance(_projection.ToScreen(EditorSession.EntityOrigin(entity)), pointer);
+                    if (distance >= hoverDistance) continue;
+                    hovered = entity;
+                    hoverDistance = distance;
+                }
             foreach (var entity in scene.Document.Entities.Where(PointEntityGeometry.IsPointEntity))
             {
                 Vector3 origin = EditorSession.EntityOrigin(entity);
                 bool selected = scene.Selection.Contains(entity);
+                bool priorityLabel = selected || ReferenceEquals(entity, hovered);
+                bool showLabel = LabelMode == EntityLabelMode.All ||
+                    (LabelMode == EntityLabelMode.Selected ? selected : priorityLabel || _projection.Zoom >= 0.35);
                 if (MistPainting.IsPainted(entity) && !selected)
                 {
                     if (scene.MistPaintingActive)
@@ -103,7 +121,8 @@ internal sealed class OrthographicDrawing
                 {
                     if (scene.PreviewModelForEntity(entity) is { } model)
                     {
-                        if (selected) DrawText(context, model.Name, _projection.ToScreen(origin) + new Vector(7, 7), SelectionBrush);
+                        if (showLabel) labels.Add((model.Name, _projection.ToScreen(origin) + new Vector(7, 7),
+                            selected ? SelectionBrush : MutedBrush, priorityLabel));
                         continue;
                     }
                     missingModel = true;
@@ -135,10 +154,10 @@ internal sealed class OrthographicDrawing
                 // FX and sound can share X/Y while differing in height. Keep their labels
                 // in separate screen-space rows in Top view instead of drawing over each other.
                 double labelY = rect.Top + (isSoundMarker && _projection.Plane == OrthoPlane.Top ? 12 : -2);
-                DrawText(context, isSoundMarker ? "Sound" : isFxMarker ? "FX" : entity.ClassName,
-                    new Point(rect.Right + 5, labelY),
+                if (showLabel) labels.Add((isSoundMarker ? "Sound" : isFxMarker ? "FX" : entity.ClassName,
+                    new Point(rect.Right + 5, labelY), selected ? SelectionBrush :
                     isSoundMarker ? SoundMarkerPen.Brush ?? MutedBrush :
-                    isFxMarker ? FxMarkerPen.Brush ?? MutedBrush : MutedBrush);
+                    isFxMarker ? FxMarkerPen.Brush ?? MutedBrush : MutedBrush, priorityLabel));
                 if (spawnArrow.Length == 0 && !VehiclePathPreview.IsNode(entity) &&
                     (entity.Properties.ContainsKey("angles") || entity.Properties.ContainsKey("angle")))
                     try
@@ -148,6 +167,7 @@ internal sealed class OrthographicDrawing
                     }
                     catch (ArgumentException) { }
             }
+            DrawEntityLabels(context, labels);
             MapEntity? selectedVehicle = scene.Selection.Items.OfType<MapEntity>().FirstOrDefault(VehiclePathPreview.IsNode);
             DrawTargets(context, scene, selectedVehicle is not null);
             if (session.Selection.Active is MapEntity { ClassName: "light" } selectedLight &&
@@ -447,6 +467,25 @@ internal sealed class OrthographicDrawing
     private Pen HorizontalAxisPen => _projection.Plane == OrthoPlane.Side ? YAxisPen : XAxisPen;
     private Pen VerticalAxisPen => _projection.Plane == OrthoPlane.Top ? YAxisPen : ZAxisPen;
     private static IBrush Brush(string color) => new SolidColorBrush(Color.Parse(color));
+
+    private void DrawEntityLabels(DrawingContext context,
+        List<(string Text, Point Position, IBrush Brush, bool Priority)> labels)
+    {
+        var occupied = new List<Rect>();
+        Rect viewport = new(_projection.Size);
+        foreach (var label in labels.OrderByDescending(label => label.Priority))
+        {
+            var text = new FormattedText(label.Text, CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight, Typeface.Default, 11, label.Brush);
+            Rect bounds = new(label.Position, new Size(text.Width + 6, text.Height + 4));
+            if (!viewport.Intersects(bounds)) continue;
+            if (LabelMode == EntityLabelMode.Auto && !label.Priority && occupied.Any(area => area.Intersects(bounds)))
+                continue;
+            occupied.Add(bounds);
+            if (label.Priority) context.DrawRectangle(BackgroundBrush, null, bounds.Inflate(2), 3, 3);
+            context.DrawText(text, label.Position);
+        }
+    }
 
     private static void DrawText(DrawingContext context, string text, Point position, IBrush brush, double size = 11) =>
         context.DrawText(new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,

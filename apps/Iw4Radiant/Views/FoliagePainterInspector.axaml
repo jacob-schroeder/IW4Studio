@@ -6,7 +6,7 @@
         <TextBlock Text="Painter" Classes="panelTitle" />
         <TextBlock Text="Build a brush from models and prefabs, then paint across camera surfaces." Classes="caption" TextWrapping="Wrap" />
         <Expander Header="Saved palettes" IsExpanded="False">
-            <StackPanel Spacing="7" Margin="0,8,0,0">
+            <StackPanel Spacing="7">
                 <TextBlock Text="Keep a brush to use in a later session." Classes="caption" />
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
                     <ComboBox x:Name="PresetChoice" AutomationProperties.Name="Saved painter palette"

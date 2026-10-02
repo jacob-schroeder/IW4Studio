@@ -80,9 +80,7 @@
             <TextBlock Text="Use Vertex mode and the transform tools to move selected controls, rows, or columns in any view." Classes="caption" TextWrapping="Wrap" />
         </StackPanel>
         <Expander x:Name="BridgePanel" Header="Bridge two surfaces" IsExpanded="False">
-            <StackPanel Spacing="7" Margin="0,8,0,0">
-                <TextBlock Text="Select two world surfaces in order: curved patches (including cylinders), terrains, or brushes. A whole brush uses its top face; Face mode picks another face. The nearest compatible boundaries are suggested, and you can change either one."
-                           Classes="caption" TextWrapping="Wrap" />
+            <StackPanel Spacing="7">
                 <TextBlock x:Name="BridgeReadyText" Classes="caption" TextWrapping="Wrap" />
                 <TextBlock x:Name="BridgeFirstCaption" Text="1 · Start surface" Classes="fieldLabel" />
                 <ComboBox x:Name="BridgeFirstEdge" HorizontalAlignment="Stretch" />
@@ -94,14 +92,20 @@
                     <TextBlock x:Name="BridgeRiseCaption" Text="Center rise · units" Grid.Row="1" Classes="fieldLabel" />
                     <NumericUpDown x:Name="BridgeRise" Grid.Row="1" Grid.Column="1" Minimum="-1024" Maximum="1024" Value="0" Increment="16" FormatString="0" />
                 </Grid>
-                <TextBlock x:Name="BridgeMaterialText" Classes="caption" TextWrapping="Wrap" />
+                <TextBlock x:Name="BridgeMaterialText" Classes="caption" TextWrapping="Wrap" IsVisible="False" />
                 <Button x:Name="CreateBridgeButton" Content="Create bridge" Classes="panelAction" HorizontalAlignment="Stretch" />
-                <TextBlock x:Name="BridgeShapeHelp" Text="The source surfaces stay intact. The new terrain is solid and editable; one Undo removes it. Positive rise makes a hump, negative rise makes a dip."
-                           Classes="caption" TextWrapping="Wrap" />
+                <Expander Header="How bridge selection works" IsExpanded="False">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Select surfaces in order. Whole brushes use their top face; Face mode lets you choose another. Compatible edges are suggested."
+                                   Classes="caption" TextWrapping="Wrap" />
+                        <TextBlock x:Name="BridgeShapeHelp" Text="The source surfaces stay intact. The new terrain is solid and editable; one Undo removes it. Positive rise makes a hump, negative rise makes a dip."
+                                   Classes="caption" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Expander>
             </StackPanel>
         </Expander>
         <Expander x:Name="RopePanel" Header="Rope between two points" IsExpanded="False">
-            <StackPanel Spacing="7" Margin="0,8,0,0">
+            <StackPanel Spacing="7">
                 <TextBlock Text="Place two temporary info_null markers and select both. Choose a material in the browser. Creating the rope replaces the markers; Undo brings them back."
                            Classes="caption" TextWrapping="Wrap" />
                 <TextBlock x:Name="RopeReadyText" Classes="caption" TextWrapping="Wrap" />

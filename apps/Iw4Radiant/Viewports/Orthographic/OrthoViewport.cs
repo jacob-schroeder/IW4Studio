@@ -9,12 +9,20 @@ using Iw4Radiant.Materials;
 
 namespace Iw4Radiant.Viewports.Orthographic;
 
+internal enum EntityLabelMode { Auto, Selected, All }
+
 public sealed class OrthoViewport : Control
 {
     private readonly OrthographicProjection _projection = new();
     private readonly OrthographicDrawing _drawing;
     private readonly OrthographicGestures _gestures;
     private ContextMenu? _objectMenu;
+
+    internal EntityLabelMode LabelMode
+    {
+        get => _drawing.LabelMode;
+        set { _drawing.LabelMode = value; InvalidateVisual(); }
+    }
 
     public OrthoViewport()
     {
@@ -165,6 +173,8 @@ public sealed class OrthoViewport : Control
     {
         base.OnPointerMoved(e);
         _gestures.PointerMoved(e);
+        _drawing.HoverPosition = _gestures.IsActive ? null : e.GetPosition(this);
+        InvalidateVisual();
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -186,6 +196,8 @@ public sealed class OrthoViewport : Control
     {
         base.OnPointerExited(e);
         _gestures.PointerExited();
+        _drawing.HoverPosition = null;
+        InvalidateVisual();
     }
 
     private void OnModelDragOver(object? sender, DragEventArgs e)

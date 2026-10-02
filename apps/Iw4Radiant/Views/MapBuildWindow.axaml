@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Iw4Radiant.Views.MapBuildWindow"
-        Title="Build PS3 FF" Width="720" Height="560"
+        Title="Build PS3 map (.ff)" Width="720" Height="560"
         MinWidth="600" MinHeight="480" WindowStartupLocation="CenterOwner">
     <Grid Margin="18" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
         <StackPanel Spacing="4">
@@ -47,7 +47,7 @@
             </Grid>
         </Grid>
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-            <Button x:Name="BuildButton" Content="Build PS3 fastfile" Classes="panelAction" Click="Build_Click" />
+            <Button x:Name="BuildButton" Content="Build PS3 map (.ff)" Classes="panelAction" Click="Build_Click" />
             <Button x:Name="PreviewButton" Content="Preview compiled map" Classes="panelAction"
                     IsVisible="False" Click="Preview_Click" AutomationProperties.Name="Preview compiled map" />
             <Button x:Name="CloseButton" Content="Close" MinWidth="88" Click="Close_Click" />

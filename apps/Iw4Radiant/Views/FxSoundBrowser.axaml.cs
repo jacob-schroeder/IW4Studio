@@ -172,6 +172,9 @@ public partial class FxSoundBrowser : UserControl
             ? matches.OrderByDescending(asset => asset.IsKnownLoop)
                 .ThenBy(asset => asset.DisplayName, StringComparer.Ordinal).ToArray()
             : matches;
+        EmptyState.IsVisible = matches.Length == 0;
+        EmptyState.Text = SourceDirectory is null ? "Choose an asset library to browse." :
+            "No assets match this search.";
         AssetList.SelectedItem = null;
         ResultText.Text = SourceDirectory is null ? "Use the same raw library as Build PS3 map." :
             $"{matches.Length} matching on-disk {(IsSoundBrowser ? "sounds" : "effects")}";

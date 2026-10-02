@@ -25,6 +25,10 @@ public partial class SelectionInspector : UserControl
     internal event Action<string, bool>? FxSoundPreviewRequested;
     internal event Action? WaterAppearanceRequested;
     internal event Action? CompleteWaterVolumeRequested;
+    internal event Action? FogSettingsRequested;
+
+    private void FogSettings_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        FogSettingsRequested?.Invoke();
 
     internal void ShowTool(EditorTool tool)
     {
@@ -222,6 +226,10 @@ public partial class SelectionInspector : UserControl
             if (entityChanged) Destructibles.SetState(destructible && entity is not null ? DestructiblePresets.Find(entity.Properties) : null,
                 new DestructiblePreviewSettings(), false);
             SelectionText.Text = SelectionSummary(session.Selection);
+            SelectionEmptyHint.IsVisible = session.Selection.Count == 0;
+            SelectionEditingFields.IsVisible = session.Selection.Count != 0;
+            PropertiesExpander.IsVisible = entity is not null;
+            EntityEmptyHint.IsVisible = entity is null || entity.ClassName == "worldspawn";
             EntitySelectionInfo.IsVisible = entity is not null && session.Selection.Count > 1;
             bool wholeBrush = session.Selection.Count == 1 && session.Selection.Active is MapBrush;
             ApplyBoundsButton.IsEnabled = RevertBoundsButton.IsEnabled = wholeBrush;

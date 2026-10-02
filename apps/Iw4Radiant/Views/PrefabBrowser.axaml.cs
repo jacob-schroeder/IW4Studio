@@ -148,6 +148,9 @@ public partial class PrefabBrowser : UserControl
             _updating = true;
             _filtered = _files.Where(path => Path.GetRelativePath(_folder ?? ".", path).Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
             PrefabList.ItemsSource = _filtered.Select(path => Path.GetRelativePath(_folder ?? ".", path)).ToArray();
+            EmptyState.IsVisible = _filtered.Length == 0;
+            EmptyState.Text = _folder is null ? "Choose a prefab folder to begin." :
+                _files.Length == 0 ? "No .map prefabs in this folder." : "No prefabs match this search.";
             int index = current is null ? -1 : Array.IndexOf(_filtered, current);
             PrefabList.SelectedIndex = index >= 0 ? index : _filtered.Length > 0 ? 0 : -1;
             _updating = false;

@@ -35,8 +35,8 @@ public partial class ViewportWorkspace : UserControl
     private Control? _activeBeforeCompiledPreview;
     private GridLength[] _twoColumns = [new(1, GridUnitType.Star), new(5), new(1.2, GridUnitType.Star)];
     private GridLength[] _fourColumns = [new(1, GridUnitType.Star), new(5), new(1, GridUnitType.Star)];
-    private GridLength[] _twoRows = [new(1, GridUnitType.Star), new(5), new(270)];
-    private GridLength[] _fourRows = [new(1, GridUnitType.Star), new(5), new(1, GridUnitType.Star), new(5), new(250)];
+    private GridLength[] _twoRows = [new(1, GridUnitType.Star), new(5), new(290)];
+    private GridLength[] _fourRows = [new(1, GridUnitType.Star), new(5), new(1, GridUnitType.Star), new(5), new(290)];
 
     public ViewportWorkspace()
     {
@@ -232,15 +232,6 @@ public partial class ViewportWorkspace : UserControl
     internal void ShowPrefabs() => ShowBrowser(2);
     internal void ShowFxSounds(bool isSound) => ShowBrowser(isSound ? 4 : 3);
     internal void ShowWeapons() => ShowBrowser(6);
-    internal void ShowConsole() => ShowBrowser(7);
-
-    private void RefreshConsoleOutput()
-    {
-        RendererErrorText.Text = string.Join(Environment.NewLine + Environment.NewLine,
-            new[] { CameraView.RendererError, _walkError, _glassShatterError, CameraView.WalkPlayerError }.Where(message => !string.IsNullOrEmpty(message)));
-        RendererErrorPanel.IsVisible = !string.IsNullOrEmpty(RendererErrorText.Text);
-    }
-
     internal void DisableMapPreviews()
     {
         MapFxToggle.IsChecked = false;
@@ -278,6 +269,13 @@ public partial class ViewportWorkspace : UserControl
         Activate(CameraView);
         ApplyLayout();
         FocusActiveView();
+    }
+
+    internal void ShowFogSettings()
+    {
+        if (_dialogs?.BlocksInput == true || _compiledPreviewVisible) return;
+        ShowCamera();
+        FogToggle.IsChecked = true;
     }
 
     internal void CyclePlane() => ShowGrid((OrthoPlane)(((int)_activeGrid.Plane + 1) % GridViews.Count));
@@ -539,6 +537,30 @@ public partial class ViewportWorkspace : UserControl
         MathF.Sqrt(Math.Clamp(linear.Y, 0, 1)),
         MathF.Sqrt(Math.Clamp(linear.Z, 0, 1)));
 
+    private void CloseFilm_Click(object? sender, RoutedEventArgs e) => FilmToggle.IsChecked = false;
+    private void CloseFog_Click(object? sender, RoutedEventArgs e) => FogToggle.IsChecked = false;
+
+    private void Labels_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (GridViews is null || sender is not ComboBox { SelectedIndex: >= 0 } combo) return;
+        OrthoViewport view = (combo.Tag as string) switch
+        {
+            "Front" => FrontView,
+            "Side" => SideView,
+            _ => TopView
+        };
+        view.LabelMode = (EntityLabelMode)combo.SelectedIndex;
+    }
+
+    private void EditorCamera_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingCameraControls || CameraView is null || _dialogs?.BlocksInput == true) return;
+        CameraView.StopWalk();
+        CameraView.FlyMode = false;
+        RefreshCameraControls();
+        CameraView.Focus();
+    }
+
     private void FlyCamera_Changed(object? sender, RoutedEventArgs e)
     {
         if (_updatingCameraControls || CameraView is null || _dialogs?.BlocksInput == true) return;
@@ -616,6 +638,7 @@ public partial class ViewportWorkspace : UserControl
         _updatingCameraControls = true;
         try
         {
+            EditorCamera.IsChecked = !CameraView.FlyMode && !CameraView.WalkMode;
             FlyCamera.IsChecked = CameraView.FlyMode;
             WalkCamera.IsChecked = CameraView.WalkMode;
             WalkCamera.IsEnabled = !_compiledPreviewVisible;

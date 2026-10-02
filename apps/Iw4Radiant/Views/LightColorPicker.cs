@@ -13,8 +13,8 @@ public sealed class LightColorPicker : UserControl
     private readonly Slider _blue = new() { Minimum = 0, Maximum = 1, Height = 22 };
     private readonly Border _preview = new()
     {
-        Width = 38, Height = 24, CornerRadius = new CornerRadius(3),
-        BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1)
+        Width = 38, Height = 24, CornerRadius = new CornerRadius(6),
+        BorderBrush = new SolidColorBrush(Color.Parse("#3B4048")), BorderThickness = new Thickness(1)
     };
     private readonly TextBlock _readout = new()
     {
@@ -45,7 +45,7 @@ public sealed class LightColorPicker : UserControl
             {
                 Width = 24, Height = 22, MinWidth = 0, MinHeight = 0,
                 Padding = new Thickness(0), Margin = new Thickness(0, 0, 4, 0),
-                Background = new SolidColorBrush(color), BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1)
+                Background = new SolidColorBrush(color), BorderBrush = new SolidColorBrush(Color.Parse("#3B4048")), BorderThickness = new Thickness(1)
             };
             ToolTip.SetTip(button, color.ToString());
             button.Click += (_, _) =>

@@ -1,5 +1,21 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Styles.Resources>
+        <GridLength x:Key="SliderPreContentMargin">6</GridLength>
+        <GridLength x:Key="SliderPostContentMargin">6</GridLength>
+        <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver">#303640</SolidColorBrush>
+        <SolidColorBrush x:Key="ExpanderHeaderBackgroundPressed">#353D48</SolidColorBrush>
+        <SolidColorBrush x:Key="ExpanderHeaderBackgroundDisabled">#202226</SolidColorBrush>
+        <SolidColorBrush x:Key="ExpanderHeaderBorderBrushDisabled">#30353C</SolidColorBrush>
+        <SolidColorBrush x:Key="ExpanderChevronBackground">Transparent</SolidColorBrush>
+        <SolidColorBrush x:Key="ExpanderChevronBackgroundPointerOver">Transparent</SolidColorBrush>
+        <SolidColorBrush x:Key="ExpanderChevronBackgroundPressed">Transparent</SolidColorBrush>
+        <SolidColorBrush x:Key="ExpanderContentBackground">#25282D</SolidColorBrush>
+        <Thickness x:Key="ExpanderContentDownBorderThickness">0</Thickness>
+        <Thickness x:Key="ExpanderContentUpBorderThickness">0</Thickness>
+        <Thickness x:Key="ExpanderContentLeftBorderThickness">0</Thickness>
+        <Thickness x:Key="ExpanderContentRightBorderThickness">0</Thickness>
+    </Styles.Resources>
     <Style Selector="Window">
         <Setter Property="Background" Value="#202226" />
         <Setter Property="Foreground" Value="#D9DCE1" />
@@ -22,34 +38,41 @@
     <Style Selector="TextBox, NumericUpDown, ComboBox">
         <Setter Property="MinHeight" Value="28" />
         <Setter Property="Padding" Value="6,4" />
-        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="CornerRadius" Value="7" />
         <Setter Property="Background" Value="#1B1D21" />
-        <Setter Property="BorderBrush" Value="#454A52" />
+        <Setter Property="BorderBrush" Value="#3B4048" />
         <Setter Property="FontSize" Value="12" />
     </Style>
     <Style Selector="NumericUpDown">
         <Setter Property="ShowButtonSpinner" Value="False" />
     </Style>
+    <Style Selector="Slider">
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="Height" Value="32" />
+    </Style>
     <Style Selector=":is(Button)">
         <Setter Property="MinHeight" Value="28" />
         <Setter Property="Padding" Value="8,4" />
-        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="CornerRadius" Value="7" />
         <Setter Property="FontSize" Value="12" />
     </Style>
     <Style Selector="Button, ToggleButton">
+        <Setter Property="Background" Value="#2C3036" />
+        <Setter Property="BorderBrush" Value="#3C4149" />
+        <Setter Property="Foreground" Value="#D9DCE1" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector=":is(TemplatedControl).compact">
         <Setter Property="MinHeight" Value="28" />
         <Setter Property="Padding" Value="6,4" />
-        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="CornerRadius" Value="7" />
         <Setter Property="FontSize" Value="12" />
     </Style>
     <Style Selector=":is(Button).panelAction">
-        <Setter Property="Background" Value="#30343A" />
+        <Setter Property="Background" Value="#303640" />
         <Setter Property="Foreground" Value="#E0E3E7" />
-        <Setter Property="BorderBrush" Value="#454A52" />
+        <Setter Property="BorderBrush" Value="#434D5A" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
     <Style Selector="TabControl">
@@ -63,61 +86,78 @@
         <Setter Property="FontSize" Value="12" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="#BFC4CD" />
-        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="CornerRadius" Value="7" />
+    </Style>
+    <Style Selector="TabControl.panelTabs /template/ ItemsPresenter#PART_ItemsPresenter">
+        <Setter Property="Margin" Value="12,4,12,4" />
     </Style>
     <Style Selector="TabItem:selected">
-        <Setter Property="Background" Value="#3D4B5E" />
+        <Setter Property="Background" Value="#323D4B" />
         <Setter Property="Foreground" Value="#E4EAF1" />
     </Style>
     <Style Selector="Expander">
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="CornerRadius" Value="0" />
-        <Setter Property="Padding" Value="0" />
+        <Setter Property="CornerRadius" Value="7" />
+        <Setter Property="Padding" Value="12,8,12,12" />
+    </Style>
+    <Style Selector="Expander /template/ Border#ExpanderContent">
+        <Setter Property="Background" Value="#25282D" />
+        <Setter Property="BorderThickness" Value="0" />
     </Style>
     <Style Selector="Expander /template/ ToggleButton">
         <Setter Property="MinHeight" Value="28" />
-        <Setter Property="Padding" Value="6,4" />
+        <Setter Property="Height" Value="32" />
+        <Setter Property="Padding" Value="12,0,0,0" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="Background" Value="#25282D" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="CornerRadius" Value="7" />
         <Setter Property="FontSize" Value="12" />
     </Style>
     <Style Selector="Border.panelHeader, Border.toolOptionsBar">
         <Setter Property="Background" Value="#25282D" />
-        <Setter Property="BorderBrush" Value="#34383E" />
+        <Setter Property="BorderBrush" Value="#30343B" />
         <Setter Property="BorderThickness" Value="0,0,0,1" />
         <Setter Property="Padding" Value="8,3" />
         <Setter Property="MinHeight" Value="30" />
     </Style>
     <Style Selector="Border.viewportPanel">
+        <Setter Property="CornerRadius" Value="9" />
+        <Setter Property="ClipToBounds" Value="True" />
         <Setter Property="Background" Value="#1B1D21" />
-        <Setter Property="BorderBrush" Value="#34383E" />
+        <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
     <Style Selector="Border.viewportPanel.activeViewport">
         <Setter Property="BorderBrush" Value="#63758C" />
     </Style>
     <Style Selector=":is(Button).toolbarButton">
-        <Setter Property="Width" Value="26" />
-        <Setter Property="Height" Value="26" />
-        <Setter Property="MinWidth" Value="26" />
-        <Setter Property="MinHeight" Value="26" />
+        <Setter Property="Width" Value="28" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="MinWidth" Value="28" />
+        <Setter Property="MinHeight" Value="28" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Margin" Value="1,0" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="CornerRadius" Value="6" />
     </Style>
     <Style Selector="StackPanel.toolbarGroup">
         <Setter Property="Orientation" Value="Horizontal" />
-        <Setter Property="Margin" Value="0,0,0,4" />
+        <Setter Property="Spacing" Value="1" />
     </Style>
-    <Style Selector="Border.toolbarSeparator">
-        <Setter Property="Width" Value="1" />
-        <Setter Property="Height" Value="18" />
-        <Setter Property="Margin" Value="5,0" />
-        <Setter Property="Background" Value="#34383E" />
+    <Style Selector="StackPanel.toolbarSection">
+        <Setter Property="Margin" Value="0,0,12,6" />
+        <Setter Property="Spacing" Value="3" />
+    </Style>
+    <Style Selector="TextBlock.toolbarCaption">
+        <Setter Property="Foreground" Value="#969EAA" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Margin" Value="4,0,0,0" />
     </Style>
     <Style Selector="ComboBox.toolbarCombo">
         <Setter Property="Height" Value="26" />
@@ -132,7 +172,7 @@
         <Setter Property="Padding" Value="0" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="CornerRadius" Value="6" />
     </Style>
     <Style Selector="Button.viewportLabel">
         <Setter Property="MinHeight" Value="24" />
@@ -144,8 +184,61 @@
         <Setter Property="Background" Value="#3D4B5E" />
         <Setter Property="Foreground" Value="#E4EAF1" />
     </Style>
+    <Style Selector="Button:disabled /template/ ContentPresenter, ToggleButton:disabled /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="#30353C" />
+        <Setter Property="Foreground" Value="#747D89" />
+    </Style>
+    <Style Selector="Button.toolbarButton:disabled /template/ ContentPresenter, ToggleButton.toolbarButton:disabled /template/ ContentPresenter">
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter, ToggleButton:not(#ExpanderHeader):pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="#3A424E" />
+    </Style>
+    <Style Selector="ToggleButton:not(#ExpanderHeader):checked /template/ ContentPresenter">
+        <Setter Property="Background" Value="#35465C" />
+        <Setter Property="Foreground" Value="#E7EDF5" />
+    </Style>
+    <Style Selector="ToggleButton#ExpanderHeader /template/ ContentPresenter, ToggleButton#ExpanderHeader:checked /template/ ContentPresenter, ToggleButton#ExpanderHeader:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="#D9DCE1" />
+    </Style>
+    <Style Selector="ComboBox:disabled /template/ Border#Background">
+        <Setter Property="Background" Value="#202226" />
+        <Setter Property="BorderBrush" Value="#30353C" />
+    </Style>
+    <Style Selector="ComboBox:disabled /template/ ContentControl#ContentPresenter, ComboBox:disabled /template/ PathIcon#DropDownGlyph">
+        <Setter Property="Foreground" Value="#747D89" />
+    </Style>
+    <Style Selector="TextBox:disabled">
+        <Setter Property="Foreground" Value="#747D89" />
+    </Style>
+    <Style Selector="TextBox:disabled /template/ Border#PART_BorderElement">
+        <Setter Property="Background" Value="#202226" />
+        <Setter Property="BorderBrush" Value="#30353C" />
+    </Style>
+    <Style Selector="FlyoutPresenter, MenuFlyoutPresenter, ToolTip">
+        <Setter Property="CornerRadius" Value="9" />
+    </Style>
     <Style Selector="GridSplitter">
-        <Setter Property="Background" Value="#34383E" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Background" Value="#30343B" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Grid Background="Transparent">
+                    <Border Name="Divider" Background="{TemplateBinding Background}" />
+                </Grid>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="GridSplitter[ResizeDirection=Columns] /template/ Border#Divider">
+        <Setter Property="Width" Value="1" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="GridSplitter[ResizeDirection=Rows] /template/ Border#Divider">
+        <Setter Property="Height" Value="1" />
+        <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style Selector="GridSplitter:pointerover">
         <Setter Property="Background" Value="#8195AE" />

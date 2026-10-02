@@ -36,6 +36,7 @@ public partial class MainWindow : Window
             () => Workspace.Camera.CompiledPreview is null, Workspace.EnablePreviewLights);
         Inspector.WaterAppearanceRequested += ApplyWaterVolume;
         Inspector.CompleteWaterVolumeRequested += CompleteWaterVolume;
+        Inspector.FogSettingsRequested += Workspace.ShowFogSettings;
         Workspace.InitializeActions(_dialogs, FinishGestures);
         Workspace.InitializeFogActions(_session);
         Workspace.LayoutChanged += RefreshLayoutControls;

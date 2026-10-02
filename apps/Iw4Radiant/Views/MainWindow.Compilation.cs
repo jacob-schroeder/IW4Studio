@@ -24,7 +24,7 @@ public partial class MainWindow
                 string? folder = Path.GetDirectoryName(_session.FilePath);
                 return await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
                 {
-                    Title = "Build .d3dbsp",
+                    Title = "Compile BSP (.d3dbsp)",
                     SuggestedFileName = Path.GetFileNameWithoutExtension(_session.FilePath ?? "mp_untitled.map"),
                     DefaultExtension = "d3dbsp", ShowOverwritePrompt = true,
                     SuggestedStartLocation = folder is null ? null : await StorageProvider.TryGetFolderFromPathAsync(folder),
@@ -38,9 +38,12 @@ public partial class MainWindow
             MapDocument sourceDocument = _session.Document;
             MapDocument document = sourceDocument.Clone();
             var (materials, models) = ResolveBuildAssets(document);
-            var dialog = new MapBuildWindow(document, path, materials, models, _session.FilePath,
-                CreateBuildNavigator(sourceDocument));
+            Func<SelectionPath, bool> navigate = CreateBuildNavigator(sourceDocument);
+            var dialog = new MapBuildWindow(document, path, materials, models, _session.FilePath, navigate);
             await _dialogs.ShowModalAsync(() => dialog.ShowDialog<object?>(this));
+            if (dialog.BuildAttempted)
+                Workspace.SetBuildResult(dialog.BuildOutput, dialog.BuildProblem, dialog.BuildErrorLocation,
+                    navigate, dialog.CompletedBspPath is { } previewPath ? () => ShowBspPreviewAsync(previewPath) : null);
             if (dialog.CompletedBspPath is { } completedPath)
             {
                 RememberBuiltBsp(completedPath, sourceDocument);
@@ -72,11 +75,19 @@ public partial class MainWindow
             string sourceFolder = Path.GetDirectoryName(sourcePath) ??
                 throw new InvalidDataException("The saved map has no containing directory.");
             string buildFolder = Path.Combine(sourceFolder, "map_build");
+            Func<SelectionPath, bool> navigate = CreateBuildNavigator(sourceDocument);
             var dialog = new MapBuildWindow(document, sourcePath, materials, models,
                 _buildEmitterAssetsPath ?? FindEmitterAssetDirectory(sourcePath) ?? "",
                 _buildOutputFolder ?? (Directory.Exists(buildFolder) ? buildFolder : sourceFolder),
-                CreateBuildNavigator(sourceDocument));
+                navigate);
             await _dialogs.ShowModalAsync(() => dialog.ShowDialog<object?>(this));
+            if (dialog.BuildAttempted)
+            {
+                string? compiledPath = dialog.CompletedDirectory is { } directory
+                    ? Path.Combine(directory, Path.GetFileNameWithoutExtension(sourcePath) + ".d3dbsp") : null;
+                Workspace.SetBuildResult(dialog.BuildOutput, dialog.BuildProblem, dialog.BuildErrorLocation,
+                    navigate, compiledPath is not null ? () => ShowBspPreviewAsync(compiledPath) : null);
+            }
             if (dialog.CompletedDirectory is not { } completedDirectory) return;
             _buildEmitterAssetsPath = dialog.EmitterAssetDirectory;
             _buildOutputFolder = dialog.OutputFolder;

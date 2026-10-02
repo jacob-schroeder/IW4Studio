@@ -5,9 +5,10 @@
              xmlns:ortho="using:Iw4Radiant.Viewports.Orthographic"
              xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Iw4Radiant.Views.ViewportWorkspace">
+    <Grid RowDefinitions="*,Auto,Auto">
     <Grid x:Name="LayoutGrid" ColumnDefinitions="*,5,1.2*" RowDefinitions="*,5,220">
         <Border x:Name="CameraPanel" Classes="viewportPanel" Grid.Column="2">
-            <Grid RowDefinitions="30,*">
+            <Grid RowDefinitions="34,*">
                 <Border Classes="panelHeader">
                     <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="7,0,2,0">
                         <TextBlock Text="Camera" VerticalAlignment="Center" />
@@ -24,7 +25,7 @@
                         <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="3" Margin="0,0,3,0">
                             <ToggleButton x:Name="MapFxToggle" Classes="viewportAction" Content="FX" Width="36"
                                           IsCheckedChanged="MapFx_Changed" ToolTip.Tip="Show placed supported effects in the camera. This preview does not edit the map."
-                                          AutomationProperties.Name="Preview placed FX" />
+                                          AutomationProperties.Name="Preview placed effects (FX)" />
                             <StackPanel x:Name="MapFxTransport" Orientation="Horizontal" Spacing="3" IsVisible="False">
                                 <Button x:Name="MapFxPauseButton" Classes="viewportAction" Width="28" IsEnabled="False"
                                         Click="MapFxPause_Click" ToolTip.Tip="Pause placed FX preview"
@@ -46,9 +47,13 @@
                                       AutomationProperties.Name="Preview placed sounds">
                             <icons:MaterialIcon Kind="VolumeHigh" Width="16" Height="16" />
                         </ToggleButton>
-                        <ToggleButton x:Name="FlyCamera" Grid.Column="5" Classes="viewportAction" Content="Fly" Width="42" Margin="0,0,5,0"
+                        <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="2">
+                        <ToggleButton x:Name="EditorCamera" Classes="viewportAction" Content="Editor" Width="48"
+                                      IsCheckedChanged="EditorCamera_Changed" ToolTip.Tip="Orbit and edit the map" AutomationProperties.Name="Editor camera" />
+                        <ToggleButton x:Name="FlyCamera" Classes="viewportAction" Content="Fly" Width="42" Margin="0,0,5,0"
                                       IsCheckedChanged="FlyCamera_Changed" ToolTip.Tip="Fly through the map: WASD to move, Q/E down/up, right-drag to look, Shift for speed. Escape returns to orbit."
                                       AutomationProperties.Name="Fly camera" />
+                        </StackPanel>
                         <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="3" Margin="0,0,5,0">
                             <ToggleButton x:Name="WalkCamera" Classes="viewportAction" Content="Walk" Width="48"
                                           IsCheckedChanged="WalkCamera_Changed" AutomationProperties.Name="Player walk preview" />
@@ -68,7 +73,7 @@
                 <Grid Grid.Row="1" ClipToBounds="True">
                     <camera:CameraViewport x:Name="CameraView" />
                     <camera:CameraFoliageOverlay x:Name="CameraFoliageBrush" IsHitTestVisible="False" />
-                    <Border Background="#BF1B1D21" Padding="7,4" VerticalAlignment="Top" HorizontalAlignment="Left"
+                    <Border Background="#BF1B1D21" Padding="8,4" Margin="8" CornerRadius="6" VerticalAlignment="Top" HorizontalAlignment="Left"
                             IsHitTestVisible="False">
                         <TextBlock x:Name="CameraControlsHint" FontSize="11" Foreground="#BEC7D2" TextWrapping="Wrap" />
                     </Border>
@@ -104,95 +109,103 @@
                             </WrapPanel>
                         </StackPanel>
                     </Border>
-                    <Border x:Name="FilmPreviewPanel" IsVisible="False" Background="#25282D" BorderBrush="#515B69"
-                            BorderThickness="1" CornerRadius="5" Margin="8" Width="320"
+                    <Border x:Name="FilmPreviewPanel" IsVisible="False" Background="#25282D" BorderBrush="#3C4653"
+                            BorderThickness="1" CornerRadius="9" Margin="8" Width="280"
                             VerticalAlignment="Top" HorizontalAlignment="Right">
                         <Grid RowDefinitions="Auto,*">
-                            <Border Padding="12" BorderBrush="#34383E" BorderThickness="0,0,0,1">
-                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                    <StackPanel Spacing="3">
-                                        <TextBlock Text="Film preview" Classes="panelTitle" />
-                                        <TextBlock Text="Camera only · not saved or baked" Classes="caption" />
+                            <Border Padding="12,8,12,10" BorderBrush="#30343B" BorderThickness="0,0,0,1">
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="4">
+                                    <TextBlock Text="Film · camera preview" Classes="panelTitle" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                                        <Button Content="Reset" Click="FilmReset_Click" AutomationProperties.Name="Reset film preview" />
+                                        <Button Classes="viewportAction" Content="×" Click="CloseFilm_Click" AutomationProperties.Name="Close film preview" />
                                     </StackPanel>
-                                    <Button Grid.Column="1" Content="Reset" Classes="panelAction" VerticalAlignment="Top"
-                                            Click="FilmReset_Click" AutomationProperties.Name="Reset film preview" />
+                                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="Temporary · not saved with the map"
+                                               Classes="caption" TextWrapping="Wrap" />
                                 </Grid>
                             </Border>
-                            <ScrollViewer Grid.Row="1" MaxHeight="360" VerticalScrollBarVisibility="Auto"
-                                          HorizontalScrollBarVisibility="Disabled">
-                                <StackPanel Spacing="14" Margin="12">
-                                    <StackPanel Spacing="8">
-                                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="2">
-                                            <TextBlock Text="Brightness" Classes="fieldLabel" />
-                                            <TextBlock x:Name="FilmBrightnessValue" Grid.Column="1" Classes="caption" />
-                                            <Slider x:Name="FilmBrightness" Grid.Row="1" Grid.ColumnSpan="2" Height="22"
-                                                    Minimum="-1" Maximum="1" Value="0" AutomationProperties.Name="Film preview brightness" />
-                                        </Grid>
-                                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="2">
-                                            <TextBlock Text="Contrast" Classes="fieldLabel" />
-                                            <TextBlock x:Name="FilmContrastValue" Grid.Column="1" Classes="caption" />
-                                            <Slider x:Name="FilmContrast" Grid.Row="1" Grid.ColumnSpan="2" Height="22"
-                                                    Minimum="0" Maximum="4" Value="1" AutomationProperties.Name="Film preview contrast" />
-                                        </Grid>
-                                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="2">
-                                            <TextBlock Text="Desaturation" Classes="fieldLabel" />
-                                            <TextBlock x:Name="FilmDesaturationValue" Grid.Column="1" Classes="caption" />
-                                            <Slider x:Name="FilmDesaturation" Grid.Row="1" Grid.ColumnSpan="2" Height="22"
-                                                    Minimum="0" Maximum="1" Value="0" AutomationProperties.Name="Film preview desaturation" />
-                                        </Grid>
-                                    </StackPanel>
-                                    <TabControl SelectedIndex="0" AutomationProperties.Name="Film tint range">
-                                        <TabItem Header="Highlights" ToolTip.Tip="Tint the brighter parts of the image. White is neutral; other tints reduce RGB channels.">
-                                            <Border Background="#1B1D21" CornerRadius="0,0,3,3" Padding="10">
-                                                <views:LightColorPicker x:Name="FilmLightTint" />
-                                            </Border>
-                                        </TabItem>
-                                        <TabItem Header="Shadows" ToolTip.Tip="Tint the darker parts of the image. White is neutral; other tints reduce RGB channels.">
-                                            <Border Background="#1B1D21" CornerRadius="0,0,3,3" Padding="10">
-                                                <views:LightColorPicker x:Name="FilmDarkTint" />
-                                            </Border>
-                                        </TabItem>
-                                    </TabControl>
+                            <ScrollViewer Grid.Row="1" MaxHeight="300" Margin="12,8,4,12"
+                                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Spacing="12" Margin="0,0,8,0">
+                                    <Grid ColumnDefinitions="74,*,30" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="4" RowSpacing="8">
+                                        <TextBlock Text="Brightness" Classes="fieldLabel" />
+                                        <Slider x:Name="FilmBrightness" Grid.Column="1" Minimum="-1" Maximum="1" Value="0"
+                                                AutomationProperties.Name="Film preview brightness" />
+                                        <TextBlock x:Name="FilmBrightnessValue" Grid.Column="2" Classes="caption" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                        <TextBlock Grid.Row="1" Text="Contrast" Classes="fieldLabel" />
+                                        <Slider x:Name="FilmContrast" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="4" Value="1"
+                                                AutomationProperties.Name="Film preview contrast" />
+                                        <TextBlock x:Name="FilmContrastValue" Grid.Row="1" Grid.Column="2" Classes="caption" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                        <TextBlock Grid.Row="2" Text="Desaturation" Classes="fieldLabel" />
+                                        <Slider x:Name="FilmDesaturation" Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="1" Value="0"
+                                                AutomationProperties.Name="Film preview desaturation" />
+                                        <TextBlock x:Name="FilmDesaturationValue" Grid.Row="2" Grid.Column="2" Classes="caption" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                    </Grid>
+                                    <Expander Header="Color tint" HorizontalContentAlignment="Stretch">
+                                        <TabControl SelectedIndex="0" AutomationProperties.Name="Film tint range">
+                                            <TabItem Header="Highlights" ToolTip.Tip="Tint the brighter parts of the image. White is neutral; other tints reduce RGB channels.">
+                                                <views:LightColorPicker x:Name="FilmLightTint" Margin="0,8,0,0" />
+                                            </TabItem>
+                                            <TabItem Header="Shadows" ToolTip.Tip="Tint the darker parts of the image. White is neutral; other tints reduce RGB channels.">
+                                                <views:LightColorPicker x:Name="FilmDarkTint" Margin="0,8,0,0" />
+                                            </TabItem>
+                                        </TabControl>
+                                    </Expander>
                                 </StackPanel>
                             </ScrollViewer>
                         </Grid>
                     </Border>
-                    <Border x:Name="FogPreviewPanel" IsVisible="False" Background="#F225282D" BorderBrush="#515B69"
-                            BorderThickness="1" CornerRadius="5" Padding="12" Margin="8" Width="304"
+                    <Border x:Name="FogPreviewPanel" IsVisible="False" Background="#25282D" BorderBrush="#3C4653"
+                            BorderThickness="1" CornerRadius="9" Margin="8" Width="280"
                             VerticalAlignment="Top" HorizontalAlignment="Right">
-                        <ScrollViewer MaxHeight="430" VerticalScrollBarVisibility="Auto">
-                            <StackPanel Spacing="9">
-                                <TextBlock Text="Global fog" FontWeight="SemiBold" />
-                                <CheckBox x:Name="FogEnabled" Content="Enable fog" IsCheckedChanged="FogEnabled_Changed"
-                                          AutomationProperties.Name="Enable global fog" />
-                                <StackPanel x:Name="FogControls" Spacing="9" IsEnabled="False">
-                                    <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="7">
-                                        <TextBlock Text="Start" Classes="fieldLabel" />
-                                        <TextBox x:Name="FogStart" Grid.Column="1" Text="512" TextChanged="FogDraft_Changed"
-                                                 AutomationProperties.Name="Fog start distance" />
-                                        <TextBlock Grid.Row="1" Text="Half distance" Classes="fieldLabel" />
-                                        <TextBox x:Name="FogHalfDistance" Grid.Row="1" Grid.Column="1" Text="1024" TextChanged="FogDraft_Changed"
-                                                 AutomationProperties.Name="Fog half distance" />
-                                        <TextBlock Grid.Row="2" Text="Max opacity" Classes="fieldLabel" />
-                                        <TextBox x:Name="FogMaxOpacity" Grid.Row="2" Grid.Column="1" Text="1" TextChanged="FogDraft_Changed"
-                                                 AutomationProperties.Name="Fog maximum opacity" />
-                                    </Grid>
-                                    <TextBlock Text="Fog color" Classes="fieldLabel" />
-                                    <views:LightColorPicker x:Name="FogColor" />
+                        <Grid RowDefinitions="Auto,*">
+                            <Border Padding="12,8,12,10" BorderBrush="#30343B" BorderThickness="0,0,0,1">
+                                <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto" RowSpacing="4" ColumnSpacing="8">
+                                    <TextBlock Text="Environment · fog" Classes="panelTitle" VerticalAlignment="Center" />
+                                    <CheckBox x:Name="FogEnabled" Grid.Column="1" Content="Enabled" MinHeight="24" IsCheckedChanged="FogEnabled_Changed"
+                                              AutomationProperties.Name="Enable global fog" />
+                                    <Button Grid.Column="2" Classes="viewportAction" Content="×" Click="CloseFog_Click" AutomationProperties.Name="Close fog settings" />
+                                    <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Text="Saved with map · changes apply immediately" Classes="caption" TextWrapping="Wrap" />
+                                </Grid>
+                            </Border>
+                            <ScrollViewer Grid.Row="1" MaxHeight="430" Margin="12,8,4,12"
+                                          HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <StackPanel Spacing="8" Margin="0,0,8,0">
+                                    <StackPanel x:Name="FogControls" Spacing="8" IsEnabled="False">
+                                        <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="8">
+                                            <TextBlock Text="Start" Classes="fieldLabel" />
+                                            <TextBox x:Name="FogStart" Grid.Column="1" Text="512" TextChanged="FogDraft_Changed"
+                                                     AutomationProperties.Name="Fog start distance" />
+                                            <TextBlock Grid.Row="1" Text="Half distance" Classes="fieldLabel" />
+                                            <TextBox x:Name="FogHalfDistance" Grid.Row="1" Grid.Column="1" Text="1024" TextChanged="FogDraft_Changed"
+                                                     AutomationProperties.Name="Fog half distance" />
+                                            <TextBlock Grid.Row="2" Text="Max opacity" Classes="fieldLabel" />
+                                            <TextBox x:Name="FogMaxOpacity" Grid.Row="2" Grid.Column="1" Text="1" TextChanged="FogDraft_Changed"
+                                                     AutomationProperties.Name="Fog maximum opacity" />
+                                        </Grid>
+                                        <Expander Header="Fog color" HorizontalContentAlignment="Stretch">
+                                            <views:LightColorPicker x:Name="FogColor" />
+                                        </Expander>
+                                    </StackPanel>
+                                    <TextBlock x:Name="FogError" Foreground="#FFB7A8" TextWrapping="Wrap" IsVisible="False" />
                                 </StackPanel>
-                                <TextBlock x:Name="FogError" Foreground="#FFB7A8" TextWrapping="Wrap" IsVisible="False" />
-                            </StackPanel>
-                        </ScrollViewer>
+                            </ScrollViewer>
+                        </Grid>
                     </Border>
                 </Grid>
             </Grid>
         </Border>
         <Border x:Name="TopPanel" Classes="viewportPanel" Grid.RowSpan="3">
-            <Grid RowDefinitions="30,*">
+            <Grid RowDefinitions="34,*">
                 <Border Classes="panelHeader">
-                    <Grid ColumnDefinitions="*,Auto">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
                         <Button Content="Top · XY ↻" Classes="viewportLabel" HorizontalAlignment="Left" Click="CyclePlane_Click" ToolTip.Tip="Cycle XY / XZ / YZ (Ctrl/Cmd+Tab)" />
-                        <Button Grid.Column="1" Classes="viewportAction" Tag="1" Click="Maximize_Click" ToolTip.Tip="Maximize / restore top view" AutomationProperties.Name="Maximize or restore top view">
+                        <ComboBox Grid.Column="1" x:Name="TopLabels" Tag="Top" Width="110" Classes="toolbarCombo" SelectedIndex="0"
+                                  SelectionChanged="Labels_Changed" AutomationProperties.Name="Top entity labels"
+                                  ToolTip.Tip="Entity labels: Auto prioritizes selected and hovered objects and hides overlaps. All shows every name.">
+                            <ComboBoxItem Content="Auto labels" /><ComboBoxItem Content="Selected" /><ComboBoxItem Content="All labels" />
+                        </ComboBox>
+                        <Button Grid.Column="2" Classes="viewportAction" Tag="1" Click="Maximize_Click" ToolTip.Tip="Maximize / restore top view" AutomationProperties.Name="Maximize or restore top view">
                             <icons:MaterialIcon Kind="Fullscreen" Width="16" Height="16" />
                         </Button>
                     </Grid>
@@ -201,11 +214,16 @@
             </Grid>
         </Border>
         <Border x:Name="FrontPanel" Classes="viewportPanel" IsVisible="False">
-            <Grid RowDefinitions="30,*">
+            <Grid RowDefinitions="34,*">
                 <Border Classes="panelHeader">
-                    <Grid ColumnDefinitions="*,Auto">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
                         <Button Content="Front · XZ ↻" Classes="viewportLabel" HorizontalAlignment="Left" Click="CyclePlane_Click" ToolTip.Tip="Cycle XY / XZ / YZ (Ctrl/Cmd+Tab)" />
-                        <Button Grid.Column="1" Classes="viewportAction" Tag="2" Click="Maximize_Click" ToolTip.Tip="Maximize / restore front view" AutomationProperties.Name="Maximize or restore front view">
+                        <ComboBox Grid.Column="1" x:Name="FrontLabels" Tag="Front" Width="110" Classes="toolbarCombo" SelectedIndex="0"
+                                  SelectionChanged="Labels_Changed" AutomationProperties.Name="Front entity labels"
+                                  ToolTip.Tip="Entity labels: Auto prioritizes selected and hovered objects and hides overlaps. All shows every name.">
+                            <ComboBoxItem Content="Auto labels" /><ComboBoxItem Content="Selected" /><ComboBoxItem Content="All labels" />
+                        </ComboBox>
+                        <Button Grid.Column="2" Classes="viewportAction" Tag="2" Click="Maximize_Click" ToolTip.Tip="Maximize / restore front view" AutomationProperties.Name="Maximize or restore front view">
                             <icons:MaterialIcon Kind="Fullscreen" Width="16" Height="16" />
                         </Button>
                     </Grid>
@@ -214,11 +232,16 @@
             </Grid>
         </Border>
         <Border x:Name="SidePanel" Classes="viewportPanel" IsVisible="False">
-            <Grid RowDefinitions="30,*">
+            <Grid RowDefinitions="34,*">
                 <Border Classes="panelHeader">
-                    <Grid ColumnDefinitions="*,Auto">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
                         <Button Content="Side · YZ ↻" Classes="viewportLabel" HorizontalAlignment="Left" Click="CyclePlane_Click" ToolTip.Tip="Cycle XY / XZ / YZ (Ctrl/Cmd+Tab)" />
-                        <Button Grid.Column="1" Classes="viewportAction" Tag="3" Click="Maximize_Click" ToolTip.Tip="Maximize / restore side view" AutomationProperties.Name="Maximize or restore side view">
+                        <ComboBox Grid.Column="1" x:Name="SideLabels" Tag="Side" Width="110" Classes="toolbarCombo" SelectedIndex="0"
+                                  SelectionChanged="Labels_Changed" AutomationProperties.Name="Side entity labels"
+                                  ToolTip.Tip="Entity labels: Auto prioritizes selected and hovered objects and hides overlaps. All shows every name.">
+                            <ComboBoxItem Content="Auto labels" /><ComboBoxItem Content="Selected" /><ComboBoxItem Content="All labels" />
+                        </ComboBox>
+                        <Button Grid.Column="2" Classes="viewportAction" Tag="3" Click="Maximize_Click" ToolTip.Tip="Maximize / restore side view" AutomationProperties.Name="Maximize or restore side view">
                             <icons:MaterialIcon Kind="Fullscreen" Width="16" Height="16" />
                         </Button>
                     </Grid>
@@ -229,7 +252,7 @@
         <GridSplitter x:Name="ColumnSplitter" Grid.Column="1" Grid.RowSpan="3" ResizeDirection="Columns" />
         <GridSplitter x:Name="ViewRowSplitter" IsVisible="False" ResizeDirection="Rows" />
         <GridSplitter x:Name="MaterialSplitter" Grid.Column="2" Grid.Row="1" ResizeDirection="Rows" />
-        <TabControl x:Name="AssetBrowserTabs" Grid.Column="2" Grid.Row="2" Padding="0">
+        <TabControl x:Name="AssetBrowserTabs" Classes="panelTabs" Grid.Column="2" Grid.Row="2" Padding="0">
             <TabItem Header="Materials"><views:MaterialBrowser x:Name="MaterialBrowserView" /></TabItem>
             <TabItem Header="Models"><views:XModelBrowser x:Name="XModelBrowserView" /></TabItem>
             <TabItem Header="Prefabs"><views:PrefabBrowser x:Name="PrefabBrowserView" /></TabItem>
@@ -237,14 +260,44 @@
             <TabItem Header="Sounds"><views:FxSoundBrowser x:Name="SoundBrowserView" IsSoundBrowser="True" /></TabItem>
             <TabItem Header="Destructibles"><views:DestructibleBrowser x:Name="DestructibleBrowserView" /></TabItem>
             <TabItem Header="Weapons"><views:WeaponBrowser x:Name="WeaponBrowserView" /></TabItem>
-            <TabItem Header="Console Output">
-                <Border x:Name="RendererErrorPanel" Padding="9" IsVisible="False">
-                    <TextBox x:Name="RendererErrorText" IsReadOnly="True" AcceptsReturn="True"
-                             TextWrapping="Wrap" FontFamily="Menlo,Consolas,monospace" FontSize="11"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             AutomationProperties.Name="Editor diagnostics" />
-                </Border>
-            </TabItem>
+
         </TabControl>
+    </Grid>
+    <Border Grid.Row="1" Background="#25282D" BorderBrush="#30343B" BorderThickness="0,1,0,0" Padding="6,2">
+        <Grid ColumnDefinitions="*,Auto">
+            <ToggleButton x:Name="OutputDrawerToggle" Content="Problems and output" HorizontalAlignment="Left"
+                          Background="Transparent" BorderThickness="0" IsCheckedChanged="OutputDrawer_Changed"
+                          ToolTip.Tip="Show editor problems and the last build output" />
+            <Button x:Name="PreviewBuildButton" Grid.Column="1" Content="Preview compiled map" IsVisible="False"
+                    Click="PreviewBuild_Click" Classes="compact" />
+        </Grid>
+    </Border>
+    <Border x:Name="OutputDrawer" Grid.Row="2" IsVisible="False" Height="190" Background="#202226"
+            BorderBrush="#30343B" BorderThickness="0,1,0,0" Padding="8,4,8,8">
+        <Grid>
+            <TabControl x:Name="OutputTabs">
+                <TabItem Header="Problems">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,Auto,*" RowSpacing="6">
+                        <TextBlock x:Name="ProblemsSummary" Text="No problems reported" Classes="caption" />
+                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBlock x:Name="BuildProblemText" TextWrapping="Wrap" Foreground="#F2BAA9" IsVisible="False" />
+                            <Button x:Name="ShowBuildProblemButton" Grid.Column="1" Content="Show in map" IsVisible="False"
+                                    Click="ShowBuildProblem_Click" Classes="panelAction" VerticalAlignment="Top" />
+                        </Grid>
+                        <TextBox x:Name="RendererErrorText" Grid.Row="2" IsReadOnly="True" AcceptsReturn="True"
+                                 PlaceholderText="No renderer problems reported." TextWrapping="Wrap" FontFamily="Menlo,Consolas,monospace"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Editor diagnostics" />
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Output">
+                    <TextBox x:Name="BuildOutputText" Margin="0,8,0,0" IsReadOnly="True" AcceptsReturn="True"
+                             PlaceholderText="Build output will appear here." TextWrapping="Wrap" FontFamily="Menlo,Consolas,monospace"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Build output" />
+                </TabItem>
+            </TabControl>
+            <Button Content="×" Classes="viewportAction" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Click="CloseOutput_Click" AutomationProperties.Name="Close problems and output" />
+        </Grid>
+    </Border>
     </Grid>
 </UserControl>

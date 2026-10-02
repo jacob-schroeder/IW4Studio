@@ -220,7 +220,12 @@ public partial class XModelBrowser : UserControl
         _filterCancellation?.Cancel();
         XModelSource[] allModels = (_catalog?.Models ?? []).Concat(_bundledCatalog?.Models ?? [])
             .DistinctBy(model => model.Name, StringComparer.Ordinal).ToArray();
-        if (allModels.Length == 0) return;
+        if (allModels.Length == 0)
+        {
+            EmptyState.IsVisible = true;
+            EmptyState.Text = "Choose an asset library to browse models.";
+            return;
+        }
         using var cancellation = new CancellationTokenSource();
         _filterCancellation = cancellation;
         string filter = ModelFilter.Text ?? "";
@@ -254,10 +259,13 @@ public partial class XModelBrowser : UserControl
             var previews = visible.Select(model => cached[model.Name]).ToArray();
             var unavailable = previews.Where(preview => preview.Preview is null).ToArray();
             ModelList.ItemsSource = previews.Where(preview => preview.Preview is not null).ToArray();
+            EmptyState.IsVisible = previews.All(preview => preview.Preview is null);
+            EmptyState.Text = models.Length == 0 ? "No models match this search." :
+                "Matching models have no available previews.";
             ModelInfo.Text = $"{models.Length} of {allModels.Length} models" +
-                (models.Length > visible.Length ? " · first 120 matches; narrow search" : "") +
-                (unavailable.Length > 0 ? $" · {unavailable.Length} unavailable previews omitted" : "") +
-                " · Drag a thumbnail or Large preview into a viewport; Place model also supports click placement.";
+                (models.Length > visible.Length ? " · first 120 shown; narrow search" : "") +
+                (unavailable.Length > 0 ? $" · {unavailable.Length} unavailable" : "") +
+                " · Drag to place or use Place model.";
             ToolTip.SetTip(ModelInfo, unavailable.Length > 0 ? string.Join('\n', unavailable.Select(preview => $"{preview.Name}: {preview.Error}")) : ModelInfo.Text);
         }
         catch (OperationCanceledException) { }

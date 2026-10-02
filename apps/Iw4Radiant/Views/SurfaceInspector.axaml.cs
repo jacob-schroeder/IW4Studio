@@ -131,6 +131,8 @@ public partial class SurfaceInspector : UserControl
             _shownReference = reference;
             TextureLockValue.IsChecked = session.TextureLock;
             ProjectionFields.IsEnabled = reference is not null;
+            TextureSection.IsVisible = reference is not null;
+            ProjectionFields.IsVisible = reference is not null;
             AutoCaulkButton.IsEnabled = session.Selection.Items.Count(item => item is MapBrush or MapEntity) > 1 ||
                 session.Selection.Items.OfType<MapEntity>().Any(entity => entity.Brushes.Count > 1);
             SurfaceSummary.Text = faces.Length == 0 ? "Select a brush or face." :

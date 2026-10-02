@@ -79,8 +79,9 @@ public sealed class SunDirectionControl : Control
     {
         var background = new SolidColorBrush(Color.Parse("#1B1D21"));
         var grid = new Pen(new SolidColorBrush(Color.Parse("#454A52")));
+        var border = new Pen(new SolidColorBrush(Color.Parse("#363B42")));
         var sun = new SolidColorBrush(Color.Parse("#E5B477"));
-        context.DrawRectangle(background, grid, new Rect(Bounds.Size), 2, 2);
+        context.DrawRectangle(background, border, new Rect(Bounds.Size).Deflate(0.5), 8, 8);
         var center = new Point(44, Bounds.Height / 2);
         const double radius = 29;
         context.DrawEllipse(null, grid, center, radius, radius);

@@ -2,30 +2,28 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="using:Iw4Radiant.Views"
              x:Class="Iw4Radiant.Views.MaterialBrowser">
-    <Grid RowDefinitions="Auto,Auto,*,Auto" Background="#222427">
-        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="8,5" ColumnSpacing="6">
-            <TextBlock Text="Materials" Classes="panelTitle" VerticalAlignment="Center" Margin="0,0,4,0" />
-            <TextBox x:Name="MaterialFilter" Grid.Column="1" Classes="compact" MinWidth="60"
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Background="#222427" RowSpacing="4">
+        <Grid ColumnDefinitions="*,Auto" Margin="12,5,12,0" ColumnSpacing="8">
+            <TextBox x:Name="MaterialFilter" Classes="compact" MinWidth="60"
                      PlaceholderText="Search materials" ToolTip.Tip="Filter the loaded material names" />
-            <ToggleButton x:Name="InUseToggle" Grid.Column="2" Classes="compact" Content="In Use"
-                          ToolTip.Tip="Show materials used by this map's brushes, terrain and resolved prefabs. Combines with search." />
-            <Button x:Name="BrowseButton" Grid.Column="3" Classes="panelAction" Content="Browse…"
+            <Button x:Name="BrowseButton" Grid.Column="1" Classes="panelAction" Content="Choose library…"
                     ToolTip.Tip="Choose a raw asset library or texture folder" />
-            <ToggleButton x:Name="PreviewToggle" Grid.Column="4" Classes="compact" Content="Preview"
-                          IsChecked="False" ToolTip.Tip="Show the selected image and its details" />
         </Grid>
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto,Auto" Margin="8,0,8,5" ColumnSpacing="6">
-            <TextBlock Text="Collection" Classes="fieldLabel" VerticalAlignment="Center" />
-            <ComboBox x:Name="FavoriteCollection" Grid.Column="1" Classes="compact"
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="12,0" ColumnSpacing="8">
+            <ComboBox x:Name="FavoriteCollection" Classes="compact"
                       AutomationProperties.Name="Material collection"
                       ToolTip.Tip="Filter materials by a saved collection. Combines with search and In Use." />
-            <Button x:Name="ManageFavoritesButton" Grid.Column="2" Classes="panelAction" Content="Manage…"
+            <ToggleButton x:Name="InUseToggle" Grid.Column="1" Classes="compact" Content="In use"
+                          ToolTip.Tip="Show materials used by this map's brushes, terrain and resolved prefabs. Combines with search." />
+            <ToggleButton x:Name="PreviewToggle" Grid.Column="2" Classes="compact" Content="Preview"
+                          IsChecked="False" ToolTip.Tip="Show the selected image and its details" />
+            <Button x:Name="ManageFavoritesButton" Grid.Column="3" Classes="panelAction" Content="Edit…"
                     AutomationProperties.Name="Manage material collections" />
-            <Button x:Name="FindReplaceButton" Grid.Column="3" Classes="panelAction" Content="Find / replace…"
+            <Button x:Name="FindReplaceButton" Grid.Column="4" Classes="panelAction" Content="Replace…"
                     AutomationProperties.Name="Find and replace materials"
                     ToolTip.Tip="Replace an exact material name on selected surfaces or throughout this map" />
         </Grid>
-        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="4,0">
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="9,0">
             <ListBox x:Name="MaterialList" Background="Transparent" BorderThickness="0" Padding="0"
                      ToolTip.Tip="Choose a material to apply it to selected faces or geometry and use it for new geometry."
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -35,6 +33,7 @@
                 </ListBox.ItemsPanel>
                 <ListBox.Styles>
                     <Style Selector="ListBoxItem">
+                    <Setter Property="CornerRadius" Value="7" />
                         <Setter Property="Width" Value="{Binding #ThumbnailSize.Value}" />
                         <Setter Property="Height" Value="{Binding #ThumbnailSize.Value}" />
                         <Setter Property="Padding" Value="3" />
@@ -46,7 +45,7 @@
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="views:MaterialThumbnail">
                         <Grid RowDefinitions="*,Auto" ToolTip.Tip="{CompiledBinding Name}">
-                            <Border Background="#303237" CornerRadius="2">
+                            <Border Background="#303237" CornerRadius="5">
                                 <Grid>
                                     <TextBlock Text="No preview" Classes="caption" FontSize="10"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -59,11 +58,14 @@
                                 <TextBlock Text="Sky · +X" FontSize="10" ToolTip.Tip="The cubemap's actual +X face" />
                             </Border>
                             <TextBlock Grid.Row="1" Text="{CompiledBinding Name}" FontSize="11" Margin="0,3,0,0"
-                                       TextAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                       TextAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
+            <TextBlock x:Name="EmptyState" Classes="caption" Text="Choose an asset library to browse materials."
+                       Margin="12" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       TextWrapping="Wrap" IsHitTestVisible="False" />
             <Grid Grid.Column="1" Width="168" Margin="6,2,4,2" RowDefinitions="*,Auto"
                   IsVisible="{Binding #PreviewToggle.IsChecked}">
                 <Border Background="#303237" BorderBrush="#45484E" BorderThickness="1" CornerRadius="2">
@@ -74,7 +76,7 @@
                            TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding #PreviewInfo.Text}" />
             </Grid>
         </Grid>
-        <Border Grid.Row="3" BorderBrush="#393C42" BorderThickness="0,1,0,0" Padding="8,4,8,3">
+        <Border Grid.Row="3" BorderBrush="#393C42" BorderThickness="0,1,0,0" Padding="12,4,12,8">
             <Grid RowDefinitions="Auto,Auto" RowSpacing="2">
                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
                     <TextBlock Text="Active material" Classes="fieldLabel" VerticalAlignment="Center"
@@ -99,7 +101,7 @@
                                ToolTip.Tip="{Binding #MaterialInfo.Text}" />
                     <TextBlock Grid.Column="1" Text="Size" Classes="caption" VerticalAlignment="Center" />
                     <Slider x:Name="ThumbnailSize" Grid.Column="2" Width="64"
-                            Minimum="64" Maximum="112" Value="80" SmallChange="16" LargeChange="16"
+                            Minimum="80" Maximum="112" Value="96" SmallChange="16" LargeChange="16"
                             TickFrequency="16" IsSnapToTickEnabled="True"
                             ToolTip.Tip="Thumbnail size" />
                 </Grid>

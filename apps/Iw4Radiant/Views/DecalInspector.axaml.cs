@@ -34,8 +34,13 @@ public partial class DecalInspector : UserControl
     internal void RefreshSelection(EditorSession session)
     {
         bool supported = _supportsAlpha(session.Material);
-        DecalMaterialText.Text = supported ? $"Decal material: {session.Material}" : "Choose a material with supported alpha blending in the browser.";
-        ProjectButton.IsEnabled = supported && session.Selection.Count > 0 && session.Selection.Items.All(item => item is BrushFaceSelection);
+        int faceCount = session.Selection.Items.OfType<BrushFaceSelection>().Count();
+        bool selectedFaces = faceCount > 0 && faceCount == session.Selection.Count;
+        DecalInstructions.IsVisible = selectedFaces;
+        DecalFields.IsVisible = selectedFaces;
+        DecalMaterialText.Text = !selectedFaces ? $"Select brush faces in Face mode · {faceCount} selected." :
+            supported ? $"Decal material: {session.Material}" : "Choose a material with supported alpha blending in the browser.";
+        ProjectButton.IsEnabled = supported && selectedFaces;
     }
 
     private static float Read(TextBox input) => float.TryParse(input.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value) &&

@@ -82,7 +82,7 @@ public partial class GameplayEntityInspector : UserControl
     internal void RefreshSelection(EditorSession session)
     {
         MapEntity? entity = session.Selection.Active as MapEntity;
-        GameplayFields.IsVisible = entity?.ClassName != "stage";
+        GameplayFields.IsVisible = entity is not null && entity.ClassName is not ("stage" or "worldspawn");
         if (entity?.ClassName == "worldspawn") entity = null;
         Fields.IsEnabled = ApplyButton.IsEnabled = entity is not null;
         RadiusFields.IsVisible = entity?.ClassName == "trigger_radius";

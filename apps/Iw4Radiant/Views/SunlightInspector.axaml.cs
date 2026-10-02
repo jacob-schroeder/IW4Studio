@@ -10,6 +10,7 @@ public partial class SunlightInspector : UserControl
 {
     private MapEntity? _shownEntity;
     private string?[] _shownValues = [];
+    private Vector3 _sourceColor = Vector3.One;
     private bool _updating, _applying, _stageMode, _sourceValid = true;
 
     public SunlightInspector() => InitializeComponent();
@@ -127,9 +128,10 @@ public partial class SunlightInspector : UserControl
             {
                 // Initial fields are an authoring draft; absent source remains disabled until Apply.
                 Vector3 color = sun?.Color ?? Vector3.One;
-                RedBox.Text = Number(color.X);
-                GreenBox.Text = Number(color.Y);
-                BlueBox.Text = Number(color.Z);
+                _sourceColor = color;
+                RedBox.Text = ColorNumber(color.X);
+                GreenBox.Text = ColorNumber(color.Y);
+                BlueBox.Text = ColorNumber(color.Z);
                 IntensityBox.Text = Number(sun?.Intensity ?? 1);
                 var angles = sun?.Angles ?? new Vector3(-45, 0, 0);
                 PitchBox.Text = Number(angles.X);
@@ -175,12 +177,13 @@ public partial class SunlightInspector : UserControl
     {
         if (_updating) return;
         Vector3 color = ColorPicker.SelectedColor;
+        _sourceColor = color;
         _updating = true;
         try
         {
-            RedBox.Text = Number(color.X);
-            GreenBox.Text = Number(color.Y);
-            BlueBox.Text = Number(color.Z);
+            RedBox.Text = ColorNumber(color.X);
+            GreenBox.Text = ColorNumber(color.Y);
+            BlueBox.Text = ColorNumber(color.Z);
         }
         finally { _updating = false; }
     }
@@ -197,7 +200,8 @@ public partial class SunlightInspector : UserControl
             MapSunProperties? sun = SunEnabled.IsChecked == true ? new MapSunProperties
             {
                 Intensity = ReadNumber(IntensityBox, "intensity"),
-                Color = new Vector3(ReadNumber(RedBox, "red"), ReadNumber(GreenBox, "green"), ReadNumber(BlueBox, "blue")),
+                Color = new Vector3(ReadColor(RedBox, "red", _sourceColor.X),
+                    ReadColor(GreenBox, "green", _sourceColor.Y), ReadColor(BlueBox, "blue", _sourceColor.Z)),
                 Angles = new Vector3(ReadNumber(PitchBox, "pitch"), ReadNumber(YawBox, "yaw"), ReadNumber(RollBox, "roll"))
             } : null;
             float? ambient = AmbientFields.IsVisible && AmbientOverride.IsChecked == true
@@ -236,5 +240,9 @@ public partial class SunlightInspector : UserControl
     private static bool TryReadNumber(TextBox input, out float value) =>
         float.TryParse(input.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && float.IsFinite(value);
 
+    private static float ReadColor(TextBox input, string name, float source) =>
+        input.Text == ColorNumber(source) ? source : ReadNumber(input, name);
+
+    private static string ColorNumber(float value) => value.ToString("G6", CultureInfo.InvariantCulture);
     private static string Number(float value) => value.ToString("G9", CultureInfo.InvariantCulture);
 }

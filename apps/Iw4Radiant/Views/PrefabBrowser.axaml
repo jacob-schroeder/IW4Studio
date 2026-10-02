@@ -2,35 +2,54 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="using:Iw4Radiant.Views"
              x:Class="Iw4Radiant.Views.PrefabBrowser">
-    <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="*,*,180" Margin="8" ColumnSpacing="10" RowSpacing="6">
-        <Grid Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="5">
-            <TextBox x:Name="SearchBox" PlaceholderText="Search prefabs" />
-            <Button x:Name="FolderButton" Grid.Column="1" Content="Folder…" />
+    <Grid RowDefinitions="Auto,*,Auto" Background="#222427" RowSpacing="4">
+        <Grid ColumnDefinitions="*,Auto" Margin="12,5,12,0" ColumnSpacing="8">
+            <TextBox x:Name="SearchBox" Classes="compact" PlaceholderText="Search prefabs" />
+            <Button x:Name="FolderButton" Grid.Column="1" Content="Choose folder…" Classes="panelAction" />
         </Grid>
-        <TextBlock x:Name="FolderText" Grid.Row="2" Grid.ColumnSpan="3" Classes="caption" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-        <Button x:Name="SaveSelectionButton" Grid.Column="2" Content="Save selection…" HorizontalAlignment="Stretch" ToolTip.Tip="Save selection as a reusable prefab" />
-        <ListBox x:Name="PrefabList" Grid.Row="1" />
-        <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="*,Auto" RowSpacing="4">
-            <views:PrefabPreview x:Name="Preview" MinHeight="90" />
-            <TextBlock x:Name="PreviewText" Grid.Row="1" Classes="caption" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding #PreviewText.Text}" />
+        <Grid Grid.Row="1" ColumnDefinitions="*,150" ColumnSpacing="8" Margin="12,0">
+            <ListBox x:Name="PrefabList" Background="Transparent" BorderThickness="0" Padding="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.Styles>
+                    <Style Selector="ListBoxItem">
+                    <Setter Property="CornerRadius" Value="7" />
+                        <Setter Property="Padding" Value="7,5" />
+                        <Setter Property="Margin" Value="0,0,0,2" />
+                    </Style>
+                </ListBox.Styles>
+            </ListBox>
+            <TextBlock x:Name="EmptyState" Classes="caption" Text="Choose a prefab folder to begin."
+                       HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
+                       TextWrapping="Wrap" Margin="12" IsHitTestVisible="False" />
+            <Border Grid.Column="1" Background="#292C31" BorderBrush="#393C42" BorderThickness="1"
+                    CornerRadius="6" Padding="7">
+                <Grid RowDefinitions="Auto,*,Auto" RowSpacing="5">
+                    <TextBlock Text="Selected prefab" Classes="fieldLabel" />
+                    <views:PrefabPreview x:Name="Preview" Grid.Row="1" ClipToBounds="True" />
+                    <TextBlock x:Name="PreviewText" Grid.Row="2" Classes="caption" TextWrapping="Wrap"
+                               MaxLines="3" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding #PreviewText.Text}" />
+                </Grid>
+            </Border>
         </Grid>
-        <ScrollViewer Grid.Row="1" Grid.Column="2" HorizontalScrollBarVisibility="Disabled">
+        <Border Grid.Row="2" BorderBrush="#393C42" BorderThickness="0,1,0,0" Padding="12,4,12,8">
             <StackPanel Spacing="5">
-                <Button x:Name="PlaceButton" Content="Place in view" HorizontalAlignment="Stretch" IsEnabled="False"
-                        ToolTip.Tip="Click a grid or camera surface to place the prefab. Hold Shift to place copies. Escape cancels." />
-                <Button x:Name="AddToBrushButton" Content="Add to brush" HorizontalAlignment="Stretch" IsEnabled="False"
-                        ToolTip.Tip="Add this prefab to the Painter palette for repeated placement." />
-                <Button x:Name="OpenSourceButton" Content="Open browser source" HorizontalAlignment="Stretch" IsEnabled="False" />
-                <TextBlock x:Name="InstanceText" Classes="caption" TextWrapping="Wrap" />
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="5">
-                    <Button x:Name="EditInstanceButton" Content="Edit source" HorizontalAlignment="Stretch" />
-                    <Button x:Name="ReloadButton" Grid.Column="1" Content="Reload" HorizontalAlignment="Stretch" />
-                </Grid>
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="5">
-                    <Button x:Name="UniqueButton" Content="Unique…" HorizontalAlignment="Stretch" ToolTip.Tip="Save a unique source for this instance" />
-                    <Button x:Name="ExplodeButton" Grid.Column="1" Content="Explode" HorizontalAlignment="Stretch" />
-                </Grid>
+                <TextBlock x:Name="FolderText" Classes="caption" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="InstanceText" Classes="caption" TextWrapping="Wrap" MaxLines="2" />
+                <WrapPanel Orientation="Horizontal">
+                    <Button x:Name="PlaceButton" Content="Place in view" Classes="panelAction" IsEnabled="False" Margin="0,0,5,4"
+                            ToolTip.Tip="Click a grid or camera surface to place the prefab. Hold Shift to place copies. Escape cancels." />
+                    <Button x:Name="AddToBrushButton" Content="Add to brush" Classes="panelAction" IsEnabled="False" Margin="0,0,5,4"
+                            ToolTip.Tip="Add this prefab to the Painter palette for repeated placement." />
+                    <Button x:Name="OpenSourceButton" Content="Open source" Classes="panelAction" IsEnabled="False" Margin="0,0,5,4" />
+                    <Button x:Name="SaveSelectionButton" Content="Save selection…" Classes="panelAction" Margin="0,0,5,4"
+                            ToolTip.Tip="Save selection as a reusable prefab" />
+                    <Button x:Name="EditInstanceButton" Content="Edit source" Classes="panelAction" Margin="0,0,5,4" />
+                    <Button x:Name="ReloadButton" Content="Reload" Classes="panelAction" Margin="0,0,5,4" />
+                    <Button x:Name="UniqueButton" Content="Unique…" Classes="panelAction" Margin="0,0,5,4"
+                            ToolTip.Tip="Save a unique source for this instance" />
+                    <Button x:Name="ExplodeButton" Content="Explode" Classes="panelAction" Margin="0,0,0,4" />
+                </WrapPanel>
             </StackPanel>
-        </ScrollViewer>
+        </Border>
     </Grid>
 </UserControl>

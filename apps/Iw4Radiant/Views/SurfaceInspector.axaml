@@ -66,7 +66,7 @@
                 </Grid>
             </StackPanel>
         </StackPanel>
-        <StackPanel Spacing="4">
+        <StackPanel x:Name="TextureSection" Spacing="4" IsVisible="False">
             <TextBlock Text="Texture" Classes="panelTitle" />
             <TextBox x:Name="TextureName" IsReadOnly="True" PlaceholderText="No selected surface"
                      ToolTip.Tip="The selected surfaces' material. Click a material thumbnail to replace it immediately." />
@@ -84,7 +84,7 @@
             <Button x:Name="ConvertFaceButton" Content="Create terrain from face" Classes="panelAction" HorizontalAlignment="Stretch" />
         </StackPanel>
         <TextBlock x:Name="ProjectionInfo" Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
-        <StackPanel x:Name="ProjectionFields" Spacing="8" IsEnabled="False">
+        <StackPanel x:Name="ProjectionFields" Spacing="8" IsEnabled="False" IsVisible="False">
             <TextBlock Text="Texture alignment" Classes="panelTitle" />
             <Grid ColumnDefinitions="*,28,28" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="4" RowSpacing="5">
                 <TextBlock Classes="fieldLabel" Text="Horizontal shift" />

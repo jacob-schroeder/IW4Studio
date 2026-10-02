@@ -2,20 +2,19 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="using:Iw4Radiant.Views"
              x:Class="Iw4Radiant.Views.XModelBrowser">
-    <Grid RowDefinitions="Auto,*,Auto" Background="#222427">
-        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6" Margin="8,5">
-            <TextBlock Text="Models" Classes="panelTitle" VerticalAlignment="Center" />
-            <TextBox x:Name="ModelFilter" Grid.Column="1" Classes="compact" PlaceholderText="Search XModels" />
-            <Button x:Name="BrowseButton" Grid.Column="2" Classes="panelAction" Content="Browse raw…" />
-            <Button x:Name="PreviewButton" Grid.Column="3" Classes="panelAction" Content="Large preview" IsEnabled="False" />
+    <Grid RowDefinitions="Auto,*,Auto" Background="#222427" RowSpacing="4">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="12,5,12,0">
+            <TextBox x:Name="ModelFilter" Classes="compact" PlaceholderText="Search models" />
+            <Button x:Name="BrowseButton" Grid.Column="1" Classes="panelAction" Content="Choose library…" />
         </Grid>
-        <ListBox x:Name="ModelList" Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="0"
+        <ListBox x:Name="ModelList" Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="0" Margin="9,0"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
             <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
             <ListBox.Styles>
                 <Style Selector="ListBoxItem">
-                    <Setter Property="Width" Value="110" /><Setter Property="Height" Value="110" />
-                    <Setter Property="Padding" Value="3" /><Setter Property="Margin" Value="2" />
+                    <Setter Property="CornerRadius" Value="7" />
+                    <Setter Property="Width" Value="104" /><Setter Property="Height" Value="104" />
+                    <Setter Property="Padding" Value="4" /><Setter Property="Margin" Value="3" />
                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                     <Setter Property="VerticalContentAlignment" Value="Stretch" />
                 </Style>
@@ -23,25 +22,29 @@
             <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="views:XModelThumbnail">
                     <Grid RowDefinitions="*,Auto" ToolTip.Tip="{CompiledBinding Description}">
-                        <Border Background="#303237" CornerRadius="2"><Image Source="{CompiledBinding Preview}" Stretch="Uniform" /></Border>
+                        <Border Background="#303237" CornerRadius="5"><Image Source="{CompiledBinding Preview}" Stretch="Uniform" /></Border>
                         <TextBlock Grid.Row="1" Text="{CompiledBinding Name}" FontSize="11" Margin="0,3,0,0"
-                                   TextAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                   TextAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
                     </Grid>
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
-        <Border Grid.Row="2" BorderBrush="#393C42" BorderThickness="0,1,0,0" Padding="8,4">
+        <TextBlock x:Name="EmptyState" Grid.Row="1" Classes="caption"
+                   Text="Choose an asset library to browse models." Margin="12" TextWrapping="Wrap"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
+        <Border Grid.Row="2" BorderBrush="#393C42" BorderThickness="0,1,0,0" Padding="12,4,12,8">
             <Grid RowDefinitions="Auto,Auto" RowSpacing="4">
                 <WrapPanel Orientation="Horizontal">
-                    <Button x:Name="PlaceButton" Classes="panelAction" Content="Place model" IsEnabled="False" Margin="0,0,6,0" />
-                    <CheckBox x:Name="AlignSurface" Content="Align to surface" Margin="0,0,10,0" />
-                    <Button x:Name="DropButton" Classes="panelAction" Content="Drop selection" Margin="0,0,6,0" />
-                    <Button x:Name="FindButton" Classes="panelAction" Content="Find instances" IsEnabled="False" Margin="0,0,6,0" />
-                    <Button x:Name="ReplaceButton" Classes="panelAction" Content="Find / replace…" IsEnabled="False" />
-                    <Button x:Name="AddFoliageButton" Classes="panelAction" Content="Add to brush" IsEnabled="False" Margin="6,0,0,0" />
+                    <Button x:Name="PlaceButton" Classes="panelAction" Content="Place model" IsEnabled="False" Margin="0,0,6,4" />
+                    <Button x:Name="PreviewButton" Classes="panelAction" Content="Large preview" IsEnabled="False" Margin="0,0,6,4" />
+                    <CheckBox x:Name="AlignSurface" Content="Align to surface" Margin="0,0,10,4" />
+                    <Button x:Name="DropButton" Classes="panelAction" Content="Drop selection" Margin="0,0,6,4" />
+                    <Button x:Name="FindButton" Classes="panelAction" Content="Find instances" IsEnabled="False" Margin="0,0,6,4" />
+                    <Button x:Name="ReplaceButton" Classes="panelAction" Content="Find / replace…" IsEnabled="False" Margin="0,0,0,4" />
+                    <Button x:Name="AddFoliageButton" Classes="panelAction" Content="Add to brush" IsEnabled="False" Margin="6,0,0,4" />
                 </WrapPanel>
                 <TextBlock x:Name="ModelInfo" Grid.Row="1" Classes="caption" Text="Browse assets, then drag a model into a viewport or use Place model."
-                           TextTrimming="CharacterEllipsis" />
+                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding #ModelInfo.Text}" />
             </Grid>
         </Border>
     </Grid>

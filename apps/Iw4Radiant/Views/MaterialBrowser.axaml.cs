@@ -656,6 +656,9 @@ public partial class MaterialBrowser : UserControl
             .OrderByDescending(material => material.Name.Equals(filter, StringComparison.OrdinalIgnoreCase))
             .ThenBy(material => material.Name, StringComparer.OrdinalIgnoreCase).ToArray();
         var shown = matches.Take(2000).ToArray();
+        EmptyState.IsVisible = shown.Length == 0;
+        EmptyState.Text = available == 0 ? "Choose an asset library to browse materials." :
+            "No materials match the current filters.";
         var selected = MaterialList.SelectedItem as MaterialThumbnail;
         _filtering = true;
         try

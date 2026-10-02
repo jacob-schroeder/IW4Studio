@@ -2,14 +2,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="using:Iw4Radiant.Views"
              x:Class="Iw4Radiant.Views.WeaponBrowser">
-    <Grid RowDefinitions="Auto,*,Auto" Background="#222427">
-        <TextBlock Text="Weapons" Classes="panelTitle" Margin="8,7" />
-        <ListBox x:Name="WeaponList" Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="0"
+    <Grid RowDefinitions="*,Auto" Background="#222427">
+        <ListBox x:Name="WeaponList" Grid.Row="0" Background="Transparent" BorderThickness="0" Padding="0" Margin="9,0"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
             <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
             <ListBox.Styles>
                 <Style Selector="ListBoxItem">
-                    <Setter Property="Width" Value="148" /><Setter Property="Height" Value="160" />
+                    <Setter Property="CornerRadius" Value="7" />
+                    <Setter Property="Width" Value="116" /><Setter Property="Height" Value="112" />
                     <Setter Property="Padding" Value="4" /><Setter Property="Margin" Value="3" />
                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                     <Setter Property="VerticalContentAlignment" Value="Stretch" />
@@ -18,20 +18,21 @@
             <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="views:WeaponThumbnail">
                     <Grid RowDefinitions="*,Auto" ToolTip.Tip="{CompiledBinding Status}">
-                        <Border Background="#303237" CornerRadius="2">
+                        <Border Background="#303237" CornerRadius="5">
                             <Grid>
-                                <Image Source="{CompiledBinding Preview}" Stretch="Uniform" />
+                                <Image Source="{CompiledBinding Preview}" Stretch="Uniform" MaxHeight="72" />
                                 <TextBlock Text="Preview unavailable" IsVisible="{CompiledBinding IsPreviewUnavailable}"
                                            Classes="caption" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Grid>
                         </Border>
                         <TextBlock Grid.Row="1" Text="{CompiledBinding Name}" FontSize="11" FontWeight="SemiBold"
-                                   Margin="0,4,0,0" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                   Margin="0,4,0,0" TextAlignment="Center" TextTrimming="CharacterEllipsis"
+                                   TextWrapping="NoWrap" ToolTip.Tip="{CompiledBinding Name}" />
                     </Grid>
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
-        <Border Grid.Row="2" BorderBrush="#393C42" BorderThickness="0,1,0,0" Padding="8,5">
+        <Border Grid.Row="1" BorderBrush="#393C42" BorderThickness="0,1,0,0" Padding="12,4,12,8">
             <StackPanel Spacing="4">
                 <Button x:Name="PlaceButton" Classes="panelAction" Content="Place mounted minigun"
                         HorizontalAlignment="Left" />

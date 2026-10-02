@@ -16,7 +16,7 @@
         </Style>
     </UserControl.Styles>
     <Grid RowDefinitions="Auto,*" Background="#292B2F">
-        <Border Padding="12,10" BorderBrush="#3A3D42" BorderThickness="0,0,0,1">
+        <Border Padding="12,10" BorderBrush="#30343B" BorderThickness="0,0,0,1">
             <StackPanel Spacing="5">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                     <materialIcons:MaterialIcon Kind="TuneVariant" Width="15" Height="15" />
@@ -25,33 +25,35 @@
                 <TextBlock x:Name="SelectionText" Text="No selection" TextWrapping="Wrap" Classes="caption" />
             </StackPanel>
         </Border>
-        <TabControl x:Name="InspectorTabs" Grid.Row="1" Padding="0">
+        <TabControl x:Name="InspectorTabs" Classes="panelTabs" Grid.Row="1" Padding="0">
             <TabItem x:Name="SelectionTab" ToolTip.Tip="Selection · bounds and transforms" AutomationProperties.Name="Selection">
                 <TabItem.Header><materialIcons:MaterialIcon Kind="CursorDefaultOutline" Width="16" Height="16" /></TabItem.Header>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="12" Spacing="10">
-                        <TextBlock Text="Bounds" Classes="panelTitle"
-                                   ToolTip.Tip="Bounds describe the current selection. Select one whole brush to resize it." />
-                        <Grid ColumnDefinitions="48,*,*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="4" RowSpacing="4">
-                            <TextBlock Grid.Column="1" Text="X" Classes="caption" />
-                            <TextBlock Grid.Column="2" Text="Y" Classes="caption" />
-                            <TextBlock Grid.Column="3" Text="Z" Classes="caption" />
-                            <TextBlock Grid.Row="1" Text="Min" Classes="fieldLabel" />
-                            <TextBox x:Name="MinX" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Minimum X" />
-                            <TextBox x:Name="MinY" Grid.Row="1" Grid.Column="2" ToolTip.Tip="Minimum Y" />
-                            <TextBox x:Name="MinZ" Grid.Row="1" Grid.Column="3" ToolTip.Tip="Minimum Z" />
-                            <TextBlock Grid.Row="2" Text="Size" Classes="fieldLabel" />
-                            <TextBox x:Name="SizeX" Grid.Row="2" Grid.Column="1" ToolTip.Tip="Size X" />
-                            <TextBox x:Name="SizeY" Grid.Row="2" Grid.Column="2" ToolTip.Tip="Size Y" />
-                            <TextBox x:Name="SizeZ" Grid.Row="2" Grid.Column="3" ToolTip.Tip="Size Z" />
-                        </Grid>
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
-                            <Button x:Name="ApplyBoundsButton" Content="Apply bounds" Classes="panelAction" HorizontalAlignment="Stretch"
-                                    ToolTip.Tip="Resize the selected brush to these bounds." />
-                            <Button x:Name="RevertBoundsButton" Grid.Column="1" Content="Revert"
-                                    ToolTip.Tip="Restore the current selection bounds without editing the map." />
-                        </Grid>
-                        <Separator />
+                    <StackPanel Margin="12" Spacing="16">
+                        <TextBlock x:Name="SelectionEmptyHint" Text="Select a brush, entity, surface, or vertex to inspect its bounds and transform." Classes="caption" TextWrapping="Wrap" />
+                        <StackPanel x:Name="SelectionEditingFields" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Bounds" Classes="panelTitle"
+                                       ToolTip.Tip="Bounds describe the current selection. Select one whole brush to resize it." />
+                            <Grid ColumnDefinitions="48,*,*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="4" RowSpacing="4">
+                                <TextBlock Grid.Column="1" Text="X" Classes="caption" />
+                                <TextBlock Grid.Column="2" Text="Y" Classes="caption" />
+                                <TextBlock Grid.Column="3" Text="Z" Classes="caption" />
+                                <TextBlock Grid.Row="1" Text="Min" Classes="fieldLabel" />
+                                <TextBox x:Name="MinX" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Minimum X" />
+                                <TextBox x:Name="MinY" Grid.Row="1" Grid.Column="2" ToolTip.Tip="Minimum Y" />
+                                <TextBox x:Name="MinZ" Grid.Row="1" Grid.Column="3" ToolTip.Tip="Minimum Z" />
+                                <TextBlock Grid.Row="2" Text="Size" Classes="fieldLabel" />
+                                <TextBox x:Name="SizeX" Grid.Row="2" Grid.Column="1" ToolTip.Tip="Size X" />
+                                <TextBox x:Name="SizeY" Grid.Row="2" Grid.Column="2" ToolTip.Tip="Size Y" />
+                                <TextBox x:Name="SizeZ" Grid.Row="2" Grid.Column="3" ToolTip.Tip="Size Z" />
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                                <Button x:Name="ApplyBoundsButton" Content="Apply bounds" Classes="panelAction" HorizontalAlignment="Stretch"
+                                        ToolTip.Tip="Resize the selected brush to these bounds." />
+                                <Button x:Name="RevertBoundsButton" Grid.Column="1" Content="Revert"
+                                        ToolTip.Tip="Restore the current selection bounds without editing the map." />
+                            </Grid>
+                        </StackPanel>
                         <views:TransformInspector x:Name="Transforms" />
                     </StackPanel>
                 </ScrollViewer>
@@ -65,7 +67,7 @@
             <TabItem x:Name="SurfaceTab" ToolTip.Tip="Surfaces · water, texture alignment and decals" AutomationProperties.Name="Surfaces">
                 <TabItem.Header><materialIcons:MaterialIcon Kind="TextureBox" Width="16" Height="16" /></TabItem.Header>
                 <ScrollViewer x:Name="SurfaceScroll" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="12" Spacing="10">
+                    <StackPanel Margin="12" Spacing="16">
                         <views:SurfaceInspector x:Name="Surfaces" />
                         <views:DecalInspector x:Name="Decals" />
                     </StackPanel>
@@ -74,27 +76,28 @@
             <TabItem x:Name="EntityTab" ToolTip.Tip="Entities · gameplay, links and lights" AutomationProperties.Name="Entities">
                 <TabItem.Header><materialIcons:MaterialIcon Kind="CubeOutline" Width="16" Height="16" /></TabItem.Header>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="12" Spacing="10">
+                    <StackPanel Margin="12" Spacing="16">
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
                             <ComboBox x:Name="EntityList" HorizontalAlignment="Stretch" ToolTip.Tip="Select an entity to inspect." />
                             <Button x:Name="WorldButton" Grid.Column="1" Content="World" ToolTip.Tip="Select the worldspawn entity." />
                         </Grid>
+                        <TextBlock x:Name="EntityEmptyHint" Text="Select a gameplay entity to edit its fields, or create one below." Classes="caption" TextWrapping="Wrap" />
                         <TextBlock x:Name="EntitySelectionInfo" Text="Edits apply to the active entity only."
                                    Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
                         <Expander x:Name="DestructiblePreviewExpander" Header="Destructible preview" IsVisible="False"
                                   IsExpanded="True">
-                            <views:DestructiblePreviewPanel x:Name="DestructiblePreview" Margin="0,8,0,0" />
+                            <views:DestructiblePreviewPanel x:Name="DestructiblePreview" />
                         </Expander>
                         <views:GameplayEntityInspector x:Name="Gameplay" />
                         <Expander x:Name="RuntimePhysicsExpander" Header="Runtime physics" IsVisible="False" IsExpanded="True">
-                            <StackPanel Spacing="7" Margin="0,8,0,0">
+                            <StackPanel Spacing="7">
                                 <CheckBox x:Name="RuntimePhysicsCheckBox" Content="Runtime physics" />
                                 <TextBlock Text="Supported preset: soccer_ball" Classes="caption" />
                                 <TextBlock x:Name="RuntimePhysicsHint" Classes="caption" TextWrapping="Wrap" />
                             </StackPanel>
                         </Expander>
                         <Expander x:Name="FxSoundExpander" Header="FX / sound reference" IsVisible="False">
-                            <StackPanel Spacing="7" Margin="0,8,0,0">
+                            <StackPanel Spacing="7">
                                 <TextBlock x:Name="FxSoundKind" Classes="caption" />
                                 <TextBox x:Name="FxSoundName" FontFamily="Menlo,Consolas,monospace" FontSize="11"
                                          PlaceholderText="Exact asset name" />
@@ -143,8 +146,8 @@
                         </Expander>
                         <views:LightInspector x:Name="Lights" />
                         <views:SunlightInspector x:Name="StageLighting" IsVisible="False" />
-                        <Expander x:Name="PropertiesExpander" Header="Entity properties" IsExpanded="False">
-                            <StackPanel Spacing="7" Margin="0,8,0,0">
+                        <Expander x:Name="PropertiesExpander" Header="Entity properties" IsExpanded="False" IsVisible="False">
+                            <StackPanel Spacing="7">
                                 <TextBox x:Name="PropertiesBox" AcceptsReturn="True" MinHeight="180" TextWrapping="NoWrap"
                                          FontFamily="monospace" PlaceholderText="Select an entity."
                                          ToolTip.Tip="One key=value pair per line. Property names must be unique and classname must remain present."
@@ -162,7 +165,7 @@
             <TabItem x:Name="TerrainTab" ToolTip.Tip="Terrain · sculpting, vertex noise, color and alpha" AutomationProperties.Name="Terrain">
                 <TabItem.Header><materialIcons:MaterialIcon Kind="Terrain" Width="16" Height="16" /></TabItem.Header>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="12" Spacing="12">
+                    <StackPanel Margin="12" Spacing="16">
                         <views:TerrainInspector x:Name="Terrain" />
                         <Separator />
                         <views:TerrainPaintInspector x:Name="TerrainPaint" />
@@ -180,7 +183,11 @@
                     <materialIcons:MaterialIcon Kind="WeatherSunny" Width="16" Height="16" />
                 </TabItem.Header>
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="12" Spacing="12">
+                    <StackPanel Margin="12" Spacing="16">
+                        <StackPanel Spacing="4">
+                            <Button Content="Fog settings…" Click="FogSettings_Click" HorizontalAlignment="Stretch" />
+                            <TextBlock Text="Saved with the map" Classes="caption" />
+                        </StackPanel>
                         <views:SunlightInspector x:Name="Sunlight" />
                         <Separator />
                         <views:SkyInspector x:Name="Skies" />

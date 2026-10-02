@@ -42,6 +42,7 @@ public partial class TransformInspector : UserControl
                 _ => "Scale multipliers"
             };
             ApplyTransformButton.Content = $"Apply {session.TransformMode.ToString().ToLowerInvariant()}";
+            TransformOperationFields.IsVisible = session.CanTransformSelection;
             ApplyTransformButton.IsEnabled = ResetTransformButton.IsEnabled = session.CanTransformSelection;
             XValue.IsEnabled = YValue.IsEnabled = ZValue.IsEnabled = session.CanTransformSelection;
             if (session.SelectionBounds is { } bounds)

@@ -68,6 +68,9 @@ public partial class GeometryInspector
             BridgeRows.Value = rowCount == 16 ? 15 : rowCount + 1;
         BridgeFirstEdge.ItemsSource = _bridgeFirstEdges.Select(edge => edge.Label).ToArray();
         BridgeSecondEdge.ItemsSource = _bridgeSecondEdges.Select(edge => edge.Label).ToArray();
+        bool edgesAvailable = selected.Length == 2 && issue is null &&
+            _bridgeFirstEdges.Length > 0 && _bridgeSecondEdges.Length > 0;
+        BridgeFirstEdge.IsEnabled = BridgeSecondEdge.IsEnabled = edgesAvailable;
         if (newPair)
         {
             (int First, int Second)? suggestion = TerrainBridge.Suggest(_bridgeFirstEdges, _bridgeSecondEdges);
@@ -79,19 +82,24 @@ public partial class GeometryInspector
         BridgeSecondEdge.SelectedIndex = chosenSecond >= 0 && chosenSecond < _bridgeSecondEdges.Length ? chosenSecond : -1;
         _bridgeIssue = issue;
         BridgeReadyText.Text = selected.Length != 2
-            ? "Select two world curved patches, terrains, or brushes. Shift-click the second surface; Face mode picks a specific brush face."
-            : issue ?? "Choose an edge on each surface. The nearest compatible pair is suggested when available.";
+            ? selected.Length < 2 ? $"Select two surfaces · {selected.Length} of 2." :
+                $"Select exactly two surfaces · {selected.Length} selected."
+            : issue ?? (edgesAvailable ? "Choose an edge on each surface." : "No compatible edges on the selected surfaces.");
         UpdateBridgeInfo();
     }
 
     private void UpdateBridgeInfo()
     {
+        BridgeMaterialText.IsVisible = false;
         int first = BridgeFirstEdge.SelectedIndex, second = BridgeSecondEdge.SelectedIndex;
         bool ready = _bridgeIssue is null && first >= 0 && first < _bridgeFirstEdges.Length &&
             second >= 0 && second < _bridgeSecondEdges.Length && BridgeRows.Value is not null && BridgeRise.Value is not null;
         if (!ready)
         {
             CreateBridgeButton.IsEnabled = false;
+            if (_bridgeSelection.Length == 2 && _bridgeIssue is null)
+                BridgeReadyText.Text = _bridgeFirstEdges.Length == 0 || _bridgeSecondEdges.Length == 0
+                    ? "No compatible edges on the selected surfaces." : "Choose an edge on each surface.";
             BridgeRiseCaption.Text = "Center rise · units";
             BridgeShapeHelp.Text = "The source surfaces stay intact. One Undo removes the bridge. A closed rim can bulge outward or inward; an open edge can rise along Z.";
             BridgeMaterialText.Text = "Choose one edge on each surface. The start surface supplies the bridge material.";
@@ -125,6 +133,7 @@ public partial class GeometryInspector
         BridgeMaterialText.Text = string.Equals(start.Material, end.Material, StringComparison.Ordinal)
             ? $"Material · {start.Material}. Texture coordinates blend between the two matching-material edges."
             : $"Material · {start.Material} from the start surface. Texture continues across the gap; the end surface uses {end.Material}.";
+        BridgeMaterialText.IsVisible = true;
     }
 
     private static string SurfaceName(object? selected) => selected switch
