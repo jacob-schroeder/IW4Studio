@@ -16,6 +16,11 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            if (OperatingSystem.IsMacOS())
+            {
+                MacApplicationIcon.Apply();
+            }
+
             desktop.MainWindow = new MainWindow();
         }
 

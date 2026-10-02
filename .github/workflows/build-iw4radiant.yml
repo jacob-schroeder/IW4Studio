@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - apps/Iw4Radiant/**
+      - Resources/iw4radiant_logo.*
       - tools/D3dbspLinker/**
       - src/**
       - global.json
@@ -134,8 +135,39 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
+          bundle_root="$RUNNER_TEMP/iw4radiant-macos"
+          app_dir="$bundle_root/Iw4Radiant.app"
+          mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
+          cp -R publish/. "$app_dir/Contents/MacOS/"
+          cp Resources/iw4radiant_logo.icns "$app_dir/Contents/Resources/"
+          cat > "$app_dir/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>Iw4Radiant</string>
+              <key>CFBundleIdentifier</key>
+              <string>io.github.jacob-schroeder.iw4radiant</string>
+              <key>CFBundleName</key>
+              <string>IW4Radiant</string>
+              <key>CFBundleIconFile</key>
+              <string>iw4radiant_logo.icns</string>
+              <key>CFBundleInfoDictionaryVersion</key>
+              <string>6.0</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${{ needs.version.outputs.public_version }}</string>
+              <key>CFBundleVersion</key>
+              <string>${{ needs.version.outputs.public_version }}</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+          </dict>
+          </plist>
+          PLIST
           mkdir -p "artifact/release/iw4radiant/${{ matrix.platform }}"
-          tar -czf "artifact/release/iw4radiant/${{ matrix.platform }}/${{ matrix.asset }}" -C publish .
+          tar -czf "artifact/release/iw4radiant/${{ matrix.platform }}/${{ matrix.asset }}" -C "$bundle_root" Iw4Radiant.app
 
       - name: Stage platform build
         uses: actions/upload-artifact@v4
