@@ -8,24 +8,34 @@ namespace Iw4Radiant.Compilation;
 
 internal sealed record MapMovingLightScripts(string Name, string Source)
 {
-    internal static MapMovingLightScripts? Create(MapDocument source, string sourcePath, string mapName)
+    internal static MapMovingLightScripts? Create(MapDocument source, string sourcePath, string mapName,
+        List<MapScriptEntitySpan>? entitySpans = null)
     {
-        MapDocument expanded = PrefabLibrary.ExpandForCompilation(source, sourcePath);
+        Dictionary<MapEntity, int>? sourceIndices = entitySpans is null ? null : new();
+        MapDocument expanded = PrefabLibrary.ExpandForCompilation(source, sourcePath, sourceIndices);
         MovingLight[] lights = Enumerate(expanded).ToArray();
         if (lights.Length == 0) return null;
         if (mapName.Length == 0 || mapName.Any(character =>
                 !char.IsAsciiLetterOrDigit(character) && character != '_'))
             throw new InvalidDataException("A map with moving lights needs a filename containing only letters, numbers, and underscores.");
 
+        string name = $"maps/mp/{mapName}_lights.gsc";
         var script = new StringBuilder("main()\r\n{\r\n");
         foreach (MovingLight light in lights)
+        {
+            int start = script.Length;
             script.Append("\tthread sweep_").Append(light.Index).Append("();\r\n");
+            entitySpans?.Add(new(name, start, script.Length - start, sourceIndices?[light.Entity] ?? -1, IsPrimary: false));
+        }
         script.Append("}\r\n");
         foreach (MovingLight light in lights)
         {
+            // Each helper starts with a blank separator line; link to its declaration.
+            int start = script.Length + "\r\n".Length;
             if (light.Light.SweepPlane != 0)
             {
                 AppendTiltedSweep(script, light);
+                entitySpans?.Add(new(name, start, script.Length - start, sourceIndices?[light.Entity] ?? -1));
                 continue;
             }
             float halfSeconds = light.Light.SweepSeconds / 2f;
@@ -51,8 +61,9 @@ internal sealed record MapMovingLightScripts(string Name, string Source)
                 .Append(Number(easeSeconds)).Append(");\r\n")
                 .Append("\t\twait ").Append(Number(light.Light.SweepSeconds)).Append(";\r\n")
                 .Append("\t}\r\n}\r\n");
+            entitySpans?.Add(new(name, start, script.Length - start, sourceIndices?[light.Entity] ?? -1));
         }
-        return new MapMovingLightScripts($"maps/mp/{mapName}_lights.gsc", script.ToString());
+        return new MapMovingLightScripts(name, script.ToString());
     }
 
     internal static IEnumerable<MapEntity> CreateRuntimeEntities(MapDocument document)

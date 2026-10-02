@@ -34,21 +34,24 @@ internal sealed record MapEmitterScripts(
 
 internal static class MapEmitterScriptAuthoring
 {
-    internal static MapEmitterScripts? Create(MapDocument source, string sourcePath, string mapName)
+    internal static MapEmitterScripts? Create(MapDocument source, string sourcePath, string mapName,
+        List<MapScriptEntitySpan>? entitySpans = null)
     {
-        MapDocument expanded = PrefabLibrary.ExpandForCompilation(source, sourcePath);
+        Dictionary<MapEntity, int>? sourceIndices = entitySpans is null ? null : new();
+        MapDocument expanded = PrefabLibrary.ExpandForCompilation(source, sourcePath, sourceIndices);
         MapEntity[] markers = expanded.Entities.Where(entity => entity.ClassName == "fx_origin").ToArray();
         if (markers.Length == 0) return null;
         if (mapName.Length == 0 || mapName.Any(character =>
                 !char.IsAsciiLetterOrDigit(character) && character != '_'))
             throw new InvalidDataException("A map with FX or sound markers needs a filename containing only letters, numbers, and underscores.");
 
-        var effects = new List<(string Name, Vector3 Origin, Vector3 Angles, string? StartDelay, string? TriggerKey)>();
-        var sounds = new List<(string Name, Vector3 Origin, Vector3 Angles, bool Looping)>();
+        var effects = new List<(string Name, Vector3 Origin, Vector3 Angles, string? StartDelay, string? TriggerKey, int EntityIndex)>();
+        var sounds = new List<(string Name, Vector3 Origin, Vector3 Angles, bool Looping, int EntityIndex)>();
         var variants = new List<MapSoundVariant>();
         var triggerKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (MapEntity marker in markers)
         {
+            int entityIndex = sourceIndices?[marker] ?? -1;
             if (marker.Brushes.Count != 0 || marker.Terrains.Count != 0 || marker.PreservedPrimitives.Count != 0)
                 throw new InvalidDataException("An FX or sound marker must be a point entity without brushes or terrain.");
             if (!marker.TryGetOrigin(out Vector3 origin))
@@ -85,7 +88,7 @@ internal static class MapEmitterScriptAuthoring
                            markers.Any(entity => entity.Properties.GetValueOrDefault("soundalias") == name));
                     variants.Add(new MapSoundVariant(name, sourceName, settings));
                 }
-                sounds.Add((name, origin, angles, settings.Looping));
+                sounds.Add((name, origin, angles, settings.Looping, entityIndex));
             }
             else if (playback == "script")
             {
@@ -95,7 +98,7 @@ internal static class MapEmitterScriptAuthoring
                     throw new InvalidDataException("A script-triggered FX marker needs a key of letters, numbers and underscores, starting with a letter or underscore.");
                 if (!triggerKeys.Add(triggerKey))
                     throw new InvalidDataException($"FX script key '{triggerKey}' is duplicated after prefab expansion. Give each callable marker a unique key.");
-                effects.Add((name, origin, angles, null, triggerKey));
+                effects.Add((name, origin, angles, null, triggerKey, entityIndex));
             }
             else
             {
@@ -109,7 +112,7 @@ internal static class MapEmitterScriptAuthoring
                         throw new InvalidDataException("FX start delay must be a finite number of seconds, zero or greater.");
                     delay = seconds.ToString("G9", CultureInfo.InvariantCulture);
                 }
-                effects.Add((name, origin, angles, delay, null));
+                effects.Add((name, origin, angles, delay, null, entityIndex));
             }
         }
 
@@ -117,10 +120,18 @@ internal static class MapEmitterScriptAuthoring
             .Order(StringComparer.Ordinal).ToArray();
         string[] soundNames = sounds.Select(sound => sound.Name).Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal).ToArray();
+        string mapFxName = $"maps/mp/{mapName}_fx.gsc";
+        string createFxName = $"maps/createfx/{mapName}_fx.gsc";
         var mapFx = new StringBuilder("main()\r\n{\r\n");
         foreach (string name in fxNames)
+        {
+            int start = mapFx.Length;
             mapFx.Append("\tlevel._effect[ \"").Append(name).Append("\" ] = loadfx( \"")
                 .Append(name).Append("\" );\r\n");
+            if (entitySpans is not null)
+                foreach (int entityIndex in effects.Where(effect => effect.Name == name).Select(effect => effect.EntityIndex).Distinct())
+                    entitySpans.Add(new(mapFxName, start, mapFx.Length - start, entityIndex, IsPrimary: false));
+        }
         // Authored markers are omitted from MapEnts. Map-start markers use
         // CreateFX records; script-call markers use the function below.
         mapFx.Append("\tmaps\\createfx\\").Append(mapName).Append("_fx::main();\r\n}\r\n");
@@ -133,6 +144,7 @@ internal static class MapEmitterScriptAuthoring
                 .Append("_emitters_loaded ) )\r\n\t\treturn;\r\n");
             foreach (var effect in effects.Where(effect => effect.TriggerKey is not null))
             {
+                int start = mapFx.Length;
                 mapFx.Append("\tif ( key == \"").Append(effect.TriggerKey).Append("\" )\r\n\t{\r\n")
                     .Append("\t\tfx = spawnFx( level._effect[ \"").Append(effect.Name)
                     .Append("\" ], ").Append(Vector(effect.Origin)).Append(", anglestoforward( ")
@@ -140,6 +152,7 @@ internal static class MapEmitterScriptAuthoring
                     .Append(Vector(effect.Angles)).Append(" ) );\r\n")
                     .Append("\t\ttriggerFx( fx, -15 );\r\n")
                     .Append("\t\tfx willNeverChange();\r\n\t\treturn;\r\n\t}\r\n");
+                entitySpans?.Add(new(mapFxName, start, mapFx.Length - start, effect.EntityIndex));
             }
             mapFx.Append("}\r\n");
         }
@@ -152,6 +165,7 @@ internal static class MapEmitterScriptAuthoring
             .Append('\t').Append(initialized).Append(" = true;\r\n\r\n");
         foreach (var effect in effects.Where(effect => effect.TriggerKey is null))
         {
+            int start = createFx.Length;
             createFx.Append("\tent = createOneshotEffect( \"").Append(effect.Name).Append("\" );\r\n")
                 .Append("\tent.v[ \"origin\" ] = ").Append(Vector(effect.Origin)).Append(";\r\n")
                 .Append("\tent.v[ \"angles\" ] = ").Append(Vector(effect.Angles)).Append(";\r\n")
@@ -159,13 +173,16 @@ internal static class MapEmitterScriptAuthoring
             if (effect.StartDelay is not null)
                 createFx.Append("\tent.v[ \"delay\" ] = ").Append(effect.StartDelay).Append(";\r\n");
             createFx.Append("\r\n");
+            entitySpans?.Add(new(createFxName, start, createFx.Length - start, effect.EntityIndex));
         }
         foreach (var sound in sounds.Where(sound => sound.Looping))
         {
+            int start = createFx.Length;
             createFx.Append("\tent = createLoopSound();\r\n")
                 .Append("\tent.v[ \"origin\" ] = ").Append(Vector(sound.Origin)).Append(";\r\n")
                 .Append("\tent.v[ \"angles\" ] = ").Append(Vector(sound.Angles)).Append(";\r\n")
                 .Append("\tent.v[ \"soundalias\" ] = \"").Append(sound.Name).Append("\";\r\n\r\n");
+            entitySpans?.Add(new(createFxName, start, createFx.Length - start, sound.EntityIndex));
         }
         if (sounds.Any(sound => !sound.Looping))
         {
@@ -188,14 +205,15 @@ internal static class MapEmitterScriptAuthoring
                 .Append("\t\tlevel waittill( \"player_spawned\", player );\r\n\r\n");
             foreach (var sound in sounds.Where(sound => !sound.Looping))
             {
+                int start = createFx.Length;
                 createFx.Append("\torg = spawn( \"script_origin\", ").Append(Vector(sound.Origin)).Append(" );\r\n")
                     .Append("\torg PlaySound( \"").Append(sound.Name).Append("\" );\r\n\r\n");
+                entitySpans?.Add(new(createFxName, start, createFx.Length - start, sound.EntityIndex));
             }
             createFx.Append("}\r\n");
         }
         return new MapEmitterScripts(
-            $"maps/mp/{mapName}_fx.gsc", mapFx.ToString(),
-            $"maps/createfx/{mapName}_fx.gsc", createFx.ToString(), fxNames, soundNames, variants.ToArray());
+            mapFxName, mapFx.ToString(), createFxName, createFx.ToString(), fxNames, soundNames, variants.ToArray());
     }
 
     private static string Vector(Vector3 value) => string.Format(CultureInfo.InvariantCulture,

@@ -14,10 +14,13 @@ internal sealed class PrefabLibrary
 
     internal static bool IsPrefab(MapEntity entity) => entity.ClassName == "misc_prefab";
 
-    internal static MapDocument ExpandForCompilation(MapDocument document, string? mapPath)
+    internal static MapDocument ExpandForCompilation(MapDocument document, string? mapPath,
+        Dictionary<MapEntity, int>? sourceEntityIndices = null)
     {
         var library = new PrefabLibrary();
         MapDocument result = document.Clone();
+        if (sourceEntityIndices is not null)
+            for (int i = 0; i < result.Entities.Count; i++) sourceEntityIndices.Add(result.Entities[i], i);
         var targetResolutions = result.Entities.Where(entity => !IsPrefab(entity) && entity.Properties.ContainsKey("target"))
             .ToDictionary(entity => entity, entity => result.ResolveTargets(entity).ToArray());
         var targetNames = result.Entities.Where(entity => !IsPrefab(entity))
@@ -57,6 +60,12 @@ internal sealed class PrefabLibrary
             targetNames.UnionWith(names);
             result.World.Brushes.AddRange(expanded.World.Brushes);
             result.World.Terrains.AddRange(expanded.World.Terrains);
+            if (sourceEntityIndices is not null)
+            {
+                int sourceIndex = sourceEntityIndices[instance];
+                foreach (MapEntity child in expanded.Entities.Skip(1)) sourceEntityIndices.Add(child, sourceIndex);
+                sourceEntityIndices.Remove(instance);
+            }
             result.Entities.AddRange(expanded.Entities.Skip(1));
             result.Entities.Remove(instance);
         }

@@ -83,6 +83,7 @@ public sealed class OrthoViewport : Control
 
     internal event Action<BrushKind>? BrushKindRequested;
     internal event Action<MapEntity>? EntityInspectorRequested;
+    internal event Action<MapEntity>? ScriptRequested;
     internal event Action? ModelsRequested;
     internal event Action? PrefabsRequested;
     internal event Action? OrganizationRequested;
@@ -117,10 +118,11 @@ public sealed class OrthoViewport : Control
         Frame(bounds.Min, bounds.Max);
     }
 
-    public void FrameSelection()
+    public void FrameSelection(float padding = 0)
     {
         _gestures.CancelGesture();
-        if (Session?.SelectionBounds is { } bounds) Frame(bounds.Min, bounds.Max);
+        if (Session?.SelectionBounds is { } bounds)
+            Frame(bounds.Min - new Vector3(padding), bounds.Max + new Vector3(padding));
         else FrameAll();
     }
 
@@ -260,6 +262,7 @@ public sealed class OrthoViewport : Control
             OrthographicGeometry.HitTest(session, _projection, point), position,
             kind => BrushKindRequested?.Invoke(kind),
             entity => EntityInspectorRequested?.Invoke(entity),
+            entity => ScriptRequested?.Invoke(entity),
             () => ModelsRequested?.Invoke(),
             () => PrefabsRequested?.Invoke(),
             () => OrganizationRequested?.Invoke(),

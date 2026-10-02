@@ -11,7 +11,7 @@ internal static class CameraObjectMenu
     internal static ContextMenu Open(CameraViewport viewport, EditorSession session,
         IReadOnlyList<(object Item, string Label)> hits, BrushFaceSelection? target, Point position,
         Action<BrushKind> classify, Action createModelPlayerClip, Action<MapEntity> inspectEntity,
-        Action<string> status)
+        Action<MapEntity> showScript, Action<string> status)
     {
         MapDocument document = session.Document;
         var menu = new ContextMenu();
@@ -19,6 +19,12 @@ internal static class CameraObjectMenu
         var entries = new List<(object Item, MenuItem Menu)>();
         var kinds = new MenuItem { Header = "Brush type" };
         var playerClip = new MenuItem { Header = "Create player clip from models" };
+        var script = new MenuItem { Header = "Show script" };
+        script.Click += (_, _) =>
+        {
+            if (IsCurrent() && session.Selection.Active is { } active &&
+                MapOrganization.Entity(document, active) is { } entity && document.Entities.Contains(entity)) showScript(entity);
+        };
         ToolTip.SetTip(playerClip, "Fit editable brushes to solid collision geometry, using smaller sections where the mesh supports them. Models without collision source use an outer visual hull. Review and adjust the result.");
         playerClip.Click += (_, _) => { if (IsCurrent()) createModelPlayerClip(); };
         var selectAll = new MenuItem { Header = "Select all hit objects", StaysOpenOnClick = true };
@@ -139,6 +145,7 @@ internal static class CameraObjectMenu
         menu.Items.Add(selectAll);
         menu.Items.Add(deselectAll);
         menu.Items.Add(new Separator());
+        menu.Items.Add(script);
         if (LightObjectMenu.Create(session, document, hits.FirstOrDefault().Item, inspectEntity, status) is { } lighting)
         {
             menu.Items.Add(lighting);
@@ -169,6 +176,7 @@ internal static class CameraObjectMenu
 
         void Refresh()
         {
+            script.IsEnabled = IsCurrent() && session.Selection.Active is { } active && MapOrganization.Entity(document, active) is not null;
             foreach (var (item, entry) in entries)
             {
                 entry.IsChecked = IsCurrent() && session.Selection.Contains(item);

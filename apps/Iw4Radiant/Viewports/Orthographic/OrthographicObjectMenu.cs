@@ -9,7 +9,8 @@ namespace Iw4Radiant.Viewports.Orthographic;
 internal static class OrthographicObjectMenu
 {
     internal static ContextMenu Open(Control viewport, EditorSession session, object? hit, Vector3 position,
-        Action<BrushKind> classify, Action<MapEntity> inspectEntity, Action showModels, Action showPrefabs,
+        Action<BrushKind> classify, Action<MapEntity> inspectEntity, Action<MapEntity> showScript,
+        Action showModels, Action showPrefabs,
         Action showOrganization, Action<string> status)
     {
         MapDocument document = session.Document;
@@ -36,6 +37,12 @@ internal static class OrthographicObjectMenu
 
         MapEntity? currentEntity = session.Selection.Active is { } active
             ? MapOrganization.Entity(document, active) : null;
+        var script = new MenuItem { Header = "Show script", IsEnabled = currentEntity is not null };
+        script.Click += (_, _) =>
+        {
+            if (IsCurrent() && currentEntity is not null && document.Entities.Contains(currentEntity)) showScript(currentEntity);
+        };
+        menu.Items.Add(script);
         MenuItem? lighting = LightObjectMenu.Create(session, document, hit, inspectEntity, status);
         if (lighting is not null) menu.Items.Add(lighting);
         if (currentEntity is { ClassName: not "worldspawn" } &&

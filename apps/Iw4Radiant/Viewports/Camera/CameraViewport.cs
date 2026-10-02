@@ -326,6 +326,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     internal event Action? NavigationChanged;
     internal event Action<BrushKind>? BrushKindRequested;
     internal event Action<MapEntity>? EntityInspectorRequested;
+    internal event Action<MapEntity>? ScriptRequested;
     internal event Action? CreateModelPlayerClipRequested;
     internal event Action<IReadOnlyList<Point>?>? FoliageBrushChanged;
     internal bool HasPointerGesture => _dragPointer is not null;
@@ -511,12 +512,17 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
         RequestNextFrameRendering();
     }
 
-    internal void FrameSelection()
+    internal void FrameSelection(float padding = 0)
     {
         StopWalk();
         FinishGesture();
-        if (_session is { } session) _navigation.FrameBounds(
-            PhysicsPlacementSelectionBounds() ?? session.SelectionBounds ?? session.Scene.VisibleBounds, Aspect);
+        if (_session is { } session)
+        {
+            var bounds = PhysicsPlacementSelectionBounds() ?? session.SelectionBounds ?? session.Scene.VisibleBounds;
+            if (bounds is { } selected && padding > 0)
+                bounds = (selected.Min - new Vector3(padding), selected.Max + new Vector3(padding));
+            _navigation.FrameBounds(bounds, Aspect);
+        }
         NavigationChanged?.Invoke();
         RequestNextFrameRendering();
     }
@@ -871,6 +877,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
                     kind => BrushKindRequested?.Invoke(kind),
                     () => CreateModelPlayerClipRequested?.Invoke(),
                     entity => EntityInspectorRequested?.Invoke(entity),
+                    entity => ScriptRequested?.Invoke(entity),
                     message => InteractionStatusChanged?.Invoke(message));
             }
             if (_dragPointer is null) UpdateHoverCursor(point, e.KeyModifiers);

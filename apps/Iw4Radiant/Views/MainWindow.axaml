@@ -74,6 +74,7 @@
                 </MenuItem>
                 <MenuItem Header="Show / hide asset browser" Click="Materials_Click" />
                 <MenuItem Header="Console output" Click="Console_Click" />
+                <MenuItem Header="Map _Scripts…" Click="MapScripts_Click" />
                 <MenuItem Header="Show / hide inspector" Click="Inspector_Click" />
                 <MenuItem Header="Environment · sunlight and skies" Click="Environment_Click" />
                 <MenuItem Header="Camera preview">
@@ -118,6 +119,8 @@
             </MenuItem>
             <MenuItem Header="_Entity">
                 <MenuItem Header="_Worldspawn properties" Click="World_Click" />
+                <MenuItem x:Name="ShowScriptMenu" Header="Show _script" Click="ShowScript_Click" />
+                <Separator />
                 <MenuItem Header="Add _light" Click="Light_Click" />
                 <MenuItem Header="Add player _start" Click="Player_Click" />
             </MenuItem>

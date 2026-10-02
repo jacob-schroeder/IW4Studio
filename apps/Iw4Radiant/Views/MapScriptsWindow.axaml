@@ -1,0 +1,144 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:compilation="clr-namespace:Iw4Radiant.Compilation"
+        xmlns:local="clr-namespace:Iw4Radiant.Views"
+        x:Class="Iw4Radiant.Views.MapScriptsWindow"
+        Title="IW4Radiant · Map Scripts" Width="840" Height="550"
+        MinWidth="640" MinHeight="380" WindowStartupLocation="CenterOwner"
+        Background="#23252A" Foreground="#E6E7EB" FontSize="13">
+    <Window.Styles>
+        <Style Selector="TextBlock.scriptCaption">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#A4AAB6" />
+        </Style>
+        <Style Selector="ListBox.scriptFiles">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="ListBox.scriptFiles ListBoxItem">
+            <Setter Property="Padding" Value="7" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Foreground" Value="#E6E7EB" />
+        </Style>
+        <Style Selector="ListBox.scriptFiles ListBoxItem:selected /template/ Border#PART_LayoutRoot">
+            <Setter Property="Background" Value="#354B67" />
+        </Style>
+        <Style Selector="Button.scriptAction">
+            <Setter Property="Background" Value="#303238" />
+            <Setter Property="BorderBrush" Value="#454850" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="9,4" />
+            <Setter Property="Foreground" Value="#E6E7EB" />
+        </Style>
+    </Window.Styles>
+    <Grid RowDefinitions="Auto,*,Auto">
+        <Border Background="#303238" BorderBrush="#454850" BorderThickness="0,0,0,1" Padding="15,10">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalAlignment="Center">
+                    <TextBlock x:Name="MapNameText" Text="Untitled map" FontWeight="Medium" MaxWidth="180" TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="FreshnessText" Grid.Column="1" Text="· Read only" Classes="scriptCaption" VerticalAlignment="Center" TextWrapping="Wrap" />
+                </Grid>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="7">
+                    <Button x:Name="RefreshButton" Content="Refresh" Classes="scriptAction" Click="Refresh_Click"
+                            ToolTip.Tip="Regenerate source from the current map without compiling or saving it." />
+                    <Button x:Name="CopySourceButton" Content="Copy source" Classes="scriptAction" Click="CopySource_Click" IsEnabled="False" />
+                </StackPanel>
+            </Grid>
+        </Border>
+        <Grid Grid.Row="1" ColumnDefinitions="190,*">
+            <Border BorderBrush="#454850" BorderThickness="0,0,1,0">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="8,12">
+                        <TextBlock Text="Generated files" Classes="scriptCaption" Margin="7,5,7,8" />
+                        <ListBox x:Name="GeneratedFiles" Classes="scriptFiles" SelectionChanged="GeneratedFiles_SelectionChanged"
+                                 AutomationProperties.Name="Generated map scripts">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="compilation:MapScriptSource"><TextBlock Text="{Binding Role}" TextWrapping="Wrap" ToolTip.Tip="{Binding Name}" /></DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <Border Height="1" Background="#454850" Margin="7,14,7,8" />
+                        <Expander x:Name="AnimationGroup" Header="Animation helpers" IsExpanded="False">
+                            <StackPanel>
+                                <TextBlock x:Name="NoAnimationsText" Text="No animation helpers for this map."
+                                           Classes="scriptCaption" TextWrapping="Wrap" Margin="7,8" />
+                                <ListBox x:Name="AnimationFiles" Classes="scriptFiles" SelectionChanged="AnimationFiles_SelectionChanged"
+                                         AutomationProperties.Name="Animation helper dependencies">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="compilation:MapScriptSource"><TextBlock Text="{Binding Role}" TextWrapping="Wrap" ToolTip.Tip="{Binding Name}" /></DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </Expander>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+            <Grid Grid.Column="1" Background="#1C1E23" RowDefinitions="Auto,Auto,Auto,*">
+                <Border BorderBrush="#454850" BorderThickness="0,0,0,1" Padding="15,12">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
+                        <StackPanel VerticalAlignment="Center" Spacing="3">
+                            <TextBlock x:Name="AssetPathText" Text="Map source" FontFamily="Menlo,Consolas,monospace"
+                                       FontSize="12" TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="SourceKindText" Text="Generated GSC" Classes="scriptCaption" />
+                        </StackPanel>
+                        <Button x:Name="ShowInMapButton" Grid.Column="1" Content="Show in map" Classes="scriptAction"
+                                VerticalAlignment="Center" IsEnabled="False" Click="ShowInMap_Click" />
+                    </Grid>
+                </Border>
+                <Border x:Name="NoticePanel" Grid.Row="1" IsVisible="False" Background="#303238" Padding="15,9">
+                    <TextBlock x:Name="NoticeText" Foreground="#DEC492" FontSize="12" TextWrapping="Wrap" />
+                </Border>
+                <StackPanel Grid.Row="2">
+                    <Grid x:Name="SourceLocationsPanel" IsVisible="False" ColumnDefinitions="Auto,*" Margin="12,8" ColumnSpacing="8">
+                        <TextBlock Text="Script location" Classes="scriptCaption" VerticalAlignment="Center" />
+                        <ComboBox x:Name="SourceLocations" Grid.Column="1" HorizontalAlignment="Stretch"
+                                  SelectionChanged="SourceLocations_SelectionChanged" AutomationProperties.Name="Generated code locations for map entity" />
+                    </Grid>
+                    <Grid x:Name="FindBar" IsVisible="False" ColumnDefinitions="*,Auto,Auto,Auto" Margin="12,8" ColumnSpacing="6">
+                        <TextBox x:Name="FindInput" PlaceholderText="Find in this file" KeyDown="FindInput_KeyDown" AutomationProperties.Name="Find in script" />
+                        <Button Grid.Column="1" Content="Previous" Classes="scriptAction" Click="FindPrevious_Click" />
+                        <Button Grid.Column="2" Content="Next" Classes="scriptAction" Click="FindNext_Click" />
+                        <Button Grid.Column="3" Content="×" Classes="scriptAction" Click="CloseNavigation_Click" AutomationProperties.Name="Close find" />
+                    </Grid>
+                    <Grid x:Name="GoToBar" IsVisible="False" ColumnDefinitions="*,Auto,Auto" Margin="12,8" ColumnSpacing="6">
+                        <TextBox x:Name="LineInput" PlaceholderText="Go to line" KeyDown="LineInput_KeyDown" AutomationProperties.Name="Go to script line" />
+                        <Button Grid.Column="1" Content="Go" Classes="scriptAction" Click="GoToLine_Click" />
+                        <Button Grid.Column="2" Content="×" Classes="scriptAction" Click="CloseNavigation_Click" AutomationProperties.Name="Close go to line" />
+                    </Grid>
+                </StackPanel>
+                <ScrollViewer x:Name="SourceScroll" Grid.Row="3" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                    <Grid ColumnDefinitions="Auto,*" Margin="8,16,15,26" ColumnSpacing="12" VerticalAlignment="Top">
+                        <TextBlock x:Name="LineNumbers" Foreground="#A4AAB6" FontFamily="Menlo,Consolas,monospace"
+                                   FontSize="12" LineHeight="22" TextAlignment="Right" MinWidth="28" />
+                        <local:MapScriptTextBlock x:Name="SourceText" Grid.Column="1" Foreground="#E6E7EB"
+                                             FontFamily="Menlo,Consolas,monospace" FontSize="12" LineHeight="22"
+                                             TextWrapping="NoWrap" SelectionBrush="#354B67"
+                                             SelectionForegroundBrush="#E6E7EB" AutomationProperties.Name="Read-only GSC source">
+                            <local:MapScriptTextBlock.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem x:Name="ShowInMapMenu" Header="Show in map" IsEnabled="False" Click="ShowInMap_Click" />
+                                    <Separator />
+                                    <MenuItem Header="Copy selection" Click="CopySelection_Click" />
+                                    <MenuItem Header="Select all" Click="SelectAll_Click" />
+                                    <Separator />
+                                    <MenuItem Header="Find…" Click="Find_Click" InputGesture="Ctrl+F" />
+                                    <MenuItem Header="Go to line…" Click="ShowGoToLine_Click" InputGesture="Ctrl+G" />
+                                </ContextMenu>
+                            </local:MapScriptTextBlock.ContextMenu>
+                        </local:MapScriptTextBlock>
+                    </Grid>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+        <Border Grid.Row="2" Background="#303238" BorderBrush="#454850" BorderThickness="0,1,0,0" Padding="15,8">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <TextBlock x:Name="FooterText" Text="Read-only source · Ctrl+F to find · Ctrl+G to go to line"
+                           Classes="scriptCaption" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="LineCountText" Grid.Column="1" Classes="scriptCaption" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

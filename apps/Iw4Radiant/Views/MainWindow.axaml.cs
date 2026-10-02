@@ -50,6 +50,7 @@ public partial class MainWindow : Window
             view.CanAcceptModelDrop = () => !_dialogs.BlocksInput;
             view.CursorStatusChanged += SetStatus;
             view.BrushKindRequested += ApplyBrushKind;
+            view.ScriptRequested += ShowEntityScript;
             view.EntityInspectorRequested += entity =>
             {
                 if (!ReferenceEquals(_session.Selection.Active, entity)) _session.Select(entity);
@@ -76,6 +77,7 @@ public partial class MainWindow : Window
         Workspace.Camera.InteractionStatusChanged += SetStatus;
         Workspace.Camera.RendererStatusChanged += OnCompiledPreviewRendererStatus;
         Workspace.Camera.BrushKindRequested += ApplyBrushKind;
+        Workspace.Camera.ScriptRequested += ShowEntityScript;
         Workspace.Camera.EntityInspectorRequested += entity =>
         {
             if (!ReferenceEquals(_session.Selection.Active, entity)) _session.Select(entity);
@@ -99,7 +101,7 @@ public partial class MainWindow : Window
         RefreshLayoutControls();
         RefreshEditor();
         SetStatus("Browse an asset folder and choose a material, then draw a brush or terrain in a grid view.");
-        Closed += (_, _) => { Workspace.Camera.StopPhysicsPlacement(); Workspace.Camera.StopGlassShatter(); Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); Workspace.Models.ReleaseImages(); _previewAudio.Dispose(); };
+        Closed += (_, _) => { _mapScriptsWindow?.Close(); Workspace.Camera.StopPhysicsPlacement(); Workspace.Camera.StopGlassShatter(); Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); Workspace.Models.ReleaseImages(); _previewAudio.Dispose(); };
         Deactivated += (_, _) => { Workspace.FinishFogEdit(); Workspace.Camera.PausePhysicsPlacement(); Workspace.Camera.FinishGesture(cancel: true); };
         AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
     }
@@ -121,6 +123,7 @@ public partial class MainWindow : Window
         RedoMenu.IsEnabled = RedoToolbar.IsEnabled = _session.CanRedo;
         ApplyPlayerClipMenu.IsEnabled = PlayerClipEditing.CanApply(_session);
         CreateModelPlayerClipMenu.IsEnabled = PlayerClipEditing.CanGenerateFromModels(_session);
+        ShowScriptMenu.IsEnabled = SelectedScriptEntity() is not null;
         (ToggleButton Button, EditorTool Tool)[] tools =
             [(TerrainTool, EditorTool.Terrain), (SculptTool, EditorTool.Sculpt),
              (FaceTool, EditorTool.Face), (VertexTool, EditorTool.Vertex), (ClipTool, EditorTool.Clip)];

@@ -1,4 +1,5 @@
 using System.Text;
+using IW4.Formats.SourceFormat.Gsc;
 using IW4.Formats.SourceFormat.Character;
 using IW4.Formats.SourceFormat.LightDef;
 using IW4.Formats.SourceFormat.Material;
@@ -513,9 +514,8 @@ internal static partial class FastFileConverter
             throw new InvalidDataException($"Faction settings require the generated map script; RawFile '{mapScriptName}' overrides it.");
         RawFileAsset mapScript = rawFileOverrides.FirstOrDefault(rawFile =>
                 string.Equals(rawFile.Name, mapScriptName, StringComparison.Ordinal)) ??
-            CreateMapScript(assetName, waterScript, hasMapFxScript, hasMapMovingLightsScript,
-                hasMapFogScript,
-                factions, destructiblePrecacheScripts);
+            CreateMapScript(mapScriptName, waterScript, hasMapFxScript, hasMapMovingLightsScript,
+                hasMapFogScript, factions, destructiblePrecacheScripts);
         if (destructiblePrecacheScripts.Length != 0 && rawFileOverrides.Contains(mapScript))
             Console.WriteLine("Destructible animations: the custom map script must call " +
                 string.Join(", ", destructiblePrecacheScripts.Select(name =>
@@ -1124,51 +1124,14 @@ internal static partial class FastFileConverter
     private static string MapScriptStartup(string scriptName) =>
         scriptName[..^".gsc".Length].Replace('/', '\\') + "::main();";
 
-    private static RawFileAsset CreateMapScript(string assetName, RawFileAsset? waterScript,
+    private static RawFileAsset CreateMapScript(string scriptName, RawFileAsset? waterScript,
         bool hasMapFxScript, bool hasMapMovingLightsScript, bool hasMapFogScript, MapFactionSettings factions,
         IReadOnlyList<string> destructiblePrecacheScripts)
     {
-        string scriptName = assetName[..^".d3dbsp".Length] + ".gsc";
-        bool authoredAssault = factions.AlliesAssaultA is not null || factions.AxisAssaultA is not null;
-        var appearancePrecache = new StringBuilder();
-        if (factions.AlliesAssaultA is { } alliesPrecache)
-            AppendRangersAssaultPrecache(appearancePrecache, alliesPrecache);
-        if (factions.AxisAssaultA is { } axisPrecache)
-            AppendRangersAssaultPrecache(appearancePrecache, axisPrecache);
-        // These factions own the player-model closure selected below.
-        string script =
-            "main()\r\n" +
-            "{\r\n" +
-            string.Concat(destructiblePrecacheScripts.Select(name =>
-                "\t" + name[..^".gsc".Length].Replace('/', '\\') + "::main();\r\n")) +
-            (hasMapFxScript ? "\t" + MapScriptStartup(assetName[..^".d3dbsp".Length] + "_fx.gsc") + "\r\n" : "") +
-            (hasMapMovingLightsScript ? "\t" + MapScriptStartup(assetName[..^".d3dbsp".Length] + "_lights.gsc") + "\r\n" : "") +
-            "\tmaps\\mp\\_load::main();\r\n" +
-            (hasMapFogScript ? "\t" + MapScriptStartup(assetName[..^".d3dbsp".Length] + "_fog.gsc") + "\r\n" : "") +
-            $"\tgame[\"allies\"] = \"{factions.Allies}\";\r\n" +
-            $"\tgame[\"axis\"] = \"{factions.Axis}\";\r\n" +
-            "\tgame[\"attackers\"] = \"allies\";\r\n" +
-            "\tgame[\"defenders\"] = \"axis\";\r\n" +
-            appearancePrecache.ToString() +
-            (authoredAssault ? "\tlevel.iw4radiant_originalOnStartGameType = level.onStartGameType;\r\n\tlevel.onStartGameType = ::iw4radiant_onStartGameType;\r\n" : "") +
-            (waterScript is null ? "" : "\t" + WaterVolumeScript.Startup(waterScript) + "\r\n") +
-            "}\r\n";
-        if (authoredAssault)
-        {
-            var additions = new StringBuilder();
-            additions.Append("\r\niw4radiant_onStartGameType()\r\n{\r\n");
-            if (factions.AlliesAssaultA is not null)
-                additions.Append("\tif ( game[\"allies\"] == \"us_army\" )\r\n\t\tgame[\"allies_model\"][\"ASSAULT\"] = ::iw4radiant_allies_assault;\r\n");
-            if (factions.AxisAssaultA is not null)
-                additions.Append("\tif ( game[\"axis\"] == \"us_army\" )\r\n\t\tgame[\"axis_model\"][\"ASSAULT\"] = ::iw4radiant_axis_assault;\r\n");
-            additions.Append("\t[[level.iw4radiant_originalOnStartGameType]]();\r\n");
-            additions.Append("}\r\n");
-            if (factions.AlliesAssaultA is { } alliesAppearance)
-                AppendRangersAssaultCallback(additions, "allies", alliesAppearance);
-            if (factions.AxisAssaultA is { } axisAppearance)
-                AppendRangersAssaultCallback(additions, "axis", axisAppearance);
-            script += additions.ToString();
-        }
+        string? waterScriptName = waterScript is null ? null : waterScript.Name ??
+            throw new InvalidDataException("Missing water script name.");
+        string script = MapStartupScript.Create(scriptName, hasMapFxScript, hasMapMovingLightsScript,
+            hasMapFogScript, factions, destructiblePrecacheScripts, waterScriptName);
         byte[] content = Encoding.ASCII.GetBytes(script);
         return new RawFileAsset
         {
@@ -1177,37 +1140,6 @@ internal static partial class FastFileConverter
             Len = content.Length,
             Buffer = [.. content, 0]
         };
-    }
-
-    private static void AppendRangersAssaultPrecache(StringBuilder script, FactionAppearance appearance)
-    {
-        script.Append("\tprecacheModel(\"").Append(appearance.Body).Append("\");\r\n");
-        if (appearance.Head is { } head)
-            script.Append("\tprecacheModel(\"").Append(head).Append("\");\r\n");
-        else if (!appearance.HeadIncluded)
-            script.Append("\tcodescripts\\character::precacheModelArray(xmodelalias\\alias_us_army_heads::main());\r\n");
-        script.Append("\tprecacheModel(\"").Append(appearance.ViewHands).Append("\");\r\n");
-    }
-
-    private static void AppendRangersAssaultCallback(StringBuilder script, string team, FactionAppearance appearance)
-    {
-        script.Append("\r\niw4radiant_").Append(team).Append("_assault()\r\n{\r\n")
-            .Append("\tswitch( codescripts\\character::get_random_character(3) )\r\n\t{\r\n")
-            .Append("\tcase 0:\r\n")
-            .Append("\t\tself setModel(\"").Append(appearance.Body).Append("\");\r\n");
-        if (appearance.Head is { } head)
-            script.Append("\t\tiw4radiant_heads = [];\r\n")
-                .Append("\t\tiw4radiant_heads[0] = \"").Append(head).Append("\";\r\n")
-                .Append("\t\tcodescripts\\character::attachHead(\"iw4radiant_").Append(team)
-                .Append("_assault_head\", iw4radiant_heads);\r\n");
-        else if (!appearance.HeadIncluded)
-            script.Append("\t\tcodescripts\\character::attachHead(\"alias_us_army_heads\", xmodelalias\\alias_us_army_heads::main());\r\n");
-        script.Append("\t\tself setViewmodel(\"").Append(appearance.ViewHands).Append("\");\r\n")
-            .Append("\t\tself.voice = \"american\";\r\n")
-            .Append("\t\tbreak;\r\n")
-            .Append("\tcase 1:\r\n\t\tcharacter\\mp_character_us_army_assault_b::main();\r\n\t\tbreak;\r\n")
-            .Append("\tcase 2:\r\n\t\tcharacter\\mp_character_us_army_assault_c::main();\r\n\t\tbreak;\r\n")
-            .Append("\t}\r\n}\r\n");
     }
 
     private static RawFileAsset CreateMapMarker(string assetName) => new()
