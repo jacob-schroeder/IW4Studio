@@ -109,7 +109,8 @@ public partial class MainWindow
         Workspace.SetCompiledPreview(null);
         CompiledPreviewBanner.IsVisible = false;
         EditorMenu.IsEnabled = EditorToolbar.IsEnabled = true;
-        EditorMenu.IsVisible = EditorToolbar.IsVisible = true;
+        EditorMenu.IsVisible = !OperatingSystem.IsMacOS();
+        EditorToolbar.IsVisible = true;
         RefreshLayoutControls();
         RefreshEditor();
         Workspace.FocusActiveView();

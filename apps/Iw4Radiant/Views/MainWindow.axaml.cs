@@ -100,6 +100,7 @@ public partial class MainWindow : Window
         _ready = true;
         RefreshLayoutControls();
         RefreshEditor();
+        InitializePlatformMenu();
         SetStatus("Browse an asset folder and choose a material, then draw a brush or terrain in a grid view.");
         Closed += (_, _) => { _mapScriptsWindow?.Close(); Workspace.Camera.StopPhysicsPlacement(); Workspace.Camera.StopGlassShatter(); Inspector.ReleaseImages(); Workspace.Materials.ReleaseImages(); Workspace.Models.ReleaseImages(); _previewAudio.Dispose(); };
         Deactivated += (_, _) => { Workspace.FinishFogEdit(); Workspace.Camera.PausePhysicsPlacement(); Workspace.Camera.FinishGesture(cancel: true); };

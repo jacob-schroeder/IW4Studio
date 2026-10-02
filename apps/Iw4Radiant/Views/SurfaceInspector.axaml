@@ -24,33 +24,33 @@
         <TextBlock x:Name="ProjectionInfo" Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
         <StackPanel x:Name="ProjectionFields" Spacing="8" IsEnabled="False">
             <TextBlock Text="Texture alignment" Classes="panelTitle" />
-            <Grid ColumnDefinitions="*,78,24,24" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="4" RowSpacing="5">
+            <Grid ColumnDefinitions="*,28,28" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="4" RowSpacing="5">
                 <TextBlock Classes="fieldLabel" Text="Horizontal shift" />
-                <TextBox x:Name="ShiftXValue" Grid.Column="1" ToolTip.Tip="Horizontal (S) shift in world units." />
-                <Button x:Name="ShiftXDecrease" Grid.Column="2" Content="−" Padding="0" ToolTip.Tip="Decrease horizontal shift by 1. Apply to commit." />
-                <Button x:Name="ShiftXIncrease" Grid.Column="3" Content="+" Padding="0" ToolTip.Tip="Increase horizontal shift by 1. Apply to commit." />
-                <TextBlock Grid.Row="1" Classes="fieldLabel" Text="Vertical shift" />
-                <TextBox x:Name="ShiftYValue" Grid.Row="1" Grid.Column="1" ToolTip.Tip="Vertical (T) shift in world units." />
-                <Button x:Name="ShiftYDecrease" Grid.Row="1" Grid.Column="2" Content="−" Padding="0" ToolTip.Tip="Decrease vertical shift by 1. Apply to commit." />
-                <Button x:Name="ShiftYIncrease" Grid.Row="1" Grid.Column="3" Content="+" Padding="0" ToolTip.Tip="Increase vertical shift by 1. Apply to commit." />
-                <TextBlock Grid.Row="2" Classes="fieldLabel" Text="Horizontal repeat" />
-                <TextBox x:Name="WidthValue" Grid.Row="2" Grid.Column="1"
+                <TextBox x:Name="ShiftXValue" Grid.Row="1" ToolTip.Tip="Horizontal (S) shift in world units." />
+                <Button x:Name="ShiftXDecrease" Grid.Row="1" Grid.Column="1" Width="28" Height="28" Content="−" Padding="0" ToolTip.Tip="Decrease horizontal shift by 1. Apply to commit." />
+                <Button x:Name="ShiftXIncrease" Grid.Row="1" Grid.Column="2" Width="28" Height="28" Content="+" Padding="0" ToolTip.Tip="Increase horizontal shift by 1. Apply to commit." />
+                <TextBlock Grid.Row="2" Classes="fieldLabel" Text="Vertical shift" />
+                <TextBox x:Name="ShiftYValue" Grid.Row="3" ToolTip.Tip="Vertical (T) shift in world units." />
+                <Button x:Name="ShiftYDecrease" Grid.Row="3" Grid.Column="1" Width="28" Height="28" Content="−" Padding="0" ToolTip.Tip="Decrease vertical shift by 1. Apply to commit." />
+                <Button x:Name="ShiftYIncrease" Grid.Row="3" Grid.Column="2" Width="28" Height="28" Content="+" Padding="0" ToolTip.Tip="Increase vertical shift by 1. Apply to commit." />
+                <TextBlock Grid.Row="4" Classes="fieldLabel" Text="Horizontal repeat" />
+                <TextBox x:Name="WidthValue" Grid.Row="5"
                          ToolTip.Tip="Horizontal size in world units per texture repeat. Negative values mirror; zero uses Radiant's default of 128." />
-                <Button x:Name="WidthDecrease" Grid.Row="2" Grid.Column="2" Content="−" Padding="0" ToolTip.Tip="Decrease horizontal repeat size by 1. Apply to commit." />
-                <Button x:Name="WidthIncrease" Grid.Row="2" Grid.Column="3" Content="+" Padding="0" ToolTip.Tip="Increase horizontal repeat size by 1. Apply to commit." />
-                <TextBlock Grid.Row="3" Classes="fieldLabel" Text="Vertical repeat" />
-                <TextBox x:Name="HeightValue" Grid.Row="3" Grid.Column="1"
+                <Button x:Name="WidthDecrease" Grid.Row="5" Grid.Column="1" Width="28" Height="28" Content="−" Padding="0" ToolTip.Tip="Decrease horizontal repeat size by 1. Apply to commit." />
+                <Button x:Name="WidthIncrease" Grid.Row="5" Grid.Column="2" Width="28" Height="28" Content="+" Padding="0" ToolTip.Tip="Increase horizontal repeat size by 1. Apply to commit." />
+                <TextBlock Grid.Row="6" Classes="fieldLabel" Text="Vertical repeat" />
+                <TextBox x:Name="HeightValue" Grid.Row="7"
                          ToolTip.Tip="Vertical size in world units per texture repeat. Negative values mirror; zero uses Radiant's default of 128." />
-                <Button x:Name="HeightDecrease" Grid.Row="3" Grid.Column="2" Content="−" Padding="0" ToolTip.Tip="Decrease vertical repeat size by 1. Apply to commit." />
-                <Button x:Name="HeightIncrease" Grid.Row="3" Grid.Column="3" Content="+" Padding="0" ToolTip.Tip="Increase vertical repeat size by 1. Apply to commit." />
-                <TextBlock Grid.Row="4" Classes="fieldLabel" Text="Rotation (°)" />
-                <TextBox x:Name="RotationValue" Grid.Row="4" Grid.Column="1" ToolTip.Tip="Texture rotation in degrees." />
-                <Button x:Name="RotationDecrease" Grid.Row="4" Grid.Column="2" Content="−" Padding="0" ToolTip.Tip="Rotate by −15°. Apply to commit." />
-                <Button x:Name="RotationIncrease" Grid.Row="4" Grid.Column="3" Content="+" Padding="0" ToolTip.Tip="Rotate by 15°. Apply to commit." />
-                <TextBlock Grid.Row="5" Classes="fieldLabel" Text="Skew" />
-                <TextBox x:Name="SkewValue" Grid.Row="5" Grid.Column="1" ToolTip.Tip="Texture projection skew." />
-                <Button x:Name="SkewDecrease" Grid.Row="5" Grid.Column="2" Content="−" Padding="0" ToolTip.Tip="Decrease skew by 0.1. Apply to commit." />
-                <Button x:Name="SkewIncrease" Grid.Row="5" Grid.Column="3" Content="+" Padding="0" ToolTip.Tip="Increase skew by 0.1. Apply to commit." />
+                <Button x:Name="HeightDecrease" Grid.Row="7" Grid.Column="1" Width="28" Height="28" Content="−" Padding="0" ToolTip.Tip="Decrease vertical repeat size by 1. Apply to commit." />
+                <Button x:Name="HeightIncrease" Grid.Row="7" Grid.Column="2" Width="28" Height="28" Content="+" Padding="0" ToolTip.Tip="Increase vertical repeat size by 1. Apply to commit." />
+                <TextBlock Grid.Row="8" Classes="fieldLabel" Text="Rotation (°)" />
+                <TextBox x:Name="RotationValue" Grid.Row="9" ToolTip.Tip="Texture rotation in degrees." />
+                <Button x:Name="RotationDecrease" Grid.Row="9" Grid.Column="1" Width="28" Height="28" Content="−" Padding="0" ToolTip.Tip="Rotate by −15°. Apply to commit." />
+                <Button x:Name="RotationIncrease" Grid.Row="9" Grid.Column="2" Width="28" Height="28" Content="+" Padding="0" ToolTip.Tip="Rotate by 15°. Apply to commit." />
+                <TextBlock Grid.Row="10" Classes="fieldLabel" Text="Skew" />
+                <TextBox x:Name="SkewValue" Grid.Row="11" ToolTip.Tip="Texture projection skew." />
+                <Button x:Name="SkewDecrease" Grid.Row="11" Grid.Column="1" Width="28" Height="28" Content="−" Padding="0" ToolTip.Tip="Decrease skew by 0.1. Apply to commit." />
+                <Button x:Name="SkewIncrease" Grid.Row="11" Grid.Column="2" Width="28" Height="28" Content="+" Padding="0" ToolTip.Tip="Increase skew by 0.1. Apply to commit." />
             </Grid>
             <TextBlock Text="Repeat size and shift use world units. Adjust values, then Apply." Classes="caption" TextWrapping="Wrap" />
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">

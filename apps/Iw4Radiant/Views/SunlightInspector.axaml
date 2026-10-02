@@ -15,16 +15,18 @@
         </Grid>
         <Button x:Name="EditSourceButton" Content="Edit world properties" IsVisible="False" />
         <StackPanel x:Name="SunFields" Spacing="8">
-            <Grid ColumnDefinitions="*,*,*,34" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4">
-                <TextBlock Text="Red" Classes="caption" />
-                <TextBlock Text="Green" Grid.Column="1" Classes="caption" />
-                <TextBlock Text="Blue" Grid.Column="2" Classes="caption" />
-                <TextBox x:Name="RedBox" Grid.Row="1" Text="1" ToolTip.Tip="Red component; values above 1 increase brightness." />
-                <TextBox x:Name="GreenBox" Grid.Row="1" Grid.Column="1" Text="1" ToolTip.Tip="Green component; values above 1 increase brightness." />
-                <TextBox x:Name="BlueBox" Grid.Row="1" Grid.Column="2" Text="1" ToolTip.Tip="Blue component; values above 1 increase brightness." />
-                <Border x:Name="ColorSwatch" Grid.Row="1" Grid.Column="3" Background="White" BorderBrush="#454A52"
-                        BorderThickness="1" CornerRadius="2" ToolTip.Tip="Color preview. Values above 1 appear at full brightness." />
-            </Grid>
+            <TextBlock Text="Color" Classes="fieldLabel" />
+            <views:LightColorPicker x:Name="ColorPicker" ToolTip.Tip="Adjust sunlight color channels or choose a swatch. RGB values control the exact brightness." />
+            <Expander Header="RGB values" IsExpanded="False">
+                <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4" Margin="0,8,0,0">
+                    <TextBlock Text="Red" Classes="caption" />
+                    <TextBlock Text="Green" Grid.Column="1" Classes="caption" />
+                    <TextBlock Text="Blue" Grid.Column="2" Classes="caption" />
+                    <TextBox x:Name="RedBox" Grid.Row="1" Text="1" ToolTip.Tip="Red component; values above 1 increase brightness." />
+                    <TextBox x:Name="GreenBox" Grid.Row="1" Grid.Column="1" Text="1" ToolTip.Tip="Green component; values above 1 increase brightness." />
+                    <TextBox x:Name="BlueBox" Grid.Row="1" Grid.Column="2" Text="1" ToolTip.Tip="Blue component; values above 1 increase brightness." />
+                </Grid>
+            </Expander>
             <Grid ColumnDefinitions="65,*" ColumnSpacing="5">
                 <TextBlock Text="Intensity" Classes="fieldLabel" />
                 <TextBox x:Name="IntensityBox" Grid.Column="1" Text="1" ToolTip.Tip="Direct sunlight intensity. 1 lights a facing surface at full brightness." />

@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Numerics;
 using Avalonia.Controls;
-using Avalonia.Media;
 using Iw4Radiant.Editing;
 using Iw4Radiant.MapSource;
 
@@ -42,6 +41,7 @@ public partial class SunlightInspector : UserControl
         RedBox.TextChanged += (_, _) => RefreshColor();
         GreenBox.TextChanged += (_, _) => RefreshColor();
         BlueBox.TextChanged += (_, _) => RefreshColor();
+        ColorPicker.SelectedColorChanged += PickerColorChanged;
         PitchBox.TextChanged += (_, _) => RefreshDirection();
         YawBox.TextChanged += (_, _) => RefreshDirection();
         DirectionPicker.DirectionChanged += () =>
@@ -160,13 +160,29 @@ public partial class SunlightInspector : UserControl
     private void RefreshColor()
     {
         if (_updating) return;
-        ColorSwatch.Background = TryReadNumber(RedBox, out float red) && red >= 0 &&
-            TryReadNumber(GreenBox, out float green) && green >= 0 &&
-            TryReadNumber(BlueBox, out float blue) && blue >= 0
-            ? new SolidColorBrush(Color.FromRgb(Channel(red), Channel(green), Channel(blue)))
-            : Brushes.Transparent;
+        if (!TryReadNumber(RedBox, out float red) || red < 0 ||
+            !TryReadNumber(GreenBox, out float green) || green < 0 ||
+            !TryReadNumber(BlueBox, out float blue) || blue < 0) return;
 
-        static byte Channel(float value) => (byte)MathF.Round(Math.Clamp(value, 0, 1) * 255);
+        Vector3 color = new(red, green, blue);
+        if (ColorPicker.SelectedColor == color) return;
+        _updating = true;
+        try { ColorPicker.SelectedColor = color; }
+        finally { _updating = false; }
+    }
+
+    private void PickerColorChanged()
+    {
+        if (_updating) return;
+        Vector3 color = ColorPicker.SelectedColor;
+        _updating = true;
+        try
+        {
+            RedBox.Text = Number(color.X);
+            GreenBox.Text = Number(color.Y);
+            BlueBox.Text = Number(color.Z);
+        }
+        finally { _updating = false; }
     }
 
     private async Task ApplyAsync(EditorSession session, EditorDialogs dialogs, Action finishGestures)
