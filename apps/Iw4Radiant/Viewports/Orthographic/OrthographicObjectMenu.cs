@@ -9,7 +9,7 @@ namespace Iw4Radiant.Viewports.Orthographic;
 internal static class OrthographicObjectMenu
 {
     internal static ContextMenu Open(Control viewport, EditorSession session, object? hit, Vector3 position,
-        Action<BrushKind> classify, Action<MapEntity> inspectEntity, Action<MapEntity> showScript,
+        Action<BrushKind> classify, Action water, Action<MapEntity> inspectEntity, Action<MapEntity> showScript,
         Action showModels, Action showPrefabs,
         Action showOrganization, Action<string> status)
     {
@@ -91,7 +91,7 @@ internal static class OrthographicObjectMenu
         menu.Items.Add(organization);
 
         menu.Items.Add(new Separator());
-        MenuItem brushTypes = BrushTypes(session, document, classify);
+        MenuItem brushTypes = BrushTypes(session, document, classify, water);
         menu.Items.Add(brushTypes);
         var geometry = session.Selection.Items.Select(EditorSelection.Owner)
             .Where(item => item is MapBrush or MapTerrain && session.Visibility.CanSelect(document, item))
@@ -124,12 +124,13 @@ internal static class OrthographicObjectMenu
         }
     }
 
-    private static MenuItem BrushTypes(EditorSession session, MapDocument document, Action<BrushKind> classify)
+    private static MenuItem BrushTypes(EditorSession session, MapDocument document, Action<BrushKind> classify, Action water)
     {
+        bool canWater = WaterEditing.GetBrushes(session).Length > 0;
         var menu = new MenuItem
         {
             Header = "Brush type",
-            IsEnabled = session.Selection.Items.Select(EditorSelection.Owner).OfType<MapBrush>()
+            IsEnabled = canWater || session.Selection.Items.Select(EditorSelection.Owner).OfType<MapBrush>()
                 .Any(brush => session.Visibility.CanSelect(document, brush))
         };
         foreach (var (label, kind) in new[]
@@ -143,6 +144,10 @@ internal static class OrthographicObjectMenu
             item.Click += (_, _) => classify(kind);
             menu.Items.Add(item);
         }
+        var waterItem = new MenuItem { Header = "Water", IsEnabled = canWater };
+        ToolTip.SetTip(waterItem, "Apply water to all selected brushes.");
+        waterItem.Click += (_, _) => water();
+        menu.Items.Add(waterItem);
         return menu;
     }
 

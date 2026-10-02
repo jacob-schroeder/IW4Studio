@@ -98,6 +98,8 @@
                 <MenuItem Header="Import leak path (.lin)…" Click="ImportLeakPath_Click" />
             </MenuItem>
             <MenuItem Header="_Create">
+                <MenuItem Header="Water volume…" Click="DrawWater_Click"
+                          ToolTip.Tip="Choose a water appearance, then draw the volume in a grid view." />
                 <MenuItem Header="_Factions…" Click="Factions_Click" />
                 <MenuItem Header="_Models…" Click="Models_Click" />
                 <MenuItem Header="_Weapons…" Click="Weapons_Click" />

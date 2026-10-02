@@ -23,6 +23,8 @@ public partial class SelectionInspector : UserControl
     internal event Action? PrefabBrowserRequested;
     internal event Action<string, bool>? FxSoundBrowserRequested;
     internal event Action<string, bool>? FxSoundPreviewRequested;
+    internal event Action? WaterAppearanceRequested;
+    internal event Action? CompleteWaterVolumeRequested;
 
     internal void ShowTool(EditorTool tool)
     {
@@ -48,6 +50,11 @@ public partial class SelectionInspector : UserControl
     }
 
     internal void ShowEnvironment() => InspectorTabs.SelectedItem = EnvironmentTab;
+    internal void ShowWater()
+    {
+        InspectorTabs.SelectedItem = SurfaceTab;
+        SurfaceScroll.Offset = default;
+    }
     internal void ShowPainter() => InspectorTabs.SelectedItem = PainterTab;
     internal void SetPainterMode(bool mist)
     {
@@ -70,6 +77,8 @@ public partial class SelectionInspector : UserControl
     {
         Transforms.InitializeActions(session, dialogs, finishGestures);
         Surfaces.InitializeActions(session, dialogs, finishGestures, resolveMaterial, setStatus);
+        Surfaces.WaterAppearanceRequested += () => WaterAppearanceRequested?.Invoke();
+        Surfaces.CompleteWaterVolumeRequested += () => CompleteWaterVolumeRequested?.Invoke();
         Lights.InitializeActions(session, dialogs, finishGestures, authoredPreviewAvailable, enablePreviewLighting);
         Terrain.InitializeActions(session, dialogs, finishGestures, setStatus);
         Sunlight.InitializeActions(session, dialogs, finishGestures);
@@ -274,6 +283,12 @@ public partial class SelectionInspector : UserControl
             }
             Transforms.RefreshSelection(session);
             Surfaces.RefreshSelection(session);
+            if (Surfaces.HasWaterSelection)
+            {
+                if (session.Selection.Count == 1 && session.Selection.Active is MapBrush brush)
+                    SelectionText.Text = $"Water volume · {brush.Faces.Count} planes";
+                if (changed && !IsKeyboardFocusWithin) ShowWater();
+            }
             bool hadLightError = Lights.HasSourceError;
             Lights.RefreshSelection(session);
             if (Lights.HasSourceError && (entityChanged || !hadLightError)) PropertiesExpander.IsExpanded = true;

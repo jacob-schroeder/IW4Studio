@@ -62,9 +62,9 @@
                     <views:GeometryInspector x:Name="Geometry" Margin="12" />
                 </ScrollViewer>
             </TabItem>
-            <TabItem x:Name="SurfaceTab" ToolTip.Tip="Surfaces · texture alignment and decals" AutomationProperties.Name="Surfaces">
+            <TabItem x:Name="SurfaceTab" ToolTip.Tip="Surfaces · water, texture alignment and decals" AutomationProperties.Name="Surfaces">
                 <TabItem.Header><materialIcons:MaterialIcon Kind="TextureBox" Width="16" Height="16" /></TabItem.Header>
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer x:Name="SurfaceScroll" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="12" Spacing="10">
                         <views:SurfaceInspector x:Name="Surfaces" />
                         <views:DecalInspector x:Name="Decals" />

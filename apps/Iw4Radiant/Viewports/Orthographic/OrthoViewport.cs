@@ -82,6 +82,7 @@ public sealed class OrthoViewport : Control
     }
 
     internal event Action<BrushKind>? BrushKindRequested;
+    internal event Action? WaterRequested;
     internal event Action<MapEntity>? EntityInspectorRequested;
     internal event Action<MapEntity>? ScriptRequested;
     internal event Action? ModelsRequested;
@@ -261,6 +262,7 @@ public sealed class OrthoViewport : Control
         _objectMenu = OrthographicObjectMenu.Open(this, session,
             OrthographicGeometry.HitTest(session, _projection, point), position,
             kind => BrushKindRequested?.Invoke(kind),
+            () => WaterRequested?.Invoke(),
             entity => EntityInspectorRequested?.Invoke(entity),
             entity => ScriptRequested?.Invoke(entity),
             () => ModelsRequested?.Invoke(),

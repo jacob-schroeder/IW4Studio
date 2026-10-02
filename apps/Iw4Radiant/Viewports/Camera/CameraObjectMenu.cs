@@ -10,7 +10,7 @@ internal static class CameraObjectMenu
 {
     internal static ContextMenu Open(CameraViewport viewport, EditorSession session,
         IReadOnlyList<(object Item, string Label)> hits, BrushFaceSelection? target, Point position,
-        Action<BrushKind> classify, Action createModelPlayerClip, Action<MapEntity> inspectEntity,
+        Action<BrushKind> classify, Action water, Action createModelPlayerClip, Action<MapEntity> inspectEntity,
         Action<MapEntity> showScript, Action<string> status)
     {
         MapDocument document = session.Document;
@@ -18,6 +18,9 @@ internal static class CameraObjectMenu
         bool openedForSimulation = viewport.PhysicsPlacementActive || viewport.GlassShatterActive;
         var entries = new List<(object Item, MenuItem Menu)>();
         var kinds = new MenuItem { Header = "Brush type" };
+        var waterItem = new MenuItem { Header = "Water" };
+        ToolTip.SetTip(waterItem, "Apply water to all selected brushes.");
+        waterItem.Click += (_, _) => { if (IsCurrent()) water(); };
         var playerClip = new MenuItem { Header = "Create player clip from models" };
         var script = new MenuItem { Header = "Show script" };
         script.Click += (_, _) =>
@@ -162,6 +165,7 @@ internal static class CameraObjectMenu
             entry.Click += (_, _) => { if (IsCurrent()) classify(kind); };
             kinds.Items.Add(entry);
         }
+        kinds.Items.Add(waterItem);
         menu.Items.Add(kinds);
         menu.Items.Add(playerClip);
         menu.Items.Add(destructible);
@@ -184,8 +188,10 @@ internal static class CameraObjectMenu
             }
             selectAll.IsEnabled = entries.Any(entry => entry.Menu.IsEnabled && !entry.Menu.IsChecked);
             deselectAll.IsEnabled = entries.Any(entry => entry.Menu.IsEnabled && entry.Menu.IsChecked);
-            kinds.IsEnabled = IsCurrent() && session.Selection.Items.Select(EditorSelection.Owner).OfType<MapBrush>()
-                .Any(brush => session.Visibility.CanSelect(document, brush));
+            bool canWater = IsCurrent() && WaterEditing.GetBrushes(session).Length > 0;
+            waterItem.IsEnabled = canWater;
+            kinds.IsEnabled = IsCurrent() && (canWater || session.Selection.Items.Select(EditorSelection.Owner).OfType<MapBrush>()
+                .Any(brush => session.Visibility.CanSelect(document, brush)));
             playerClip.IsVisible = playerClip.IsEnabled = IsCurrent() && PlayerClipEditing.CanGenerateFromModels(session);
             MapEntity? destructibleTarget = IsCurrent() ? DestructibleTarget() : null;
             destructible.IsVisible = destructible.IsEnabled = destructibleTarget is not null;

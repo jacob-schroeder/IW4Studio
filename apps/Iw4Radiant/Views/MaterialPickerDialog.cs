@@ -15,7 +15,8 @@ internal static class MaterialPickerDialog
     private const int PageSize = 96;
 
     internal static async Task<string?> ShowAsync(Window owner, string title,
-        IReadOnlyList<MaterialPickerOption> options, string? initialName, string? initialQuery = null)
+        IReadOnlyList<MaterialPickerOption> options, string? initialName, string? initialQuery = null,
+        bool waterAppearances = false)
     {
         MaterialPickerOption[] all = options.OrderBy(option => option.Name, StringComparer.OrdinalIgnoreCase).ToArray();
         MaterialPickerOption[] matches = string.IsNullOrWhiteSpace(initialQuery) ? all : all.Where(option =>
@@ -31,7 +32,7 @@ internal static class MaterialPickerDialog
         var cards = new List<(MaterialPickerOption Option, Button Button,
             Image Image, TextBlock Placeholder)>();
 
-        var search = new TextBox { Text = initialQuery ?? "", PlaceholderText = "Search materials by name",
+        var search = new TextBox { Text = initialQuery ?? "", PlaceholderText = waterAppearances ? "Search water appearances" : "Search materials by name",
             HorizontalAlignment = HorizontalAlignment.Stretch };
         var count = new TextBlock { Foreground = Brush("#AEB6C2"), VerticalAlignment = VerticalAlignment.Center };
         var gallery = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(5) };
@@ -47,7 +48,7 @@ internal static class MaterialPickerDialog
         var detailImage = new Image { Stretch = Stretch.Uniform };
         var detailPlaceholder = new TextBlock
         {
-            Text = "Select a material",
+            Text = waterAppearances ? "Select an appearance" : "Select a material",
             Foreground = Brush("#AEB6C2"),
             TextAlignment = TextAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
@@ -57,7 +58,7 @@ internal static class MaterialPickerDialog
         var detailName = new TextBlock { FontSize = 17, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
         var detailUsage = new TextBlock { Foreground = Brush("#AEB6C2"), TextWrapping = TextWrapping.Wrap };
         var cancel = new Button { Content = "Cancel", MinWidth = 86 };
-        var choose = new Button { Content = "Choose material", MinWidth = 132, IsEnabled = selected is not null };
+        var choose = new Button { Content = waterAppearances ? "Use appearance" : "Choose material", MinWidth = 132, IsEnabled = selected is not null };
         var dialog = new Window
         {
             Title = title, Width = 940, Height = 570, MinWidth = 660, MinHeight = 550,
@@ -183,11 +184,11 @@ internal static class MaterialPickerDialog
             detailImage.Source = null;
             detailBitmap?.Dispose();
             detailBitmap = null;
-            detailName.Text = selected?.Name ?? "Choose a material";
+            detailName.Text = selected?.Name ?? (waterAppearances ? "Choose an appearance" : "Choose a material");
             detailUsage.Text = selected?.SurfaceCount is { } surfaces
                 ? $"Used on {surfaces:N0} {(surfaces == 1 ? "surface" : "surfaces")}."
-                : "";
-            detailPlaceholder.Text = selected is null ? "Select a material"
+                : waterAppearances ? "Tint preview · see motion in the camera." : "";
+            detailPlaceholder.Text = selected is null ? (waterAppearances ? "Select an appearance" : "Select a material")
                 : selected.Material is null ? "Preview unavailable · source material is not loaded"
                 : "Loading preview…";
             detailPlaceholder.IsVisible = true;
@@ -232,7 +233,9 @@ internal static class MaterialPickerDialog
             scroll.Offset = new Vector(0, 0);
             int first = page * PageSize;
             int shown = Math.Min(PageSize, matches.Length - first);
-            count.Text = $"{matches.Length:N0} {(matches.Length == 1 ? "material" : "materials")}";
+            string noun = waterAppearances ? (matches.Length == 1 ? "appearance" : "appearances")
+                : (matches.Length == 1 ? "material" : "materials");
+            count.Text = $"{matches.Length:N0} {noun}";
             pageInfo.Text = matches.Length == 0 ? "No matches"
                 : $"{first + 1:N0}–{first + shown:N0} of {matches.Length:N0}";
             previous.IsEnabled = page > 0;

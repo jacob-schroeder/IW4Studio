@@ -10,6 +10,10 @@ namespace Iw4Radiant.Views;
 
 public partial class SurfaceInspector : UserControl
 {
+    internal event Action? WaterAppearanceRequested;
+    internal event Action? CompleteWaterVolumeRequested;
+    internal bool HasWaterSelection { get; private set; }
+
     private MapFace[] _shownFaces = [];
     private string[] _shownProjections = [];
     private MapFace? _shownReference;
@@ -36,6 +40,14 @@ public partial class SurfaceInspector : UserControl
         WireAdjustment(SkewDecrease, SkewIncrease, SkewValue, "skew", 0.1f);
         ApplyProjectionButton.Click += async (_, _) => await ApplyProjectionAsync(session, dialogs, finishGestures);
         ApplyWaterButton.Click += async (_, _) => await ApplyWaterAsync(session, dialogs, finishGestures);
+        WaterAppearanceButton.Click += (_, _) =>
+        {
+            if (!dialogs.BlocksInput) WaterAppearanceRequested?.Invoke();
+        };
+        CompleteWaterVolumeButton.Click += (_, _) =>
+        {
+            if (!dialogs.BlocksInput) CompleteWaterVolumeRequested?.Invoke();
+        };
         FitButton.Click += async (_, _) => await FitAsync(session, dialogs, finishGestures);
         AxialButton.Click += async (_, _) => await AxialAsync(session, dialogs, finishGestures);
         AutoCaulkButton.Click += async (_, _) => await AutoCaulkAsync(session, dialogs, finishGestures, setStatus);
@@ -167,6 +179,17 @@ public partial class SurfaceInspector : UserControl
 
     private void RefreshWater(EditorSession session, IReadOnlyList<MapFace> faces)
     {
+        Func<string, MaterialSource?>? resolveMaterial = _resolveMaterial;
+        MapBrush[] brushes = WaterEditing.GetBrushes(session);
+        bool IsWaterFace(MapFace face) => resolveMaterial?.Invoke(face.Material)?.IsWater == true ||
+            WaterMaterialAuthoring.IsAuthoredMaterialName(face.Material);
+        bool selectedFaceIsWater = faces.Any(IsWaterFace);
+        HasWaterSelection = selectedFaceIsWater || brushes.Any(brush => brush.Faces.Any(IsWaterFace));
+        WaterSection.IsVisible = HasWaterSelection;
+        WaterAppearanceButton.IsEnabled = brushes.Length > 0;
+        CompleteWaterVolumeSection.IsVisible = resolveMaterial is { } resolve &&
+            brushes.Any(brush =>
+                WaterEditing.HasWater(brush, resolve) && !WaterEditing.IsWaterVolume(brush, resolve));
         string[] names = faces.Select(face => face.Material).Distinct(StringComparer.Ordinal).Take(2).ToArray();
         string? name = names.Length == 1 ? names[0] : null;
         IReadOnlyDictionary<string, WaterMaterialDefinition> definitions =
@@ -181,30 +204,32 @@ public partial class SurfaceInspector : UserControl
             {
                 WaterFields.IsEnabled = false;
                 ApplyWaterButton.IsEnabled = RevertWaterButton.IsEnabled = false;
-                WaterInfo.Text = $"Authored water definition error: {exception.Message}";
+                WaterAppearanceValue.Text = "Appearance unavailable";
+                WaterInfo.Text = $"Water settings unavailable: {exception.Message}";
+                WaterInfo.IsVisible = true;
                 foreach (TextBox box in WaterBoxes()) box.Text = "";
                 WaterColorPicker.SelectedColor = Vector3.Zero;
                 _shownWaterMaterial = name;
                 return;
             }
-        MaterialSource? material = name is null ? null : _resolveMaterial?.Invoke(name);
+        WaterAppearanceValue.Text = !selectedFaceIsWater && HasWaterSelection ? "Water on other faces" :
+            name is null ? "Mixed appearances" :
+            definitions.GetValueOrDefault(name)?.SourceMaterial ??
+            (WaterMaterialAuthoring.IsAuthoredMaterialName(name) ? "Appearance unavailable" : name);
+        MaterialSource? material = name is null ? null : resolveMaterial?.Invoke(name);
         bool enabled = material?.Water is not null;
         WaterFields.IsEnabled = enabled;
         ApplyWaterButton.IsEnabled = RevertWaterButton.IsEnabled = enabled;
-        if (faces.Count == 0)
-            WaterInfo.Text = "Select a brush or face using a native water material.";
-        else if (names.Length != 1)
-            WaterInfo.Text = "Selected surfaces use mixed materials. Select surfaces with one water material.";
+        if (names.Length != 1)
+            WaterInfo.Text = "Mixed appearances. Choose one to edit settings.";
         else if (!enabled)
-            WaterInfo.Text = material is null
-                ? $"Material '{name}' is unavailable. Load its source assets to edit water."
-                : $"Material '{name}' is not native water.";
+            WaterInfo.Text = selectedFaceIsWater
+                ? "Water material unavailable. Load its source assets to edit settings."
+                : "Select a water face to edit settings.";
         else if (name is { } selectedName && material is { } waterMaterial)
         {
             WaterMaterialDefinition? definition = definitions.GetValueOrDefault(selectedName);
-            WaterInfo.Text = definition is null
-                ? $"Stock water · {selectedName}"
-                : $"Authored water · source {definition.SourceMaterial}";
+            WaterInfo.Text = "";
             bool changed = !string.Equals(_shownWaterMaterial, selectedName, StringComparison.Ordinal);
             if (changed || !WaterInputFocused())
             {
@@ -222,6 +247,7 @@ public partial class SurfaceInspector : UserControl
                 SetValue(FresnelExponent, definition?.FresnelExponent ?? waterMaterial.EnvMapParms.Z);
             }
         }
+        WaterInfo.IsVisible = !string.IsNullOrEmpty(WaterInfo.Text);
         if (!enabled && !WaterInputFocused())
         {
             foreach (TextBox box in WaterBoxes()) box.Text = "";

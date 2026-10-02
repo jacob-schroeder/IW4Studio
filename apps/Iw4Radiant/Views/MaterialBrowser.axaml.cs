@@ -494,15 +494,15 @@ public partial class MaterialBrowser : UserControl
         _preview = null;
     }
 
-    private async Task BrowseAsync(Window owner, EditorSession session, EditorDialogs dialogs,
+    internal async Task<bool> BrowseAsync(Window owner, EditorSession session, EditorDialogs dialogs,
         Action finishGestures, Action<string> setStatus)
     {
-        if (dialogs.BlocksInput) return;
+        if (dialogs.BlocksInput) return false;
         finishGestures();
         var folders = await dialogs.ShowModalAsync(() => owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
             { Title = "Choose raw assets or a texture folder", AllowMultiple = false }));
-        if (folders.Count == 0 || folders[0].TryGetLocalPath() is not { } root) return;
-        await LoadFolderAsync(root);
+        if (folders.Count == 0 || folders[0].TryGetLocalPath() is not { } root) return false;
+        return await LoadFolderAsync(root);
     }
 
     internal async Task<bool> LoadFolderAsync(string root, bool nonBlocking = false)
@@ -684,22 +684,32 @@ public partial class MaterialBrowser : UserControl
             (collection is null ? "" : $" · {collection.Name}") +
             (matches.Length > 2000 ? " · first 2,000 shown; narrow search" : "");
     }
-    private void PreviewMaterial(EditorSession session)
+    internal bool UseMaterial(EditorSession session, MaterialSource material)
+    {
+        MaterialList.SelectedItem = null;
+        PreviewMaterial(session, material);
+        return session.Material == material.Name;
+    }
+
+    private void PreviewMaterial(EditorSession session) =>
+        PreviewMaterial(session, (MaterialList.SelectedItem as MaterialThumbnail)?.Material);
+
+    private void PreviewMaterial(EditorSession session, MaterialSource? material)
     {
         ReleasePreview();
         PreviewInfo.Text = "Choose a material to preview.";
         ToolTip.SetTip(PreviewInfo, null);
         _ = RefreshSourceReadinessAsync();
-        if (MaterialList.SelectedItem is not MaterialThumbnail material) return;
+        if (material is null) return;
         MaterialName.Text = material.Name;
         session.Material = "";
         try
         {
-            _preview = MaterialImages.Load(material.Material, 256);
+            _preview = MaterialImages.Load(material, 256);
             MaterialPreview.Source = _preview;
-            PreviewInfo.Text = material.Material.IsWater
-                ? "Native PS3 water tint · camera uses GPU waves and authored reflection probes."
-                : Path.GetFileName(material.Material.ImagePath) + (material.IsSky ? " · Sky cube, +X face" : "");
+            PreviewInfo.Text = material.IsWater
+                ? "Water · appearance and motion are editable in the inspector."
+                : Path.GetFileName(material.ImagePath) + (material.IsSky ? " · Sky cube, +X face" : "");
             session.Material = material.Name;
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception))

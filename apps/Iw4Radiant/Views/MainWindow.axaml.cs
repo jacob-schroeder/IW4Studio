@@ -33,6 +33,8 @@ public partial class MainWindow : Window
             ResolveMaterial, () => Workspace.ActivePlane, name => ResolveMaterial(name)?.Surface.SupportsAlpha == true,
             name => ResolveMaterial(name)?.UsesVertexColor == true, SetStatus,
             () => Workspace.Camera.CompiledPreview is null, Workspace.EnablePreviewLights);
+        Inspector.WaterAppearanceRequested += ApplyWaterVolume;
+        Inspector.CompleteWaterVolumeRequested += CompleteWaterVolume;
         Workspace.InitializeActions(_dialogs, FinishGestures);
         Workspace.InitializeFogActions(_session);
         Workspace.LayoutChanged += RefreshLayoutControls;
@@ -46,6 +48,7 @@ public partial class MainWindow : Window
             view.CanAcceptModelDrop = () => !_dialogs.BlocksInput;
             view.CursorStatusChanged += SetStatus;
             view.BrushKindRequested += ApplyBrushKind;
+            view.WaterRequested += ApplyWaterVolume;
             view.ScriptRequested += ShowEntityScript;
             view.EntityInspectorRequested += entity =>
             {
@@ -73,6 +76,7 @@ public partial class MainWindow : Window
         Workspace.Camera.InteractionStatusChanged += SetStatus;
         Workspace.Camera.RendererStatusChanged += OnCompiledPreviewRendererStatus;
         Workspace.Camera.BrushKindRequested += ApplyBrushKind;
+        Workspace.Camera.WaterRequested += ApplyWaterVolume;
         Workspace.Camera.ScriptRequested += ShowEntityScript;
         Workspace.Camera.EntityInspectorRequested += entity =>
         {

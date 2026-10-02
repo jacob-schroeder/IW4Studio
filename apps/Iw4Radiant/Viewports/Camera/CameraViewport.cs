@@ -325,6 +325,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
     internal event Action? NavigationModeChanged;
     internal event Action? NavigationChanged;
     internal event Action<BrushKind>? BrushKindRequested;
+    internal event Action? WaterRequested;
     internal event Action<MapEntity>? EntityInspectorRequested;
     internal event Action<MapEntity>? ScriptRequested;
     internal event Action? CreateModelPlayerClipRequested;
@@ -875,6 +876,7 @@ public sealed partial class CameraViewport : OpenGlControlBase, ICustomHitTest
                 _objectMenu = CameraObjectMenu.Open(this, session,
                     hits, face, point,
                     kind => BrushKindRequested?.Invoke(kind),
+                    () => WaterRequested?.Invoke(),
                     () => CreateModelPlayerClipRequested?.Invoke(),
                     entity => EntityInspectorRequested?.Invoke(entity),
                     entity => ScriptRequested?.Invoke(entity),
