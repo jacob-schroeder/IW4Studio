@@ -54,6 +54,19 @@
                                         ToolTip.Tip="Restore the current selection bounds without editing the map." />
                             </Grid>
                         </StackPanel>
+                        <StackPanel x:Name="BrushLightingFields" Spacing="5" IsVisible="False">
+                            <Grid ColumnDefinitions="*,80" ColumnSpacing="8">
+                                <TextBlock Text="Lighting" Classes="fieldLabel" VerticalAlignment="Center" />
+                                <ComboBox x:Name="BrushLightingValue" Grid.Column="1" HorizontalAlignment="Stretch"
+                                          AutomationProperties.Name="Brush lighting"
+                                          ToolTip.Tip="0 excludes this brush from baked light-grid bounds. Rendering and reflections are unaffected.">
+                                    <ComboBoxItem Content="0" />
+                                    <ComboBoxItem Content="1" />
+                                </ComboBox>
+                            </Grid>
+                            <TextBlock x:Name="BrushLightingMixedHint" Text="Mixed values · choose 0 or 1 to apply to all selected brushes."
+                                       Classes="caption" TextWrapping="Wrap" IsVisible="False" />
+                        </StackPanel>
                         <views:TransformInspector x:Name="Transforms" />
                     </StackPanel>
                 </ScrollViewer>

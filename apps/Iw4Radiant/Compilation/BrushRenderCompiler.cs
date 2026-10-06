@@ -91,7 +91,7 @@ internal static class BrushRenderCompiler
         {
             string name = collisionMaterial.Name ?? throw new InvalidDataException("A collision material has no name.");
             // Collision rows repeat a material name for each authored brush contents category.
-            if (ClipBrushMaterial.IsPlayerClip(name) || CaulkMaterial.IsCaulk(name) || materials.ContainsKey(name)) continue;
+            if (ClipBrushMaterial.IsCollisionOnly(name) || CaulkMaterial.IsCaulk(name) || materials.ContainsKey(name)) continue;
             materials.Add(name, new MaterialAsset
             {
                 Info = new MaterialInfo

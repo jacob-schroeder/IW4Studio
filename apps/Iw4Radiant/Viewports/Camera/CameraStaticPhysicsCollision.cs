@@ -45,18 +45,18 @@ internal static class CameraStaticPhysicsCollision
                 BrushGeometry.Validate(brush);
                 BrushKind kind = BrushContents.ReadForCompilation(brush);
                 if (kind is BrushKind.NonColliding or BrushKind.WeaponClip ||
-                    brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material))) continue;
+                    brush.Faces.All(face => ClipBrushMaterial.IsCollisionOnly(face.Material))) continue;
                 bool solid = false, nonsolid = false;
                 foreach (MapFace face in brush.Faces)
                 {
-                    if (ClipBrushMaterial.IsPlayerClip(face.Material)) { nonsolid = true; continue; }
+                    if (ClipBrushMaterial.IsCollisionOnly(face.Material)) { nonsolid = true; continue; }
                     if (CaulkMaterial.IsCaulk(face.Material)) { solid = true; continue; }
                     MaterialSource material = resolveMaterial(face.Material) ??
                         throw new InvalidDataException($"{label} material '{face.Material}' is unavailable.");
                     if (material.IsSky || material.IsWater) nonsolid = true; else solid = true;
                 }
                 if (solid && nonsolid)
-                    throw new NotSupportedException($"{label} cannot classify brushes mixing solid, sky, water or player-clip faces.");
+                    throw new NotSupportedException($"{label} cannot classify brushes mixing solid, sky, water or collision-only faces.");
                 if (!solid) continue;
                 Vector3[] points = brush.GetVertices().ToArray();
                 if (points.Length < 4 || points.Any(point => !Finite(point)))
@@ -66,7 +66,7 @@ internal static class CameraStaticPhysicsCollision
             foreach (MapTerrain terrain in entity.Terrains)
             {
                 if (TerrainContents.ReadNonColliding(terrain)) continue;
-                if (ClipBrushMaterial.IsPlayerClip(terrain.Material)) continue;
+                if (ClipBrushMaterial.IsCollisionOnly(terrain.Material)) continue;
                 MaterialSource material = resolveMaterial(terrain.Material) ??
                     throw new InvalidDataException($"{label} material '{terrain.Material}' is unavailable.");
                 if (material.IsSky || material.IsWater) continue;

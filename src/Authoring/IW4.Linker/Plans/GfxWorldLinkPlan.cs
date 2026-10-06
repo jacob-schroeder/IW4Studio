@@ -1580,6 +1580,9 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
                     throw new InvalidDataException($"GfxWorld.CellTrees[{index}] AABB count disagrees with CellTreeCounts.");
                 foreach ((GfxAabbTree tree, int treeIndex) in value.CellTrees[index].AabbTrees.Select((tree, treeIndex) => (tree, treeIndex)))
                 {
+                    // The fully-visible path copies aggregate lists even for internal nodes.
+                    if (tree.SurfaceCount > GfxAabbTree.MaxIndexCount || tree.SModelIndexCount > GfxAabbTree.MaxIndexCount)
+                        throw new InvalidDataException($"GfxWorld.CellTrees[{index}].AabbTrees[{treeIndex}] exceeds the PS3 visibility worker's safe index-list limit ({GfxAabbTree.MaxIndexCount}). Coalesce surfaces or split visibility cells before linking.");
                     if (tree.SModelIndexCount != tree.SModelIndexes.Count)
                         throw new InvalidDataException($"GfxWorld.CellTrees[{index}].AabbTrees[{treeIndex}].SModelIndexCount disagrees with its index count.");
                 }

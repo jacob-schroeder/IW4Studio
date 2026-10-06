@@ -10,10 +10,16 @@ internal sealed record MaterialSource(
     bool IsSky,
     MaterialSamplerState SamplerState)
 {
+    internal string? SourceDirectory { get; init; }
     internal (string Root, string Name)? SourceImage { get; init; }
     internal bool HasPreviewImage => SourceImage is not null || File.Exists(ImagePath);
     internal bool PreviewDefinitionAvailable { get; init; } = true;
     internal string TechniqueSet { get; init; } = "";
+    internal Vector3 ColorTint { get; init; } = Vector3.One;
+    internal MaterialSource? NormalMap { get; init; }
+    internal MaterialSource? SpecularMap { get; init; }
+    internal MaterialSource? DetailMap { get; init; }
+    internal Vector2 DetailScale { get; init; } = Vector2.One;
     internal bool UsesVertexColor => TechniqueSet.StartsWith("wc_", StringComparison.Ordinal);
     internal MaterialWater? Water { get; init; }
     internal OceanWaveSettings? Ocean { get; init; }

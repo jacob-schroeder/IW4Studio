@@ -198,7 +198,7 @@ internal sealed class CameraPrefabPlacementSimulation : IDisposable
 
         bool UnsupportedMovingFace(MapFace face)
         {
-            if (ClipBrushMaterial.IsPlayerClip(face.Material)) return true;
+            if (ClipBrushMaterial.IsCollisionOnly(face.Material)) return true;
             if (CaulkMaterial.IsCaulk(face.Material)) return false;
             MaterialSource material = resolveMaterial(face.Material) ??
                 throw new InvalidDataException($"Physics placement material '{face.Material}' is unavailable.");

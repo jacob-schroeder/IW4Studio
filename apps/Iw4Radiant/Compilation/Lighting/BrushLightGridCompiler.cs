@@ -56,6 +56,8 @@ internal static class BrushLightGridCompiler
         colorIndices[Convert.ToHexString(rgb)] = 1;
         var colorLookup = colorIndices.GetAlternateLookup<ReadOnlySpan<char>>();
         Span<char> key = stackalloc char[GfxLightGridColors.SerializedSize * 2];
+        Span<byte> keyedRgb = stackalloc byte[GfxLightGridColors.SerializedSize];
+        int discardedBits = 0;
         long completedEntries = 0;
         int lastBucket = 0;
         for (int x = mins[0]; x <= maxs[0]; x++)
@@ -73,14 +75,22 @@ internal static class BrushLightGridCompiler
             byte primaryLight = primaryOwners?[entries.Count] ?? scene.PrimaryLightAt(point);
             scene.DiffuseIrradianceDirections(point, irradiance, primaryLight);
             Encode(irradiance, rgb);
-            Convert.TryToHexString(rgb, key, out _);
+            WriteKey(rgb, discardedBits, keyedRgb, key);
             if (!colorLookup.TryGetValue(key, out ushort colorIndex))
             {
                 if (colors.Count > ushort.MaxValue)
-                    throw new NotSupportedException("The baked light grid exceeds 65536 unique colors. Reduce map bounds or lighting variation.");
-                colorIndex = checked((ushort)colors.Count);
-                colors.Add(new GfxLightGridColors(rgb.ToArray()));
-                colorIndices.Add(new string(key), colorIndex);
+                {
+                    (colors, colorIndices, discardedBits) = ReducePalette(colors, entries, discardedBits);
+                    colorLookup = colorIndices.GetAlternateLookup<ReadOnlySpan<char>>();
+                    WriteKey(rgb, discardedBits, keyedRgb, key);
+                    progress?.Report($"Light grid palette: {colors.Count} colors; {discardedBits} low bits discarded per RGB component.");
+                }
+                if (!colorLookup.TryGetValue(key, out colorIndex))
+                {
+                    colorIndex = checked((ushort)colors.Count);
+                    colors.Add(new GfxLightGridColors(rgb.ToArray()));
+                    colorIndices.Add(new string(key), colorIndex);
+                }
             }
             byte visiblePrimary = scene.PrimaryVisibility(point, Vector3.Zero, primaryLight) > 0
                 ? primaryLight
@@ -106,6 +116,58 @@ internal static class BrushLightGridCompiler
             lastBucket = bucket;
             progress.Report($"Light grid: {completedEntries}/{entryCount} entries completed ({completedEntries * 100 / entryCount}%).");
         }
+    }
+
+    private static void WriteKey(ReadOnlySpan<byte> rgb, int discardedBits, Span<byte> keyedRgb, Span<char> key)
+    {
+        for (int index = 0; index < rgb.Length; index++)
+            keyedRgb[index] = (byte)(rgb[index] >> discardedBits);
+        Convert.TryToHexString(keyedRgb, key, out _);
+    }
+
+    private static (List<GfxLightGridColors> Colors, Dictionary<string, ushort> Indices, int DiscardedBits) ReducePalette(
+        List<GfxLightGridColors> colors, List<GfxLightGridEntry> entries, int previousBits)
+    {
+        const int targetCount = (ushort.MaxValue + 1) * 3 / 4;
+        for (int bits = previousBits + 1; bits <= 8; bits++)
+        {
+            var reduced = new List<GfxLightGridColors> { colors[0], colors[1] };
+            var indices = new Dictionary<string, ushort>(StringComparer.Ordinal)
+            {
+                [ColorKey(colors[0].RgbBytes, bits)] = 0,
+                [ColorKey(colors[1].RgbBytes, bits)] = 1
+            };
+            var remap = new ushort[colors.Count];
+            remap[1] = 1;
+            for (int oldIndex = 2; oldIndex < colors.Count; oldIndex++)
+            {
+                string key = ColorKey(colors[oldIndex].RgbBytes, bits);
+                if (!indices.TryGetValue(key, out ushort newIndex))
+                {
+                    newIndex = checked((ushort)reduced.Count);
+                    reduced.Add(colors[oldIndex]);
+                    indices.Add(key, newIndex);
+                    if (reduced.Count > targetCount) break;
+                }
+                remap[oldIndex] = newIndex;
+            }
+            if (reduced.Count > targetCount) continue;
+            for (int entryIndex = 0; entryIndex < entries.Count; entryIndex++)
+            {
+                GfxLightGridEntry entry = entries[entryIndex];
+                entries[entryIndex] = entry with { ColorsIndex = remap[entry.ColorsIndex] };
+            }
+            return (reduced, indices, bits);
+        }
+        throw new InvalidDataException("The light-grid palette could not be reduced to its native index range.");
+    }
+
+    private static string ColorKey(IReadOnlyList<byte> rgb, int discardedBits)
+    {
+        Span<byte> keyedRgb = stackalloc byte[GfxLightGridColors.SerializedSize];
+        for (int index = 0; index < keyedRgb.Length; index++)
+            keyedRgb[index] = (byte)(rgb[index] >> discardedBits);
+        return Convert.ToHexString(keyedRgb);
     }
 
     private static byte[] SelectPrimaryOwners(BrushLightingScene scene, ushort[] mins, ushort[] maxs,
@@ -189,10 +251,11 @@ internal static class BrushLightGridCompiler
         for (int channel = 0; channel < 3; channel++)
         {
             float value = irradiance[sample][channel];
-            if (!float.IsFinite(value) || value < 0 || value > 4)
+            if (!float.IsFinite(value) || value < 0)
                 throw new NotSupportedException("Calculated model lighting exceeds the native light-grid range.");
             // Native light-probe RGB decodes as (2 * byte / 255)^2.
-            bytes[sample * 3 + channel] = (byte)Math.Clamp((int)MathF.Round(127.5f * MathF.Sqrt(value)), 0, 255);
+            // Saturate overbright sums, just as the surface lightmap encoder does.
+            bytes[sample * 3 + channel] = (byte)MathF.Round(127.5f * MathF.Sqrt(MathF.Min(value, 4)));
         }
     }
 }

@@ -6,5 +6,6 @@ internal enum BrushKind
     Detail,
     NonColliding,
     WeaponClip,
-    BreakableGlass
+    BreakableGlass,
+    Ladder
 }

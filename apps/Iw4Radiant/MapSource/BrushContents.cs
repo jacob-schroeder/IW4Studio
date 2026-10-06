@@ -1,4 +1,5 @@
 using Iw4Radiant.MapSource.Parsing;
+using Iw4Radiant.Materials;
 
 namespace Iw4Radiant.MapSource;
 
@@ -13,6 +14,8 @@ internal static class BrushContents
 
     internal static BrushKind Read(MapBrush brush)
     {
+        if (brush.Faces.Count > 0 && brush.Faces.All(face => ClipBrushMaterial.IsLadder(face.Material)))
+            return BrushKind.Ladder;
         BrushKind kind = BrushKind.Structural;
         foreach (string directive in brush.Directives)
         {
@@ -34,6 +37,13 @@ internal static class BrushContents
     internal static void Set(MapBrush brush, BrushKind kind)
     {
         if (kind != BrushKind.BreakableGlass) BrushGlass.Clear(brush);
+        foreach (MapFace face in brush.Faces)
+        {
+            if (kind == BrushKind.Ladder)
+                face.Material = ClipBrushMaterial.Ladder;
+            else if (ClipBrushMaterial.IsLadder(face.Material))
+                face.Material = CaulkMaterial.Name;
+        }
         // Preserve unrelated native contents flags and other brush directives.
         var contents = new List<string>();
         for (int index = brush.Directives.Count - 1; index >= 0; index--)
@@ -44,7 +54,7 @@ internal static class BrushContents
                 .Where(value => value is not ("detail" or "nonColliding" or "weaponClip" or "glass")));
             brush.Directives.RemoveAt(index);
         }
-        if (kind != BrushKind.Structural)
+        if (kind is not (BrushKind.Structural or BrushKind.Ladder))
             contents.Add(kind switch
             {
                 BrushKind.Detail => "detail",
@@ -78,6 +88,12 @@ internal static class BrushContents
                 _ => throw new NotSupportedException($"Brush contents '{tokens[1].Value}' is not supported by compilation.")
             };
         }
+        if (brush.Faces.Count > 0 && brush.Faces.All(face => ClipBrushMaterial.IsLadder(face.Material)))
+        {
+            if (found)
+                throw new NotSupportedException("Ladder brushes define their native contents through the ladder material. Remove the contents override.");
+            return BrushKind.Ladder;
+        }
         return kind;
     }
 
@@ -88,8 +104,9 @@ internal static class BrushContents
         BrushKind.NonColliding => NonCollidingContents,
         BrushKind.WeaponClip => WeaponClipContents,
         BrushKind.BreakableGlass => GlassContents,
+        BrushKind.Ladder => ClipBrushMaterial.Contents,
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 
-    internal static bool BlocksPlayer(BrushKind kind) => kind is BrushKind.Structural or BrushKind.Detail or BrushKind.BreakableGlass;
+    internal static bool BlocksPlayer(BrushKind kind) => kind is BrushKind.Structural or BrushKind.Detail or BrushKind.BreakableGlass or BrushKind.Ladder;
 }

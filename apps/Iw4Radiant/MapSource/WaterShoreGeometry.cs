@@ -33,7 +33,7 @@ internal sealed class WaterShoreGeometry
             }
         }
 
-        bool VisibleSolid(string name) => !ClipBrushMaterial.IsPlayerClip(name) && !CaulkMaterial.IsCaulk(name) &&
+        bool VisibleSolid(string name) => !ClipBrushMaterial.IsCollisionOnly(name) && !CaulkMaterial.IsCaulk(name) &&
             resolveMaterial(name) is { IsWater: false, IsSky: false, Surface.IsBlended: false };
     }
 

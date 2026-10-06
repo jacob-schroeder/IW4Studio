@@ -24,6 +24,7 @@ internal sealed class OrthographicDrawing
     private static readonly Pen MajorGrid = new(Brush("#33373E"));
     private static readonly Pen BrushPen = new(Brush("#9AA0AA"));
     private static readonly Pen ClipBrushPen = new(Brush("#D959D9"));
+    private static readonly Pen LadderBrushPen = new(Brush("#F2CC33"));
     private static readonly Pen TerrainPen = new(Brush("#84988B"));
     private static readonly Pen EntityPen = new(Brush("#A29AAE"), 1.5);
     private static readonly Pen FxMarkerPen = new(Brush("#E8B66A"), 1.8);
@@ -79,7 +80,8 @@ internal sealed class OrthographicDrawing
                 {
                     bool faceSelected = scene.Selection.Contains(new BrushFaceSelection(brush, polygon.Face));
                     DrawPolygon(context, polygon.Vertices.Select(_projection.ToScreen).ToArray(), faceSelected ? SelectionFill : null,
-                        selected || faceSelected ? SelectedPen : ClipBrushMaterial.IsPlayerClip(polygon.Face.Material) ? ClipBrushPen : BrushPen);
+                        selected || faceSelected ? SelectedPen : ClipBrushMaterial.IsLadder(polygon.Face.Material) ? LadderBrushPen :
+                            ClipBrushMaterial.IsPlayerClip(polygon.Face.Material) ? ClipBrushPen : BrushPen);
                 }
             }
             foreach (var terrain in scene.Document.Terrains)

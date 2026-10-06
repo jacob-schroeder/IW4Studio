@@ -63,8 +63,13 @@ internal sealed class SceneSunlight
             Notice = "Sunlight preview unavailable: no non-sky geometry to shadow.";
             return;
         }
+        int activeShadowCount = usedSunIndices.Count(index =>
+        {
+            MapSunProperties sun = stages?.Sun(index) ?? source.Value;
+            return sun.Intensity > 0 && sun.Color != Vector3.Zero;
+        });
         int size = Math.Min(_maximumTextureSize,
-            (int)(PreferredShadowSize / MathF.Sqrt(Math.Max(usedSunIndices.Count, 1))));
+            (int)(PreferredShadowSize / MathF.Sqrt(Math.Max(activeShadowCount, 1))));
         if (size < 2)
         {
             Notice = "Sunlight preview unavailable: this GPU cannot allocate a sun shadow map.";

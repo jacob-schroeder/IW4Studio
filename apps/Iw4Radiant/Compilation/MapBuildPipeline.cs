@@ -1,6 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using D3dbspLinker.Conversion;
 using IW4.Formats.SourceFormat.Character;
+using IW4.Formats.SourceFormat.Material;
+using IW4.Formats.SourceFormat.Physics;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;
@@ -55,60 +58,68 @@ internal static class MapBuildPipeline
             !Directory.Exists(emitterAssetDirectory))
             throw new DirectoryNotFoundException(
                 "Choose the raw asset library containing the map's materials, FX and sounds.");
-        progress.Report("Checking destructible dependencies before compiling geometry and lighting…");
-        await Task.Run(() =>
+        string assetName = $"maps/mp/{mapName}.d3dbsp";
+        string token = Guid.NewGuid().ToString("N")[..8];
+        string staging = Path.Combine(outputFolder, $".{mapName}-{token}.building");
+        string destination = Path.Combine(outputFolder, $"{mapName}-{DateTime.Now:yyyyMMdd-HHmmss}-{token}");
+        Directory.CreateDirectory(staging);
+        bool compiledBspWritten = false;
+        try
         {
+            progress.Report("Preparing build files…");
+            string bspPath = Path.Combine(staging, mapName + ".d3dbsp");
+            string fastFilePath = Path.Combine(staging, mapName + ".ff");
+            IReadOnlyDictionary<string, string> soundVariantPaths = emitters?.WriteSoundVariants(staging, emitterAssetDirectory)
+                ?? new Dictionary<string, string>(StringComparer.Ordinal);
+            var mapRawFiles = new List<(string Name, string Path)>(emitters?.WriteTo(staging) ?? []);
+            if (movingLights is not null) mapRawFiles.Add(movingLights.WriteTo(staging));
+            if (fog is not null) mapRawFiles.Add(fog.WriteTo(staging));
             var expanded = PrefabLibrary.ExpandForCompilation(document, sourcePath);
             DestructiblePreset[] presets = expanded.Entities.Select(entity =>
             {
                 DestructiblePresets.Validate(entity.Properties);
                 return DestructiblePresets.Find(entity.Properties);
             }).OfType<DestructiblePreset>().Distinct().ToArray();
-            if (presets.Length == 0) return;
             string bootstrap = Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3");
-            var readiness = DestructibleAssets.Check(emitterAssetDirectory, presets, cancellationToken, bootstrap);
-            string[] issues = readiness.Where(pair => !pair.Value.IsReady)
-                .SelectMany(pair => pair.Value.Issues.Select(issue => $"{pair.Key.Name}: {issue}")).ToArray();
-            if (issues.Length != 0)
-                throw new InvalidDataException("Destructible assets need attention. Resolve these in the asset library before building:\n" +
-                    string.Join('\n', issues));
-        }, cancellationToken);
-        string assetName = $"maps/mp/{mapName}.d3dbsp";
-        string token = Guid.NewGuid().ToString("N")[..8];
-        string staging = Path.Combine(outputFolder, $".{mapName}-{token}.building");
-        string destination = Path.Combine(outputFolder, $"{mapName}-{DateTime.Now:yyyyMMdd-HHmmss}-{token}");
-        Directory.CreateDirectory(staging);
-        try
-        {
-            progress.Report("Preparing build files…");
-            string bspPath = Path.Combine(staging, mapName + ".d3dbsp");
-            string fastFilePath = Path.Combine(staging, mapName + ".ff");
-            IReadOnlyDictionary<string, string> soundVariantPaths = new Dictionary<string, string>(StringComparer.Ordinal);
+            string[] precacheScripts = presets.Select(preset => preset.PrecacheRawFileName)
+                .OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
+            if (precacheScripts.Length != 0)
+                foreach (string name in precacheScripts.Append("animtrees/destructibles.atr"))
+                {
+                    string path = Path.Combine(emitterAssetDirectory, name);
+                    if (!File.Exists(path)) path = Path.Combine(bootstrap, name);
+                    mapRawFiles.Add((name, path));
+                }
+            string[] additionalModels = expanded.Entities
+                .Where(entity => entity.ClassName is "script_model" or "misc_turret")
+                .Select(entity => entity.Properties["model"]).Concat(presets.SelectMany(preset => preset.ModelNames))
+                .Distinct(StringComparer.Ordinal).ToArray();
+            var dependencies = CreateDependencyRequest(expanded, sourcePath, emitterAssetDirectory, bootstrap,
+                emitters, presets, additionalModels, mapRawFiles, soundVariantPaths, cancellationToken);
             await Task.Run(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                soundVariantPaths = emitters?.WriteSoundVariants(staging, emitterAssetDirectory) ?? soundVariantPaths;
                 progress.Report("Checking brushes, meshes and entities…");
                 MapCompiler.ValidateNavigableSource(document);
                 string savedSource = Path.Combine(staging, mapName + ".map");
                 MapFile.Write(document, savedSource);
+                progress.Report("Checking all source asset dependencies before geometry and lighting…");
+                FastFileDependencyPreflight.Validate(dependencies);
+                progress.Report("Asset dependencies ready. Compiling geometry and lighting…");
                 var bsp = MapCompiler.Compile(MapFile.Read(savedSource), assetName, materials, models, cancellationToken, sourcePath, progress);
                 cancellationToken.ThrowIfCancellationRequested();
                 progress.Report("Writing compiled BSP…");
                 bsp.Write(bspPath);
+                compiledBspWritten = true;
                 progress.Report("Compiled BSP written.");
             }, cancellationToken);
-            var mapRawFiles = new List<(string Name, string Path)>(emitters?.WriteTo(staging) ?? []);
-            if (movingLights is not null) mapRawFiles.Add(movingLights.WriteTo(staging));
-            if (fog is not null) mapRawFiles.Add(fog.WriteTo(staging));
             if (emitters is not null)
             {
                 progress.Report($"Exported {emitters.FxNames.Length} FX references and {emitters.SoundNames.Length} sound aliases to map scripts.");
             }
             progress.Report("Compiling source assets and included startup assets; linking the PS3 fastfile…");
             await RunLinkerAsync(bspPath, assetName, fastFilePath,
-                emitters, emitterAssetDirectory, mapRawFiles, soundVariantPaths,
-                sourcePath, progress, cancellationToken);
+                dependencies, additionalModels, progress, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(fastFilePath) || new FileInfo(fastFilePath).Length == 0)
                 throw new InvalidDataException("D3dbspLinker completed without producing a fastfile.");
@@ -121,80 +132,104 @@ internal static class MapBuildPipeline
         }
         finally
         {
-            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+            if (Directory.Exists(staging))
+            {
+                if (compiledBspWritten)
+                {
+                    string retained = destination + "-unpackaged";
+                    Directory.Move(staging, retained);
+                    progress.Report($"Packaging did not finish. Compiled BSP and build inputs retained in {retained}");
+                }
+                else Directory.Delete(staging, recursive: true);
+            }
         }
+    }
+
+    private static FastFileDependencyPreflightRequest CreateDependencyRequest(MapDocument document,
+        string sourcePath, string assetDirectory, string bootstrapDirectory, MapEmitterScripts? emitters,
+        IReadOnlyList<DestructiblePreset> presets, IReadOnlyCollection<string> additionalModels,
+        IReadOnlyList<(string Name, string Path)> rawFiles, IReadOnlyDictionary<string, string> soundVariants,
+        CancellationToken cancellationToken)
+    {
+        MapBrush[] glass = document.Brushes.Where(BrushGlass.IsGlass).ToArray();
+        string[] materialNames = document.Brushes.Where(brush => !BrushGlass.IsGlass(brush))
+            .SelectMany(brush => brush.Faces).Select(face => face.Material)
+            .Concat(document.Terrains.Select(terrain => terrain.Material))
+            .Concat(glass.SelectMany(BrushGlassCompiler.RequiredMaterialNames))
+            .Where(name => !CaulkMaterial.IsCaulk(name) && !ClipBrushMaterial.IsCollisionOnly(name))
+            .Distinct(StringComparer.Ordinal).ToArray();
+        MapFactionSettings factions = MapFactionAuthoring.Read(document.World.Properties);
+        return new FastFileDependencyPreflightRequest
+        {
+            AssetLibraryDirectory = Path.GetFullPath(assetDirectory),
+            BootstrapDirectory = bootstrapDirectory,
+            MaterialNames = materialNames,
+            ModelNames = document.Entities.Where(entity => entity.ClassName is "misc_model" or RuntimePhysicsAuthoring.ClassName)
+                .Select(entity => entity.Properties["model"]).Concat(additionalModels)
+                .Distinct(StringComparer.Ordinal).ToArray(),
+            PhysPresetNames = glass.Select(brush => (BrushGlass.Read(brush) ??
+                    throw new InvalidDataException("Configure glass settings before building.")).PhysPreset)
+                .Distinct(StringComparer.Ordinal).ToArray(),
+            FxNames = (emitters?.FxNames ?? []).Concat(presets.SelectMany(preset => preset.FxNames))
+                .Distinct(StringComparer.Ordinal).ToArray(),
+            SoundNames = (emitters?.SoundNames ?? []).Concat(presets.SelectMany(preset => preset.SoundNames))
+                .Distinct(StringComparer.Ordinal).ToArray(),
+            XAnimNames = presets.SelectMany(preset => preset.AnimationNames).Distinct(StringComparer.Ordinal).ToArray(),
+            RawFilePaths = rawFiles.ToDictionary(file => file.Name, file => Path.GetFullPath(file.Path), StringComparer.Ordinal),
+            SoundDefinitionPaths = soundVariants,
+            WorldProperties = document.World.Properties,
+            AuthoredWaterNames = materialNames.Where(WaterMaterialAuthoring.IsAuthoredMaterialName).ToArray(),
+            TurretWeaponNames = document.Entities.Where(entity => entity.ClassName == "misc_turret")
+                .Select(entity => entity.Properties["weaponinfo"]).Distinct(StringComparer.Ordinal).ToArray(),
+            CharacterAssetsDirectory = factions.AlliesAssaultA?.CustomAssetFolder is not null ||
+                factions.AxisAssaultA?.CustomAssetFolder is not null
+                ? MapFactionAuthoring.GetCharacterAssetsDirectory(sourcePath) : null,
+            CancellationToken = cancellationToken
+        };
     }
 
     private static async Task RunLinkerAsync(string bspPath,
         string assetName, string fastFilePath,
-        MapEmitterScripts? emitters, string emitterAssetDirectory,
-        IReadOnlyList<(string Name, string Path)> mapRawFiles,
-        IReadOnlyDictionary<string, string> soundVariantPaths,
-        string sourcePath,
+        FastFileDependencyPreflightRequest dependencies, IReadOnlyCollection<string> additionalModels,
         IProgress<string> progress,
         CancellationToken cancellationToken)
     {
         var start = BundledLinker.CreateStartInfo();
         foreach (string value in new[] { "build", bspPath, assetName, fastFilePath, "--compiled-lighting" }) start.ArgumentList.Add(value);
-        var entities = IW4.Formats.D3dbsp.D3dbspFile.Read(bspPath).GetEntities();
-        DestructiblePreset[] destructibles = entities.Select(DestructiblePresets.Find)
-            .OfType<DestructiblePreset>().Distinct().ToArray();
-        foreach (string model in entities
-                     .Where(entity => entity.GetValueOrDefault("classname") is "script_model" or "misc_turret")
-                     .Select(entity => entity["model"]).Concat(destructibles.SelectMany(preset => preset.ModelNames))
-                     .Distinct(StringComparer.Ordinal))
+        foreach (string model in additionalModels)
         {
             start.ArgumentList.Add("--xmodel");
             start.ArgumentList.Add(model);
         }
         start.ArgumentList.Add("--asset-library");
-        start.ArgumentList.Add(Path.GetFullPath(emitterAssetDirectory));
-        MapFactionSettings factions = MapFactionAuthoring.Read(
-            entities.First(entity => entity.GetValueOrDefault("classname") == "worldspawn"));
-        if (factions.AlliesAssaultA?.CustomAssetFolder is not null || factions.AxisAssaultA?.CustomAssetFolder is not null)
+        start.ArgumentList.Add(dependencies.AssetLibraryDirectory);
+        if (dependencies.CharacterAssetsDirectory is { } characters)
         {
             start.ArgumentList.Add("--character-assets");
-            start.ArgumentList.Add(MapFactionAuthoring.GetCharacterAssetsDirectory(sourcePath));
+            start.ArgumentList.Add(characters);
         }
         // Destruction-only assets have no placed emitter/model of their own.
         // Package their roots without adding map-start FX or sound playback.
-        foreach (string name in (emitters?.FxNames ?? []).Concat(destructibles.SelectMany(preset => preset.FxNames))
-                     .Distinct(StringComparer.Ordinal))
+        foreach (string name in dependencies.FxNames)
         {
             start.ArgumentList.Add("--fx");
             start.ArgumentList.Add(name);
         }
-        foreach (string name in destructibles.SelectMany(preset => preset.AnimationNames).Distinct(StringComparer.Ordinal))
+        foreach (string name in dependencies.XAnimNames)
         {
             start.ArgumentList.Add("--xanim");
             start.ArgumentList.Add(name);
         }
-        string[] precacheRawFiles = destructibles.Select(preset => preset.PrecacheRawFileName)
-            .OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
-        if (precacheRawFiles.Length != 0)
-        {
-            string bootstrap = Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3");
-            foreach (string name in precacheRawFiles.Append("animtrees/destructibles.atr"))
-            {
-                string source = Path.Combine(emitterAssetDirectory, name);
-                if (!File.Exists(source)) source = Path.Combine(bootstrap, name);
-                if (!File.Exists(source))
-                    throw new FileNotFoundException($"Destructible RawFile '{name}' is missing from the asset library and bootstrap.", source);
-                start.ArgumentList.Add("--rawfile");
-                start.ArgumentList.Add($"{name}={Path.GetFullPath(source)}");
-            }
-        }
-        foreach (string name in (emitters?.SoundNames ?? []).Concat(destructibles.SelectMany(preset => preset.SoundNames))
-                     .Distinct(StringComparer.Ordinal))
+        foreach (string name in dependencies.SoundNames)
         {
             start.ArgumentList.Add("--sound");
-            start.ArgumentList.Add(soundVariantPaths.TryGetValue(name, out string? path)
+            start.ArgumentList.Add(dependencies.SoundDefinitionPaths.TryGetValue(name, out string? path)
                 ? $"{name}={path}" : name);
         }
-        foreach (var rawFile in mapRawFiles)
+        foreach (var rawFile in dependencies.RawFilePaths)
         {
             start.ArgumentList.Add("--rawfile");
-            start.ArgumentList.Add($"{rawFile.Name}={rawFile.Path}");
+            start.ArgumentList.Add($"{rawFile.Key}={rawFile.Value}");
         }
         using var process = new Process { StartInfo = start };
         try

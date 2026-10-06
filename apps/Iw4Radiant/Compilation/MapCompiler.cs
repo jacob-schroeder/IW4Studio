@@ -108,6 +108,9 @@ internal static class MapCompiler
                 if (ClipBrushMaterial.IsPlayerClip(name))
                     return new ClipMaterial { Name = name, Contents = ClipBrushMaterial.Contents,
                         SurfaceFlags = ClipBrushMaterial.SurfaceFlags };
+                if (ClipBrushMaterial.IsLadder(name))
+                    return new ClipMaterial { Name = name, Contents = ClipBrushMaterial.Contents,
+                        SurfaceFlags = ClipBrushMaterial.LadderSurfaceFlags };
                 if (CaulkMaterial.IsCaulk(name))
                     return new ClipMaterial { Name = name, Contents = CaulkMaterial.Contents,
                         SurfaceFlags = CaulkMaterial.SurfaceFlags };
@@ -218,6 +221,7 @@ internal static class MapCompiler
         foreach (MapBrush brush in document.Brushes)
         {
             BrushGeometry.Validate(brush);
+            _ = BrushLighting.Read(brush);
             BrushKind kind = BrushContents.ReadForCompilation(brush);
             var glassSettings = BrushGlass.Read(brush);
             if (kind == BrushKind.BreakableGlass)
@@ -234,6 +238,10 @@ internal static class MapCompiler
             if (brush.Faces.Any(face => ClipBrushMaterial.IsPlayerClip(face.Material)) &&
                 !brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material)))
                 throw new NotSupportedException("Apply clip_player to every face of a player clip brush. Mixed player clip and visible faces are not supported by compilation.");
+            if (brush.Faces.Any(face => ClipBrushMaterial.IsLadder(face.Material)) && kind != BrushKind.Ladder)
+                throw new NotSupportedException("Apply ladder to every face of a ladder brush. Mixed ladder and other faces are not supported by compilation.");
+            if (kind == BrushKind.Ladder && !document.World.Brushes.Contains(brush))
+                throw new NotSupportedException("Ladder collision must belong to worldspawn before compilation.");
             bool playerClip = brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material));
             bool anySky = brush.Faces.Any(face => materials.TryGetValue(face.Material, out var material) && material.IsSky);
             bool sky = brush.Faces.All(face => materials.TryGetValue(face.Material, out var material) && material.IsSky);
@@ -276,8 +284,8 @@ internal static class MapCompiler
                     if (materials.TryGetValue(terrain.Material, out var paintedMaterial) && !paintedMaterial.UsesVertexColor &&
                         terrain.Colors.Any(color => color != Vector4.One))
                         throw new NotSupportedException($"Material '{terrain.Material}' does not consume painted vertex color or alpha. Apply a wc_ world material before painting, or reset its vertex colors to white and alpha to 100%.");
-                    if (ClipBrushMaterial.IsPlayerClip(terrain.Material) || materials.TryGetValue(terrain.Material, out var material) && material.IsSky)
-                        throw new NotSupportedException("Use world brushes for sky and player clip. These materials are not supported on meshes.");
+                    if (ClipBrushMaterial.IsCollisionOnly(terrain.Material) || materials.TryGetValue(terrain.Material, out var material) && material.IsSky)
+                        throw new NotSupportedException("Use world brushes for sky, player clip and ladder. These materials are not supported on meshes.");
                     if (materials.TryGetValue(terrain.Material, out var terrainMaterial) && terrainMaterial.IsWater)
                         throw new NotSupportedException("Native water requires a closed world-brush volume; water materials are not supported on terrain meshes.");
                 }
@@ -339,7 +347,7 @@ internal static class MapCompiler
             foreach (MapBrush brush in document.World.Brushes.Where(_ => type.Category == "Spawns" || entity.ClassName == "reflection_probe"))
                 if (!brush.Faces.All(face => materials.TryGetValue(face.Material, out var material) && material.IsSky) &&
                     !brush.Faces.All(face => materials.TryGetValue(face.Material, out var material) && material.IsWater) &&
-                    !(entity.ClassName == "reflection_probe" && brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material))) &&
+                    !(entity.ClassName == "reflection_probe" && brush.Faces.All(face => ClipBrushMaterial.IsCollisionOnly(face.Material))) &&
                     (brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material)) ||
                      BrushContents.BlocksPlayer(BrushContents.ReadForCompilation(brush))) &&
                     brush.Faces.All(face => BrushGeometry.Dot(face.Normal, origin - face.A) <= BrushGeometry.PlaneTolerance))
@@ -397,7 +405,7 @@ internal static class MapCompiler
         {
             var tokens = MapTokenizer.Tokenize(directive);
             if (MapOrganization.IsLayerDirective(directive)) continue;
-            if (brushContents && tokens.Count > 0 && !tokens[0].Quoted && tokens[0].Value is "contents" or "glass") continue;
+            if (brushContents && tokens.Count > 0 && !tokens[0].Quoted && tokens[0].Value is "contents" or "glass" or "lighting") continue;
             if (brushContents && MapToolFlags.ReadForCompilation(directive)) continue;
             throw new NotSupportedException($"Source directive '{directive}' is not supported by compilation.");
         }

@@ -50,7 +50,7 @@ internal static class MaterialCatalog
         foreach (string path in jsonFiles)
         {
             string name = Path.ChangeExtension(Path.GetRelativePath(materialRoot, path), null).Replace('\\', '/');
-            (string? colorMap, bool isSky, MaterialWater? water, Vector4 waterColor, Vector4 envMapParms,
+            (string? colorMap, bool isSky, MaterialWater? water, Vector4 waterColor, Vector4 envMapParms, Vector3 colorTint,
                 MaterialSamplerState samplerState, MaterialSurfaceState surface, MaterialGameFlags gameFlags,
                 MaterialSurfaceTypeBits surfaceTypeBits, string techniqueSet) material;
             try { material = ReadMaterial(path); }
@@ -63,18 +63,25 @@ internal static class MaterialCatalog
                         { PreviewDefinitionAvailable = false };
                 continue;
             }
-            var (colorMap, isSky, water, waterColor, envMapParms, samplerState, surface, gameFlags, surfaceTypeBits, techniqueSet) = material;
+            var (colorMap, isSky, water, waterColor, envMapParms, colorTint, samplerState, surface, gameFlags, surfaceTypeBits, techniqueSet) = material;
             bool hasSource = false;
             string? image = colorMap is null ? null : ResolveImage(colorMap, out hasSource);
             if (image is not null || hasSource || isSky || water is not null || includeUnavailable)
+            {
+                var previewMaps = ReadPreviewMaps(path, name, imageRoot, techniqueSet);
                 materials[name] = new MaterialSource(name, image ?? "", isSky, samplerState)
                 {
+                    SourceDirectory = root,
                     SourceImage = hasSource && !isSky && water is null && colorMap is not null
                         ? (Path.GetDirectoryName(imageRoot) ?? imageRoot, colorMap) : null,
-                    Water = water, WaterColor = waterColor, EnvMapParms = envMapParms, Surface = surface, GameFlags = gameFlags,
+                    Water = water, WaterColor = waterColor, EnvMapParms = envMapParms, ColorTint = colorTint,
+                    Surface = surface, GameFlags = gameFlags,
                     SurfaceTypeBits = surfaceTypeBits, TechniqueSet = techniqueSet,
+                    NormalMap = previewMaps.Normal, SpecularMap = previewMaps.Specular,
+                    DetailMap = previewMaps.Detail, DetailScale = previewMaps.DetailScale,
                     OceanFoamImagePath = water is null ? "" : ResolveImage(WaterMaterialAuthoring.OceanFoamImageName, out _) ?? ""
                 };
+            }
         }
         return (Ordered(materials), unsupported);
 
@@ -114,16 +121,20 @@ internal static class MaterialCatalog
         root = Path.GetFullPath(root);
         string materialPath = Path.Combine(root, "materials", $"{name}.json");
         if (!File.Exists(materialPath)) return null;
-        var (colorMap, isSky, water, waterColor, envMapParms, samplerState, surface, gameFlags,
+        var (colorMap, isSky, water, waterColor, envMapParms, colorTint, samplerState, surface, gameFlags,
             surfaceTypeBits, techniqueSet) = ReadMaterial(materialPath);
         bool hasSource = false;
         string? imagePath = colorMap is null ? null : ResolveImage(colorMap, out hasSource);
         if (imagePath is null && !hasSource && !isSky && water is null) return null;
+        var previewMaps = ReadPreviewMaps(materialPath, name, Path.Combine(root, "images"), techniqueSet);
         return new MaterialSource(name, imagePath ?? "", isSky, samplerState)
         {
+            SourceDirectory = root,
             SourceImage = hasSource && !isSky && water is null && colorMap is not null ? (root, colorMap) : null,
-            Water = water, WaterColor = waterColor, EnvMapParms = envMapParms, Surface = surface,
+            Water = water, WaterColor = waterColor, EnvMapParms = envMapParms, ColorTint = colorTint, Surface = surface,
             GameFlags = gameFlags, SurfaceTypeBits = surfaceTypeBits, TechniqueSet = techniqueSet,
+            NormalMap = previewMaps.Normal, SpecularMap = previewMaps.Specular,
+            DetailMap = previewMaps.Detail, DetailScale = previewMaps.DetailScale,
             OceanFoamImagePath = water is null ? "" : ResolveImage(WaterMaterialAuthoring.OceanFoamImageName, out _) ?? ""
         };
 
@@ -143,7 +154,86 @@ internal static class MaterialCatalog
         values.OrderBy(pair => pair.Key, StringComparer.Ordinal)
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
 
-    private static (string? Image, bool IsSky, MaterialWater? Water, Vector4 WaterColor, Vector4 EnvMapParms, MaterialSamplerState SamplerState,
+    private static (MaterialSource? Normal, MaterialSource? Specular, MaterialSource? Detail, Vector2 DetailScale)
+        ReadPreviewMaps(string materialPath, string materialName, string imageRoot, string techniqueSet)
+    {
+        if (techniqueSet is not ("wc_l_sm_r0c0n0sf0" or "wc_l_sm_r0c0q0n0s0p0" or
+            "wc_l_sm_r0c0n0s0" or "wc_l_sm_b0c0n0s0"))
+            return (null, null, null, Vector2.One);
+        using var document = JsonDocument.Parse(File.ReadAllText(materialPath));
+        JsonElement root = document.RootElement;
+        if (!root.TryGetProperty("textures", out JsonElement textures) || textures.ValueKind != JsonValueKind.Array)
+            return (null, null, null, Vector2.One);
+
+        MaterialSource? Find(string role)
+        {
+            foreach (JsonElement texture in textures.EnumerateArray())
+            {
+                if (texture.ValueKind != JsonValueKind.Object ||
+                    !texture.TryGetProperty("name", out JsonElement name) || name.ValueKind != JsonValueKind.String ||
+                    name.GetString() != role ||
+                    !texture.TryGetProperty("image", out JsonElement image) || image.ValueKind != JsonValueKind.String)
+                    continue;
+                string? imageName = image.GetString();
+                if (string.IsNullOrWhiteSpace(imageName)) return null;
+                string candidate = imageName.Replace('*', '_').Replace('\\', '/');
+                if (Path.IsPathRooted(candidate) || candidate.Split('/').Any(part => part is "" or "." or ".."))
+                    return null;
+                string full = Path.Combine(imageRoot, candidate);
+                bool hasSource = File.Exists(full + ".image.json");
+                string? imagePath = ImageExtensions.Select(extension => full + extension).FirstOrDefault(File.Exists);
+                if (imagePath is null && !hasSource) return null;
+                MaterialSamplerState state = ImagePreviewSampler;
+                if (texture.TryGetProperty("samplerState", out JsonElement sampler) &&
+                    sampler.ValueKind == JsonValueKind.Object)
+                {
+                    string? filter = sampler.TryGetProperty("filter", out JsonElement filterValue) &&
+                        filterValue.ValueKind == JsonValueKind.String ? filterValue.GetString() : null;
+                    string? mipMap = sampler.TryGetProperty("mipMap", out JsonElement mipValue) &&
+                        mipValue.ValueKind == JsonValueKind.String ? mipValue.GetString() : null;
+                    state = filter switch
+                    {
+                        "nearest" => MaterialSamplerState.FilterNearest,
+                        "linear" => MaterialSamplerState.FilterLinear,
+                        "aniso2x" => MaterialSamplerState.FilterAnisotropic2X,
+                        "aniso4x" => MaterialSamplerState.FilterAnisotropic4X,
+                        _ => MaterialSamplerState.FilterDisabled
+                    };
+                    state |= mipMap switch
+                    {
+                        "nearest" => MaterialSamplerState.MipMapNearest,
+                        "linear" => MaterialSamplerState.MipMapLinear,
+                        _ => MaterialSamplerState.MipMapDisabled
+                    };
+                    if (sampler.TryGetProperty("clampU", out JsonElement clampU) && clampU.ValueKind == JsonValueKind.True)
+                        state |= MaterialSamplerState.ClampU;
+                    if (sampler.TryGetProperty("clampV", out JsonElement clampV) && clampV.ValueKind == JsonValueKind.True)
+                        state |= MaterialSamplerState.ClampV;
+                    if (sampler.TryGetProperty("clampW", out JsonElement clampW) && clampW.ValueKind == JsonValueKind.True)
+                        state |= MaterialSamplerState.ClampW;
+                }
+                return new MaterialSource(materialName + "\0" + role, imagePath ?? "", false, state)
+                {
+                    SourceImage = hasSource ? (Path.GetDirectoryName(imageRoot) ?? imageRoot, imageName) : null
+                };
+            }
+            return null;
+        }
+
+        Vector2 detailScale = Vector2.One;
+        if (root.TryGetProperty("constants", out JsonElement constants) && constants.ValueKind == JsonValueKind.Array)
+            foreach (JsonElement constant in constants.EnumerateArray())
+                if (constant.ValueKind == JsonValueKind.Object &&
+                    constant.TryGetProperty("name", out JsonElement name) && name.ValueKind == JsonValueKind.String &&
+                    name.GetString() == "detailScale" &&
+                    constant.TryGetProperty("literal", out JsonElement literal) && literal.ValueKind == JsonValueKind.Array &&
+                    literal.GetArrayLength() == 4 &&
+                    float.IsFinite(literal[0].GetSingle()) && float.IsFinite(literal[1].GetSingle()))
+                    detailScale = new Vector2(literal[0].GetSingle(), literal[1].GetSingle());
+        return (Find("normalMap"), Find("specularMap"), Find("detailMap"), detailScale);
+    }
+
+    private static (string? Image, bool IsSky, MaterialWater? Water, Vector4 WaterColor, Vector4 EnvMapParms, Vector3 ColorTint, MaterialSamplerState SamplerState,
         MaterialSurfaceState Surface, MaterialGameFlags GameFlags, MaterialSurfaceTypeBits SurfaceTypeBits,
         string TechniqueSet) ReadMaterial(string path)
     {
@@ -183,7 +273,10 @@ internal static class MaterialCatalog
                 if (hasSkyFlag) throw Invalid("A sky requires a color-map texture");
                 if (techniqueSet is "w_water" or "wc_water")
                     throw Invalid("A native water technique requires a waterMap texture");
-                return (null, false, null, Vector4.Zero, Vector4.Zero, MaterialSamplerState.None, surface, gameFlags, surfaceTypeBits, techniqueSet);
+                Vector4 tint = ReadConstant("colorTint", Vector4.One);
+                Vector3 untexturedTint = new(tint.X, tint.Y, tint.Z);
+                return (null, false, null, Vector4.Zero, Vector4.Zero, untexturedTint, MaterialSamplerState.None,
+                    surface, gameFlags, surfaceTypeBits, techniqueSet);
             }
             if (textures.ValueKind != JsonValueKind.Array)
                 throw Invalid("Expected a textures array");
@@ -223,13 +316,15 @@ internal static class MaterialCatalog
                     gameFlags != (MaterialGameFlags.NoMarks | MaterialGameFlags.HasReflection))
                     throw new NotSupportedException($"Material '{path}': the supported native water profile requires the proven Water surface type and 0x14 game flags.");
                 water = ReadWaterMap(nativeWaterMap);
-                waterColor = ReadWaterConstant("waterColor");
-                envMapParms = ReadWaterConstant("envMapParms");
+                waterColor = ReadConstant("waterColor", Vector4.Zero, required: true);
+                envMapParms = ReadConstant("envMapParms", Vector4.Zero, required: true);
             }
             else if (techniqueSet is "w_water" or "wc_water")
                 throw Invalid("A native water technique requires a waterMap texture");
+            Vector4 tintLiteral = ReadConstant("colorTint", Vector4.One);
+            Vector3 colorTint = new(tintLiteral.X, tintLiteral.Y, tintLiteral.Z);
             if ((waterMap ?? colorMap) is not { } selected)
-                return (null, false, water, waterColor, envMapParms, MaterialSamplerState.None,
+                return (null, false, water, waterColor, envMapParms, colorTint, MaterialSamplerState.None,
                     surface, gameFlags, surfaceTypeBits, techniqueSet);
             bool hasSampler = selected.TryGetProperty("samplerState", out var sampler);
             if (!hasSampler || sampler.ValueKind != JsonValueKind.Object)
@@ -254,34 +349,48 @@ internal static class MaterialCatalog
             if (ReadClamp("clampV")) samplerState |= MaterialSamplerState.ClampV;
             if (ReadClamp("clampW")) samplerState |= MaterialSamplerState.ClampW;
             if (!selected.TryGetProperty("image", out var image) || image.ValueKind == JsonValueKind.Null)
-                return (null, isSky, water, waterColor, envMapParms, samplerState,
+                return (null, isSky, water, waterColor, envMapParms, colorTint, samplerState,
                     surface, gameFlags, surfaceTypeBits, techniqueSet);
             if (image.ValueKind != JsonValueKind.String)
                 throw Invalid("Expected a colorMap image name");
             string? imageName = image.GetString();
             return (string.IsNullOrWhiteSpace(imageName) ? null : imageName, isSky, water, waterColor, envMapParms,
-                samplerState, surface, gameFlags, surfaceTypeBits, techniqueSet);
+                colorTint, samplerState, surface, gameFlags, surfaceTypeBits, techniqueSet);
 
-            Vector4 ReadWaterConstant(string key)
+            Vector4 ReadConstant(string key, Vector4 fallback, bool required = false)
             {
-                if (!root.TryGetProperty("constants", out var constants) || constants.ValueKind != JsonValueKind.Array)
-                    throw Invalid($"A native water material requires a {key} constant");
+                bool hasConstants = root.TryGetProperty("constants", out var constants);
+                if (!hasConstants || constants.ValueKind != JsonValueKind.Array)
+                {
+                    if (required) throw Invalid($"A native water material requires a {key} constant");
+                    if (hasConstants) throw Invalid("Expected a constants array");
+                    return fallback;
+                }
                 JsonElement? match = null;
                 foreach (JsonElement constant in constants.EnumerateArray())
                     if (constant.ValueKind == JsonValueKind.Object && constant.TryGetProperty("name", out var constantName) &&
                         constantName.ValueKind == JsonValueKind.String && constantName.GetString() == key)
                     {
-                        if (match is not null) throw Invalid($"A native water material requires exactly one {key} constant");
+                        if (match is not null) throw Invalid(required
+                            ? $"A native water material requires exactly one {key} constant"
+                            : $"Expected exactly one {key} constant");
                         match = constant;
                     }
-                if (match is not { } selectedConstant || !selectedConstant.TryGetProperty("literal", out var literal) ||
+                if (match is not { } selectedConstant)
+                {
+                    if (required) throw Invalid($"A native water material requires a four-component {key} constant");
+                    return fallback;
+                }
+                if (!selectedConstant.TryGetProperty("literal", out var literal) ||
                     literal.ValueKind != JsonValueKind.Array || literal.GetArrayLength() != 4)
-                    throw Invalid($"A native water material requires a four-component {key} constant");
+                    throw Invalid(required ? $"A native water material requires a four-component {key} constant"
+                        : $"Expected a four-component {key} constant");
                 var value = new Vector4(literal[0].GetSingle(), literal[1].GetSingle(),
                     literal[2].GetSingle(), literal[3].GetSingle());
                 if (!float.IsFinite(value.X) || !float.IsFinite(value.Y) || !float.IsFinite(value.Z) ||
                     !float.IsFinite(value.W))
-                    throw Invalid($"A native water material has a non-finite {key} constant");
+                    throw Invalid(required ? $"A native water material has a non-finite {key} constant"
+                        : $"Expected a finite {key} constant");
                 return value;
             }
 

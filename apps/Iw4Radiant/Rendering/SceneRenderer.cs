@@ -44,10 +44,12 @@ internal sealed class SceneRenderer
         _filmLightTintLocation, _filmDarkTintLocation;
     private uint _lineTexture, _fallbackCube;
     private PixelSize _renderSize;
-    private int _viewProjectionLocation, _texturedLocation, _litLocation, _alphaTestLocation, _premultiplyAlphaLocation,
+    private int _viewProjectionLocation, _texturedLocation, _colorTintLocation, _litLocation, _alphaTestLocation, _premultiplyAlphaLocation,
         _ignoreVertexColorLocation, _waterPreviewLocation, _eyeLocation, _linearCaptureLocation, _hasWaterReflectionLocation,
         _cubicClipLocation, _cubicClipCenterLocation, _cubicClipDistanceLocation, _modelLocation, _normalTransformLocation,
         _fogEnabledLocation, _fogColorLocation, _fogStartLocation, _fogDensityLocation, _fogMaxOpacityLocation;
+    private int _hasMaterialNormalLocation, _hasMaterialSpecularLocation, _hasMaterialDetailLocation,
+        _materialDetailScaleLocation;
     private int _compiledLightmapModeLocation, _compiledSunDirectionLocation, _compiledSunColorLocation,
         _compiledPrimaryTypeLocation, _compiledLocalPositionRadiusLocation, _compiledLocalColorLocation,
         _compiledSpotDirectionOuterCosLocation, _compiledSpotInnerCosExponentLocation;
@@ -468,6 +470,11 @@ internal sealed class SceneRenderer
             _modelLocation = _gl.GetUniformLocation(_program, "uModel");
             _normalTransformLocation = _gl.GetUniformLocation(_program, "uNormalTransform");
             _texturedLocation = _gl.GetUniformLocation(_program, "uTextured");
+            _colorTintLocation = _gl.GetUniformLocation(_program, "uColorTint");
+            _hasMaterialNormalLocation = _gl.GetUniformLocation(_program, "uHasMaterialNormalMap");
+            _hasMaterialSpecularLocation = _gl.GetUniformLocation(_program, "uHasMaterialSpecularMap");
+            _hasMaterialDetailLocation = _gl.GetUniformLocation(_program, "uHasMaterialDetailMap");
+            _materialDetailScaleLocation = _gl.GetUniformLocation(_program, "uMaterialDetailScale");
             _compiledLightmapModeLocation = _gl.GetUniformLocation(_program, "uCompiledLightmapMode");
             _compiledSunDirectionLocation = _gl.GetUniformLocation(_program, "uCompiledSunDirection");
             _compiledSunColorLocation = _gl.GetUniformLocation(_program, "uCompiledSunColorLinear");
@@ -503,6 +510,9 @@ internal sealed class SceneRenderer
             _gl.UniformMatrix4(_modelLocation, 1, false, (float*)&identity);
             _gl.UniformMatrix4(_normalTransformLocation, 1, false, (float*)&identity);
             _gl.Uniform1(_gl.GetUniformLocation(_program, "uTexture"), 0);
+            _gl.Uniform1(_gl.GetUniformLocation(_program, "uMaterialNormalMap"), 10);
+            _gl.Uniform1(_gl.GetUniformLocation(_program, "uMaterialSpecularMap"), 11);
+            _gl.Uniform1(_gl.GetUniformLocation(_program, "uMaterialDetailMap"), 12);
             _gl.Uniform1(_gl.GetUniformLocation(_program, "uCompiledDiffuseLightmap"), 7);
             _gl.Uniform1(_gl.GetUniformLocation(_program, "uCompiledSunVisibility"), 8);
             _compiledLightmapUvBuffer = _gl.GenBuffer();
@@ -618,9 +628,16 @@ internal sealed class SceneRenderer
             if (_destructibleWreckModel is { } wreck)
                 foreach (var material in wreck.Document.Materials)
                     _materialTextures.GetTexture(gl, material.Name, resolveMaterial);
-            if (_materialTextures.UploadReady(gl) is { } uploaded &&
-                _surfaceBatches.Any(batch => batch.Material == uploaded))
-                _worldTextureUploaded = true;
+            if (_materialTextures.UploadReady(gl) is { } uploaded)
+            {
+                int separator = uploaded.IndexOf('\0');
+                string surfaceMaterial = separator < 0 ? uploaded : uploaded[..separator];
+                if (_surfaceBatches.Any(batch => batch.Material == surfaceMaterial))
+                {
+                    if (separator < 0) _worldTextureUploaded = true;
+                    else _reflectionsDirty = true;
+                }
+            }
             ProcessDestructiblePreparation(gl, resolveMaterial);
             if (_worldTextureUploaded && !_materialTextures.HasPendingTextures && _compiledPreview is null)
             {
@@ -705,6 +722,7 @@ internal sealed class SceneRenderer
             gl.DepthFunc(DepthFunction.Lequal);
             gl.Uniform1(_litLocation, 0);
             gl.Uniform1(_texturedLocation, 0);
+            BindMaterialPreview(gl, null);
             gl.Uniform1(_alphaTestLocation, 0);
             gl.Uniform1(_premultiplyAlphaLocation, 0);
             gl.Uniform1(_waterPreviewLocation, 0);
@@ -770,6 +788,12 @@ internal sealed class SceneRenderer
             }
             gl.BindVertexArray(0);
             gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture12);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture11);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture10);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture8);
             gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture9);
@@ -821,6 +845,12 @@ internal sealed class SceneRenderer
             gl.Disable(EnableCap.DepthTest);
             gl.BindVertexArray(0);
             gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+            gl.ActiveTexture(TextureUnit.Texture12);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture11);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
+            gl.ActiveTexture(TextureUnit.Texture10);
+            gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture8);
             gl.BindTexture(TextureTarget.Texture2D, 0);
             gl.ActiveTexture(TextureUnit.Texture7);
@@ -1041,6 +1071,7 @@ internal sealed class SceneRenderer
                 gl.Disable(EnableCap.CullFace);
                 gl.Uniform1(_ignoreVertexColorLocation, 0);
                 gl.BindTexture(TextureTarget.Texture2D, texture);
+                BindMaterialPreview(gl, source);
                 FxPreviewVertex[] vertices = sampled;
                 if (opacity < 1)
                 {
@@ -1148,6 +1179,7 @@ internal sealed class SceneRenderer
                 gl.Disable(EnableCap.CullFace);
                 gl.Uniform1(_ignoreVertexColorLocation, 0);
                 gl.BindTexture(TextureTarget.Texture2D, texture);
+                BindMaterialPreview(gl, source);
                 gl.DrawArrays(PrimitiveType.Triangles, start, (uint)count);
             }
         }
@@ -1281,6 +1313,7 @@ internal sealed class SceneRenderer
             SceneMaterialDrawing.Apply(gl, previewAlpha ? state : OpaquePreview(state), _alphaTestLocation,
                 _premultiplyAlphaLocation, _ignoreVertexColorLocation);
             gl.BindTexture(TextureTarget.Texture2D, texture);
+            BindMaterialPreview(gl, source);
             gl.Uniform1(_litLocation, previewLighting ? 1 : 0);
             gl.Uniform1(_texturedLocation, 1);
             gl.DrawArrays(PrimitiveType.Triangles, batch.Start, (uint)batch.Count);
@@ -1511,6 +1544,7 @@ internal sealed class SceneRenderer
             BindCompiledLightmap(gl, _compiledPreview?.LightingAt(batch.Start) ??
                 (CompiledBspPreview.NoLightmap, (byte)0));
             gl.BindTexture(TextureTarget.Texture2D, texture);
+            BindMaterialPreview(gl, source);
             gl.Uniform1(_waterPreviewLocation, water ? 1 : 0);
             if (water) _water.Bind(gl, batch.Material);
             gl.Uniform1(_litLocation, _compiledPreview is null && previewLighting ? 1 : 0);
@@ -1574,6 +1608,7 @@ internal sealed class SceneRenderer
                     SceneMaterialDrawing.Apply(gl, _surfaceStates[triangle.Material], _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation);
                     if (_compiledPreview is not null) gl.Uniform1(_ignoreVertexColorLocation, 0);
                     gl.BindTexture(TextureTarget.Texture2D, texture);
+                    BindMaterialPreview(gl, source);
                     gl.Uniform1(_waterPreviewLocation, water ? 1 : 0);
                     if (water) _water.Bind(gl, triangle.Material);
                     gl.Uniform1(_litLocation, _compiledPreview is null && previewLighting ? 1 : 0);
@@ -1604,6 +1639,7 @@ internal sealed class SceneRenderer
                         _alphaTestLocation, _premultiplyAlphaLocation, _ignoreVertexColorLocation);
                     if (_compiledPreview is not null) gl.Uniform1(_ignoreVertexColorLocation, 0);
                     gl.BindTexture(TextureTarget.Texture2D, texture);
+                    BindMaterialPreview(gl, resolveMaterial?.Invoke(batch.Material));
                     gl.Uniform1(_waterPreviewLocation, 1);
                     _water.Bind(gl, batch.Material);
                     gl.Uniform1(_litLocation, _compiledPreview is null && previewLighting ? 1 : 0);
@@ -1691,6 +1727,12 @@ internal sealed class SceneRenderer
         gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
         gl.ActiveTexture(TextureUnit.Texture8);
         gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
+        gl.ActiveTexture(TextureUnit.Texture10);
+        gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
+        gl.ActiveTexture(TextureUnit.Texture11);
+        gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
+        gl.ActiveTexture(TextureUnit.Texture12);
+        gl.BindTexture(TextureTarget.Texture2D, _lineTexture);
         gl.ActiveTexture(TextureUnit.Texture0);
     }
 
@@ -1769,6 +1811,7 @@ internal sealed class SceneRenderer
 
     private void ResetSurfaceState(GL gl)
     {
+        BindMaterialPreview(gl, null);
         gl.Disable(EnableCap.Blend);
         gl.Disable(EnableCap.CullFace);
         gl.Enable(EnableCap.DepthTest);
@@ -1779,6 +1822,27 @@ internal sealed class SceneRenderer
         gl.Uniform1(_waterPreviewLocation, 0);
         gl.Uniform1(_compiledLightmapModeLocation, 0);
         gl.Disable(EnableCap.PolygonOffsetFill);
+    }
+
+    private void BindMaterialPreview(GL gl, MaterialSource? source)
+    {
+        Vector3 tint = source?.ColorTint ?? Vector3.One;
+        gl.Uniform3(_colorTintLocation, tint.X, tint.Y, tint.Z);
+        gl.ActiveTexture(TextureUnit.Texture10);
+        uint normal = _materialTextures.GetMapTexture(gl, source?.NormalMap);
+        gl.BindTexture(TextureTarget.Texture2D, normal != 0 ? normal : _lineTexture);
+        gl.ActiveTexture(TextureUnit.Texture11);
+        uint specular = _materialTextures.GetMapTexture(gl, source?.SpecularMap);
+        gl.BindTexture(TextureTarget.Texture2D, specular != 0 ? specular : _lineTexture);
+        gl.ActiveTexture(TextureUnit.Texture12);
+        uint detail = _materialTextures.GetMapTexture(gl, source?.DetailMap);
+        gl.BindTexture(TextureTarget.Texture2D, detail != 0 ? detail : _lineTexture);
+        gl.Uniform1(_hasMaterialNormalLocation, normal != 0 ? 1 : 0);
+        gl.Uniform1(_hasMaterialSpecularLocation, specular != 0 ? 1 : 0);
+        gl.Uniform1(_hasMaterialDetailLocation, normal != 0 && detail != 0 ? 1 : 0);
+        var scale = source?.DetailScale ?? Vector2.One;
+        gl.Uniform2(_materialDetailScaleLocation, scale.X, scale.Y);
+        gl.ActiveTexture(TextureUnit.Texture0);
     }
 
     private unsafe void PrepareFramebuffer(GL gl, PixelSize size)
@@ -2002,24 +2066,36 @@ internal sealed class SceneRenderer
             _waterDrawRanges.Add(batch.Material, ranges);
         }
         _surfaceBounds = null;
+        (Vector3 Min, Vector3 Max)? shadowCasterBounds = null;
         _waterMaterialBounds.Clear();
         foreach (var batch in _surfaceBatches)
         {
-            float height = resolveMaterial?.Invoke(batch.Material)?.Ocean?.Height ?? 0;
+            MaterialSource? source = resolveMaterial?.Invoke(batch.Material);
+            float height = source?.Ocean?.Height ?? 0;
             bool water = _waterMaterials.Contains(batch.Material);
             for (int index = batch.Start; index < batch.Start + batch.Count; index++)
             {
                 Vector3 position = data[index].Position;
                 Vector3 extent = new Vector3(height * data[index].Color.X);
-                _surfaceBounds = _surfaceBounds is { } bounds
-                    ? (Vector3.Min(bounds.Min, position - extent), Vector3.Max(bounds.Max, position + extent))
-                    : (position - extent, position + extent);
+                if (source?.IsSky != true && !water)
+                {
+                    _surfaceBounds = _surfaceBounds is { } bounds
+                        ? (Vector3.Min(bounds.Min, position - extent), Vector3.Max(bounds.Max, position + extent))
+                        : (position - extent, position + extent);
+                    if (source?.Surface.HasShadowMapTechnique == true)
+                        shadowCasterBounds = shadowCasterBounds is { } casters
+                            ? (Vector3.Min(casters.Min, position - extent), Vector3.Max(casters.Max, position + extent))
+                            : (position - extent, position + extent);
+                }
                 if (water)
                     _waterMaterialBounds[batch.Material] = _waterMaterialBounds.TryGetValue(batch.Material, out var current)
                         ? (Vector3.Min(current.Min, position - extent), Vector3.Max(current.Max, position + extent))
                         : (position - extent, position + extent);
             }
         }
+        // Non-casting backdrops must not consume the sun map's resolution.
+        // Keep receiver bounds when nothing casts, so an empty shadow map still supplies sunlight.
+        _surfaceBounds = shadowCasterBounds ?? _surfaceBounds;
         fixed (SceneVertex* pointer = data)
             gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(data.Length * sizeof(SceneVertex)), pointer, BufferUsageARB.StaticDraw);
         for (uint attribute = 0; attribute < 4; attribute++)

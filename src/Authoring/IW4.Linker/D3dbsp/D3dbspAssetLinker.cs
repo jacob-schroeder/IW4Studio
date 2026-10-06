@@ -207,9 +207,14 @@ public static class D3dbspAssetLinker
                 .ToDictionary(AssetKey.FromDefinition);
             for (int index = 0; index < renderMaterials.Length; index++)
             {
+                // Custom source materials need not use the retail w/ or wc/ prefixes.
+                // Keep the special 3D default and existing native-name lookup first.
                 if (availableMaterials.TryGetValue(
                     AssetKey.FromDefinition(renderMaterials[index]),
-                    out MaterialAsset? material))
+                    out MaterialAsset? material) ||
+                    clipMaterials[index].Name is { } sourceName && sourceName != "$default" && availableMaterials.TryGetValue(
+                        new AssetKey(new CanonicalAssetFamily(XAssetType.Material), sourceName),
+                        out material))
                 {
                     renderMaterials[index] = material;
                 }

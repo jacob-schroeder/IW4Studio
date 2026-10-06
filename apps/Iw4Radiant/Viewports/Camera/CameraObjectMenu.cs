@@ -158,7 +158,7 @@ internal static class CameraObjectMenu
                  {
                      ("Structural", BrushKind.Structural), ("Detail", BrushKind.Detail),
                      ("Non Collide", BrushKind.NonColliding), ("Weapon Clip", BrushKind.WeaponClip),
-                     ("Breakable glass", BrushKind.BreakableGlass)
+                     ("Ladder", BrushKind.Ladder), ("Breakable glass", BrushKind.BreakableGlass)
                  })
         {
             var entry = new MenuItem { Header = label };

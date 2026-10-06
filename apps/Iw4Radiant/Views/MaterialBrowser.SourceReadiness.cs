@@ -32,7 +32,7 @@ public partial class MaterialBrowser
         ShowSourceButton.IsEnabled = false;
         SourceReadiness.Text = "Checking source…";
         ToolTip.SetTip(SourceReadiness, null);
-        if (ClipBrushMaterial.IsPlayerClip(selected.Name) || CaulkMaterial.IsCaulk(selected.Name))
+        if (ClipBrushMaterial.IsCollisionOnly(selected.Name) || CaulkMaterial.IsCaulk(selected.Name))
         {
             SourceReadiness.Text = "Built in · collision surface";
             return;

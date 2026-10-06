@@ -137,7 +137,7 @@ internal static class OrthographicObjectMenu
                  {
                      ("Structural", BrushKind.Structural), ("Detail", BrushKind.Detail),
                      ("Non Collide", BrushKind.NonColliding), ("Weapon Clip", BrushKind.WeaponClip),
-                     ("Breakable glass", BrushKind.BreakableGlass)
+                     ("Ladder", BrushKind.Ladder), ("Breakable glass", BrushKind.BreakableGlass)
                  })
         {
             var item = new MenuItem { Header = label };

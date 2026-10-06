@@ -56,7 +56,7 @@ public sealed class MaterialSourceCompiler
     {
         string normalized = SourceOutput.NormalizeOwnedAssetName(name.StartsWith(',') ? name[1..] : name, "Material");
         string relativePath = $"materials/{normalized}.json";
-        return Path.Combine(SourceRoot(relativePath, normalized), relativePath);
+        return Path.Combine(SourceRoot(relativePath), relativePath);
     }
 
     public MaterialAsset LoadMaterial(string name) => Load(XAssetType.Material, name,
@@ -93,14 +93,12 @@ public sealed class MaterialSourceCompiler
             normalized => $"shader_bin_ps3/{(kind == MaterialShaderKind.Vertex ? "vertex" : "pixel")}/{Path.ChangeExtension(normalized, ".cg")}.json",
             (normalized, root) => new ShaderExchange().Link(root, normalized, kind));
 
-    private string SourceRoot(string relativePath, string? materialName = null)
+    private string SourceRoot(string relativePath)
     {
         if (_bootstrapDirectory is null || !File.Exists(Path.Combine(_bootstrapDirectory, relativePath)))
             return _sourceDirectory;
-        string sourcePath = Path.Combine(_sourceDirectory, relativePath);
-        // Legacy preview exports lack the native fields required to override bundled materials.
-        return !File.Exists(sourcePath) || materialName is not null && MaterialExchange.IsLegacySource(sourcePath, materialName)
-            ? _bootstrapDirectory : _sourceDirectory;
+        return File.Exists(Path.Combine(_sourceDirectory, relativePath))
+            ? _sourceDirectory : _bootstrapDirectory;
     }
 
     private T Load<T>(XAssetType type, string name, Func<string, string> relativeSourcePath,
@@ -111,7 +109,7 @@ public sealed class MaterialSourceCompiler
         if (_assets.TryGetValue(key, out BaseAsset? existing))
             return (T)existing;
         string relativePath = relativeSourcePath(normalized);
-        string root = SourceRoot(relativePath, type == XAssetType.Material ? normalized : null);
+        string root = SourceRoot(relativePath);
         try
         {
             T asset = read(normalized, root);

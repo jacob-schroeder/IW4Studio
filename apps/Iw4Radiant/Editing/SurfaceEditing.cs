@@ -131,7 +131,7 @@ internal static class SurfaceEditing
         bool IsEligibleBrush(MapBrush brush) => brush.Faces.All(face =>
         {
             if (CaulkMaterial.IsCaulk(face.Material)) return true;
-            if (ClipBrushMaterial.IsPlayerClip(face.Material)) return false;
+            if (ClipBrushMaterial.IsCollisionOnly(face.Material)) return false;
             MaterialSource? material = resolveMaterial(face.Material);
             return material is not null && !material.IsSky && !material.IsWater &&
                 !material.Surface.IsBlended && material.Surface.AlphaTest is null && material.Surface.DepthWrite;

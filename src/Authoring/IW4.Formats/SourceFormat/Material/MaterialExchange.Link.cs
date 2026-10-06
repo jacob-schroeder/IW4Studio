@@ -108,21 +108,6 @@ public sealed partial class MaterialExchange
         return asset;
     }
 
-    internal static bool IsLegacySource(string path, string name)
-    {
-        try
-        {
-            using FileStream stream = File.OpenRead(path);
-            using JsonDocument document = JsonDocument.Parse(stream);
-            return ReadSourceVersion(Object(document.RootElement, "Material"), name) == 1;
-        }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or JsonException)
-        {
-            // Invalid overrides must still reach Link and report their original error.
-            return false;
-        }
-    }
-
     private static int ReadSourceVersion(JsonElement root, string name)
     {
         if (String(root, "_game", "Material") != "iw4" ||

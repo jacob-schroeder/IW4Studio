@@ -1,4 +1,6 @@
 using IW4.Formats.SourceFormat.Material;
+using IW4.Formats.SourceFormat.Techset;
+using IW4.Game.Assets.TechniqueSet;
 using System.Numerics;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Materials;
@@ -64,14 +66,15 @@ internal static class MapSurfaceCompiler
         MapStageLighting stages)
     {
         var shore = new WaterShoreGeometry(document, name => materials.GetValueOrDefault(name));
-        var surfaces = CompileEntity(document.World, materials, shore, stages).ToList();
+        var tints = CompileColorTints(document, materials);
+        var surfaces = CompileEntity(document.World, materials, tints, shore, stages).ToList();
         int index = 0;
         foreach (MapEntity entity in MapCompiler.BrushEntities(document))
         {
             index++;
             if (entity.ClassName != "script_brushmodel") continue;
             int first = surfaces.Count;
-            surfaces.AddRange(CompileEntity(entity, materials, null, stages).Select(surface => surface with
+            surfaces.AddRange(CompileEntity(entity, materials, tints, null, stages).Select(surface => surface with
             {
                 ModelIndex = index, SourceIndex = surface.SourceIndex + first
             }));
@@ -80,12 +83,14 @@ internal static class MapSurfaceCompiler
     }
 
     private static MapRenderSurface[] CompileEntity(MapEntity entity, IReadOnlyDictionary<string, MaterialSource> materials,
-        WaterShoreGeometry? shore, MapStageLighting stages)
+        IReadOnlyDictionary<string, Vector3> tints, WaterShoreGeometry? shore, MapStageLighting stages)
     {
         var surfaces = new List<MapRenderSurface>();
-        foreach (MapPolygon boundary in entity.Brushes.Where(brush => !BrushGlass.IsGlass(brush)).SelectMany(brush => brush.GetPolygons()))
+        foreach (var (brush, contributesToLightGrid) in entity.Brushes.Where(brush => !BrushGlass.IsGlass(brush))
+                     .Select(brush => (brush, BrushLighting.Read(brush))))
+        foreach (MapPolygon boundary in brush.GetPolygons())
         {
-            if (ClipBrushMaterial.IsPlayerClip(boundary.Face.Material) || CaulkMaterial.IsCaulk(boundary.Face.Material)) continue;
+            if (ClipBrushMaterial.IsCollisionOnly(boundary.Face.Material) || CaulkMaterial.IsCaulk(boundary.Face.Material)) continue;
             MaterialSource material = materials[boundary.Face.Material];
             if (!OceanSurfaceGeometry.IsVisibleSurface(boundary, material.IsWater)) continue;
             Vector3 boundaryCenter = boundary.Vertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex) /
@@ -115,10 +120,11 @@ internal static class MapSurfaceCompiler
                     {
                         Vector4 color = ocean is null ? Vector4.One : OceanSurfaceGeometry.VertexColor(boundary, ocean, point, shore);
                         if (material.IsWater && ocean is null) color.W = WaterShoreGeometry.VertexAlpha(point, contacts);
-                        return color;
+                        return TintColor(color, tints.GetValueOrDefault(polygon.Face.Material, Vector3.One));
                     }).ToArray(), surfaces.Count)
                 {
                     Displacement = ocean is not null && OceanSurfaceGeometry.IsTop(boundary) ? ocean.Height : 0,
+                    ContributesToLightGrid = contributesToLightGrid,
                     ReflectionCenter = boundaryCenter,
                     SunPrimaryLightIndex = sunIndex
                 });
@@ -130,19 +136,7 @@ internal static class MapSurfaceCompiler
         MapTerrain[] meshes = entity.Terrains.Select(CompiledTerrain).ToArray();
         var meshIndices = meshes.Select((terrain, index) => (terrain, index: index + surfaces.Count))
             .ToDictionary(pair => pair.terrain, pair => pair.index);
-        // Equal positions on adjoining patches share a normal. Materials/smoothing groups stay independent.
-        var smoothNormals = new Dictionary<(Vector3 Position, string Material, string Smoothing), Vector3>();
-        foreach (MapTerrain terrain in meshes)
-        foreach (var (a, b, c) in terrain.GetTriangles())
-        {
-            Vector3 normal = Vector3.Cross(terrain.Vertices[b] - terrain.Vertices[a], terrain.Vertices[c] - terrain.Vertices[a]);
-            if (normal.LengthSquared() <= 0.00000001f || terrain.Smoothing == "smoothing_hard") continue;
-            foreach (int vertex in new[] { a, b, c })
-            {
-                var key = (terrain.Vertices[vertex], terrain.Material, terrain.Smoothing ?? "smoothing_smooth");
-                smoothNormals[key] = smoothNormals.GetValueOrDefault(key) + normal;
-            }
-        }
+        var terrainNormals = new TerrainNormals(meshes);
         foreach (MapTerrain terrain in meshes)
         foreach (var (a, b, c) in terrain.GetTriangles())
         {
@@ -159,13 +153,13 @@ internal static class MapSurfaceCompiler
                 throw new InvalidDataException($"Terrain '{terrain.Material}' has a degenerate texture projection. Give the triangle distinct texture coordinates.");
             Vector3 tangent = (edgeU * uvV.Y - edgeV * uvU.Y) / determinant;
             Vector3 binormal = (edgeV * uvU.X - edgeU * uvV.X) / determinant;
-            Vector3[] normals = indices.Select(index => terrain.Smoothing == "smoothing_hard" ? normal :
-                Unit(smoothNormals[(terrain.Vertices[index], terrain.Material, terrain.Smoothing ?? "smoothing_smooth")])).ToArray();
+            Vector3[] normals = indices.Select(index => terrainNormals.At(terrain, index, normal)).ToArray();
             surfaces.Add(new(terrain.Material, indices.Select(index => terrain.Vertices[index]).ToArray(), normal, normals,
                 normals.Select(n => Unit(tangent - n * Vector3.Dot(tangent, n))).ToArray(),
                 normals.Select(n => Unit(binormal - n * Vector3.Dot(binormal, n))).ToArray(),
                 indices.Select(index => terrain.TextureCoordinates[index]).ToArray(),
-                indices.Select(index => terrain.Colors[index]).ToArray(), meshIndices[terrain])
+                indices.Select(index => TintColor(terrain.Colors[index],
+                    tints.GetValueOrDefault(terrain.Material, Vector3.One))).ToArray(), meshIndices[terrain])
             {
                 // MapTerrain.LightmapSize is authored world-units-per-secondary-luxel. Preserve it
                 // on every terrain render triangle; brush surfaces intentionally leave this null.
@@ -175,6 +169,46 @@ internal static class MapSurfaceCompiler
         }
         return surfaces.ToArray();
     }
+
+    private static Dictionary<string, Vector3> CompileColorTints(MapDocument document,
+        IReadOnlyDictionary<string, MaterialSource> materials)
+    {
+        var tints = new Dictionary<string, Vector3>(StringComparer.Ordinal);
+        var nativeTint = new Dictionary<(string Root, string TechniqueSet), bool>();
+        var names = document.Brushes.Where(brush => !BrushGlass.IsGlass(brush))
+            .SelectMany(brush => brush.Faces).Select(face => face.Material)
+            .Concat(document.Terrains.Select(terrain => terrain.Material)).Distinct(StringComparer.Ordinal);
+        foreach (string name in names)
+        {
+            if (!materials.TryGetValue(name, out MaterialSource? material) || material.IsSky || material.IsWater ||
+                !material.UsesVertexColor || material.ColorTint == Vector3.One) continue;
+            string root = material.SourceDirectory ?? throw new InvalidDataException(
+                $"Material '{name}' needs its source technique set to compile colorTint.");
+            var key = (root, material.TechniqueSet);
+            if (!nativeTint.TryGetValue(key, out bool bindsTint))
+            {
+                var techset = new TechsetExchange().Link(root, material.TechniqueSet);
+                // Native material-name hash for colorTint. A bound constant already
+                // reaches the shader; multiplying the vertices would apply it twice.
+                bindsTint = techset.TechniqueSlots.SelectMany(slot => slot.Technique?.Passes ?? [])
+                    .SelectMany(pass => pass.Args).Any(argument =>
+                        argument.Type is MaterialShaderArgumentType.MaterialVertexConst or MaterialShaderArgumentType.MaterialPixelConst &&
+                        argument.MaterialNameHash == 0xb60c3b3a);
+                nativeTint.Add(key, bindsTint);
+            }
+            if (bindsTint) continue;
+            Vector3 tint = material.ColorTint;
+            if (!BrushGeometry.IsFinite(tint) || tint.X < 0 || tint.X > 1 || tint.Y < 0 || tint.Y > 1 || tint.Z < 0 || tint.Z > 1)
+                throw new NotSupportedException($"Material '{name}' colorTint must be between 0 and 1 for native vertex colors.");
+            tints.Add(name, tint);
+        }
+        return tints;
+    }
+
+    // Native lm/lm_sun shaders multiply colorMap by Color0 before squaring RGB
+    // for lighting. Keep tint in the authored domain and preserve terrain alpha.
+    private static Vector4 TintColor(Vector4 color, Vector3 tint) =>
+        new(color.X * tint.X, color.Y * tint.Y, color.Z * tint.Z, color.W);
 
     private static Vector3 Unit(Vector3 vector) => BrushGeometry.IsFinite(vector) && vector.LengthSquared() > 0.00000001f
         ? Vector3.Normalize(vector)

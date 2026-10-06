@@ -20,7 +20,7 @@ internal sealed class MapFiltersWindow : Window
         [
             (EditorFilter.Structural, "Structural brushes"), (EditorFilter.Detail, "Detail brushes"),
             (EditorFilter.NonColliding, "Non-colliding brushes"), (EditorFilter.WeaponClip, "Weapon clip brushes"),
-            (EditorFilter.PlayerClip, "Player clip brushes"), (EditorFilter.Terrain, "Terrain"),
+            (EditorFilter.PlayerClip, "Player clip and ladder brushes"), (EditorFilter.Terrain, "Terrain"),
             (EditorFilter.Curves, "Curves and patches"), (EditorFilter.Models, "Models"),
             (EditorFilter.Prefabs, "Prefabs"), (EditorFilter.Lights, "Lights"),
             (EditorFilter.BrushEntities, "Brush entities"), (EditorFilter.OtherEntities, "Other entities")

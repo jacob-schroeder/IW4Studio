@@ -11,6 +11,14 @@ in vec4 vOceanSurface;
 #include "ocean-surface.hlsl"
 
 uniform sampler2D uTexture;
+uniform vec3 uColorTint;
+uniform sampler2D uMaterialNormalMap;
+uniform sampler2D uMaterialSpecularMap;
+uniform sampler2D uMaterialDetailMap;
+uniform bool uHasMaterialNormalMap;
+uniform bool uHasMaterialSpecularMap;
+uniform bool uHasMaterialDetailMap;
+uniform vec2 uMaterialDetailScale;
 uniform sampler2D uCompiledDiffuseLightmap;
 uniform sampler2D uCompiledSunVisibility;
 uniform int uCompiledLightmapMode;
@@ -71,23 +79,37 @@ vec3 previewFog(vec3 color)
     return mix(color, uFogColor, fog);
 }
 
+float shadowAxisWeight(int offset, float phase)
+{
+    // Bilinearly blend neighboring 3x3 PCF results using their shared 4x4
+    // footprint. Only the entering and leaving edge taps change weight.
+    return offset == -1 ? 1.0 - phase : offset == 2 ? phase : 1.0;
+}
+
 float sunVisibility(vec3 coordinate, vec2 depthGradient)
 {
-    // Never illuminate a receiver outside the shadow map's covered world bounds.
-    if (any(lessThan(coordinate, vec3(0.0))) || any(greaterThan(coordinate, vec3(1.0))))
-        return 0.0;
+    // The map encloses casters, not every receiver. Outside its XY footprint
+    // or in front of its nearest depth, no caster can block the sun.
+    if (any(lessThan(coordinate.xy, vec2(0.0))) || any(greaterThan(coordinate.xy, vec2(1.0))) ||
+        coordinate.z <= 0.0)
+        return 1.0;
     ivec2 size = textureSize(uSunShadow, 0);
-    ivec2 pixel = ivec2(floor(coordinate.xy * vec2(size)));
+    vec2 samplePosition = coordinate.xy * vec2(size) - 0.5;
+    ivec2 pixel = ivec2(floor(samplePosition));
+    vec2 phase = fract(samplePosition);
     float reference = coordinate.z - 0.00001;
     float visible = 0.0;
-    for (int y = -1; y <= 1; y++)
-    for (int x = -1; x <= 1; x++)
+    for (int y = -1; y <= 2; y++)
+    for (int x = -1; x <= 2; x++)
     {
-        ivec2 samplePixel = clamp(pixel + ivec2(x, y), ivec2(0), size - ivec2(1));
+        ivec2 tapPixel = pixel + ivec2(x, y);
+        float weight = shadowAxisWeight(x, phase.x) * shadowAxisWeight(y, phase.y);
+        ivec2 samplePixel = clamp(tapPixel, ivec2(0), size - ivec2(1));
         // Compare at this tap's position on the receiving triangle, not the center pixel's depth.
         vec2 offset = (vec2(samplePixel) + 0.5) / vec2(size) - coordinate.xy;
         float receiverDepth = reference + dot(depthGradient, offset);
-        visible += receiverDepth <= texelFetch(uSunShadow, samplePixel, 0).r ? 1.0 : 0.0;
+        float casterDepth = texelFetch(uSunShadow, samplePixel, 0).r;
+        visible += (casterDepth >= 1.0 || receiverDepth <= casterDepth ? 1.0 : 0.0) * weight;
     }
     return visible / 9.0;
 }
@@ -121,16 +143,20 @@ float shadowVisibility(int lightIndex, vec3 fromLight, float radius, float diffu
     int tile = lightIndex * 6 + face;
     ivec2 first = ivec2(tile % uShadowGrid.x, tile / uShadowGrid.x) * uShadowTileSize;
     ivec2 last = first + ivec2(uShadowTileSize - 1);
-    ivec2 pixel = first + ivec2(floor(uv * float(uShadowTileSize)));
+    vec2 samplePosition = vec2(first) + uv * float(uShadowTileSize) - 0.5;
+    ivec2 pixel = ivec2(floor(samplePosition));
+    vec2 phase = fract(samplePosition);
     float radialDepth = length(fromLight) / radius;
     float bias = max(0.0005, 0.002 * (1.0 - diffuse));
     float planeDistance = dot(receiverPlane, fromLight);
     float visible = 0.0;
-    for (int y = -1; y <= 1; y++)
-    for (int x = -1; x <= 1; x++)
+    for (int y = -1; y <= 2; y++)
+    for (int x = -1; x <= 2; x++)
     {
         // Clamp PCF taps to this face so adjacent lights cannot bleed together.
-        ivec2 samplePixel = clamp(pixel + ivec2(x, y), first, last);
+        ivec2 tapPixel = pixel + ivec2(x, y);
+        float weight = shadowAxisWeight(x, phase.x) * shadowAxisWeight(y, phase.y);
+        ivec2 samplePixel = clamp(tapPixel, first, last);
         vec2 tap = (vec2(samplePixel - first) + 0.5) / float(uShadowTileSize) * 2.0 - 1.0;
         vec3 ray;
         if (face == 0) ray = vec3(1.0, -tap.y, -tap.x);
@@ -145,7 +171,7 @@ float shadowVisibility(int lightIndex, vec3 fromLight, float radius, float diffu
         float receiverDepth = radialDepth;
         if (abs(denominator) > 1e-20 && planeDistance / denominator > 0.0)
             receiverDepth = planeDistance / denominator * length(ray) / radius;
-        visible += receiverDepth - bias <= texelFetch(uShadowAtlas, samplePixel, 0).r ? 1.0 : 0.0;
+        visible += (receiverDepth - bias <= texelFetch(uShadowAtlas, samplePixel, 0).r ? 1.0 : 0.0) * weight;
     }
     return visible / 9.0;
 }
@@ -154,6 +180,33 @@ float waterHeight(vec2 uv)
 {
     return texture(uWaterHeight, uv).r + 0.60009766 * texture(uWaterHeight, uv * 3.7).r
         + 0.36010742 * texture(uWaterHeight, uv * 13.69).r;
+}
+
+vec3 materialNormal()
+{
+    vec3 geometric = normalize(vNormal);
+    if (!gl_FrontFacing) geometric = -geometric;
+    if (!uHasMaterialNormalMap) return geometric;
+    // Match the existing IW4.Render.OpenGl editor preview's DXT5nm-style AG
+    // decode. The recovered PS3 fragment program's composition is unavailable.
+    vec4 encoded = texture(uMaterialNormalMap, vTexCoord);
+    vec2 xy = vec2(encoded.a, encoded.g) * 2.0 - 1.0;
+    if (uHasMaterialDetailMap)
+    {
+        vec4 detail = texture(uMaterialDetailMap, vTexCoord * uMaterialDetailScale);
+        xy += vec2(detail.a, detail.g) * 2.0 - 1.0;
+    }
+    vec3 mapped = normalize(vec3(xy, sqrt(max(1.0 - dot(xy, xy), 0.0))));
+    vec3 dp1 = dFdx(vPosition), dp2 = dFdy(vPosition);
+    vec2 duv1 = dFdx(vTexCoord), duv2 = dFdy(vTexCoord);
+    vec3 dp2Perp = cross(dp2, geometric), dp1Perp = cross(geometric, dp1);
+    vec3 tangent = dp2Perp * duv1.x + dp1Perp * duv2.x;
+    vec3 bitangent = dp2Perp * duv1.y + dp1Perp * duv2.y;
+    float maximumLength = max(dot(tangent, tangent), dot(bitangent, bitangent));
+    if (maximumLength <= 0.00000001) return geometric;
+    float inverseLength = inversesqrt(maximumLength);
+    return normalize(tangent * (mapped.x * inverseLength) +
+        bitangent * (mapped.y * inverseLength) + geometric * mapped.z);
 }
 
 void main()
@@ -170,6 +223,9 @@ void main()
             ? -receiverPlane.xy / receiverPlane.z : vec2(0.0);
         localReceiverPlane = cross(dFdx(vPosition), dFdy(vPosition));
     }
+    // Alpha and cubic clipping may discard neighboring fragments; resolve the
+    // tangent frame while derivatives are still defined for the whole quad.
+    vec3 previewNormal = materialNormal();
     if (uCubicClip && any(greaterThan(abs(vPosition - uCubicClipCenter), vec3(uCubicClipDistance))))
         discard;
     vec4 surface = uTextured && uIgnoreVertexColor ? vec4(1.0) : vColor;
@@ -230,19 +286,28 @@ void main()
     }
     else if (uTextured)
         surface *= texture(uTexture, vTexCoord);
+    // Generic editor tint preview; this does not execute the native material technique.
+    surface.rgb *= uColorTint;
     applyMaterialAlpha(surface.a);
     vec3 color = uLinearCapture ? surface.rgb * surface.rgb : surface.rgb;
+    vec3 normal = previewNormal;
+    vec3 viewDirection = normalize(uEye - vPosition);
+    float specularMap = uHasMaterialSpecularMap ? texture(uMaterialSpecularMap, vTexCoord).r : 0.0;
+    vec3 specularLighting = vec3(0.0);
     if (uLit)
     {
-        vec3 normal = normalize(vNormal);
-        if (!gl_FrontFacing)
-            normal = -normal;
         vec3 illumination = vec3(0.25 * uSunAmbientScale);
         if (uSunEnabled)
         {
             float diffuse = max(dot(normal, uSunDirection), 0.0);
             if (diffuse > 0.0)
-                illumination += uSunColor * diffuse * sunVisibility(sunCoordinate, sunDepthGradient);
+            {
+                float visibility = sunVisibility(sunCoordinate, sunDepthGradient);
+                illumination += uSunColor * diffuse * visibility;
+                // Broad editor highlight; the native exponent is not recovered.
+                vec3 halfDirection = normalize(uSunDirection + viewDirection);
+                specularLighting += uSunColor * pow(max(dot(normal, halfDirection), 0.0), 32.0) * visibility;
+            }
         }
         for (int i = 0; i < uLightCount; i++)
         {
@@ -288,8 +353,12 @@ void main()
                 continue;
             float visibility = shadowVisibility(i, -toLight, lightPositionRadius.w, diffuse, localReceiverPlane);
             illumination += lightColorExponent.rgb * attenuation * diffuse * visibility;
+            vec3 halfDirection = normalize(toLight / max(distanceToLight, 0.0001) + viewDirection);
+            specularLighting += lightColorExponent.rgb * attenuation *
+                pow(max(dot(normal, halfDirection), 0.0), 32.0) * visibility;
         }
         color *= illumination;
+        if (uHasMaterialSpecularMap) color += specularMap * specularLighting;
     }
     if (uCompiledLightmapMode == 3)
     {
@@ -298,7 +367,7 @@ void main()
         vec3 direct = vec3(0.0);
         if (uCompiledPrimaryType == 1)
         {
-            float incidence = max(dot(normalize(vNormal), uCompiledSunDirection), 0.0);
+            float incidence = max(dot(normal, uCompiledSunDirection), 0.0);
             direct = uCompiledSunColorLinear * incidence;
         }
         else if (uCompiledPrimaryType == 2 || uCompiledPrimaryType == 3)
@@ -308,7 +377,7 @@ void main()
             if (distanceToLight < uCompiledLocalPositionRadius.w)
             {
                 vec3 toLightDirection = toLight / max(distanceToLight, 0.0001);
-                float incidence = max(dot(normalize(vNormal), toLightDirection), 0.0);
+                float incidence = max(dot(normal, toLightDirection), 0.0);
                 float falloff = texture(uPrimaryFalloff,
                     vec2(clamp(distanceToLight / uCompiledLocalPositionRadius.w, 0.0, 1.0), 0.5)).r;
                 float cone = 1.0;

@@ -42,7 +42,7 @@ internal static class GeometryEditing
         if ((uint)firstEdge >= (uint)first.Length || (uint)secondEdge >= (uint)second.Length)
             throw new ArgumentException("Choose one boundary edge on each selected surface.");
         string material = first[firstEdge].Material;
-        if (CaulkMaterial.IsCaulk(material) || ClipBrushMaterial.IsPlayerClip(material))
+        if (CaulkMaterial.IsCaulk(material) || ClipBrushMaterial.IsCollisionOnly(material))
             throw new ArgumentException("The first surface must have a visible material. Choose a textured terrain or brush face first.");
         MapTerrain bridge = TerrainBridge.Create(first[firstEdge], second[secondEdge], rows, rise);
         MapSurfaceCompiler.ValidateTerrain(bridge);
@@ -247,7 +247,7 @@ internal static class GeometryEditing
         if (session.Selection.Count != 1 || !Equals(session.Selection.Active, selected) ||
             !session.Document.World.Brushes.Contains(selected.Brush) || !selected.Brush.Faces.Contains(selected.Face))
             throw new ArgumentException("Select one face of a world brush to convert to terrain.");
-        if (CaulkMaterial.IsCaulk(selected.Face.Material) || ClipBrushMaterial.IsPlayerClip(selected.Face.Material))
+        if (CaulkMaterial.IsCaulk(selected.Face.Material) || ClipBrushMaterial.IsCollisionOnly(selected.Face.Material))
             throw new ArgumentException("Choose a visible, textured brush face to convert.");
         MapPolygon polygon = selected.Brush.GetPolygons().FirstOrDefault(item => ReferenceEquals(item.Face, selected.Face))
             ?? throw new ArgumentException("The selected brush face has no usable boundary.");

@@ -50,7 +50,7 @@ internal sealed class EditorVisibility
         {
             category = item switch
             {
-                MapBrush brush when brush.Faces.Count > 0 && brush.Faces.All(face => Materials.ClipBrushMaterial.IsPlayerClip(face.Material)) => EditorFilter.PlayerClip,
+                MapBrush brush when brush.Faces.Count > 0 && brush.Faces.All(face => Materials.ClipBrushMaterial.IsCollisionOnly(face.Material)) => EditorFilter.PlayerClip,
                 MapBrush brush => BrushContents.Read(brush) switch
                 {
                     BrushKind.Detail => EditorFilter.Detail,

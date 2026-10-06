@@ -36,6 +36,32 @@ using D3dbspLinker.Inspection;
 
 namespace D3dbspLinker.Conversion;
 
+public sealed record FastFileDependencyPreflightRequest
+{
+    public required string AssetLibraryDirectory { get; init; }
+    public required string BootstrapDirectory { get; init; }
+    public IReadOnlyCollection<string> MaterialNames { get; init; } = [];
+    public IReadOnlyCollection<string> ModelNames { get; init; } = [];
+    public IReadOnlyCollection<string> PhysPresetNames { get; init; } = [];
+    public IReadOnlyCollection<string> FxNames { get; init; } = [];
+    public IReadOnlyCollection<string> SoundNames { get; init; } = [];
+    public IReadOnlyCollection<string> XAnimNames { get; init; } = [];
+    public IReadOnlyDictionary<string, string> RawFilePaths { get; init; } = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> SoundDefinitionPaths { get; init; } = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> WorldProperties { get; init; } = new Dictionary<string, string>();
+    public IReadOnlyCollection<string> AuthoredWaterNames { get; init; } = [];
+    public IReadOnlyCollection<string> TurretWeaponNames { get; init; } = [];
+    public string? CharacterAssetsDirectory { get; init; }
+    public CancellationToken CancellationToken { get; init; }
+}
+
+/// <summary>Loads the disk asset graph before map geometry and lighting are compiled.</summary>
+public static class FastFileDependencyPreflight
+{
+    public static void Validate(FastFileDependencyPreflightRequest request) =>
+        FastFileConverter.ValidateDiskDependencies(request);
+}
+
 internal static partial class FastFileConverter
 {
     // Exact PS3 FFA startup closure for the us_army/opforce_airborne factions.
@@ -95,6 +121,122 @@ internal static partial class FastFileConverter
         "com_plasticcase_rangers",
         "com_plasticcase_ussr"
     ];
+
+    internal static void ValidateDiskDependencies(FastFileDependencyPreflightRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        Ps3MapBootstrap.Load(request.BootstrapDirectory);
+        var materials = new MaterialSourceCompiler(request.AssetLibraryDirectory, request.BootstrapDirectory);
+        var models = new ModelSourceCompiler(request.AssetLibraryDirectory, materials, request.BootstrapDirectory);
+        var bootstrapMaterials = new MaterialSourceCompiler(request.BootstrapDirectory);
+        var bootstrapModels = new ModelSourceCompiler(request.BootstrapDirectory, bootstrapMaterials);
+        CancellationToken cancellationToken = request.CancellationToken;
+
+        foreach (string name in BootstrapXModelNames)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            bootstrapModels.LoadModel(name);
+        }
+        foreach (string name in Ps3MapBootstrap.FactionMaterials)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            bootstrapMaterials.LoadMaterial(name);
+        }
+        new LightDefExchange().LinkPointLinear(request.BootstrapDirectory, bootstrapMaterials.LoadImage);
+
+        foreach (string name in request.ModelNames.Distinct(StringComparer.Ordinal))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            models.LoadModel(name);
+        }
+        foreach (string name in request.PhysPresetNames.Distinct(StringComparer.Ordinal))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            models.LoadPhysPreset(name);
+        }
+        foreach (string name in request.MaterialNames.Distinct(StringComparer.Ordinal)
+                     .Where(name => !WaterMaterialAuthoring.IsAuthoredMaterialName(name)))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            materials.LoadMaterial(name);
+        }
+
+        IReadOnlyDictionary<string, WaterMaterialDefinition> waterDefinitions =
+            WaterMaterialAuthoring.ReadDefinitions(request.WorldProperties);
+        foreach (string name in request.AuthoredWaterNames.Distinct(StringComparer.Ordinal))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!waterDefinitions.TryGetValue(name, out WaterMaterialDefinition? definition))
+                throw new InvalidDataException($"Authored water material '{name}' has no saved world definition.");
+            MaterialAsset source = materials.LoadMaterial(definition.SourceMaterial);
+            GfxImageAsset? foam = definition.Ocean is null ? null :
+                materials.LoadImage(WaterMaterialAuthoring.OceanFoamImageName);
+            WaterMaterialAuthoring.CreateMaterial(source, definition, out _, foam);
+        }
+
+        MapFactionSettings factions = MapFactionAuthoring.Read(request.WorldProperties);
+        foreach (FactionAppearance appearance in new[] { factions.AlliesAssaultA, factions.AxisAssaultA }
+                     .OfType<FactionAppearance>().Where(appearance => appearance.CustomAssetFolder is not null)
+                     .DistinctBy(appearance => appearance.CustomAssetFolder))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (request.CharacterAssetsDirectory is null)
+                throw new InvalidDataException("Custom faction models require the map's characters folder.");
+            string root = Path.Combine(request.CharacterAssetsDirectory, appearance.CustomAssetFolder ??
+                throw new InvalidDataException("The custom faction appearance has no asset folder."));
+            var characterMaterials = new MaterialSourceCompiler(root, request.BootstrapDirectory);
+            var characterModels = new ModelSourceCompiler(root, characterMaterials, request.BootstrapDirectory);
+            CharacterModelBudget.ValidateBody(characterModels.LoadModel(appearance.Body));
+            CharacterModelBudget.ValidateHands(characterModels.LoadModel(appearance.ViewHands));
+        }
+
+        foreach ((string name, string path) in request.RawFilePaths)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try { CreateRawFile(name, path); }
+            catch (IOException exception)
+            {
+                throw new InvalidDataException($"Cannot load RawFile '{name}' from '{path}': {exception.Message}", exception);
+            }
+        }
+        string[] turretFxNames = [];
+        string[] turretSoundNames = [];
+        if (request.TurretWeaponNames.Count != 0)
+            LoadDiskTurretWeapons(request.TurretWeaponNames.Distinct(StringComparer.Ordinal).ToArray(),
+                request.AssetLibraryDirectory, request.BootstrapDirectory, materials,
+                out _, out turretFxNames, out turretSoundNames);
+        cancellationToken.ThrowIfCancellationRequested();
+        BaseAsset[] emitterAssets = LoadRawEmitterAssets(request.AssetLibraryDirectory,
+            request.FxNames.Concat(turretFxNames).Distinct(StringComparer.Ordinal).ToArray(),
+            request.SoundNames.Concat(turretSoundNames).Distinct(StringComparer.Ordinal).ToArray(),
+            request.SoundDefinitionPaths, new SoundFilePackager(), request.BootstrapDirectory);
+        foreach (string name in emitterAssets.OfType<FxEffectDefAsset>().SelectMany(effect => effect.ElemDefs)
+                     .SelectMany(element => element.VisualArray.Prepend(element.Visuals))
+                     .Select(visual => visual.Model?.Model?.Name).OfType<string>()
+                     .Distinct(StringComparer.Ordinal))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            models.LoadModel(name);
+        }
+        foreach (string name in emitterAssets.OfType<FxEffectDefAsset>().SelectMany(effect => effect.ElemDefs)
+                     .SelectMany(element => element.VisualArray.Prepend(element.Visuals)
+                         .Select(visual => visual.Material?.Material)
+                         .Concat(element.MarkVisualArray.SelectMany(mark =>
+                             new[] { mark.Material0, mark.Material1 })))
+                     .OfType<MaterialAsset>().Select(material => material.Info.Name)
+                     .OfType<string>().Distinct(StringComparer.Ordinal))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            materials.LoadMaterial(name);
+        }
+        foreach (string name in request.XAnimNames.Distinct(StringComparer.Ordinal))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            new XAnimNativeExchange().Link(
+                File.Exists(Path.Combine(request.AssetLibraryDirectory, "xanim_native", name + ".json"))
+                    ? request.AssetLibraryDirectory : request.BootstrapDirectory, name);
+        }
+    }
 
     public static void ToD3dbsp(string input, string output)
     {

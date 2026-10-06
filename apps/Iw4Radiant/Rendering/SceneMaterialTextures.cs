@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using System.Runtime.InteropServices;
+using IW4.Game.Assets.Material;
 using Iw4Radiant.Materials;
 using Silk.NET.OpenGL;
 using PixelFormat = Avalonia.Platform.PixelFormat;
@@ -46,7 +47,7 @@ internal sealed class SceneMaterialTextures
     internal void RemoveUnused(GL gl, IEnumerable<string> materials)
     {
         var used = materials.ToHashSet(StringComparer.Ordinal);
-        foreach (string material in _textures.Keys.Where(key => !used.Contains(key)).ToArray())
+        foreach (string material in _textures.Keys.Where(key => !used.Contains(key.Split('\0')[0])).ToArray())
         {
             uint texture = _textures[material];
             if (texture != 0 && texture != _fallbackTexture)
@@ -54,7 +55,7 @@ internal sealed class SceneMaterialTextures
             _textures.Remove(material);
             _failures.Remove(material);
         }
-        foreach (string material in _pending.Keys.Where(key => !used.Contains(key)).ToArray())
+        foreach (string material in _pending.Keys.Where(key => !used.Contains(key.Split('\0')[0])).ToArray())
             _pending.Remove(material);
     }
 
@@ -115,6 +116,13 @@ internal sealed class SceneMaterialTextures
         return texture;
     }
 
+    internal uint GetMapTexture(GL gl, MaterialSource? image)
+    {
+        if (image is null) return 0;
+        uint texture = GetTexture(gl, image.Name, _ => image);
+        return texture == _fallbackTexture ? 0 : texture;
+    }
+
     internal unsafe string? UploadReady(GL gl)
     {
         // Decode and upload one image at a time so ready RGBA buffers cannot accumulate.
@@ -131,10 +139,11 @@ internal sealed class SceneMaterialTextures
         string material = _decodingMaterial;
         _decode = null;
         _decodingMaterial = "";
+        _pending.TryGetValue(material, out MaterialSource? source);
         bool current = _decodeRevision == _revision &&
-            _pending.TryGetValue(material, out var source) && ReferenceEquals(source, _decodingSource);
+            source is not null && ReferenceEquals(source, _decodingSource);
         _decodingSource = null;
-        if (!current)
+        if (!current || source is null)
         {
             _ = ready.Exception;
             return null;
@@ -152,11 +161,35 @@ internal sealed class SceneMaterialTextures
             fixed (byte* address = pixels)
                 gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba8, (uint)size.Width, (uint)size.Height,
                     0, Silk.NET.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, address);
-            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
-            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
-            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
-            gl.GenerateMipmap(TextureTarget.Texture2D);
+            if (material.Contains('\0'))
+            {
+                MaterialSamplerState state = source.SamplerState;
+                bool nearest = (state & MaterialSamplerState.FilterMask) is
+                    MaterialSamplerState.FilterNearest or MaterialSamplerState.FilterDisabled;
+                MaterialSamplerState mip = state & MaterialSamplerState.MipMapMask;
+                TextureMinFilter minFilter = mip switch
+                {
+                    MaterialSamplerState.MipMapNearest => nearest ? TextureMinFilter.NearestMipmapNearest : TextureMinFilter.LinearMipmapNearest,
+                    MaterialSamplerState.MipMapLinear => nearest ? TextureMinFilter.NearestMipmapLinear : TextureMinFilter.LinearMipmapLinear,
+                    _ => nearest ? TextureMinFilter.Nearest : TextureMinFilter.Linear
+                };
+                gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)minFilter);
+                gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter,
+                    (int)(nearest ? TextureMagFilter.Nearest : TextureMagFilter.Linear));
+                gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS,
+                    (int)((state & MaterialSamplerState.ClampU) != 0 ? TextureWrapMode.ClampToEdge : TextureWrapMode.Repeat));
+                gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT,
+                    (int)((state & MaterialSamplerState.ClampV) != 0 ? TextureWrapMode.ClampToEdge : TextureWrapMode.Repeat));
+                if (mip != MaterialSamplerState.MipMapDisabled) gl.GenerateMipmap(TextureTarget.Texture2D);
+            }
+            else
+            {
+                gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
+                gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+                gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+                gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+                gl.GenerateMipmap(TextureTarget.Texture2D);
+            }
         }
         catch (Exception exception) when (SceneRenderer.IsRenderException(exception) ||
             exception is InvalidDataException or UnauthorizedAccessException)

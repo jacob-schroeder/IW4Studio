@@ -198,6 +198,19 @@ public partial class SelectionInspector : UserControl
         };
         EntityList.SelectionChanged += (_, _) => SelectEntity(session, dialogs, finishGestures);
         ApplyBoundsButton.Click += async (_, _) => await ApplyBoundsAsync(session, dialogs, finishGestures);
+        BrushLightingValue.SelectionChanged += (_, _) =>
+        {
+            if (_updating || dialogs.BlocksInput || BrushLightingValue.SelectedIndex is not (0 or 1)) return;
+            bool enabled = BrushLightingValue.SelectedIndex == 1;
+            finishGestures();
+            MapBrush[] brushes = SelectedBrushes(session)
+                .Where(brush => ReadBrushLighting(brush) != enabled).ToArray();
+            if (brushes.Length == 0) return;
+            session.Edit(() =>
+            {
+                foreach (MapBrush brush in brushes) BrushLighting.Set(brush, enabled);
+            });
+        };
         ApplyPropertiesButton.Click += async (_, _) => await ApplyPropertiesAsync(session, dialogs, finishGestures);
         RevertBoundsButton.Click += (_, _) =>
         {
@@ -236,6 +249,7 @@ public partial class SelectionInspector : UserControl
             foreach (TextBox box in BoundsBoxes()) box.IsReadOnly = !wholeBrush;
             var selectionBounds = session.SelectionBounds;
             if (selectionBounds is null || changed || !BoundsInputFocused()) ShowBounds(selectionBounds);
+            ShowBrushLighting(session);
             ApplyPropertiesButton.IsEnabled = RevertPropertiesButton.IsEnabled = entity is not null;
             PropertiesBox.IsReadOnly = entity is null;
             if (entityChanged || !PropertiesBox.IsKeyboardFocusWithin)
@@ -311,6 +325,38 @@ public partial class SelectionInspector : UserControl
             Skies.RefreshSelection(session);
         }
         finally { _updating = false; }
+    }
+
+    private static MapBrush[] SelectedBrushes(EditorSession session) =>
+        session.Selection.Count == 0 || session.Selection.Items.Any(item => EditorSelection.Owner(item) is not MapBrush)
+            ? []
+            : session.Selection.Items.Select(EditorSelection.Owner).OfType<MapBrush>().Distinct().ToArray();
+
+    private static bool? ReadBrushLighting(MapBrush brush)
+    {
+        try { return BrushLighting.Read(brush); }
+        catch (InvalidDataException) { return null; }
+    }
+
+    private void ShowBrushLighting(EditorSession session)
+    {
+        MapBrush[] brushes = SelectedBrushes(session);
+        BrushLightingFields.IsVisible = brushes.Length != 0;
+        if (brushes.Length == 0)
+        {
+            BrushLightingValue.SelectedIndex = -1;
+            BrushLightingMixedHint.IsVisible = false;
+            return;
+        }
+
+        bool?[] values = brushes.Select(ReadBrushLighting).ToArray();
+        bool invalid = values.Any(value => value is null);
+        bool unresolved = invalid || values.Skip(1).Any(value => value != values[0]);
+        BrushLightingValue.SelectedIndex = unresolved ? -1 : values[0] == true ? 1 : 0;
+        BrushLightingMixedHint.Text = invalid
+            ? "Invalid lighting attribute · choose 0 or 1 to replace it on selected brushes."
+            : "Mixed values · choose 0 or 1 to apply to all selected brushes.";
+        BrushLightingMixedHint.IsVisible = unresolved;
     }
 
     private void ShowRuntimePhysics(EditorSession session, MapEntity? entity)

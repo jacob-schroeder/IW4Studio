@@ -368,6 +368,11 @@ internal static class D3dbspGfxCodec
             throw new InvalidDataException(
                 $"The render static-model count exceeds the IW4 ushort range of {ushort.MaxValue}.");
         }
+        if (staticModelCount > GfxAabbTree.MaxIndexCount)
+        {
+            throw new InvalidDataException(
+                $"The canonical render AABB has {staticModelCount} static models; the PS3 SPU index scratch supports at most {GfxAabbTree.MaxIndexCount}.");
+        }
 
         var staticModelIndices = new ushort[staticModelCount];
         var shadowStaticModelIndices = Enumerable.Range(0, primaryLightCount)
@@ -423,6 +428,22 @@ internal static class D3dbspGfxCodec
                 world,
                 surfaceCount,
                 reflectionProbeImages.Count);
+        if (staticSurfaceCount > GfxAabbTree.MaxIndexCount)
+        {
+            CoalesceStaticWorldSurfaces(
+                staticSurfaceStart,
+                ref staticSurfaceCount,
+                ref surfaceCount,
+                ref models,
+                ref surfaces,
+                ref surfaceBounds,
+                ref outputIndices);
+        }
+        if (staticSurfaceCount > GfxAabbTree.MaxIndexCount)
+        {
+            throw new InvalidDataException(
+                $"The canonical render AABB still has {staticSurfaceCount} world surfaces after compatible draw coalescing; the PS3 SPU index scratch supports at most {GfxAabbTree.MaxIndexCount}.");
+        }
         ushort[] sortedSurfaceIndices = Enumerable.Range(
                 staticSurfaceStart,
                 staticSurfaceCount)
@@ -679,6 +700,154 @@ internal static class D3dbspGfxCodec
             // Native rejects draw-route publication when this byte capacity is zero.
             FragmentProgramUploadCapacity = ps3FragmentProgramUploadCapacity
         };
+    }
+
+    private static void CoalesceStaticWorldSurfaces(
+        int staticSurfaceStart,
+        ref int staticSurfaceCount,
+        ref int surfaceCount,
+        ref IReadOnlyList<GfxBrushModel> models,
+        ref GfxSurface[] surfaces,
+        ref GfxSurfaceBounds[] surfaceBounds,
+        ref List<ushort> outputIndices)
+    {
+        int staticSurfaceEnd = checked(staticSurfaceStart + staticSurfaceCount);
+        var claimedSurfaces = new bool[surfaceCount];
+        for (int index = staticSurfaceStart; index < staticSurfaceEnd; index++)
+            claimedSurfaces[index] = true;
+        for (int modelIndex = 1; modelIndex < models.Count; modelIndex++)
+        {
+            GfxBrushModel model = models[modelIndex];
+            if (model.SurfaceCount == 0)
+                continue;
+            int end = checked(model.StartSurfIndex + model.SurfaceCount);
+            for (int index = model.StartSurfIndex; index < end; index++)
+            {
+                if (claimedSurfaces[index])
+                {
+                    throw new InvalidDataException(
+                        $"Render brush model {modelIndex} overlaps another model at surface {index}; world-surface coalescing requires disjoint model ranges.");
+                }
+                claimedSurfaces[index] = true;
+            }
+        }
+
+        var coalescedSurfaces = new List<GfxSurface>(surfaceCount);
+        var coalescedBounds = new List<GfxSurfaceBounds>(surfaceCount);
+        var coalescedIndices = new List<ushort>(outputIndices.Count);
+        var oldToNew = new int[surfaceCount];
+        int newStaticSurfaceCount = 0;
+        for (int first = 0; first < surfaceCount;)
+        {
+            GfxSurface original = surfaces[first];
+            SrfTriangles originalTriangles = original.Triangles;
+            bool isWorldSurface = first >= staticSurfaceStart && first < staticSurfaceEnd;
+            int end = first + 1;
+            int baseVertex = originalTriangles.BaseVertex;
+            int vertexEnd = checked(baseVertex + originalTriangles.VertexCount);
+            int triangleCount = originalTriangles.TriCount;
+            while (isWorldSurface && end < staticSurfaceEnd)
+            {
+                GfxSurface candidate = surfaces[end];
+                SrfTriangles candidateTriangles = candidate.Triangles;
+                int candidateBase = candidateTriangles.BaseVertex;
+                int candidateEnd = checked(candidateBase + candidateTriangles.VertexCount);
+                int mergedBase = Math.Min(baseVertex, candidateBase);
+                int mergedEnd = Math.Max(vertexEnd, candidateEnd);
+                // Keep the merged draw exportable to v22's ushort index count.
+                if (!ReferenceEquals(candidate.Material, original.Material) ||
+                    candidate.LightmapIndex != original.LightmapIndex ||
+                    candidate.ReflectionProbeIndex != original.ReflectionProbeIndex ||
+                    candidate.PrimaryLightIndex != original.PrimaryLightIndex ||
+                    candidate.Flags != original.Flags ||
+                    mergedEnd - mergedBase > ushort.MaxValue ||
+                    candidateTriangles.TriCount > ushort.MaxValue / 3 - triangleCount)
+                {
+                    break;
+                }
+                baseVertex = mergedBase;
+                vertexEnd = mergedEnd;
+                triangleCount += candidateTriangles.TriCount;
+                end++;
+            }
+
+            int baseIndex = coalescedIndices.Count;
+            for (int index = first; index < end; index++)
+            {
+                oldToNew[index] = coalescedSurfaces.Count;
+                SrfTriangles source = surfaces[index].Triangles;
+                int sourceIndexCount = checked(source.TriCount * 3);
+                for (int offset = 0; offset < sourceIndexCount; offset++)
+                {
+                    coalescedIndices.Add(checked((ushort)(
+                        source.BaseVertex + outputIndices[source.BaseIndex + offset] - baseVertex)));
+                }
+            }
+
+            coalescedSurfaces.Add(new GfxSurface
+            {
+                Triangles = new SrfTriangles
+                {
+                    VertexLayerData = checked(baseVertex * LayerStride),
+                    BaseVertex = baseVertex,
+                    MinVertexIndex = 0,
+                    VertexCount = checked((ushort)(vertexEnd - baseVertex)),
+                    TriCount = checked((ushort)triangleCount),
+                    BaseIndex = baseIndex
+                },
+                MaterialPointer = original.MaterialPointer,
+                Material = original.Material,
+                LightmapIndex = original.LightmapIndex,
+                ReflectionProbeIndex = original.ReflectionProbeIndex,
+                PrimaryLightIndex = original.PrimaryLightIndex,
+                Flags = original.Flags
+            });
+            if (end == first + 1)
+            {
+                coalescedBounds.Add(surfaceBounds[first]);
+            }
+            else
+            {
+                var bounds = new BoundsAccumulator();
+                for (int index = first; index < end; index++)
+                    bounds.Add(surfaceBounds[index].Bounds);
+                coalescedBounds.Add(new GfxSurfaceBounds
+                {
+                    Bounds = bounds.ToBounds($"Coalesced render surfaces {first}..{end - 1}"),
+                    Unknown18To1F = surfaceBounds[first].Unknown18To1F
+                });
+            }
+            if (isWorldSurface)
+                newStaticSurfaceCount++;
+            first = end;
+        }
+
+        var coalescedModels = new GfxBrushModel[models.Count];
+        for (int modelIndex = 0; modelIndex < models.Count; modelIndex++)
+        {
+            GfxBrushModel model = models[modelIndex];
+            int start = model.SurfaceCount == 0
+                ? model.StartSurfIndex
+                : oldToNew[model.StartSurfIndex];
+            int count = modelIndex == 0 ? newStaticSurfaceCount : model.SurfaceCount;
+            coalescedModels[modelIndex] = new GfxBrushModel
+            {
+                WritableMins = model.WritableMins,
+                WritableMaxs = model.WritableMaxs,
+                BoundsMins = model.BoundsMins,
+                BoundsMaxs = model.BoundsMaxs,
+                Radius = model.Radius,
+                SurfaceCount = checked((ushort)count),
+                StartSurfIndex = checked((ushort)start)
+            };
+        }
+
+        staticSurfaceCount = newStaticSurfaceCount;
+        surfaceCount = coalescedSurfaces.Count;
+        models = Array.AsReadOnly(coalescedModels);
+        surfaces = coalescedSurfaces.ToArray();
+        surfaceBounds = coalescedBounds.ToArray();
+        outputIndices = coalescedIndices;
     }
 
     private static uint DynamicEntityWordCount(ushort count) =>

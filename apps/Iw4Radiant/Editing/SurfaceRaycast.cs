@@ -11,17 +11,22 @@ internal static class SurfaceRaycast
         out float distance)
     {
         distance = 0;
-        Vector3 edge1 = b - a, edge2 = c - a;
-        Vector3 p = Vector3.Cross(direction, edge2);
-        float determinant = Vector3.Dot(edge1, p);
-        if (MathF.Abs(determinant) < 0.000001f) return false;
-        Vector3 t = origin - a;
-        float u = Vector3.Dot(t, p) / determinant;
+        // Thin terrain and model triangles need double intermediates for the
+        // hit predicate, even though callers store the final distance as float.
+        double e1x = (double)b.X - a.X, e1y = (double)b.Y - a.Y, e1z = (double)b.Z - a.Z;
+        double e2x = (double)c.X - a.X, e2y = (double)c.Y - a.Y, e2z = (double)c.Z - a.Z;
+        double px = direction.Y * e2z - direction.Z * e2y;
+        double py = direction.Z * e2x - direction.X * e2z;
+        double pz = direction.X * e2y - direction.Y * e2x;
+        double determinant = e1x * px + e1y * py + e1z * pz;
+        if (Math.Abs(determinant) < 0.000001) return false;
+        double tx = (double)origin.X - a.X, ty = (double)origin.Y - a.Y, tz = (double)origin.Z - a.Z;
+        double u = (tx * px + ty * py + tz * pz) / determinant;
         if (u < 0 || u > 1) return false;
-        Vector3 q = Vector3.Cross(t, edge1);
-        float v = Vector3.Dot(direction, q) / determinant;
+        double qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+        double v = (direction.X * qx + direction.Y * qy + direction.Z * qz) / determinant;
         if (v < 0 || u + v > 1) return false;
-        distance = Vector3.Dot(edge2, q) / determinant;
+        distance = (float)((e2x * qx + e2y * qy + e2z * qz) / determinant);
         if (!float.IsFinite(distance) || distance < 0) return false;
         return true;
     }
@@ -66,7 +71,7 @@ internal static class SurfaceRaycast
 
         void Consider(Vector3 a, Vector3 b, Vector3 c, string material)
         {
-            if (ClipBrushMaterial.IsPlayerClip(material)) return;
+            if (ClipBrushMaterial.IsCollisionOnly(material)) return;
             if (resolveMaterial?.Invoke(material) is { IsSky: true }) return;
             if (!RayTriangle(origin, direction, a, b, c, out float distance) || distance >= closest) return;
             Vector3 triangleNormal = Vector3.Normalize(Vector3.Cross(b - a, c - a));

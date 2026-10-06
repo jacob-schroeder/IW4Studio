@@ -64,6 +64,7 @@ internal sealed class SceneGeometry
         var outlines = new List<SceneVertex>();
         var highlight = new Vector3(1, 0.65f, 0.18f);
         var clipColor = new Vector3(0.85f, 0.35f, 0.85f);
+        var ladderColor = new Vector3(0.95f, 0.8f, 0.2f);
         var caulkColor = new Vector3(0.45f, 0.68f, 0.72f);
         var wireColor = new Vector3(0.48f, 0.51f, 0.55f);
         foreach (var brush in document.Brushes.Concat(editor.ShatterFragments?.Keys ?? []))
@@ -79,12 +80,13 @@ internal sealed class SceneGeometry
                     (selectedObjects.Contains(brush) || faceSelected);
                 MaterialSource? source = resolveMaterial?.Invoke(polygon.Face.Material);
                 if (faceSelected && physicsOwner is null) AddHighlight(polygon);
-                if (ClipBrushMaterial.IsPlayerClip(polygon.Face.Material) || CaulkMaterial.IsCaulk(polygon.Face.Material) ||
+                if (ClipBrushMaterial.IsCollisionOnly(polygon.Face.Material) || CaulkMaterial.IsCaulk(polygon.Face.Material) ||
                     !OceanSurfaceGeometry.IsVisibleSurface(polygon, source?.IsWater == true))
                 {
                     for (int index = 0; index < polygon.Vertices.Length; index++)
                         AddLine(ownerOutlines, polygon.Vertices[index], polygon.Vertices[(index + 1) % polygon.Vertices.Length],
-                            selected ? highlight : CaulkMaterial.IsCaulk(polygon.Face.Material) ? caulkColor :
+                            selected ? highlight : ClipBrushMaterial.IsLadder(polygon.Face.Material) ? ladderColor :
+                                CaulkMaterial.IsCaulk(polygon.Face.Material) ? caulkColor :
                                 source?.IsWater == true ? wireColor : clipColor);
                     continue;
                 }
@@ -99,37 +101,42 @@ internal sealed class SceneGeometry
                 geometry.Surfaces.Add((start, geometry.Triangles.Count - start, center));
             }
         }
-        foreach (var terrain in document.Terrains)
+        foreach (MapEntity entity in document.Entities)
         {
-            MapTerrain surface = terrain.GetSurface();
-            var geometry = GetMaterialGeometry(terrain.Material);
-            foreach (var (a, b, c) in surface.GetTriangles())
+            MapTerrain[] surfaces = entity.Terrains.Select(terrain => terrain.GetSurface()).ToArray();
+            var terrainNormals = new TerrainNormals(surfaces);
+            foreach ((MapTerrain terrain, MapTerrain surface) in entity.Terrains.Zip(surfaces))
             {
-                Vector3 p0 = surface.Vertices[a], p1 = surface.Vertices[b], p2 = surface.Vertices[c];
-                Vector3 cross = Vector3.Cross(p1 - p0, p2 - p0);
-                if (cross.LengthSquared() < 0.000001f)
-                    continue;
-                Vector3 normal = Vector3.Normalize(cross);
-                byte sunIndex = stages?.SunIndexAt((p0 + p1 + p2) / 3) ?? (byte)1;
-                Add(a);
-                Add(b);
-                Add(c);
-                AddEdge(p0, p1);
-                AddEdge(p1, p2);
-                AddEdge(p2, p0);
-
-                void AddEdge(Vector3 a, Vector3 b)
+                var geometry = GetMaterialGeometry(terrain.Material);
+                foreach (var (a, b, c) in surface.GetTriangles())
                 {
-                    AddLine(geometry.Lines, a, b, wireColor);
-                    if (selectedObjects.Contains(terrain))
-                        AddLine(outlines, a, b, highlight);
-                }
+                    Vector3 p0 = surface.Vertices[a], p1 = surface.Vertices[b], p2 = surface.Vertices[c];
+                    Vector3 cross = Vector3.Cross(p1 - p0, p2 - p0);
+                    if (cross.LengthSquared() <= 0.00000001f)
+                        continue;
+                    Vector3 normal = Vector3.Normalize(cross);
+                    byte sunIndex = stages?.SunIndexAt((p0 + p1 + p2) / 3) ?? (byte)1;
+                    Add(a);
+                    Add(b);
+                    Add(c);
+                    AddEdge(p0, p1);
+                    AddEdge(p1, p2);
+                    AddEdge(p2, p0);
 
-                void Add(int index)
-                {
-                    Vector4 color = surface.Colors[index];
-                    Vector2 uv = surface.TextureCoordinates[index];
-                    geometry.Triangles.Add(new SceneVertex(surface.Vertices[index], normal, uv, color, sunIndex));
+                    void AddEdge(Vector3 a, Vector3 b)
+                    {
+                        AddLine(geometry.Lines, a, b, wireColor);
+                        if (selectedObjects.Contains(terrain))
+                            AddLine(outlines, a, b, highlight);
+                    }
+
+                    void Add(int index)
+                    {
+                        Vector4 color = surface.Colors[index];
+                        Vector2 uv = surface.TextureCoordinates[index];
+                        geometry.Triangles.Add(new SceneVertex(surface.Vertices[index],
+                            terrainNormals.At(surface, index, normal), uv, color, sunIndex));
+                    }
                 }
             }
         }

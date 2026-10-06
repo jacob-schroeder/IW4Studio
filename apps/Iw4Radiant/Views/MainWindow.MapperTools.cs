@@ -78,8 +78,13 @@ public partial class MainWindow
             }
             else
             {
+                if (kind == BrushKind.Ladder && brushes.Any(brush =>
+                        MapOrganization.Entity(_session.Document, brush)?.ClassName is not ("worldspawn" or "func_group")))
+                    throw new InvalidOperationException("Ladders require static world or group brushes. Remove brush entities from the selection.");
                 _session.Edit(() => { foreach (MapBrush brush in brushes) BrushContents.Set(brush, kind); });
-                SetStatus($"Set {brushes.Length} brush(es) to {kind}. Saved as native .map contents.");
+                SetStatus(kind == BrushKind.Ladder
+                    ? $"Set {brushes.Length} brush(es) to Ladder. Place the volume in front of the ladder rungs. Editor Walk does not preview climbing."
+                    : $"Set {brushes.Length} brush(es) to {kind}. Saved as native .map contents.");
             }
         }
         catch (Exception exception) when (FileOperationErrors.IsExpected(exception))

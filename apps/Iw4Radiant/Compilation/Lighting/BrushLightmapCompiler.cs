@@ -330,19 +330,7 @@ internal static class BrushLightmapCompiler
         {
             Vector3 point = Anchor + UAxis * (Minimum.X + (x - Border) * LuxelSize) +
                 VAxis * (Minimum.Y + (y - Border) * LuxelSize);
-            bool inside = true;
-            Vector3 closest = point;
-            float closestDistance = float.PositiveInfinity;
-            for (int edge = 0; edge < Polygon.Vertices.Length; edge++)
-            {
-                Vector3 a = Polygon.Vertices[edge], b = Polygon.Vertices[(edge + 1) % Polygon.Vertices.Length];
-                Vector3 segment = b - a;
-                if (Vector3.Dot(Vector3.Cross(segment, point - a), Polygon.Normal) < 0) inside = false;
-                Vector3 candidate = a + segment * Math.Clamp(Vector3.Dot(point - a, segment) / segment.LengthSquared(), 0, 1);
-                float distance = Vector3.DistanceSquared(candidate, point);
-                if (distance < closestDistance) { closestDistance = distance; closest = candidate; }
-            }
-            return inside ? point : closest;
+            return Polygon.ClampToPolygon(point);
         }
     }
 

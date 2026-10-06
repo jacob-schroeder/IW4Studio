@@ -115,7 +115,7 @@ public partial class GeometryInspector
                 : "The source surfaces stay intact. The new terrain is solid and editable; one Undo removes it. Positive rise makes a hump, negative rise makes a dip.";
         try
         {
-            if (CaulkMaterial.IsCaulk(start.Material) || ClipBrushMaterial.IsPlayerClip(start.Material))
+            if (CaulkMaterial.IsCaulk(start.Material) || ClipBrushMaterial.IsCollisionOnly(start.Material))
                 throw new ArgumentException("The start surface needs a visible material. Choose a textured surface first.");
             _ = TerrainBridge.Create(start, end, (int)BridgeRows.Value!.Value, (float)BridgeRise.Value!.Value);
         }

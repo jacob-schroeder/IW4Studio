@@ -95,10 +95,12 @@ internal sealed class CameraWalkSimulation : IDisposable
             {
                 BrushGeometry.Validate(brush);
                 BrushKind kind = BrushContents.ReadForCompilation(brush);
-                bool clip = brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material));
-                if (!clip && brush.Faces.Any(face => ClipBrushMaterial.IsPlayerClip(face.Material)))
-                    throw new NotSupportedException("Walk collision requires clip_player on every face of a player clip brush.");
-                if (clip && kind != BrushKind.Structural)
+                bool playerClip = brush.Faces.All(face => ClipBrushMaterial.IsPlayerClip(face.Material));
+                bool ladder = kind == BrushKind.Ladder;
+                bool clip = playerClip || ladder;
+                if (!clip && brush.Faces.Any(face => ClipBrushMaterial.IsCollisionOnly(face.Material)))
+                    throw new NotSupportedException("Walk collision requires the same collision material on every face of a player clip or ladder brush.");
+                if (playerClip && kind != BrushKind.Structural)
                     throw new NotSupportedException("Player clip brushes cannot also have a contents override.");
                 if (kind is BrushKind.NonColliding or BrushKind.WeaponClip) continue;
                 if (!clip)
@@ -127,8 +129,8 @@ internal sealed class CameraWalkSimulation : IDisposable
             foreach (MapTerrain terrain in entity.Terrains)
             {
                 if (TerrainContents.ReadNonColliding(terrain)) continue;
-                if (ClipBrushMaterial.IsPlayerClip(terrain.Material))
-                    throw new NotSupportedException("Walk collision requires player clips to be brushes, not terrain meshes.");
+                if (ClipBrushMaterial.IsCollisionOnly(terrain.Material))
+                    throw new NotSupportedException("Walk collision requires player clips and ladders to be brushes, not terrain meshes.");
                 MaterialSource material = resolveMaterial(terrain.Material) ??
                     throw new InvalidDataException($"Walk collision material '{terrain.Material}' is unavailable.");
                 if (material.IsSky || material.IsWater)

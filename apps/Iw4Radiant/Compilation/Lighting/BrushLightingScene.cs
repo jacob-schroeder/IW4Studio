@@ -146,15 +146,30 @@ internal sealed class BrushLightingScene
                 }
                 _images[index] = pixels;
             }
-            if (material.IsSky) continue;
+            if (material.IsSky || !polygon.ContributesToLightGrid) continue;
             foreach (Vector3 point in polygon.Vertices)
             {
                 minimum = Vector3.Min(minimum, point);
                 maximum = Vector3.Max(maximum, point);
             }
         }
+        if (polygons.Any(polygon => !polygon.ContributesToLightGrid))
+        {
+            // A smaller grid must still cover offshore props, including models
+            // that do not cast shadows. Unflagged maps retain their existing bounds.
+            foreach (MapEntity entity in document.Entities.Where(entity => entity.ClassName == "misc_model"))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string name = entity.Properties.GetValueOrDefault("model") ?? "";
+                if (!models.TryGetValue(name, out XModelSource? model))
+                    throw new InvalidDataException($"Lighting has no source geometry for static model '{name}'.");
+                var bounds = XModelGeometry.Bounds(entity, model);
+                minimum = Vector3.Min(minimum, bounds.Min);
+                maximum = Vector3.Max(maximum, bounds.Max);
+            }
+        }
         if (!BrushGeometry.IsFinite(minimum) || !BrushGeometry.IsFinite(maximum))
-            throw new InvalidDataException("Lighting requires finite non-sky brush bounds.");
+            throw new InvalidDataException("Lighting requires finite non-sky geometry or model bounds with lighting enabled.");
         var solidBrushes = new List<(Vector3 Normal, Vector3 Anchor)[]>();
         foreach (MapBrush brush in document.World.Brushes)
         {
@@ -649,7 +664,7 @@ internal sealed class BrushLightingScene
             {
                 var hit = hits[index];
                 if (IsSky(hit.Face)) return radiance + ReadSky(hit.Face, direction) * transmission;
-                Vector3 point = origin + direction * hit.Distance;
+                Vector3 point = Polygons[hit.Face].ClampToPolygon(origin + direction * hit.Distance);
                 var attributes = Polygons[hit.Face].Sample(point);
                 Vector3 normal = attributes.Normal;
                 if (Vector3.Dot(normal, direction) > 0) normal = -normal;
@@ -720,7 +735,7 @@ internal sealed class BrushLightingScene
                     // A reverse-side hit still blocks the ray but cannot emit it.
                     if (Vector3.Dot(surface.Normal, direction) >= 0) return Vector3.Zero;
                     if (ModelOccludes(origin, direction, hit.Distance, containingModels)) return Vector3.Zero;
-                    Vector3 point = origin + direction * hit.Distance;
+                    Vector3 point = surface.ClampToPolygon(origin + direction * hit.Distance);
                     var attributes = surface.Sample(point);
                     Vector3 normal = attributes.Normal;
                     if (Vector3.Dot(normal, surface.Normal) <= 0) return Vector3.Zero;
@@ -765,7 +780,7 @@ internal sealed class BrushLightingScene
                     distance <= 0.0001f && Vector3.Dot(surface.Normal, direction) >= 0) continue;
                 if (image is { } pixels)
                 {
-                    var attributes = surface.Sample(origin + direction * distance);
+                    var attributes = surface.Sample(surface.ClampToPolygon(origin + direction * distance));
                     float alpha = Math.Clamp(ReadPixel(pixels, 0, attributes.Texture.X, attributes.Texture.Y,
                         material.SamplerState).W * attributes.Color.W, 0, 1);
                     if (!PassesAlphaTest(material.Surface.ShadowAlphaTest, alpha)) continue;
@@ -983,7 +998,9 @@ internal sealed class BrushLightingScene
             // Keep entering contacts so rays cannot escape through that solid.
             if (candidate <= 0.0001f && Vector3.Dot(polygon.Normal, direction) >= 0) continue;
             distance = candidate;
-            hitPoint = origin + direction * candidate;
+            // The accepted hit lies on the face; rounding a long ray's distance
+            // back to float can move its reconstructed point beyond a thin edge.
+            hitPoint = polygon.ClampToPolygon(origin + direction * candidate);
             return true;
         }
         distance = 0;

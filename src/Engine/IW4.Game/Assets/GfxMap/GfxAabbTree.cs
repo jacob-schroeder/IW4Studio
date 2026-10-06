@@ -7,6 +7,10 @@ public sealed class GfxAabbTree
 {
     public const int SerializedSize = 0x28;
 
+    // Conservative limit for either index list copied into the PS3 visibility
+    // worker's fixed scratch buffer, including its DMA alignment padding.
+    public const int MaxIndexCount = 16_384;
+
     // 0x00: Bounds use midpoint[3] followed by nonnegative halfSize[3].
     public Bounds Bounds { get; init; } = new();
 
