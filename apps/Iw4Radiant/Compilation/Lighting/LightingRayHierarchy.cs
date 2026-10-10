@@ -1,4 +1,6 @@
 using System.Numerics;
+using IW4.Render.Geometry;
+using IW4.Render.Metal;
 using IW4.Render.WebGpu;
 
 namespace Iw4Radiant.Compilation.Lighting;
@@ -110,9 +112,19 @@ internal sealed class LightingRayHierarchy
     internal RayEnumerator Query(Vector3 origin, Vector3 direction, double maximumDistance,
         CancellationToken cancellationToken) => new(this, origin, direction, maximumDistance, cancellationToken);
 
-    internal WebGpuRayTraversal? CreateGpuTraversal(CancellationToken cancellationToken)
+    internal GpuRayTraversal? CreateGpuTraversal(ReadOnlySpan<GpuRayTraversal.Surface> surfaces,
+        ReadOnlySpan<Vector3> vertices, int worldSurfaceCount,
+        CancellationToken cancellationToken, IProgress<string>? progress)
     {
-        var nodes = new WebGpuRayTraversal.BoundsNode[_nodes.Length];
+        if (OperatingSystem.IsMacOS())
+        {
+            var metal = MetalRayTraversal.TryCreate(surfaces, vertices, worldSurfaceCount,
+                cancellationToken, out string? failureReason);
+            if (metal is not null) return metal;
+            if (failureReason is not null)
+                progress?.Report($"Metal lighting acceleration unavailable: {failureReason}");
+        }
+        var nodes = new GpuRayTraversal.BoundsNode[_nodes.Length];
         for (int index = 0; index < nodes.Length; index++)
         {
             ref readonly Node node = ref _nodes[index];

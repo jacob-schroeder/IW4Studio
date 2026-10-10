@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using IW4.Game.Database;
 
@@ -61,7 +62,7 @@ internal static class PackedStreamEncoder
     private const ushort TerminatorWord = 1;
 
     public static PackedStream Encode(
-        ReadOnlySpan<byte> logicalBytes,
+        ReadOnlyMemory<byte> logicalBytes,
         int terminatorCount,
         CompressionLevel compressionLevel)
     {
@@ -70,19 +71,68 @@ internal static class PackedStreamEncoder
 
         using var output = new MemoryStream();
         var pages = new List<PackedStreamPage>();
+        int pageCount = logicalBytes.Length / LogicalPageSize +
+            (logicalBytes.Length % LogicalPageSize == 0 ? 0 : 1);
+        int workerCount = Environment.ProcessorCount > 2
+            ? Environment.ProcessorCount - 1 : Environment.ProcessorCount;
+        int batchSize = workerCount > 1 && pageCount >= 4
+            ? Math.Min(pageCount, workerCount * 2)
+            : 1;
         int offset = 0;
         while (offset < logicalBytes.Length)
         {
-            ReadOnlySpan<byte> page = logicalBytes.Slice(
-                offset,
-                Math.Min(LogicalPageSize, logicalBytes.Length - offset));
-            int encodedOffset = checked((int)output.Position);
-            WriteLogicalPage(output, page, compressionLevel);
-            int encodedEnd = checked((int)output.Position);
-            pages.Add(new PackedStreamPage(
-                encodedOffset,
-                checked(encodedEnd - encodedOffset)));
-            offset = checked(offset + page.Length);
+            int count = Math.Min(batchSize,
+                pageCount - offset / LogicalPageSize);
+            if (count == 1)
+            {
+                ReadOnlySpan<byte> page = logicalBytes.Span.Slice(
+                    offset,
+                    Math.Min(LogicalPageSize, logicalBytes.Length - offset));
+                int encodedOffset = checked((int)output.Position);
+                WriteLogicalPage(output, page, compressionLevel);
+                int encodedEnd = checked((int)output.Position);
+                pages.Add(new PackedStreamPage(
+                    encodedOffset,
+                    checked(encodedEnd - encodedOffset)));
+                offset = checked(offset + page.Length);
+                continue;
+            }
+
+            var compressed = new byte[]?[count];
+            var errors = new ExceptionDispatchInfo?[count];
+            int batchOffset = offset;
+            Parallel.For(0, count,
+                new ParallelOptions { MaxDegreeOfParallelism = workerCount },
+                index =>
+                {
+                    int pageOffset = batchOffset + index * LogicalPageSize;
+                    ReadOnlySpan<byte> page = logicalBytes.Span.Slice(
+                        pageOffset,
+                        Math.Min(LogicalPageSize, logicalBytes.Length - pageOffset));
+                    try
+                    {
+                        compressed[index] = CompressLogicalPage(page, compressionLevel);
+                    }
+                    catch (Exception exception)
+                    {
+                        errors[index] = ExceptionDispatchInfo.Capture(exception);
+                    }
+                });
+
+            for (int index = 0; index < count; index++)
+            {
+                errors[index]?.Throw();
+                int pageLength = Math.Min(LogicalPageSize,
+                    logicalBytes.Length - offset);
+                int encodedOffset = checked((int)output.Position);
+                WriteEncodedPage(output, logicalBytes.Span.Slice(offset, pageLength),
+                    compressed[index]);
+                int encodedEnd = checked((int)output.Position);
+                pages.Add(new PackedStreamPage(
+                    encodedOffset,
+                    checked(encodedEnd - encodedOffset)));
+                offset = checked(offset + pageLength);
+            }
         }
 
         for (int index = 0; index < terminatorCount; index++)
@@ -96,21 +146,35 @@ internal static class PackedStreamEncoder
         ReadOnlySpan<byte> page,
         CompressionLevel compressionLevel)
     {
+        WriteEncodedPage(output, page, CompressLogicalPage(page, compressionLevel));
+    }
+
+    private static byte[]? CompressLogicalPage(
+        ReadOnlySpan<byte> page,
+        CompressionLevel compressionLevel)
+    {
         byte[] compressed = EncodeHeaderlessZlib(page, compressionLevel);
         if (compressed.Length is > 1 and <= ushort.MaxValue)
+            return compressed;
+        if (page.Length == LogicalPageSize)
+            return null;
+        throw new InvalidDataException(
+            "A partial decoded page cannot be represented by one PS3 packed frame.");
+    }
+
+    private static void WriteEncodedPage(
+        Stream output,
+        ReadOnlySpan<byte> page,
+        byte[]? compressed)
+    {
+        if (compressed is not null)
         {
             WriteUInt16(output, checked((ushort)compressed.Length));
             output.Write(compressed);
             return;
         }
-        if (page.Length == LogicalPageSize)
-        {
-            WriteUInt16(output, 0);
-            output.Write(page);
-            return;
-        }
-        throw new InvalidDataException(
-            "A partial decoded page cannot be represented by one PS3 packed frame.");
+        WriteUInt16(output, 0);
+        output.Write(page);
     }
 
     private static byte[] EncodeHeaderlessZlib(

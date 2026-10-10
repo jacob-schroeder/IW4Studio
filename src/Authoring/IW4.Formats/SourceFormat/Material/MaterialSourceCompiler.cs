@@ -66,7 +66,7 @@ public sealed class MaterialSourceCompiler
     public GfxImageAsset LoadImage(string name) => Load(XAssetType.Image, name,
         normalized => $"images/{normalized.Replace('*', '_')}.image.json", (normalized, root) =>
     {
-        GfxImageAsset image = new ImageExchange().Link(
+        GfxImageAsset image = CompiledImageCache.Link(
             root, normalized, out IReadOnlyList<byte[]> streamParts);
         if (streamParts.Any(part => part.Length != 0))
             _imageStreamPayloads.Add(image, streamParts);

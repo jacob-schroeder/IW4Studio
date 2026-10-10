@@ -1,5 +1,3 @@
-using System.ComponentModel;
-using System.Diagnostics;
 using D3dbspLinker.Conversion;
 using IW4.Formats.SourceFormat.Character;
 using IW4.Formats.SourceFormat.Material;
@@ -96,30 +94,56 @@ internal static class MapBuildPipeline
                 .Distinct(StringComparer.Ordinal).ToArray();
             var dependencies = CreateDependencyRequest(expanded, sourcePath, emitterAssetDirectory, bootstrap,
                 emitters, presets, additionalModels, mapRawFiles, soundVariantPaths, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            string savedSource = Path.Combine(staging, mapName + ".map");
             await Task.Run(() =>
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 progress.Report("Checking brushes, meshes and entities…");
                 MapCompiler.ValidateNavigableSource(document);
-                string savedSource = Path.Combine(staging, mapName + ".map");
                 MapFile.Write(document, savedSource);
-                progress.Report("Checking all source asset dependencies before geometry and lighting…");
-                FastFileDependencyPreflight.Validate(dependencies);
-                progress.Report("Asset dependencies ready. Compiling geometry and lighting…");
-                var bsp = MapCompiler.Compile(MapFile.Read(savedSource), assetName, materials, models, cancellationToken, sourcePath, progress);
-                cancellationToken.ThrowIfCancellationRequested();
-                progress.Report("Writing compiled BSP…");
-                bsp.Write(bspPath);
-                compiledBspWritten = true;
-                progress.Report("Compiled BSP written.");
             }, cancellationToken);
+            using var buildCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            Task<FastFilePreparedSources> preflight = Task.Run(() =>
+            {
+                progress.Report("Checking all source asset dependencies before geometry and lighting…");
+                try { return FastFileDependencyPreflight.Prepare(dependencies with { CancellationToken = buildCancellation.Token }); }
+                catch { buildCancellation.Cancel(); throw; }
+            }, buildCancellation.Token);
+            Task geometry = Task.Run(() =>
+            {
+                try
+                {
+                    progress.Report("Compiling geometry and lighting…");
+                    MapDocument snapshot = MapFile.Read(savedSource);
+                    MapDocument expandedSnapshot = PrefabLibrary.ExpandForCompilation(snapshot, sourcePath);
+                    string? cacheKey = MapBspBuildCache.CreateKey(expandedSnapshot, assetName, materials, models,
+                        buildCancellation.Token);
+                    if (cacheKey is not null && MapBspBuildCache.TryRestore(cacheKey, bspPath, buildCancellation.Token))
+                        progress.Report("Reused unchanged compiled geometry and lighting.");
+                    else
+                    {
+                        var bsp = MapCompiler.Compile(snapshot, assetName, materials, models,
+                            buildCancellation.Token, sourcePath, progress);
+                        buildCancellation.Token.ThrowIfCancellationRequested();
+                        progress.Report("Writing compiled BSP…");
+                        bsp.Write(bspPath);
+                        if (cacheKey is not null)
+                            MapBspBuildCache.Store(cacheKey, bspPath, buildCancellation.Token);
+                    }
+                }
+                catch { buildCancellation.Cancel(); throw; }
+            }, buildCancellation.Token);
+            await Task.WhenAll(preflight, geometry);
+            cancellationToken.ThrowIfCancellationRequested();
+            compiledBspWritten = true;
+            progress.Report("Compiled BSP written.");
             if (emitters is not null)
             {
                 progress.Report($"Exported {emitters.FxNames.Length} FX references and {emitters.SoundNames.Length} sound aliases to map scripts.");
             }
             progress.Report("Compiling source assets and included startup assets; linking the PS3 fastfile…");
-            await RunLinkerAsync(bspPath, assetName, fastFilePath,
-                dependencies, additionalModels, progress, cancellationToken);
+            await Task.Run(() => FastFileDependencyPreflight.Build(preflight.Result, bspPath, assetName,
+                fastFilePath, additionalModels, cancellationToken, progress), cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(fastFilePath) || new FileInfo(fastFilePath).Length == 0)
                 throw new InvalidDataException("D3dbspLinker completed without producing a fastfile.");
@@ -188,89 +212,4 @@ internal static class MapBuildPipeline
         };
     }
 
-    private static async Task RunLinkerAsync(string bspPath,
-        string assetName, string fastFilePath,
-        FastFileDependencyPreflightRequest dependencies, IReadOnlyCollection<string> additionalModels,
-        IProgress<string> progress,
-        CancellationToken cancellationToken)
-    {
-        var start = BundledLinker.CreateStartInfo();
-        foreach (string value in new[] { "build", bspPath, assetName, fastFilePath, "--compiled-lighting" }) start.ArgumentList.Add(value);
-        foreach (string model in additionalModels)
-        {
-            start.ArgumentList.Add("--xmodel");
-            start.ArgumentList.Add(model);
-        }
-        start.ArgumentList.Add("--asset-library");
-        start.ArgumentList.Add(dependencies.AssetLibraryDirectory);
-        if (dependencies.CharacterAssetsDirectory is { } characters)
-        {
-            start.ArgumentList.Add("--character-assets");
-            start.ArgumentList.Add(characters);
-        }
-        // Destruction-only assets have no placed emitter/model of their own.
-        // Package their roots without adding map-start FX or sound playback.
-        foreach (string name in dependencies.FxNames)
-        {
-            start.ArgumentList.Add("--fx");
-            start.ArgumentList.Add(name);
-        }
-        foreach (string name in dependencies.XAnimNames)
-        {
-            start.ArgumentList.Add("--xanim");
-            start.ArgumentList.Add(name);
-        }
-        foreach (string name in dependencies.SoundNames)
-        {
-            start.ArgumentList.Add("--sound");
-            start.ArgumentList.Add(dependencies.SoundDefinitionPaths.TryGetValue(name, out string? path)
-                ? $"{name}={path}" : name);
-        }
-        foreach (var rawFile in dependencies.RawFilePaths)
-        {
-            start.ArgumentList.Add("--rawfile");
-            start.ArgumentList.Add($"{rawFile.Key}={rawFile.Value}");
-        }
-        using var process = new Process { StartInfo = start };
-        try
-        {
-            if (!process.Start()) throw new InvalidOperationException("D3dbspLinker could not be started.");
-        }
-        catch (Win32Exception exception)
-        {
-            throw new InvalidOperationException("Cannot start the bundled D3dbspLinker.", exception);
-        }
-        var errors = new Queue<string>();
-        Task output = ReadLinesAsync(process.StandardOutput, false);
-        Task error = ReadLinesAsync(process.StandardError, true);
-        try
-        {
-            await process.WaitForExitAsync(cancellationToken);
-            await Task.WhenAll(output, error);
-        }
-        catch
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync(CancellationToken.None);
-            }
-            await Task.WhenAll(output, error);
-            throw;
-        }
-        if (process.ExitCode != 0)
-            throw new InvalidDataException($"D3dbspLinker exited with code {process.ExitCode}." +
-                (errors.Count == 0 ? " See the build output for details." : "\n" + string.Join('\n', errors)));
-
-        async Task ReadLinesAsync(StreamReader reader, bool isError)
-        {
-            while (await reader.ReadLineAsync() is { } line)
-            {
-                progress.Report(line);
-                if (!isError) continue;
-                if (errors.Count == 12) errors.Dequeue();
-                errors.Enqueue(line);
-            }
-        }
-    }
 }

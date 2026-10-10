@@ -1,12 +1,14 @@
 using System.Numerics;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Codecs.GfxMap;
+using IW4.Render.Geometry;
 
 namespace Iw4Radiant.Compilation.Lighting;
 
 internal static class BrushLightGridCompiler
 {
-    internal static GfxLightGrid BakeLightGrid(BrushLightingScene scene, IProgress<string>? progress = null)
+    internal static GfxLightGrid BakeLightGrid(BrushLightingScene scene, GpuRayTraversal? traversal,
+        IProgress<string>? progress = null)
     {
         var mins = new ushort[3];
         var maxs = new ushort[3];
@@ -60,45 +62,82 @@ internal static class BrushLightGridCompiler
         int discardedBits = 0;
         long completedEntries = 0;
         int lastBucket = 0;
-        for (int x = mins[0]; x <= maxs[0]; x++)
-        for (int y = mins[1]; y <= maxs[1]; y++)
-        for (int z = mins[2]; z <= maxs[2]; z++)
+        const int batchCapacity = 512;
+        int depth = maxs[2] - mins[2] + 1;
+        int columns = maxs[1] - mins[1] + 1;
+        int sampleDirections = GfxLightGridCodec.SampleDirections.Count;
+        var points = new Vector3[batchCapacity];
+        var activePoints = new Vector3[batchCapacity];
+        var activePrimaryIndices = new byte[batchCapacity];
+        var activeIndex = new int[batchCapacity];
+        var solid = new bool[batchCapacity];
+        var activeIrradiance = new Vector3[batchCapacity * sampleDirections];
+        var parallelOptions = new ParallelOptions
         {
-            scene.CancellationToken.ThrowIfCancellationRequested();
-            Vector3 point = GridPoint(x, y, z);
-            if (scene.IsInsideSolid(point))
+            CancellationToken = scene.CancellationToken,
+            MaxDegreeOfParallelism = Environment.ProcessorCount > 2
+                ? Environment.ProcessorCount - 1 : Environment.ProcessorCount
+        };
+        for (long first = 0; first < entryCount; first += batchCapacity)
+        {
+            int batchCount = (int)Math.Min(batchCapacity, entryCount - first);
+            int activeCount = 0;
+            for (int sample = 0; sample < batchCount; sample++)
             {
-                entries.Add(new GfxLightGridEntry(0, 0, 1));
+                int index = checked((int)(first + sample));
+                int x = index / (columns * depth);
+                int y = index / depth % columns;
+                int z = index % depth;
+                Vector3 point = GridPoint(mins[0] + x, mins[1] + y, mins[2] + z);
+                points[sample] = point;
+                solid[sample] = scene.IsInsideSolid(point);
+                if (solid[sample]) continue;
+                activeIndex[sample] = activeCount;
+                activePoints[activeCount] = point;
+                activePrimaryIndices[activeCount] = primaryOwners?[index] ?? scene.PrimaryLightAt(point);
+                activeCount++;
+            }
+            if (activeCount > 0)
+                scene.BakeLightGridSamples(activePoints, activePrimaryIndices, activeIrradiance, activeCount,
+                    traversal, parallelOptions);
+            for (int sample = 0; sample < batchCount; sample++)
+            {
+                scene.CancellationToken.ThrowIfCancellationRequested();
+                if (solid[sample])
+                {
+                    entries.Add(new GfxLightGridEntry(0, 0, 1));
+                    ReportEntryProgress();
+                    continue;
+                }
+                Vector3 point = points[sample];
+                int active = activeIndex[sample];
+                byte primaryLight = activePrimaryIndices[active];
+                Encode(activeIrradiance.AsSpan(active * sampleDirections, sampleDirections), rgb);
+                WriteKey(rgb, discardedBits, keyedRgb, key);
+                if (!colorLookup.TryGetValue(key, out ushort colorIndex))
+                {
+                    if (colors.Count > ushort.MaxValue)
+                    {
+                        (colors, colorIndices, discardedBits) = ReducePalette(colors, entries, discardedBits);
+                        colorLookup = colorIndices.GetAlternateLookup<ReadOnlySpan<char>>();
+                        WriteKey(rgb, discardedBits, keyedRgb, key);
+                        progress?.Report($"Light grid palette: {colors.Count} colors; {discardedBits} low bits discarded per RGB component.");
+                    }
+                    if (!colorLookup.TryGetValue(key, out colorIndex))
+                    {
+                        colorIndex = checked((ushort)colors.Count);
+                        colors.Add(new GfxLightGridColors(rgb.ToArray()));
+                        colorIndices.Add(new string(key), colorIndex);
+                    }
+                }
+                byte visiblePrimary = scene.PrimaryVisibility(point, Vector3.Zero, primaryLight) > 0
+                    ? primaryLight
+                    : scene.SunCount > 1 && primaryLight > 0 && primaryLight <= scene.SunCount
+                        ? checked((byte)(255 - scene.SunCount + primaryLight))
+                        : (byte)0;
+                entries.Add(new GfxLightGridEntry(colorIndex, visiblePrimary, 0));
                 ReportEntryProgress();
-                continue;
             }
-            byte primaryLight = primaryOwners?[entries.Count] ?? scene.PrimaryLightAt(point);
-            scene.DiffuseIrradianceDirections(point, irradiance, primaryLight);
-            Encode(irradiance, rgb);
-            WriteKey(rgb, discardedBits, keyedRgb, key);
-            if (!colorLookup.TryGetValue(key, out ushort colorIndex))
-            {
-                if (colors.Count > ushort.MaxValue)
-                {
-                    (colors, colorIndices, discardedBits) = ReducePalette(colors, entries, discardedBits);
-                    colorLookup = colorIndices.GetAlternateLookup<ReadOnlySpan<char>>();
-                    WriteKey(rgb, discardedBits, keyedRgb, key);
-                    progress?.Report($"Light grid palette: {colors.Count} colors; {discardedBits} low bits discarded per RGB component.");
-                }
-                if (!colorLookup.TryGetValue(key, out colorIndex))
-                {
-                    colorIndex = checked((ushort)colors.Count);
-                    colors.Add(new GfxLightGridColors(rgb.ToArray()));
-                    colorIndices.Add(new string(key), colorIndex);
-                }
-            }
-            byte visiblePrimary = scene.PrimaryVisibility(point, Vector3.Zero, primaryLight) > 0
-                ? primaryLight
-                : scene.SunCount > 1 && primaryLight > 0 && primaryLight <= scene.SunCount
-                    ? checked((byte)(255 - scene.SunCount + primaryLight))
-                    : (byte)0;
-            entries.Add(new GfxLightGridEntry(colorIndex, visiblePrimary, 0));
-            ReportEntryProgress();
         }
         // Canonical BSP export omits the final linker-generated row. Keep that
         // row separate from the authored Colors[1] used by native fallback sampling.

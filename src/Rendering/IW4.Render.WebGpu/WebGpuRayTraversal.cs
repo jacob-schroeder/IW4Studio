@@ -1,5 +1,4 @@
-using System.Numerics;
-using System.Runtime.InteropServices;
+using IW4.Render.Geometry;
 using Silk.NET.Core.Native;
 using Silk.NET.WebGPU;
 using Buffer = Silk.NET.WebGPU.Buffer;
@@ -8,28 +7,9 @@ namespace IW4.Render.WebGpu;
 
 // Owns one bake's immutable bounds tree and one in-flight GPU ray batch.
 // Exact surface/material evaluation remains with the caller on the CPU.
-public sealed unsafe class WebGpuRayTraversal : IDisposable
+public sealed unsafe class WebGpuRayTraversal : GpuRayTraversal
 {
-    public const int MaximumRayCount = 32768;
-    public const int ResultStride = 17; // Count followed by up to sixteen surface indices.
-    private const float CoordinateLimit = 1073741824f; // 2^30: bounded WGSL arithmetic.
-    private const float MinimumDirection = 1f / CoordinateLimit;
-
-    [StructLayout(LayoutKind.Sequential)]
-    public readonly struct BoundsNode(Vector3 minimum, int escape, Vector3 maximum, int surface)
-    {
-        public readonly Vector3 Minimum = minimum;
-        public readonly int Escape = escape;
-        public readonly Vector3 Maximum = maximum;
-        public readonly int Surface = surface;
-    }
-
-    [StructLayout(LayoutKind.Explicit, Size = 32)]
-    public readonly struct Ray(Vector3 origin, Vector3 direction)
-    {
-        [FieldOffset(0)] public readonly Vector3 Origin = origin;
-        [FieldOffset(16)] public readonly Vector3 Direction = direction;
-    }
+    public override string Name => "WebGPU compute";
 
     private readonly WebGPU _api;
     private readonly delegate* unmanaged[Cdecl]<Device*, uint, ulong*, uint> _pollDevice;
@@ -187,20 +167,26 @@ public sealed unsafe class WebGpuRayTraversal : IDisposable
 
     // Submission allows the caller to shade the preceding batch while this one runs.
     // False means this batch needs the CPU path; only successful submissions need readback.
-    public bool TrySubmit(ReadOnlySpan<Ray> rays, CancellationToken cancellationToken)
+    public override bool TrySubmit(ReadOnlySpan<Ray> rays, bool shadow, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         if (_pendingRayCount != 0) throw new InvalidOperationException("Read the pending GPU ray batch before submitting another.");
         if (rays.Length > MaximumRayCount) throw new ArgumentException("The GPU ray batch exceeds its capacity.", nameof(rays));
         if (rays.IsEmpty) return false;
-        if (_unavailable || Volatile.Read(ref _deviceLost) is not null) return false;
+        if (_unavailable) return false;
+        if (Volatile.Read(ref _deviceLost) is { } deviceLost)
+        {
+            FailureReason = deviceLost;
+            return false;
+        }
         foreach (ref readonly Ray ray in rays)
             if (!SupportedCoordinate(ray.Origin) || !SupportedDirection(ray.Direction)) return false;
         try { return SubmitBatch(rays); }
         catch (Exception exception) when (IsDeviceFailure(exception))
         {
             _unavailable = true;
+            FailureReason = exception.Message;
             return false;
         }
     }
@@ -247,7 +233,7 @@ public sealed unsafe class WebGpuRayTraversal : IDisposable
     }
 
     // A negative count in a ray's result row means overflow: use the CPU query.
-    public bool TryRead(Span<int> results, CancellationToken cancellationToken)
+    public override bool TryRead(Span<Hit> results, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_pendingRayCount == 0) throw new InvalidOperationException("No GPU ray batch is pending.");
@@ -260,17 +246,29 @@ public sealed unsafe class WebGpuRayTraversal : IDisposable
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (Volatile.Read(ref _deviceLost) is not null) return false;
+            if (Volatile.Read(ref _deviceLost) is { } deviceLost)
+            {
+                FailureReason = deviceLost;
+                return false;
+            }
             ThrowIfError();
             if (!mapped) throw new InvalidOperationException($"GPU lighting readback failed: {_mapStatus}.");
             void* pointer = _api.BufferGetConstMappedRange(_readback, 0, (nuint)(resultCount * sizeof(int)));
             if (pointer == null) throw new InvalidOperationException("GPU lighting readback returned no data.");
-            new ReadOnlySpan<int>(pointer, resultCount).CopyTo(results);
+            var candidates = new ReadOnlySpan<int>(pointer, resultCount);
+            for (int row = 0; row < resultCount; row += ResultStride)
+            {
+                int count = candidates[row];
+                results[row] = new(count, -1);
+                for (int hit = 1; hit <= count; hit++)
+                    results[row + hit] = new(candidates[row + hit], -1);
+            }
             return true;
         }
         catch (Exception exception) when (IsDeviceFailure(exception))
         {
             _unavailable = true;
+            FailureReason = exception.Message;
             return false;
         }
         finally
@@ -311,14 +309,6 @@ public sealed unsafe class WebGpuRayTraversal : IDisposable
     private static bool IsDeviceFailure(Exception exception) => exception is
         InvalidOperationException or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException;
 
-    private static bool SupportedCoordinate(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z) &&
-        MathF.Abs(value.X) <= CoordinateLimit && MathF.Abs(value.Y) <= CoordinateLimit && MathF.Abs(value.Z) <= CoordinateLimit;
-
-    private static bool SupportedDirection(Vector3 value) => Component(value.X) && Component(value.Y) && Component(value.Z);
-    private static bool Component(float value) => value == 0 ||
-        float.IsFinite(value) && MathF.Abs(value) >= MinimumDirection && MathF.Abs(value) <= 1;
-
     private void OnAdapter(RequestAdapterStatus status, Adapter* adapter, byte* message, void* data)
     {
         _adapterStatus = status;
@@ -345,7 +335,7 @@ public sealed unsafe class WebGpuRayTraversal : IDisposable
         Volatile.Write(ref _error, $"{type}: {ReadMessage(message)}");
     private static string? ReadMessage(byte* message) => message == null ? null : SilkMarshal.PtrToString((nint)message);
 
-    public void Dispose()
+    public override void Dispose()
     {
         if (_disposed) return;
         _disposed = true;

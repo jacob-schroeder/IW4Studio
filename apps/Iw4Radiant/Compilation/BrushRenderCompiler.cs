@@ -9,6 +9,7 @@ using Iw4Radiant.Compilation.Lighting;
 using Iw4Radiant.Materials;
 using Iw4Radiant.MapSource;
 using Iw4Radiant.Editing;
+using IW4.Render.Geometry;
 using Bounds = IW4.Game.Math.Bounds;
 
 namespace Iw4Radiant.Compilation;
@@ -76,9 +77,11 @@ internal static class BrushRenderCompiler
             throw new InvalidDataException("Compilation requires at least one renderable brush face or mesh triangle.");
         progress?.Report("Preparing lighting and shadow geometry…");
         var lightingScene = new BrushLightingScene(document, polygons, materialSources, models, stages, cancellationToken);
-        var (lightmaps, faceUvs, faceLightmapIndices) = BrushLightmapCompiler.BakeLightmaps(lightingScene, progress);
-        GfxLightGrid lightGrid = BrushLightGridCompiler.BakeLightGrid(lightingScene, progress);
-        var (probeImages, probes) = BrushReflectionCompiler.CaptureProbes(lightingScene, probeOrigins, progress);
+        using GpuRayTraversal? traversal = lightingScene.CreateGpuTraversal(progress);
+        progress?.Report($"Lighting acceleration: {traversal?.Name ?? "CPU"}.");
+        var (lightmaps, faceUvs, faceLightmapIndices) = BrushLightmapCompiler.BakeLightmaps(lightingScene, traversal, progress);
+        GfxLightGrid lightGrid = BrushLightGridCompiler.BakeLightGrid(lightingScene, traversal, progress);
+        var (probeImages, probes) = BrushReflectionCompiler.CaptureProbes(lightingScene, probeOrigins, traversal, progress);
         progress?.Report("Assembling rendered geometry…");
         int vertexCount = polygons.Sum(polygon => polygon.Vertices.Length);
         var positions = new byte[checked(vertexCount * WorldVertexCodec.PositionStride)];

@@ -97,7 +97,7 @@ public sealed class FastFilePackager
         try
         {
             PackedStream packedStream = PackedStreamEncoder.Encode(
-                decodedZone.Span,
+                decodedZone,
                 policy.EmitDoubleTerminator ? 2 : 1,
                 CompressionLevel.SmallestSize);
             int headerLength = ComputeHeaderLength(envelope);

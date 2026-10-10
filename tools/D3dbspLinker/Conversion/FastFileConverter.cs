@@ -58,8 +58,62 @@ public sealed record FastFileDependencyPreflightRequest
 /// <summary>Loads the disk asset graph before map geometry and lighting are compiled.</summary>
 public static class FastFileDependencyPreflight
 {
-    public static void Validate(FastFileDependencyPreflightRequest request) =>
-        FastFileConverter.ValidateDiskDependencies(request);
+    public static FastFilePreparedSources Prepare(FastFileDependencyPreflightRequest request) =>
+        FastFileConverter.PrepareDiskDependencies(request);
+
+    public static void Build(FastFilePreparedSources prepared, string bspPath,
+        string assetName, string outputPath, IReadOnlyList<string> additionalModels,
+        CancellationToken cancellationToken, IProgress<string>? progress = null)
+    {
+        FastFileDependencyPreflightRequest request = prepared.Request;
+        cancellationToken.ThrowIfCancellationRequested();
+        FastFileConverter.FromD3dbsp(bspPath, request.BootstrapDirectory, assetName, outputPath,
+            forceFullbright: false, useCompiledLighting: true, worldOnly: false,
+            useSourceMaterials: true, stockBootstrap: false,
+            dependencyFastFiles: [], providerFastFiles: [],
+            additionalXModelNames: additionalModels, additionalMaterialNames: [],
+            additionalFxNames: request.FxNames.ToArray(), additionalXAnimNames: request.XAnimNames.ToArray(),
+            additionalSoundNames: request.SoundNames.ToArray(), soundDefinitionPaths: request.SoundDefinitionPaths,
+            assetLibraryDirectory: request.AssetLibraryDirectory, rawFilePaths: request.RawFilePaths,
+            lightmapImageNames: [], outdoorImageName: null, outdoorLookupMatrix: [],
+            staticScriptModelNames: new HashSet<string>(StringComparer.Ordinal),
+            bootstrapDirectory: request.BootstrapDirectory,
+            characterAssetsDirectory: request.CharacterAssetsDirectory,
+            preparedSources: prepared, cancellationToken: cancellationToken, progress: progress);
+    }
+}
+
+public sealed class FastFilePreparedSources
+{
+    internal FastFilePreparedSources(FastFileDependencyPreflightRequest request,
+        MaterialSourceCompiler materials, ModelSourceCompiler models,
+        MaterialSourceCompiler bootstrapMaterials, ModelSourceCompiler bootstrapModels,
+        IReadOnlyDictionary<string, (MaterialSourceCompiler Materials, ModelSourceCompiler Models)> characters,
+        BaseAsset[] emitterAssets, SoundFilePackager soundPackager,
+        Ps3MapBootstrap bootstrap, IReadOnlyDictionary<string, XAnimPartsAsset> animations)
+    {
+        Request = request;
+        Materials = materials;
+        Models = models;
+        BootstrapMaterials = bootstrapMaterials;
+        BootstrapModels = bootstrapModels;
+        Characters = characters;
+        EmitterAssets = emitterAssets;
+        SoundPackager = soundPackager;
+        Bootstrap = bootstrap;
+        Animations = animations;
+    }
+
+    internal FastFileDependencyPreflightRequest Request { get; }
+    internal MaterialSourceCompiler Materials { get; }
+    internal ModelSourceCompiler Models { get; }
+    internal MaterialSourceCompiler BootstrapMaterials { get; }
+    internal ModelSourceCompiler BootstrapModels { get; }
+    internal IReadOnlyDictionary<string, (MaterialSourceCompiler Materials, ModelSourceCompiler Models)> Characters { get; }
+    internal BaseAsset[] EmitterAssets { get; }
+    internal SoundFilePackager SoundPackager { get; }
+    internal Ps3MapBootstrap Bootstrap { get; }
+    internal IReadOnlyDictionary<string, XAnimPartsAsset> Animations { get; }
 }
 
 internal static partial class FastFileConverter
@@ -122,10 +176,10 @@ internal static partial class FastFileConverter
         "com_plasticcase_ussr"
     ];
 
-    internal static void ValidateDiskDependencies(FastFileDependencyPreflightRequest request)
+    internal static FastFilePreparedSources PrepareDiskDependencies(FastFileDependencyPreflightRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        Ps3MapBootstrap.Load(request.BootstrapDirectory);
+        Ps3MapBootstrap bootstrap = Ps3MapBootstrap.Load(request.BootstrapDirectory);
         var materials = new MaterialSourceCompiler(request.AssetLibraryDirectory, request.BootstrapDirectory);
         var models = new ModelSourceCompiler(request.AssetLibraryDirectory, materials, request.BootstrapDirectory);
         var bootstrapMaterials = new MaterialSourceCompiler(request.BootstrapDirectory);
@@ -175,6 +229,7 @@ internal static partial class FastFileConverter
         }
 
         MapFactionSettings factions = MapFactionAuthoring.Read(request.WorldProperties);
+        var characterSources = new Dictionary<string, (MaterialSourceCompiler Materials, ModelSourceCompiler Models)>(StringComparer.Ordinal);
         foreach (FactionAppearance appearance in new[] { factions.AlliesAssaultA, factions.AxisAssaultA }
                      .OfType<FactionAppearance>().Where(appearance => appearance.CustomAssetFolder is not null)
                      .DistinctBy(appearance => appearance.CustomAssetFolder))
@@ -188,6 +243,7 @@ internal static partial class FastFileConverter
             var characterModels = new ModelSourceCompiler(root, characterMaterials, request.BootstrapDirectory);
             CharacterModelBudget.ValidateBody(characterModels.LoadModel(appearance.Body));
             CharacterModelBudget.ValidateHands(characterModels.LoadModel(appearance.ViewHands));
+            characterSources.Add(root, (characterMaterials, characterModels));
         }
 
         foreach ((string name, string path) in request.RawFilePaths)
@@ -206,10 +262,11 @@ internal static partial class FastFileConverter
                 request.AssetLibraryDirectory, request.BootstrapDirectory, materials,
                 out _, out turretFxNames, out turretSoundNames);
         cancellationToken.ThrowIfCancellationRequested();
+        var soundPackager = new SoundFilePackager();
         BaseAsset[] emitterAssets = LoadRawEmitterAssets(request.AssetLibraryDirectory,
             request.FxNames.Concat(turretFxNames).Distinct(StringComparer.Ordinal).ToArray(),
             request.SoundNames.Concat(turretSoundNames).Distinct(StringComparer.Ordinal).ToArray(),
-            request.SoundDefinitionPaths, new SoundFilePackager(), request.BootstrapDirectory);
+            request.SoundDefinitionPaths, soundPackager, request.BootstrapDirectory);
         foreach (string name in emitterAssets.OfType<FxEffectDefAsset>().SelectMany(effect => effect.ElemDefs)
                      .SelectMany(element => element.VisualArray.Prepend(element.Visuals))
                      .Select(visual => visual.Model?.Model?.Name).OfType<string>()
@@ -229,13 +286,16 @@ internal static partial class FastFileConverter
             cancellationToken.ThrowIfCancellationRequested();
             materials.LoadMaterial(name);
         }
+        var animations = new Dictionary<string, XAnimPartsAsset>(StringComparer.Ordinal);
         foreach (string name in request.XAnimNames.Distinct(StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            new XAnimNativeExchange().Link(
+            animations.Add(name, new XAnimNativeExchange().Link(
                 File.Exists(Path.Combine(request.AssetLibraryDirectory, "xanim_native", name + ".json"))
-                    ? request.AssetLibraryDirectory : request.BootstrapDirectory, name);
+                    ? request.AssetLibraryDirectory : request.BootstrapDirectory, name));
         }
+        return new FastFilePreparedSources(request, materials, models, bootstrapMaterials, bootstrapModels,
+            characterSources, emitterAssets, soundPackager, bootstrap, animations);
     }
 
     public static void ToD3dbsp(string input, string output)
@@ -296,7 +356,10 @@ internal static partial class FastFileConverter
         IReadOnlyList<float> outdoorLookupMatrix,
         IReadOnlySet<string> staticScriptModelNames,
         string? bootstrapDirectory = null,
-        string? characterAssetsDirectory = null)
+        string? characterAssetsDirectory = null,
+        FastFilePreparedSources? preparedSources = null,
+        CancellationToken cancellationToken = default,
+        IProgress<string>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(dependencyFastFiles);
         ArgumentNullException.ThrowIfNull(providerFastFiles);
@@ -310,6 +373,11 @@ internal static partial class FastFileConverter
         ArgumentNullException.ThrowIfNull(lightmapImageNames);
         ArgumentNullException.ThrowIfNull(outdoorLookupMatrix);
         ArgumentNullException.ThrowIfNull(staticScriptModelNames);
+        void Report(string message)
+        {
+            if (progress is null) Console.WriteLine(message);
+            else progress.Report(message);
+        }
         var requestedLightingImages = new HashSet<AssetKey>();
         IEnumerable<string> lightingNames = lightmapImageNames
             .SelectMany(pair => new[] { pair.PrimaryImageName, pair.SecondaryImageName });
@@ -382,7 +450,8 @@ internal static partial class FastFileConverter
                 : FastFileInspector.Open(templatePath);
         FastFileWorkspace RequireTemplate() => template ??
             throw new InvalidOperationException("A disk build cannot resolve fastfile providers.");
-        Ps3MapBootstrap? bootstrap = bootstrapDirectory is null ? null : Ps3MapBootstrap.Load(bootstrapDirectory);
+        Ps3MapBootstrap? bootstrap = preparedSources?.Bootstrap ??
+            (bootstrapDirectory is null ? null : Ps3MapBootstrap.Load(bootstrapDirectory));
         if (bootstrap is not null && (dependencyPaths.Length != 0 || providerPaths.Length != 0 || assetLibraryDirectory is null))
             throw new ArgumentException("Disk builds require an asset library and do not accept provider fastfiles.");
         int fragmentProgramUploadCapacity = bootstrap?.FragmentProgramUploadCapacity ??
@@ -390,10 +459,10 @@ internal static partial class FastFileConverter
              throw new InvalidDataException($"Template '{templatePath}' has no single GfxWorld.")).FragmentProgramUploadCapacity;
         var availableXModels = template is null ? new List<XModelAsset>() : CaptureActiveXModels(template)
             .Concat(dependencyPaths.SelectMany(path => LoadActiveXModels(path, worldOnly))).ToList();
-        var materialSources = assetLibraryDirectory is null ? null : new MaterialSourceCompiler(assetLibraryDirectory, bootstrapDirectory);
-        var modelSources = materialSources is null ? null : new ModelSourceCompiler(assetLibraryDirectory ?? "", materialSources, bootstrapDirectory);
-        var bootstrapMaterials = bootstrapDirectory is null ? null : new MaterialSourceCompiler(bootstrapDirectory);
-        var bootstrapModels = bootstrapMaterials is null ? null : new ModelSourceCompiler(bootstrapDirectory ?? "", bootstrapMaterials);
+        var materialSources = preparedSources?.Materials ?? (assetLibraryDirectory is null ? null : new MaterialSourceCompiler(assetLibraryDirectory, bootstrapDirectory));
+        var modelSources = preparedSources?.Models ?? (materialSources is null ? null : new ModelSourceCompiler(assetLibraryDirectory ?? "", materialSources, bootstrapDirectory));
+        var bootstrapMaterials = preparedSources?.BootstrapMaterials ?? (bootstrapDirectory is null ? null : new MaterialSourceCompiler(bootstrapDirectory));
+        var bootstrapModels = preparedSources?.BootstrapModels ?? (bootstrapMaterials is null ? null : new ModelSourceCompiler(bootstrapDirectory ?? "", bootstrapMaterials));
         var availableMaterials = new Dictionary<AssetKey, MaterialAsset>();
         var availableLightingImages = new Dictionary<AssetKey, GfxImageAsset>();
         if (useSourceMaterials && materialSources is null)
@@ -423,6 +492,7 @@ internal static partial class FastFileConverter
             }
         }
         D3dbspFile sourceBsp = D3dbspFile.Read(inputPath);
+        cancellationToken.ThrowIfCancellationRequested();
         IReadOnlyDictionary<string, string>[] dynamicEntities = sourceBsp.GetEntities()
             .Where(entity => entity.GetValueOrDefault("classname") == RuntimePhysicsAuthoring.ClassName)
             .ToArray();
@@ -461,8 +531,15 @@ internal static partial class FastFileConverter
                 throw new InvalidDataException("Custom faction models require a disk build with --character-assets pointing to the map's characters folder.");
             string root = Path.Combine(characterAssetsDirectory, appearance.CustomAssetFolder ??
                 throw new InvalidDataException("The custom faction appearance has no asset folder."));
-            var materials = new MaterialSourceCompiler(root, bootstrapDirectory);
-            var models = new ModelSourceCompiler(root, materials, bootstrapDirectory);
+            MaterialSourceCompiler materials;
+            ModelSourceCompiler models;
+            if (preparedSources is not null && preparedSources.Characters.TryGetValue(root, out var existing))
+                (materials, models) = existing;
+            else
+            {
+                materials = new MaterialSourceCompiler(root, bootstrapDirectory);
+                models = new ModelSourceCompiler(root, materials, bootstrapDirectory);
+            }
             XModelAsset body = models.LoadModel(appearance.Body);
             CharacterModelBudget.ValidateBody(body);
             XModelAsset hands = models.LoadModel(appearance.ViewHands);
@@ -659,18 +736,18 @@ internal static partial class FastFileConverter
             CreateMapScript(mapScriptName, waterScript, hasMapFxScript, hasMapMovingLightsScript,
                 hasMapFogScript, factions, destructiblePrecacheScripts);
         if (destructiblePrecacheScripts.Length != 0 && rawFileOverrides.Contains(mapScript))
-            Console.WriteLine("Destructible animations: the custom map script must call " +
+            Report("Destructible animations: the custom map script must call " +
                 string.Join(", ", destructiblePrecacheScripts.Select(name =>
                     name[..^".gsc".Length].Replace('/', '\\') + "::main();")) +
                 " in main() before maps\\mp\\_load::main().");
         if (hasMapFxScript && rawFileOverrides.Contains(mapScript))
-            Console.WriteLine($"FX and sounds: the custom map script must call {MapScriptStartup(mapFxScriptName)} in main() before maps\\mp\\_load::main(); so its emitters are registered before playback starts.");
+            Report($"FX and sounds: the custom map script must call {MapScriptStartup(mapFxScriptName)} in main() before maps\\mp\\_load::main(); so its emitters are registered before playback starts.");
         if (hasMapMovingLightsScript && rawFileOverrides.Contains(mapScript))
-            Console.WriteLine($"Moving lights: the custom map script must call {MapScriptStartup(mapMovingLightsScriptName)} in main() before maps\\mp\\_load::main(); to start the authored light sweeps.");
+            Report($"Moving lights: the custom map script must call {MapScriptStartup(mapMovingLightsScriptName)} in main() before maps\\mp\\_load::main(); to start the authored light sweeps.");
         if (hasMapFogScript && rawFileOverrides.Contains(mapScript))
-            Console.WriteLine($"Fog: the custom map script must call {MapScriptStartup(mapFogScriptName)} in main() after maps\\mp\\_load::main() to apply the authored map-wide fog.");
+            Report($"Fog: the custom map script must call {MapScriptStartup(mapFogScriptName)} in main() after maps\\mp\\_load::main() to apply the authored map-wide fog.");
         if (waterScript is not null && rawFileOverrides.Contains(mapScript))
-            Console.WriteLine($"Water effects: the custom map script must call {WaterVolumeScript.Startup(waterScript)} during main(). " +
+            Report($"Water effects: the custom map script must call {WaterVolumeScript.Startup(waterScript)} during main(). " +
                 "The water helper owns its HUD overlay and the level-priority reverb slot.");
         BaseAsset[] fastFileMapRoots =
         [
@@ -685,6 +762,7 @@ internal static partial class FastFileConverter
             .Where(asset => asset.SerializedAssetType == XAssetType.Material)
             .Select(AssetKey.FromDefinition)
             .ToHashSet();
+        cancellationToken.ThrowIfCancellationRequested();
         var bootstrapXModelGraph = bootstrapModels is not null
             ? ResolveDiskModelGraph(bootstrapModels, BootstrapXModelNames) : ResolveXModelGraph(
             RequireTemplate(),
@@ -697,6 +775,7 @@ internal static partial class FastFileConverter
             templatePath,
             bootstrapXModelGraph.XModelSurfsCount,
             bootstrapXModelGraph.PhysPresetReferenceCount);
+        cancellationToken.ThrowIfCancellationRequested();
         string[] staticXModelNames = graph.DependencyReferences
             .Where(asset => asset.SerializedAssetType == XAssetType.XModel)
             .Select(asset => asset.SerializedAssetName ??
@@ -754,10 +833,11 @@ internal static partial class FastFileConverter
                 [.. dependencyPaths, .. providerPaths], turretWeaponNames, XAssetType.Weapon, "turret Weapon");
         string[] sourceFxNames = additionalFxNames.Concat(turretFxNames).Distinct(StringComparer.Ordinal).ToArray();
         string[] sourceSoundNames = additionalSoundNames.Concat(turretSoundNames).Distinct(StringComparer.Ordinal).ToArray();
-        var soundPackager = new SoundFilePackager();
-        BaseAsset[] rawEmitterAssets = assetLibraryDirectory is null ? [] :
+        cancellationToken.ThrowIfCancellationRequested();
+        var soundPackager = preparedSources?.SoundPackager ?? new SoundFilePackager();
+        BaseAsset[] rawEmitterAssets = preparedSources?.EmitterAssets ?? (assetLibraryDirectory is null ? [] :
             LoadRawEmitterAssets(assetLibraryDirectory, sourceFxNames, sourceSoundNames, soundDefinitionPaths, soundPackager,
-                bootstrapDirectory);
+                bootstrapDirectory));
         if (modelSources is not null)
             foreach (string name in rawEmitterAssets.OfType<FxEffectDefAsset>().SelectMany(effect => effect.ElemDefs)
                          .SelectMany(element => element.VisualArray.Prepend(element.Visuals))
@@ -793,10 +873,16 @@ internal static partial class FastFileConverter
             ? ResolveOwnedAssetsAcrossFastFiles<XAnimPartsAsset>(
                 RequireTemplate(), templatePath, [.. dependencyPaths, .. providerPaths],
                 additionalXAnimNames, XAssetType.XAnim, "requested XAnim")
-            : additionalXAnimNames.Select(name => new XAnimNativeExchange().Link(
+            : additionalXAnimNames.Select(LoadDiskAnimation).ToArray();
+        XAnimPartsAsset LoadDiskAnimation(string name)
+        {
+            if (preparedSources is not null && preparedSources.Animations.TryGetValue(name, out XAnimPartsAsset? animation))
+                return animation;
+            return new XAnimNativeExchange().Link(
                 File.Exists(Path.Combine(assetLibraryDirectory, "xanim_native", name + ".json"))
                     ? assetLibraryDirectory : bootstrapDirectory ??
-                        Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3"), name)).ToArray();
+                        Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3"), name);
+        }
         BaseAsset[] xModelGraphProviders = bootstrapXModelGraph.Providers
             .Concat(staticXModelGraph.Providers)
             .Concat(additionalXModelGraph.Providers)
@@ -912,7 +998,7 @@ internal static partial class FastFileConverter
                 .Select(DiskProvider));
             existingKeys.UnionWith(sourceDefinitions.Select(AssetKey.FromDefinition));
             existingFullProviderKeys.UnionWith(sourceDefinitions.Select(AssetKey.FromDefinition));
-            Console.WriteLine($"disk material graph: {sourceDefinitions.Length} assets from {assetLibraryDirectory}");
+            Report($"disk material graph: {sourceDefinitions.Length} assets from {assetLibraryDirectory}");
         }
         if (authoredWaterMaterials.Count != 0)
         {
@@ -1125,7 +1211,9 @@ internal static partial class FastFileConverter
             bootstrap?.SelectedLanguageMask ?? RequireTemplate().InitialLinkRequest.SelectedLanguageMask,
             bootstrap?.ScriptStrings ?? RequireTemplate().InitialLinkRequest.ScriptStrings);
 
+        cancellationToken.ThrowIfCancellationRequested();
         ZoneLinkResult link = new ZoneLinker().Link(request);
+        cancellationToken.ThrowIfCancellationRequested();
         if (!link.Succeeded || link.DecodedBytes is not { } decodedBytes)
         {
             throw new InvalidDataException(
@@ -1157,6 +1245,7 @@ internal static partial class FastFileConverter
             link.LanguageMask,
             link.SelectedLanguageMask,
             link.ImageStreamLanguageTables);
+        cancellationToken.ThrowIfCancellationRequested();
         if (!package.Succeeded || package.Bytes is not { } packageBytes)
         {
             throw new InvalidDataException(
@@ -1172,8 +1261,10 @@ internal static partial class FastFileConverter
             StreamedSound.GetPackageFileName(StreamedSound.NamedFileIndex, outputPath));
         bool wroteImagePackage = false;
         bool wroteSoundPackage = false;
+        bool wroteFastFile = false;
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (imagePackage is not null)
             {
                 WriteNewFileAtomically(imagePackagePath, imagePackage.Bytes);
@@ -1184,70 +1275,74 @@ internal static partial class FastFileConverter
                 WriteNewFileAtomically(soundPackagePath, soundPackager.ToArray());
                 wroteSoundPackage = true;
             }
+            cancellationToken.ThrowIfCancellationRequested();
             WriteNewFileAtomically(outputPath, packageBytes.Span);
+            wroteFastFile = true;
+            cancellationToken.ThrowIfCancellationRequested();
         }
         catch
         {
             if (wroteImagePackage) File.Delete(imagePackagePath);
             if (wroteSoundPackage) File.Delete(soundPackagePath);
+            if (wroteFastFile && cancellationToken.IsCancellationRequested) File.Delete(outputPath);
             throw;
         }
 
-        Console.WriteLine($"wrote: {outputPath}");
+        Report($"wrote: {outputPath}");
         if (imagePackage is not null)
-            Console.WriteLine($"wrote: {imagePackagePath} ({imagePackage.Bytes.Length:N0} bytes; {imageParts.Count} streamed images)");
+            Report($"wrote: {imagePackagePath} ({imagePackage.Bytes.Length:N0} bytes; {imageParts.Count} streamed images)");
         if (wroteSoundPackage)
-            Console.WriteLine($"wrote: {soundPackagePath} ({new FileInfo(soundPackagePath).Length:N0} bytes; {soundPackager.PayloadCount} unique sound streams)");
-        Console.WriteLine($"map-asset: {assetName}");
-        Console.WriteLine($"owned-map-roots: {fastFileMapRoots.Length}");
-        Console.WriteLine($"nested-map-assets: {graph.NestedAssets.Count}");
-        Console.WriteLine($"owned-bootstrap-roots: {bootstrapXModelGraph.Models.Count + 1}");
-        Console.WriteLine($"owned-additional-xmodel-roots: {additionalXModelGraph.Models.Count}");
-        Console.WriteLine($"owned-additional-material-roots: {additionalMaterials.Length}");
-        Console.WriteLine($"authored-water-materials: {authoredWaterMaterials.Count}");
-        Console.WriteLine($"owned-additional-fx-roots: {additionalFx.Length}");
-        Console.WriteLine($"emitter-asset-source: {(assetLibraryDirectory is null ? "fastfile" : "disk")}");
-        Console.WriteLine($"disk-emitter-providers: {rawEmitterAssets.Length}");
-        Console.WriteLine($"owned-rawfile-overrides: {rawFileOverrides.Length}");
-        Console.WriteLine($"owned-roots: {roots.Count}");
-        Console.WriteLine($"bootstrap-stringtable: {bootstrapStringTable.Name}");
-        Console.WriteLine($"bootstrap-mapcrc: {signedChecksum}");
-        Console.WriteLine($"bootstrap-xmodels: {bootstrapXModelGraph.Models.Count}");
-        Console.WriteLine($"bootstrap-xmodelsurfs: {bootstrapXModelGraph.XModelSurfsCount}");
-        Console.WriteLine(
+            Report($"wrote: {soundPackagePath} ({new FileInfo(soundPackagePath).Length:N0} bytes; {soundPackager.PayloadCount} unique sound streams)");
+        Report($"map-asset: {assetName}");
+        Report($"owned-map-roots: {fastFileMapRoots.Length}");
+        Report($"nested-map-assets: {graph.NestedAssets.Count}");
+        Report($"owned-bootstrap-roots: {bootstrapXModelGraph.Models.Count + 1}");
+        Report($"owned-additional-xmodel-roots: {additionalXModelGraph.Models.Count}");
+        Report($"owned-additional-material-roots: {additionalMaterials.Length}");
+        Report($"authored-water-materials: {authoredWaterMaterials.Count}");
+        Report($"owned-additional-fx-roots: {additionalFx.Length}");
+        Report($"emitter-asset-source: {(assetLibraryDirectory is null ? "fastfile" : "disk")}");
+        Report($"disk-emitter-providers: {rawEmitterAssets.Length}");
+        Report($"owned-rawfile-overrides: {rawFileOverrides.Length}");
+        Report($"owned-roots: {roots.Count}");
+        Report($"bootstrap-stringtable: {bootstrapStringTable.Name}");
+        Report($"bootstrap-mapcrc: {signedChecksum}");
+        Report($"bootstrap-xmodels: {bootstrapXModelGraph.Models.Count}");
+        Report($"bootstrap-xmodelsurfs: {bootstrapXModelGraph.XModelSurfsCount}");
+        Report(
             $"bootstrap-material-references: {bootstrapXModelGraph.Providers.OfType<MaterialAsset>().Count(material => externalProviderKeys.Contains(AssetKey.FromDefinition(material)))}");
-        Console.WriteLine(
+        Report(
             $"bootstrap-physpreset-references: {bootstrapXModelGraph.PhysPresetReferenceCount}");
-        Console.WriteLine($"map-static-xmodels: {staticXModelGraph.Models.Count}");
-        Console.WriteLine($"map-static-xmodelsurfs: {staticXModelGraph.XModelSurfsCount}");
-        Console.WriteLine(
+        Report($"map-static-xmodels: {staticXModelGraph.Models.Count}");
+        Report($"map-static-xmodelsurfs: {staticXModelGraph.XModelSurfsCount}");
+        Report(
             $"map-static-material-references: {staticXModelGraph.Providers.OfType<MaterialAsset>().Count(material => externalProviderKeys.Contains(AssetKey.FromDefinition(material)))}");
-        Console.WriteLine(
+        Report(
             $"map-static-physpreset-references: {staticXModelGraph.PhysPresetReferenceCount}");
-        Console.WriteLine($"additional-xmodels: {additionalXModelGraph.Models.Count}");
-        Console.WriteLine($"additional-xmodelsurfs: {additionalXModelGraph.XModelSurfsCount}");
-        Console.WriteLine($"additional-materials: {additionalMaterials.Length}");
-        Console.WriteLine(
+        Report($"additional-xmodels: {additionalXModelGraph.Models.Count}");
+        Report($"additional-xmodelsurfs: {additionalXModelGraph.XModelSurfsCount}");
+        Report($"additional-materials: {additionalMaterials.Length}");
+        Report(
             $"additional-material-references: {additionalXModelGraph.Providers.OfType<MaterialAsset>().Count(material => externalProviderKeys.Contains(AssetKey.FromDefinition(material)))}");
-        Console.WriteLine(
+        Report(
             $"additional-physpreset-references: {additionalXModelGraph.PhysPresetReferenceCount}");
-        Console.WriteLine($"template-providers: {(template?.InitialLinkRequest.Assets.Providers.Count ?? 0)}");
-        Console.WriteLine($"dependency-fastfiles: {dependencyPaths.Length}");
-        Console.WriteLine($"provider-fastfiles: {providerPaths.Length}");
+        Report($"template-providers: {(template?.InitialLinkRequest.Assets.Providers.Count ?? 0)}");
+        Report($"dependency-fastfiles: {dependencyPaths.Length}");
+        Report($"provider-fastfiles: {providerPaths.Length}");
         int linkedLightmapCount = graph.Roots
             .OfType<GfxWorldAsset>()
             .Single()
             .WorldDraw
             .LightmapCount;
-        Console.WriteLine(forceFullbright || (worldOnly && lightmaps.Length == 0 && !useCompiledLighting)
+        Report(forceFullbright || (worldOnly && lightmaps.Length == 0 && !useCompiledLighting)
             ? $"lighting-mode: forced fullbright; discarded {graph.DiscardedLightByteCount} compiled light bytes"
             : $"lighting-mode: authored; linked {linkedLightmapCount} lightmap arrays");
-        Console.WriteLine($"available-providers: {baseAssets.Providers.Count}");
-        Console.WriteLine($"external-reference-fallbacks: {externalFallbackNames.Count}");
+        Report($"available-providers: {baseAssets.Providers.Count}");
+        Report($"external-reference-fallbacks: {externalFallbackNames.Count}");
         foreach (string referenceName in externalFallbackNames)
-            Console.WriteLine($"external-reference: {referenceName}");
-        Console.WriteLine($"decoded-zone-bytes: {decodedBytes.Length}");
-        Console.WriteLine($"fastfile-bytes: {packageBytes.Length}");
+            Report($"external-reference: {referenceName}");
+        Report($"decoded-zone-bytes: {decodedBytes.Length}");
+        Report($"fastfile-bytes: {packageBytes.Length}");
     }
 
     private static LinkRoot CreateOwnedRoot(BaseAsset asset, int index)

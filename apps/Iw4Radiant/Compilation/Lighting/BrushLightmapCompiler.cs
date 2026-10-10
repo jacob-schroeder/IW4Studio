@@ -2,7 +2,7 @@ using System.Buffers;
 using System.Numerics;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Codecs.GfxMap;
-using IW4.Render.WebGpu;
+using IW4.Render.Geometry;
 using Iw4Radiant.MapSource;
 
 namespace Iw4Radiant.Compilation.Lighting;
@@ -19,10 +19,10 @@ internal static class BrushLightmapCompiler
     // minimum for wide faces and bound scratch space to about one sun batch (16 rays/luxel).
     // Diffuse work retains its own ray-capacity splitting and overlaps CPU shading.
     private static int GpuBandHeight(int width, int height)
-        => Math.Min(height, Math.Max(8, WebGpuRayTraversal.MaximumRayCount / 16 / width));
+        => Math.Min(height, Math.Max(8, GpuRayTraversal.MaximumRayCount / 16 / width));
 
     internal static (IReadOnlyList<GfxLightmapArray> Lightmaps, Vector2[][] FaceUvs, byte[] FaceLightmapIndices)
-        BakeLightmaps(BrushLightingScene scene, IProgress<string>? progress = null)
+        BakeLightmaps(BrushLightingScene scene, GpuRayTraversal? traversal, IProgress<string>? progress = null)
     {
         var lightmaps = new List<GfxLightmapArray>();
         var rawPages = new List<(byte[] Primary, byte[] Secondary)>();
@@ -38,10 +38,10 @@ internal static class BrushLightmapCompiler
         var parallelOptions = new ParallelOptions
         {
             CancellationToken = scene.CancellationToken,
-            // Leave CPU capacity for the editor and other applications during a bake.
-            MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 2)
+            // Scale with available processors, leaving headroom on machines with more than two.
+            MaxDegreeOfParallelism = Environment.ProcessorCount > 2
+                ? Environment.ProcessorCount - 1 : Environment.ProcessorCount
         };
-        using var traversal = scene.CreateGpuTraversal();
         int reservedRows = scene.HasPrimaryLocalLights ? 1 : 0;
         int cursorX = 0, cursorY = reservedRows, rowHeight = 0;
         for (int faceIndex = 0; faceIndex < scene.Polygons.Count; faceIndex++)
@@ -284,6 +284,8 @@ internal static class BrushLightmapCompiler
             }
         }
         progress?.Report($"Bounced lighting complete: {bouncedLuxels}/{totalLuxels} luxels.");
+        if (traversal?.FailureReason is { } failureReason)
+            progress?.Report($"Lighting acceleration failed; remaining ray queries used CPU: {failureReason}");
         progress?.Report($"Lightmap packing: 0/{rawPages.Count} pages completed.");
         int packingBucket = 0;
         for (int page = 0; page < rawPages.Count; page++)

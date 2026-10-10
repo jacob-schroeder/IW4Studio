@@ -60,10 +60,7 @@ internal sealed record MapRenderSurface(string Material, Vector3[] Vertices, Vec
                 weightB < -0.001 || weightC < -0.001 || weightB + weightC > 1.001) continue;
             float b = (float)Math.Clamp(weightB, 0, 1);
             float c = (float)Math.Clamp(weightC, 0, 1 - b);
-            float a = 1 - b - c;
-            return (TextureCoordinates[0] * a + TextureCoordinates[corner] * b + TextureCoordinates[corner + 1] * c,
-                Colors[0] * a + Colors[corner] * b + Colors[corner + 1] * c,
-                Vector3.Normalize(Normals[0] * a + Normals[corner] * b + Normals[corner + 1] * c));
+            return Sample(corner, b, c);
         }
         // Luxel clamping and ray hits round their boundary point back to Vector3.
         // On very thin faces that rounding can exceed a barycentric tolerance;
@@ -82,6 +79,14 @@ internal sealed record MapRenderSurface(string Material, Vector3[] Vertices, Vec
                 Vector3.Normalize(Vector3.Lerp(Normals[nearestEdge], Normals[next], along)));
         }
         throw new InvalidDataException("A baked surface sample lies outside its polygon.");
+    }
+
+    internal (Vector2 Texture, Vector4 Color, Vector3 Normal) Sample(int corner, float b, float c)
+    {
+        float a = 1 - b - c;
+        return (TextureCoordinates[0] * a + TextureCoordinates[corner] * b + TextureCoordinates[corner + 1] * c,
+            Colors[0] * a + Colors[corner] * b + Colors[corner + 1] * c,
+            Vector3.Normalize(Normals[0] * a + Normals[corner] * b + Normals[corner + 1] * c));
     }
 
     internal Vector3 ClampToPolygon(Vector3 point)

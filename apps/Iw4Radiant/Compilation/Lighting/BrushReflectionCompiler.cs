@@ -2,13 +2,15 @@ using System.Numerics;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Assets.Image;
 using IW4.Game.Codecs.GfxMap;
+using IW4.Render.Geometry;
 
 namespace Iw4Radiant.Compilation.Lighting;
 
 internal static class BrushReflectionCompiler
 {
     internal static (IReadOnlyList<GfxImageAsset> Images, IReadOnlyList<GfxReflectionProbe> Origins)
-        CaptureProbes(BrushLightingScene scene, IReadOnlyList<Vector3> origins, IProgress<string>? progress = null)
+        CaptureProbes(BrushLightingScene scene, IReadOnlyList<Vector3> origins, GpuRayTraversal? traversal,
+            IProgress<string>? progress = null)
     {
         // The canonical v22 cell reserves 67 bytes for authored probe indices.
         if (origins.Count is < 1 or > 67)
@@ -40,27 +42,31 @@ internal static class BrushReflectionCompiler
         var parallelOptions = new ParallelOptions
         {
             CancellationToken = scene.CancellationToken,
-            MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 2)
+            // Scale with available processors, leaving headroom on machines with more than two.
+            MaxDegreeOfParallelism = Environment.ProcessorCount > 2
+                ? Environment.ProcessorCount - 1 : Environment.ProcessorCount
         };
 
         foreach (Vector3 origin in origins)
         {
             scene.CancellationToken.ThrowIfCancellationRequested();
             var pixels = new byte[directions.Length * 4];
+            var radiance = new Vector3[directions.Length];
+            scene.CaptureRadianceBatch(origin, directions, radiance, traversal, parallelOptions);
             Parallel.For(0, faceCount * size, parallelOptions, row =>
             {
                 scene.CancellationToken.ThrowIfCancellationRequested();
                 int firstPixel = row * size;
                 for (int pixel = firstPixel; pixel < firstPixel + size; pixel++)
                 {
-                    Vector3 radiance = scene.CaptureRadiance(origin, directions[pixel]);
+                    Vector3 value = radiance[pixel];
                     for (int channel = 0; channel < 3; channel++)
                     {
-                        if (!float.IsFinite(radiance[channel]) || radiance[channel] < 0)
+                        if (!float.IsFinite(value[channel]) || value[channel] < 0)
                             throw new InvalidDataException("A captured reflection pixel has invalid radiance.");
                         // The native probe is an LDR square-root encoding. Saturation
                         // matches that finite framebuffer range, before mip filtering.
-                        pixels[pixel * 4 + channel] = (byte)MathF.Round(255 * MathF.Sqrt(Math.Clamp(radiance[channel], 0, 1)));
+                        pixels[pixel * 4 + channel] = (byte)MathF.Round(255 * MathF.Sqrt(Math.Clamp(value[channel], 0, 1)));
                     }
                     pixels[pixel * 4 + 3] = 255;
                 }
