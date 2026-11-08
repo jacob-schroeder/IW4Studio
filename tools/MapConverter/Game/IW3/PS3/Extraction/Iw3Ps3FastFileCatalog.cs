@@ -1,14 +1,22 @@
 using System.Buffers.Binary;
 using System.Text;
+using System.Text.Json;
+using IW4.Game.Assets;
+using IW4.Game.Assets.Physics;
+using IW4.Game.Assets.RawFile;
 using IW4.Game.Assets.Image;
+using MapConverter.Game.IW3.PC.Images;
 using MapConverter.Game.IW3.PC.Extraction;
+using MapConverter.Game.IW3.PS3.Materials;
+using MapConverter.Game.IW3.PS3.Images;
+using MapConverter.Game.IW3.PS3.Techniques;
 using MapConverter.Game.IW3.PS3.FastFiles;
 using static MapConverter.Game.IW3.PC.Extraction.Iw3PcSourceLibrary;
 
 namespace MapConverter.Game.IW3.PS3.Extraction;
 
 /// <summary>Catalogs the recovered COD4 PS3 asset layouts without converting their payloads.</summary>
-internal static class Iw3Ps3FastFileCatalog
+internal static partial class Iw3Ps3FastFileCatalog
 {
     private const int MaximumRetainedBytes = 256 * 1024 * 1024;
     private const int XFileHeaderSize = 36;
@@ -16,6 +24,59 @@ internal static class Iw3Ps3FastFileCatalog
     internal static bool IsFastFile(string path) => Iw3Ps3FastFileFrames.IsFastFile(path);
 
     internal static Catalog Read(string path, CancellationToken cancellationToken)
+    {
+        var (data, logicalEnd) = ReadDecoded(path, cancellationToken);
+        return new Reader(path, data, logicalEnd, cancellationToken).ReadCatalog();
+    }
+
+    internal static IReadOnlyList<BaseAsset> ReadMapAssets(
+        string path, Iw3Ps3TechniqueCompiler techniques, Iw3Ps3ImageLibrary images,
+        Iw3Ps3ShaderLibrary stockSources,
+        CancellationToken token)
+    {
+        var (data, logicalEnd) = ReadDecoded(path, token);
+        var reader = new Reader(path, data, logicalEnd, token, techniques, images,
+            stockSources: stockSources);
+        reader.ReadCatalog(selectedMapAssets: true);
+        return reader.Definitions.Concat(techniques.CompiledShaders).ToArray();
+    }
+
+    internal static string? CaptureShaderPrefix(
+        string path, byte[] data, int logicalEnd,
+        Iw3Ps3ShaderLibrary shaders, CancellationToken token)
+    {
+        return new Reader(path, data, logicalEnd, token, shaderLibrary: shaders)
+            .CaptureShaderPrefix();
+    }
+
+    internal static RawFileAsset? FindInlineRawFile(string path, string name, CancellationToken token)
+    {
+        var (data, end) = ReadDecoded(path, token);
+        byte[] needle = Encoding.Latin1.GetBytes(name + '\0');
+        int cursor = XFileHeaderSize + 12;
+        while (cursor < end)
+        {
+            token.ThrowIfCancellationRequested();
+            int relative = data.AsSpan(cursor, end - cursor).IndexOf(needle);
+            if (relative < 0) break;
+            int nameOffset = cursor + relative;
+            int root = nameOffset - 12;
+            cursor = nameOffset + needle.Length;
+            uint length = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(root + 4));
+            if (BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(root)) != uint.MaxValue ||
+                BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(root + 8)) != uint.MaxValue ||
+                length >= end - cursor || data[cursor + (int)length] != 0)
+                continue;
+            return new RawFileAsset
+            {
+                Name = name, Len = (int)length,
+                Buffer = data.AsSpan(cursor, (int)length + 1).ToArray()
+            };
+        }
+        return null;
+    }
+
+    internal static (byte[] Data, int LogicalEnd) ReadDecoded(string path, CancellationToken cancellationToken)
     {
         using var decoded = new MemoryStream();
         long maximumDecodedSize = MaximumRetainedBytes;
@@ -42,7 +103,7 @@ internal static class Iw3Ps3FastFileCatalog
             throw new InvalidDataException($"IW3 PS3 fastfile '{path}' has truncated decoded data.");
         if (decoded.GetBuffer().AsSpan(logicalEnd, (int)decoded.Length - logicalEnd).IndexOfAnyExcept((byte)0) >= 0)
             throw new InvalidDataException($"IW3 PS3 fastfile '{path}' has nonzero data after its XFile content.");
-        return new Reader(path, decoded.GetBuffer(), logicalEnd, cancellationToken).ReadCatalog();
+        return (decoded.ToArray(), logicalEnd);
     }
 
     private readonly record struct Address(int Block, int Offset)
@@ -53,9 +114,9 @@ internal static class Iw3Ps3FastFileCatalog
     private readonly record struct Region(Address Address, int FileOffset, int Length);
 
     // These are transient pointer-resolution facts, not a second catalog or asset model.
-    private sealed record Pointer(string Kind, Region Region, int[] Dependencies);
+    private sealed record Pointer(string Kind, Region Region, int[] Dependencies, object? Value = null);
 
-    private sealed class Reader
+    private sealed partial class Reader
     {
         private readonly string _path;
         private readonly byte[] _data;
@@ -70,18 +131,45 @@ internal static class Iw3Ps3FastFileCatalog
         private readonly List<int> _deferred = [];
         private readonly List<CatalogAsset> _assets = [];
         private readonly HashSet<string> _skipped = new(StringComparer.Ordinal);
+        private readonly bool _converting;
+        private readonly bool _captureRenderSources;
+        private readonly string _ownedNamePrefix;
+        private readonly List<string?> _scriptStrings = [];
+        private readonly List<BaseAsset> _definitions = [];
+        internal IReadOnlyList<BaseAsset> Definitions => _definitions;
+        private readonly Iw3Ps3TechniqueCompiler? _techniqueCompiler;
+        private readonly Iw3Ps3MaterialCompiler? _materialCompiler;
+        private readonly Iw3Ps3ImageLibrary? _imageLibrary;
+        private readonly Iw3Ps3ShaderLibrary? _shaderLibrary;
+        private readonly Iw3Ps3ShaderLibrary? _stockSources;
         private int _position = XFileHeaderSize;
         private int _block;
         private int _root = -1;
+        private string? _shaderPrefixStopReason;
         private long _retainedBytes;
 
-        internal Reader(string path, byte[] data, int end, CancellationToken token)
+        internal Reader(string path, byte[] data, int end, CancellationToken token,
+            Iw3Ps3TechniqueCompiler? techniqueCompiler = null,
+            Iw3Ps3ImageLibrary? imageLibrary = null,
+            Iw3Ps3ShaderLibrary? shaderLibrary = null,
+            Iw3Ps3ShaderLibrary? stockSources = null)
         {
             _path = path;
             _data = data;
             _end = end;
             _token = token;
             _retainedBytes = data.Length;
+            _converting = techniqueCompiler is not null;
+            _captureRenderSources = _converting || shaderLibrary is not null;
+            _ownedNamePrefix = techniqueCompiler?.OwnedNamePrefix ?? "";
+            _techniqueCompiler = techniqueCompiler;
+            _imageLibrary = imageLibrary;
+            _shaderLibrary = shaderLibrary;
+            _stockSources = stockSources;
+            _materialCompiler = techniqueCompiler is null ? null : new(
+                techniqueCompiler,
+                (stockSources ?? throw new ArgumentNullException(nameof(stockSources))).ResolveMaterial,
+                (imageLibrary ?? throw new ArgumentNullException(nameof(imageLibrary))).Resolve);
             for (int index = 0; index < 7; index++)
             {
                 uint limit = U32(8 + index * 4);
@@ -91,7 +179,13 @@ internal static class Iw3Ps3FastFileCatalog
             }
         }
 
-        internal Catalog ReadCatalog()
+        internal string? CaptureShaderPrefix()
+        {
+            ReadCatalog(shaderPrefix: true);
+            return _shaderPrefixStopReason;
+        }
+
+        internal Catalog ReadCatalog(bool selectedMapAssets = false, bool shaderPrefix = false)
         {
             Region list = ReadBytes(16);
             int stringCount = Count(U32(list.FileOffset));
@@ -106,7 +200,7 @@ internal static class Iw3Ps3FastFileCatalog
                 Align(4);
                 Region strings = ReadBytes(Size(stringCount, 4));
                 for (int index = 0; index < stringCount; index++)
-                    ReadString(U32(strings.FileOffset + index * 4));
+                    _scriptStrings.Add(ReadString(U32(strings.FileOffset + index * 4)));
             }
             else if (stringCount != 0)
                 throw Invalid("script-string count has no pointer array");
@@ -124,28 +218,66 @@ internal static class Iw3Ps3FastFileCatalog
                     uint type = U32(entry);
                     uint raw = U32(entry + 4);
                     Address cell = roots.Address.Add(_root * 8 + 4);
-                    switch (type)
+                    bool supportedRoot = true;
+                    try
                     {
-                        case 1: PhysPreset(raw, cell); break;
-                        case 2: Animation(raw, cell); break;
-                        case 3: Model(raw, cell); break;
-                        case 4: Material(raw, cell); break;
-                        case 5: Shader(raw, cell, vertex: false); break;
-                        case 6: Shader(raw, cell, vertex: true); break;
-                        case 7: TechniqueSet(raw, cell); break;
-                        case 8: Image(raw, cell); break;
-                        case 10: SimpleAsset(raw, cell, "soundcurve", 72); break;
-                        case 24: SimpleAsset(raw, cell, "localize", 8); break;
-                        case 26: _skipped.Add("snddriverglobals"); break; // No case in PS3 0xda6a0.
-                        case 33: SimpleAsset(raw, cell, "rawfile", 12); break;
-                        case 34: StringTable(raw, cell); break;
-                        default: throw Unsupported($"XAsset type {type}");
+                        switch (type)
+                        {
+                            case 1: PhysPreset(raw, cell); break;
+                            case 2: Animation(raw, cell); break;
+                            case 3: Model(raw, cell); break;
+                            case 4: Material(raw, cell); break;
+                            case 5: Shader(raw, cell, vertex: false); break;
+                            case 6: Shader(raw, cell, vertex: true); break;
+                            case 7: TechniqueSet(raw, cell); break;
+                            case 8: Image(raw, cell); break;
+                            case 9 when shaderPrefix: SoundPrefix(raw, cell); break;
+                            case 10 when shaderPrefix: SoundCurvePrefix(raw, cell); break;
+                            case 10: SimpleAsset(raw, cell, "soundcurve", 72); break;
+                            case 11 when shaderPrefix: LoadedSoundPrefix(raw, cell); break;
+                            case 13 when _converting: ClipMap(raw, cell); break;
+                            case 14 when _converting: ComWorld(raw, cell); break;
+                            case 16 when _converting: GameWorld(raw, cell); break;
+                            case 17 when _converting: MapEnts(raw, cell); break;
+                            case 18 when _converting: World(raw, cell); break;
+                            case 19 when _converting || shaderPrefix: LightDef(raw, cell); break;
+                            case 22 when shaderPrefix: MenuListPrefix(raw, cell); break;
+                            case 21 when shaderPrefix: FontPrefix(raw, cell); break;
+                            case 27 when selectedMapAssets: supportedRoot = false; break;
+                            case 27 when shaderPrefix: Fx(raw, cell); break;
+                            case 28 when shaderPrefix: ImpactPrefix(raw, cell); break;
+                            case 9 or 28 when selectedMapAssets: supportedRoot = false; break;
+                            case 24: SimpleAsset(raw, cell, "localize", 8); break;
+                            case 25 when shaderPrefix: WeaponPrefix(raw, cell); break;
+                            case 26: _skipped.Add("snddriverglobals"); break; // No case in PS3 0xda6a0.
+                            case 33: SimpleAsset(raw, cell, "rawfile", 12); break;
+                            case 34: StringTable(raw, cell); break;
+                            default:
+                                if (!shaderPrefix) throw Unsupported($"XAsset type {type}");
+                                _shaderPrefixStopReason = Unsupported($"XAsset type {type}").Message;
+                                supportedRoot = false;
+                                break;
+                        }
                     }
+                    catch (NotSupportedException error) when (shaderPrefix)
+                    {
+                        _shaderPrefixStopReason = error.Message;
+                        break;
+                    }
+                    if (!supportedRoot) break;
                 }
             }
             else if (assetCount != 0)
                 throw Invalid("asset count has no root array");
             Pop();
+            if (shaderPrefix)
+                return new Catalog { Assets = _assets.ToArray(), SkippedAssetTypes = [] };
+            if (selectedMapAssets)
+            {
+                if (!_definitions.Any(asset => asset is IW4.Game.Assets.ColMap.ClipMapAsset))
+                    throw Invalid("source map has no collision world");
+                return new Catalog { Assets = _assets.ToArray(), SkippedAssetTypes = [] };
+            }
             // 0xe04c0 drains deferred source reads in insertion order, without padding.
             foreach (int size in _deferred)
             {
@@ -181,14 +313,19 @@ internal static class Iw3Ps3FastFileCatalog
             finally { Pop(); }
         }
 
-        private Pointer Named(string type, string? rawName, Region region, IEnumerable<int>? dependencies = null)
+        private Pointer Named(string type, string? rawName, Region region, IEnumerable<int>? dependencies = null, object? value = null)
         {
             if (string.IsNullOrEmpty(rawName))
                 throw Invalid($"{type} asset has no name");
             bool reference = rawName[0] == ',';
             string name = reference ? rawName[1..] : rawName;
-            if (!Iw3ZoneManifest.IsValidEntry(type, name))
-                throw Invalid($"invalid {type} asset identity");
+            // Prefix capture retains native names but never writes a zone
+            // manifest; stock XAnim names can contain trailing spaces.
+            if (_shaderLibrary is null && !Iw3ZoneManifest.IsValidEntry(type, name))
+                throw Invalid($"invalid {type} asset identity " +
+                    JsonSerializer.Serialize(rawName.Length <= 256
+                        ? rawName : rawName[..256]) +
+                    $" (source length {rawName.Length})");
             // Native NormalizeAssetName uses bytewise ASCII case folding and slash replacement.
             // Valid catalog names already have no surrounding whitespace.
             string key = string.Create(name.Length, name, static (destination, source) =>
@@ -208,7 +345,9 @@ internal static class Iw3Ps3FastFileCatalog
                 Dependencies = edges, References = [], StreamedSounds = []
             };
             _assets.Add(asset);
-            return new Pointer(type, region, [asset.Id]);
+            if (_converting && value is BaseAsset definition && definition is not IW4.Game.Assets.MapEnts.MapEntsAsset)
+                _definitions.Add(definition);
+            return new Pointer(type, region, [asset.Id], value);
         }
 
         private Pointer? TechniqueSet(uint raw, Address cell) => AssetPointer(raw, cell, "techniqueset", 112, root =>
@@ -218,9 +357,19 @@ internal static class Iw3Ps3FastFileCatalog
             {
                 string? name = ReadString(U32(root.FileOffset));
                 var dependencies = new HashSet<int>();
+                var slots = new Iw3Ps3TechniqueSource?[26];
                 for (int slot = 0; slot < 26; slot++)
-                    Add(dependencies, Technique(U32(root.FileOffset + 8 + slot * 4)));
-                return Named("techniqueset", name, root, dependencies);
+                {
+                    Pointer? technique = Technique(U32(root.FileOffset + 8 + slot * 4));
+                    Add(dependencies, technique);
+                    slots[slot] = technique?.Value as Iw3Ps3TechniqueSource;
+                }
+                var source = _captureRenderSources ? new Iw3Ps3TechniqueSetSource(
+                    name ?? throw Invalid("technique set has no name"), Bytes(root), slots) : null;
+                if (source is not null) _shaderLibrary?.AddSet(source);
+                if (_converting && source is not null)
+                    _definitions.Add((_techniqueCompiler ?? throw Invalid("conversion has no technique compiler")).Compile(source).TechniqueSet);
+                return Named("techniqueset", name, root, dependencies, source);
             }
             finally { Pop(); }
         });
@@ -234,6 +383,7 @@ internal static class Iw3Ps3FastFileCatalog
             int passCount = U16(root.FileOffset + 6);
             Region passes = ReadBytes(Size(passCount, 24));
             var dependencies = new HashSet<int>();
+            var sourcePasses = new List<Iw3Ps3PassSource>();
             for (int index = 0; index < passCount; index++)
             {
                 int pass = passes.FileOffset + index * 24;
@@ -241,8 +391,11 @@ internal static class Iw3Ps3FastFileCatalog
                 Pointer? declaration = ReadArray(U32(pass), 4, 34, "vertexdecl");
                 if (declaration is not null && _data[declaration.Region.FileOffset] > 16)
                     throw Invalid("vertex declaration exceeds its sixteen source routes");
-                Add(dependencies, Shader(U32(pass + 4), address.Add(4), vertex: true));
-                Add(dependencies, Shader(U32(pass + 8), address.Add(8), vertex: false));
+                Pointer? vertex = Shader(U32(pass + 4), address.Add(4), vertex: true);
+                Pointer? pixel = Shader(U32(pass + 8), address.Add(8), vertex: false);
+                Add(dependencies, vertex);
+                Add(dependencies, pixel);
+                var sourceArguments = new List<Iw3Ps3ArgumentSource>();
                 if (U32(pass + 20) != 0)
                 {
                     Align(4);
@@ -251,13 +404,21 @@ internal static class Iw3Ps3FastFileCatalog
                     for (int arg = 0; arg < count; arg++)
                     {
                         int argument = arguments.FileOffset + arg * 8;
-                        if (U16(argument) is 1 or 7)
-                            ReadArray(U32(argument + 4), 4, 16, "literal");
+                        Pointer? literal = U16(argument) is 1 or 7
+                            ? ReadArray(U32(argument + 4), 4, 16, "literal") : null;
+                        if (_captureRenderSources) sourceArguments.Add(new(
+                            _data.AsMemory(argument, 8), literal is null ? default : Bytes(literal.Region)));
                     }
                 }
+                if (_captureRenderSources) sourcePasses.Add(new(_data.AsMemory(pass, 24),
+                    declaration is null ? default : Bytes(declaration.Region),
+                    vertex?.Value as Iw3Ps3ShaderSource, pixel?.Value as Iw3Ps3ShaderSource,
+                    sourceArguments));
             }
-            ReadString(U32(root.FileOffset)); // Name follows every pass and its children.
-            return Remember(new Pointer("technique", root, dependencies.Order().ToArray()));
+            string? name = ReadString(U32(root.FileOffset)); // Name follows every pass and its children.
+            return Remember(new Pointer("technique", root, dependencies.Order().ToArray(),
+                _captureRenderSources ? new Iw3Ps3TechniqueSource(name ?? throw Invalid("technique has no name"),
+                    Bytes(root), sourcePasses) : null));
         }
 
         private Pointer? Shader(uint raw, Address cell, bool vertex)
@@ -269,26 +430,31 @@ internal static class Iw3Ps3FastFileCatalog
                 try
                 {
                     string? name = ReadString(U32(root.FileOffset));
-                    Program(U32(root.FileOffset + 4), Count(U32(root.FileOffset + 8)), vertex);
-                    return Named(type, name, root);
+                    ReadOnlyMemory<byte> program = Program(U32(root.FileOffset + 4), Count(U32(root.FileOffset + 8)), vertex);
+                    Iw3Ps3ShaderSource? source = _captureRenderSources
+                        ? new Iw3Ps3ShaderSource(name ?? throw Invalid("shader has no name"),
+                            vertex, Bytes(root), program)
+                        : null;
+                    if (source is not null) _shaderLibrary?.Add(source);
+                    return Named(type, name, root, value: source);
                 }
                 finally { Pop(); }
             });
         }
 
-        private void Program(uint raw, int byteCount, bool vertex)
+        private ReadOnlyMemory<byte> Program(uint raw, int byteCount, bool vertex)
         {
             Push(0);
             try
             {
-                if (raw == 0) return;
+                if (raw == 0) return default;
                 string kind = vertex ? "vertex-program" : "pixel-program";
                 if (raw is not (uint.MaxValue or 0xfffffffe))
                 {
                     Pointer? previous = Alias(raw, kind);
                     if (previous is null || previous.Region.Length != byteCount)
                         throw Invalid("aliased Cg program length disagrees with its shader wrapper");
-                    return;
+                    return Bytes(previous.Region);
                 }
                 Align(16);
                 Address? inserted = raw == 0xfffffffe ? InsertPointer() : null;
@@ -313,6 +479,7 @@ internal static class Iw3Ps3FastFileCatalog
                 }
                 if (inserted is { } insert)
                     SetAlias(insert, new Pointer(kind, program, []));
+                return Bytes(program);
             }
             finally { Pop(); }
         }
@@ -331,49 +498,89 @@ internal static class Iw3Ps3FastFileCatalog
                 }
                 finally { Pop(); }
                 var dependencies = new HashSet<int>();
-                Add(dependencies, TechniqueSet(U32(start + 0x70), root.Address.Add(0x70)));
+                Pointer? techniqueSet = TechniqueSet(U32(start + 0x70), root.Address.Add(0x70));
+                Add(dependencies, techniqueSet);
+                IReadOnlyList<Iw3Ps3TextureSource> sourceTextures = [];
                 uint rawTextures = U32(start + 0x74);
                 int textureCount = _data[start + 0x32];
                 if (rawTextures != 0)
                 {
                     Pointer? previous = rawTextures == uint.MaxValue ? null : Direct(rawTextures, "textures", Size(textureCount, 12));
-                    if (previous is not null) Add(dependencies, previous);
+                    if (previous is not null)
+                    {
+                        Add(dependencies, previous);
+                        sourceTextures = previous.Value as IReadOnlyList<Iw3Ps3TextureSource> ?? [];
+                    }
                     else
                     {
                         Align(4);
                         Region textures = ReadBytes(Size(textureCount, 12));
                         var textureDependencies = new HashSet<int>();
+                        var sourceRows = new List<Iw3Ps3TextureSource>();
                         for (int index = 0; index < textureCount; index++)
                         {
                             int texture = textures.FileOffset + index * 12;
                             uint child = U32(texture + 8);
+                            Pointer? image = null;
                             if (_data[texture + 7] == 11)
                             {
                                 if (child != 0) throw Unsupported("material water child (0xd0730)");
                             }
-                            else Add(textureDependencies, Image(child, textures.Address.Add(index * 12 + 8)));
+                            else
+                            {
+                                image = Image(child, textures.Address.Add(index * 12 + 8));
+                                Add(textureDependencies, image);
+                            }
+                            if (_captureRenderSources)
+                                sourceRows.Add(new(_data.AsMemory(texture, 12),
+                                    image?.Value as GfxImageAsset,
+                                    image is null ? null : _assets[image.Dependencies.Single()].Name));
                         }
-                        Pointer table = Remember(new Pointer("textures", textures, textureDependencies.Order().ToArray()));
+                        sourceTextures = sourceRows;
+                        Pointer table = Remember(new Pointer("textures", textures, textureDependencies.Order().ToArray(), sourceRows));
                         Add(dependencies, table);
                     }
                 }
-                ReadArray(U32(start + 0x78), 16, Size(_data[start + 0x33], 32), "material-constants");
+                Pointer? constants = ReadArray(U32(start + 0x78), 16, Size(_data[start + 0x33], 32), "material-constants");
                 uint rawStates = U32(start + 0x7c);
                 int stateCount = _data[start + 0x34];
+                IReadOnlyList<ReadOnlyMemory<byte>> sourceStates = [];
                 if (rawStates != 0)
                 {
-                    if (rawStates != uint.MaxValue) Direct(rawStates, "material-states", Size(stateCount, 4));
+                    if (rawStates != uint.MaxValue)
+                        sourceStates = Direct(rawStates, "material-states", Size(stateCount, 4)).Value
+                            as IReadOnlyList<ReadOnlyMemory<byte>> ?? [];
                     else
                     {
                         Align(4);
                         Region states = ReadBytes(Size(stateCount, 4));
+                        var stateRows = new List<ReadOnlyMemory<byte>>();
                         for (int index = 0; index < stateCount; index++)
-                            AssetPointer(U32(states.FileOffset + index * 4), states.Address.Add(index * 4), "material-state", 8,
+                        {
+                            Pointer? state = AssetPointer(U32(states.FileOffset + index * 4), states.Address.Add(index * 4), "material-state", 8,
                                 bits => new Pointer("material-state", bits, []));
-                        Remember(new Pointer("material-states", states, []));
+                            if (_captureRenderSources)
+                                stateRows.Add(state is null ? default : Bytes(state.Region));
+                        }
+                        sourceStates = stateRows;
+                        Remember(new Pointer("material-states", states, [], stateRows));
                     }
                 }
-                return Named("material", name, root, dependencies);
+                object? value = null;
+                if (_captureRenderSources)
+                {
+                    var sourceConstants = new List<ReadOnlyMemory<byte>>();
+                    if (constants is not null)
+                        for (int index = 0; index < _data[start + 0x33]; index++)
+                            sourceConstants.Add(_data.AsMemory(constants.Region.FileOffset + index * 32, 32));
+                    var source = new Iw3Ps3MaterialSource(name ?? throw Invalid("material has no name"),
+                        Bytes(root), techniqueSet?.Value as Iw3Ps3TechniqueSetSource,
+                        sourceTextures, sourceConstants, sourceStates);
+                    _shaderLibrary?.AddMaterial(source);
+                    if (_converting)
+                        value = (_materialCompiler ?? throw Invalid("conversion has no material compiler")).Compile(source);
+                }
+                return Named("material", name, root, dependencies, value);
             }
             finally { Pop(); }
         });
@@ -405,7 +612,17 @@ internal static class Iw3Ps3FastFileCatalog
                     }
                 }
                 finally { Pop(); }
-                return Named("image", name, root);
+                object? value = null;
+                if (_converting)
+                {
+                    string imageName = name ?? throw Invalid("image has no name");
+                    Iw3Ps3ImageLibrary library = _imageLibrary ??
+                        throw Invalid("conversion has no image library");
+                    value = imageName.StartsWith(',')
+                        ? library.Resolve(imageName)
+                        : library.ResolveAt(_path, start, imageName);
+                }
+                return Named("image", name, root, value: value);
             }
             finally { Pop(); }
         });
@@ -431,7 +648,7 @@ internal static class Iw3Ps3FastFileCatalog
 
         private Pointer? Animation(uint raw, Address cell) => AssetPointer(raw, cell, "xanim", 0x5c, root =>
         {
-            // 0xda338, 0xd5f98, 0xd5ea0 and 0xc4a00. Delta remains a separate unsupported branch.
+            // Current d3f68 follows the source delta before scalar arrays.
             Push(4);
             try
             {
@@ -439,7 +656,7 @@ internal static class Iw3Ps3FastFileCatalog
                 string? name = ReadString(U32(start));
                 PresenceArray(U32(start + 0x34), 2, Size(_data[start + 0x1d], 2), "animation-bone-names");
                 PresenceArray(U32(start + 0x54), 4, Size(_data[start + 0x1e], 8), "animation-notifications");
-                if (U32(start + 0x58) != 0) throw Unsupported("animation delta child (0xc35f0)");
+                AnimationDeltaPrefix(U32(start + 0x58), U16(start + 0xe));
                 PresenceArray(U32(start + 0x38), 1, U16(start + 4), "animation-bytes");
                 PresenceArray(U32(start + 0x3c), 2, Size(U16(start + 6), 2), "animation-shorts");
                 PresenceArray(U32(start + 0x40), 4, Size(U16(start + 8), 4), "animation-ints");
@@ -462,61 +679,122 @@ internal static class Iw3Ps3FastFileCatalog
                 string? name = ReadString(U32(start));
                 int bones = _data[start + 4], rootBones = _data[start + 5], surfaces = _data[start + 6];
                 if (rootBones > bones) throw Invalid("model root-bone count exceeds bone count");
-                ReadArray(U32(start + 8), 2, Size(bones, 2), "model-bone-names");
-                ReadArray(U32(start + 12), 1, bones - rootBones, "model-parents");
-                ReadArray(U32(start + 16), 2, Size(bones - rootBones, 8), "model-quaternions");
-                ReadArray(U32(start + 20), 4, Size(bones - rootBones, 16), "model-translations");
-                ReadArray(U32(start + 24), 1, bones, "model-part-classification");
-                ReadArray(U32(start + 28), 4, Size(bones, 32), "model-base-matrices");
+                Pointer? boneNames = ReadArray(U32(start + 8), 2, Size(bones, 2), "model-bone-names");
+                Pointer? parents = ReadArray(U32(start + 12), 1, bones - rootBones, "model-parents");
+                Pointer? quats = ReadArray(U32(start + 16), 2, Size(bones - rootBones, 8), "model-quaternions");
+                Pointer? translations = ReadArray(U32(start + 20), 4, Size(bones - rootBones, 16), "model-translations");
+                Pointer? classification = ReadArray(U32(start + 24), 1, bones, "model-part-classification");
+                Pointer? baseMatrices = ReadArray(U32(start + 28), 4, Size(bones, 32), "model-base-matrices");
+                var sourceSurfaces = new List<ModelSurfaceSource>(surfaces);
                 if (U32(start + 0x20) != 0)
                 {
                     Align(4);
                     Region roots = ReadBytes(Size(surfaces, 0x4c));
-                    for (int index = 0; index < surfaces; index++) Surface(roots.FileOffset + index * 0x4c);
+                    for (int index = 0; index < surfaces; index++)
+                    {
+                        ModelSurfaceSource? sourceSurface = Surface(roots, index);
+                        if (sourceSurface is not null) sourceSurfaces.Add(sourceSurface);
+                    }
                 }
                 var dependencies = new HashSet<int>();
+                var materials = new List<Pointer?>(surfaces);
                 if (U32(start + 0x24) != 0)
                 {
                     Align(4);
                     Region handles = ReadBytes(Size(surfaces, 4));
                     for (int index = 0; index < surfaces; index++)
-                        Add(dependencies, Material(U32(handles.FileOffset + index * 4), handles.Address.Add(index * 4)));
+                    {
+                        Pointer? material = Material(U32(handles.FileOffset + index * 4), handles.Address.Add(index * 4));
+                        Add(dependencies, material);
+                        materials.Add(material);
+                    }
                 }
-                if (U32(start + 0x88) != 0) throw Unsupported("model collision-surfaces branch");
-                PresenceArray(U32(start + 0x94), 4, Size(bones, 40), "model-bone-info");
-                Add(dependencies, PhysPreset(U32(start + 0xc4), root.Address.Add(0xc4)));
-                if (U32(start + 0xc8) != 0)
-                    throw Unsupported("model physics-geometry branch");
-                return Named("xmodel", name, root, dependencies);
+                int collisionCount = Count(U32(start + 0x8c));
+                Pointer? collision = ReadArray(U32(start + 0x88), 4,
+                    Size(collisionCount, 0x24), "model-collision-surfaces");
+                Pointer? boneInfo = PresenceArray(U32(start + 0x94), 4,
+                    Size(bones, 40), "model-bone-info");
+                Pointer? preset = PhysPreset(U32(start + 0xc4), root.Address.Add(0xc4));
+                Add(dependencies, preset);
+                PhysCollmapAsset? physCollmap = PhysGeomList(U32(start + 0xc8), name ?? "", root);
+                bool captureModel = _converting ||
+                    (_shaderLibrary is not null && name?.StartsWith(',') == false);
+                Iw3Ps3ModelSource? sourceModel = null;
+                if (captureModel)
+                {
+                    string modelName = name ?? throw Invalid("model has no name");
+                    if (!_converting && U32(start + 0xc8) != 0)
+                        _shaderLibrary?.AddUnsupportedModel(modelName, "source PhysCollmap geometry");
+                    else try
+                    {
+                        sourceModel = CaptureModelSource(
+                            modelName, root, boneNames, parents,
+                            quats, translations, classification, baseMatrices, sourceSurfaces,
+                            materials, collision, boneInfo, preset);
+                    }
+                    catch (NotSupportedException error) when (!_converting && _shaderLibrary is not null)
+                    {
+                        _shaderLibrary.AddUnsupportedModel(modelName, error.Message);
+                    }
+                }
+                if (sourceModel is not null) _shaderLibrary?.AddModel(sourceModel);
+                object? value = null;
+                if (_converting)
+                {
+                    if (sourceModel is null) throw Invalid("conversion has no model source");
+                    if (name?.StartsWith(',') == true)
+                        sourceModel = (_stockSources ?? throw Invalid("conversion has no stock source library"))
+                            .ResolveModel(name[1..]);
+                    value = CompileModelSource(sourceModel, physCollmap,
+                        name?.StartsWith(',') == true ? null : materials,
+                        name?.StartsWith(',') == true ? null : preset);
+                }
+                return Named("xmodel", name, root, dependencies, value);
             }
             finally { Pop(); }
         });
 
-        private void Surface(int root)
+        private ModelSurfaceSource? Surface(Region roots, int index)
         {
+            int root = roots.FileOffset + index * 0x4c;
             int blendWords = U16(root + 12) + U16(root + 14) * 3 + U16(root + 16) * 5 + U16(root + 18) * 7;
-            ReadArray(U32(root + 0x14), 2, Size(blendWords, 2), "surface-blend-indices");
-            ReadArray(U32(root + 0x18), 16, Size(U16(root + 2), 16), "surface-vertices0");
+            Pointer? blend = ReadArray(U32(root + 0x14), 2, Size(blendWords, 2), "surface-blend-indices");
+            Pointer? vertices0 = ReadArray(U32(root + 0x18), 16, Size(U16(root + 2), 16), "surface-vertices0");
             bool streamed = _data[root + 1] == 0 && U32(root + 0x30) == 1;
             if (streamed) Push(6);
-            try { ReadArray(U32(root + 0x24), 16, Size(U16(root + 2), 16), "surface-vertices1"); }
+            Pointer? vertices1;
+            try { vertices1 = ReadArray(U32(root + 0x24), 16, Size(U16(root + 2), 16), "surface-vertices1"); }
             finally { if (streamed) Pop(); }
             uint rawLists = U32(root + 0x34);
             int listCount = Count(U32(root + 0x30));
             Pointer? lists = ReadArray(rawLists, 4, Size(listCount, 12), "surface-rigid-lists");
             if (lists is not null && rawLists == uint.MaxValue)
             {
-                for (int index = 0; index < listCount; index++)
+                var rigidRows = new List<ModelRigidSource>(listCount);
+                for (int rigidIndex = 0; rigidIndex < listCount; rigidIndex++)
                 {
-                    uint rawTree = U32(lists.Region.FileOffset + index * 12 + 8);
+                    uint rawTree = U32(lists.Region.FileOffset + rigidIndex * 12 + 8);
                     Pointer? tree = ReadArray(rawTree, 4, 40, "surface-collision-tree");
-                    if (tree is null || rawTree != uint.MaxValue) continue;
-                    int start = tree.Region.FileOffset;
-                    PresenceArray(U32(start + 0x1c), 16, Size(Count(U32(start + 0x18)), 16), "surface-collision-nodes");
-                    PresenceArray(U32(start + 0x24), 2, Size(Count(U32(start + 0x20)), 2), "surface-collision-leaves");
+                    if (tree is not null && rawTree == uint.MaxValue)
+                    {
+                        int start = tree.Region.FileOffset;
+                        Pointer? nodes = PresenceArray(U32(start + 0x1c), 16,
+                            Size(Count(U32(start + 0x18)), 16), "surface-collision-nodes");
+                        Pointer? leaves = PresenceArray(U32(start + 0x24), 2,
+                            Size(Count(U32(start + 0x20)), 2), "surface-collision-leaves");
+                        if (_captureRenderSources) tree = Remember(tree with { Value = new ModelTreeSource(tree.Region, nodes, leaves) });
+                    }
+                    if (_captureRenderSources) rigidRows.Add(new ModelRigidSource(
+                        new Region(lists.Region.Address.Add(rigidIndex * 12), lists.Region.FileOffset + rigidIndex * 12, 12),
+                        tree));
                 }
+                if (_captureRenderSources) lists = Remember(lists with { Value = rigidRows });
             }
-            ReadArray(U32(root + 8), 16, Size(U16(root + 4), 6), "surface-triangle-indices");
+            Pointer? triangles = ReadArray(U32(root + 8), 16,
+                Size(U16(root + 4), 6), "surface-triangle-indices");
+            return !_captureRenderSources ? null : new ModelSurfaceSource(
+                new Region(roots.Address.Add(index * 0x4c), root, 0x4c),
+                blend, vertices0, vertices1, lists, triangles, streamed);
         }
 
         // PS3 0xcea90/0xcea20: TEMP asset pointer, 0x2c-byte root, then two block4 XStrings.
@@ -535,19 +813,61 @@ internal static class Iw3Ps3FastFileCatalog
                     name = ReadString(U32(start + 4));
                 }
                 else name = ReadString(U32(start));
-                if (kind == "physpreset")
-                    ReadString(U32(start + 0x1c)); // sndAliasPrefix is a string, not a sound asset pointer.
+                string? soundPrefix = kind == "physpreset"
+                    ? ReadString(U32(start + 0x1c)) : null;
+                if (kind == "physpreset" && _shaderLibrary is not null)
+                    _shaderLibrary.AddPreset(name ?? throw Invalid("physics preset has no name"),
+                        Bytes(root), soundPrefix);
+                byte[]? buffer = null;
                 if (kind == "rawfile" && U32(start + 8) != 0)
                 {
                     int length = Count(U32(start + 4));
                     if (length == int.MaxValue) throw Invalid("rawfile byte count overflows");
                     Region text = ReadBytes(length + 1);
                     if (_data[text.FileOffset + length] != 0) throw Invalid("rawfile buffer has no terminating NUL");
+                    if (_converting) buffer = Bytes(text).ToArray();
                 }
-                return Named(kind, name, root);
+                object? value = null;
+                if (_converting && kind == "physpreset")
+                {
+                    string sourceName = name ?? throw Invalid("physics preset has no name");
+                    ReadOnlyMemory<byte> sourceRoot = Bytes(root);
+                    if (sourceName.StartsWith(','))
+                    {
+                        sourceName = sourceName[1..];
+                        (sourceRoot, soundPrefix) = (_stockSources ??
+                            throw Invalid("conversion has no stock source library")).ResolvePreset(sourceName);
+                    }
+                    value = CompilePresetSource(sourceName, sourceRoot, soundPrefix);
+                }
+                else if (_converting && kind == "rawfile")
+                    value = new RawFileAsset { Name = name, Len = Count(U32(start + 4)), Buffer = buffer };
+                return Named(kind, name, root, value: value);
             }
             finally { Pop(); }
         });
+
+        private PhysPresetAsset CompilePresetSource(
+            string name, ReadOnlyMemory<byte> root, string? soundPrefix)
+        {
+            ReadOnlySpan<byte> source = root.Span;
+            if (source.Length != 0x2c)
+                throw Invalid($"physics preset '{name}' has an invalid source root");
+            return new PhysPresetAsset
+            {
+                Name = _ownedNamePrefix + name,
+                Type = BinaryPrimitives.ReadInt32BigEndian(source[4..]),
+                Mass = BinaryPrimitives.ReadSingleBigEndian(source[8..]),
+                Bounce = BinaryPrimitives.ReadSingleBigEndian(source[12..]),
+                Friction = BinaryPrimitives.ReadSingleBigEndian(source[16..]),
+                BulletForceScale = BinaryPrimitives.ReadSingleBigEndian(source[20..]),
+                ExplosiveForceScale = BinaryPrimitives.ReadSingleBigEndian(source[24..]),
+                SndAliasPrefix = soundPrefix,
+                PiecesSpreadFraction = BinaryPrimitives.ReadSingleBigEndian(source[32..]),
+                PiecesUpwardVelocity = BinaryPrimitives.ReadSingleBigEndian(source[36..]),
+                TempDefaultToCylinder = source[40]
+            };
+        }
 
         private Pointer? StringTable(uint raw, Address cell)
         {
@@ -599,7 +919,7 @@ internal static class Iw3Ps3FastFileCatalog
 
         private Pointer Direct(uint raw, string kind, int? size = null)
         {
-            Address address = Decode(raw);
+            Address address = Decode(raw, kind);
             if (!_direct.TryGetValue(address, out Pointer? pointer) || pointer.Kind != kind)
                 throw Unsupported($"unresolved direct {kind} pointer 0x{raw:X8}");
             // Reusing a larger dependency-bearing table would introduce extra graph edges.
@@ -610,7 +930,7 @@ internal static class Iw3Ps3FastFileCatalog
 
         private Pointer? Alias(uint raw, string kind)
         {
-            Address address = Decode(raw);
+            Address address = Decode(raw, kind);
             if (!_aliases.TryGetValue(address, out Pointer? pointer))
                 throw Unsupported($"unresolved alias cell for {kind}: 0x{raw:X8}");
             if (pointer is not null && pointer.Kind != kind)
@@ -637,7 +957,7 @@ internal static class Iw3Ps3FastFileCatalog
             }
             else
             {
-                Address address = Decode(raw);
+                Address address = Decode(raw, "XString");
                 Region? found = null;
                 for (int index = _strings.Count - 1; index >= 0; index--)
                 {
@@ -649,7 +969,12 @@ internal static class Iw3Ps3FastFileCatalog
                         break;
                     }
                 }
-                if (found is not { } source) throw Unsupported($"unresolved XString pointer 0x{raw:X8}");
+                if (found is not { } source)
+                {
+                    string previous = _strings.Count == 0 ? "none" :
+                        $"block {_strings[^1].Address.Block}:0x{_strings[^1].Address.Offset:X}, decoded 0x{_strings[^1].FileOffset:X}";
+                    throw Unsupported($"unresolved XString pointer 0x{raw:X8}; last inline string: {previous}");
+                }
                 int displacement = address.Offset - source.Address.Offset;
                 offset = source.FileOffset + displacement;
                 maximum = source.Length - displacement;
@@ -663,12 +988,13 @@ internal static class Iw3Ps3FastFileCatalog
             return result;
         }
 
-        private Address Decode(uint raw)
+        private Address Decode(uint raw, string? kind = null)
         {
             if (raw is 0 or uint.MaxValue or 0xfffffffe) throw Invalid("invalid packed offset sentinel");
             uint value = raw - 1;
             int block = (int)(value >> 29), offset = (int)(value & 0x1fffffff);
-            if (block >= 7 || offset >= _limits[block]) throw Invalid($"packed pointer 0x{raw:X8} is outside its block");
+            if (block >= 7 || offset >= _limits[block])
+                throw Invalid($"packed{(kind is null ? "" : " " + kind)} pointer 0x{raw:X8} is outside its block");
             return new Address(block, offset);
         }
 
@@ -755,6 +1081,7 @@ internal static class Iw3Ps3FastFileCatalog
 
         private uint U32(int offset) => BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(offset, 4));
         private ushort U16(int offset) => BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(offset, 2));
+        private ReadOnlyMemory<byte> Bytes(Region region) => _data.AsMemory(region.FileOffset, region.Length);
 
         private void Retain(long estimatedBytes)
         {

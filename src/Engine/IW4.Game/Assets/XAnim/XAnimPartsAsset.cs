@@ -19,8 +19,12 @@ public sealed class XAnimPartsAsset : BaseAsset
     public ushort RandomDataIntCount { get; init; }
     public ushort NumFrames { get; init; }
     public byte Flags { get; init; }
+    public XAnimFlags AnimationFlags => (XAnimFlags)Flags;
+    // Historical field name: PS3 console boneCount[NO_QUAT] (bucket 0).
     public byte DeltaFlags { get; init; }
+    // PS3 console boneCount buckets 1..10, in XAnimPartType order.
     public IReadOnlyList<byte> BoneCounts { get; init; } = [];
+    // Historical field name: PS3 console boneCount[ALL] (bucket 11).
     public byte BoneNameCount { get; init; }
     public byte NotifyCount { get; init; }
     public byte AssetType { get; init; }
@@ -44,4 +48,17 @@ public sealed class XAnimPartsAsset : BaseAsset
     public IReadOnlyList<XAnimNotifyInfo> Notify { get; init; } = [];
     public XPointer<XAnimDeltaPart> DeltaPartPointer { get; init; }
     public XAnimDeltaPart? DeltaPart { get; init; }
+
+    public byte GetBoneCount(XAnimPartType partType)
+    {
+        if (partType < XAnimPartType.NoQuat || partType >= XAnimPartType.Count)
+            throw new ArgumentOutOfRangeException(nameof(partType));
+
+        return partType switch
+        {
+            XAnimPartType.NoQuat => DeltaFlags,
+            XAnimPartType.All => BoneNameCount,
+            _ => BoneCounts[(int)partType - 1]
+        };
+    }
 }

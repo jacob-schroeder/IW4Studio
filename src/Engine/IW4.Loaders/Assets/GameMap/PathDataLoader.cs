@@ -153,7 +153,7 @@ public sealed class PathDataLoader
         DbLoadExecutionContext context,
         int index)
     {
-        int nodeType = rowCursor.ReadInt32();
+        var nodeType = (PathNodeType)rowCursor.ReadInt32();
         ushort spawnFlags = rowCursor.ReadUInt16();
         ScriptStringReference targetName = ReadScriptString(rowCursor, rowAddress, 0x06, context, $"PathData.nodes[{index}].targetName");
         ScriptStringReference scriptLinkName = ReadScriptString(rowCursor, rowAddress, 0x08, context, $"PathData.nodes[{index}].scriptLinkName");
@@ -166,7 +166,7 @@ public sealed class PathDataLoader
         float forwardX = rowCursor.ReadSingle();
         float forwardY = rowCursor.ReadSingle();
         float radius = rowCursor.ReadSingle();
-        float minUseDistSq = rowCursor.ReadSingle();
+        uint minUseDistSqOrErrorBits = rowCursor.ReadUInt32();
         short overlapNode0 = unchecked((short)rowCursor.ReadUInt16());
         short overlapNode1 = unchecked((short)rowCursor.ReadUInt16());
         ushort totalLinkCount = rowCursor.ReadUInt16();
@@ -228,7 +228,7 @@ public sealed class PathDataLoader
                 ForwardX = forwardX,
                 ForwardY = forwardY,
                 Radius = radius,
-                MinUseDistSq = minUseDistSq,
+                MinUseDistSqOrErrorBits = minUseDistSqOrErrorBits,
                 OverlapNode0 = overlapNode0,
                 OverlapNode1 = overlapNode1,
                 TotalLinkCount = totalLinkCount,

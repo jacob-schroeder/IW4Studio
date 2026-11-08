@@ -11,7 +11,7 @@ namespace IW4.Formats.SourceFormat.XAnim;
 /// </summary>
 internal static class ConsoleXAnimReader
 {
-    private const int ConsoleBoneCountLength = 12;
+    private const int ConsoleBoneCountLength = (int)XAnimPartType.Count;
     private const int MaterializedBoneCountLength = 10;
 
     internal static XAnimSourceParts Read(XAnimPartsAsset asset, string assetName)
@@ -24,7 +24,7 @@ internal static class ConsoleXAnimReader
         bool useByteIndices = asset.NumFrames < 256;
         ValidateRootMetadata(asset, assetName, useByteIndices);
 
-        string[] boneNames = ReadBoneNames(asset, assetName, counts[(int)ConsolePartType.All]);
+        string[] boneNames = ReadBoneNames(asset, assetName, counts[(int)XAnimPartType.All]);
         XAnimSourceNotify[] notifies = ReadNotifies(asset, assetName);
         var cursor = new FlatCursor(asset, assetName);
         XAnimSourceBoneTrack[] bones = CreateBones(boneNames);
@@ -54,8 +54,7 @@ internal static class ConsoleXAnimReader
         return new XAnimSourceParts
         {
             NumFrames = asset.NumFrames,
-            Looped =
-                (asset.Flags & CompiledXAnimWriter.FlagLooped) != 0,
+            Looped = (asset.AnimationFlags & XAnimFlags.Loop) != 0,
             Framerate = asset.Framerate,
             AssetType = asset.AssetType,
             Bones = bones,
@@ -77,32 +76,27 @@ internal static class ConsoleXAnimReader
                 $"has {materializedCounts.Count} middle bone-count buckets; expected {MaterializedBoneCountLength}.");
         }
 
-        // The current PS3 mirror retains the historical PC field names. In the
-        // proven console layout, DeltaFlags is boneCount[NO_QUAT], BoneCounts is
-        // boneCount[1..10], and BoneNameCount is boneCount[ALL].
         var counts = new int[ConsoleBoneCountLength];
-        counts[(int)ConsolePartType.NoQuat] = asset.DeltaFlags;
-        for (int index = 0; index < materializedCounts.Count; index++)
-            counts[index + 1] = materializedCounts[index];
-        counts[(int)ConsolePartType.All] = asset.BoneNameCount;
+        for (int index = 0; index < counts.Length; index++)
+            counts[index] = asset.GetBoneCount((XAnimPartType)index);
 
         int quatCount = 0;
-        for (int index = (int)ConsolePartType.NoQuat;
-             index <= (int)ConsolePartType.PrecisionQuatNoSize;
+        for (int index = (int)XAnimPartType.NoQuat;
+             index <= (int)XAnimPartType.PrecisionQuatNoSize;
              index++)
         {
             quatCount = checked(quatCount + counts[index]);
         }
 
         int transCount = 0;
-        for (int index = (int)ConsolePartType.SmallTrans;
-             index <= (int)ConsolePartType.NoTrans;
+        for (int index = (int)XAnimPartType.SmallTrans;
+             index <= (int)XAnimPartType.NoTrans;
              index++)
         {
             transCount = checked(transCount + counts[index]);
         }
 
-        int boneCount = counts[(int)ConsolePartType.All];
+        int boneCount = counts[(int)XAnimPartType.All];
         if (quatCount != boneCount || transCount != boneCount)
         {
             throw Invalid(
@@ -118,11 +112,9 @@ internal static class ConsoleXAnimReader
         string assetName,
         bool useByteIndices)
     {
-        const byte KnownFlags =
-            CompiledXAnimWriter.FlagLooped |
-            CompiledXAnimWriter.FlagDelta |
-            CompiledXAnimWriter.FlagDelta3D;
-        byte unknownFlags = (byte)(asset.Flags & ~KnownFlags);
+        const XAnimFlags KnownFlags =
+            XAnimFlags.Loop | XAnimFlags.Delta | XAnimFlags.Delta3D;
+        byte unknownFlags = (byte)(asset.AnimationFlags & ~KnownFlags);
         if (unknownFlags != 0)
         {
             throw Invalid(
@@ -131,10 +123,8 @@ internal static class ConsoleXAnimReader
                 $"in value 0x{asset.Flags:X2}.");
         }
 
-        const byte DeltaFlags =
-            CompiledXAnimWriter.FlagDelta |
-            CompiledXAnimWriter.FlagDelta3D;
-        if ((asset.Flags & DeltaFlags) == DeltaFlags)
+        const XAnimFlags DeltaFlags = XAnimFlags.Delta | XAnimFlags.Delta3D;
+        if ((asset.AnimationFlags & DeltaFlags) == DeltaFlags)
         {
             throw Invalid(
                 assetName,
@@ -345,10 +335,10 @@ internal static class ConsoleXAnimReader
         ushort numLoopFrames,
         string assetName)
     {
-        int boneIndex = counts[(int)ConsolePartType.NoQuat];
+        int boneIndex = counts[(int)XAnimPartType.NoQuat];
 
         for (int index = 0;
-             index < counts[(int)ConsolePartType.SimpleQuat];
+             index < counts[(int)XAnimPartType.SimpleQuat];
              index++, boneIndex++)
         {
             string field = $"bone {boneIndex} simple quaternion";
@@ -373,7 +363,7 @@ internal static class ConsoleXAnimReader
         }
 
         for (int index = 0;
-             index < counts[(int)ConsolePartType.NormalQuat];
+             index < counts[(int)XAnimPartType.NormalQuat];
              index++, boneIndex++)
         {
             string field = $"bone {boneIndex} normal quaternion";
@@ -398,7 +388,7 @@ internal static class ConsoleXAnimReader
         }
 
         for (int index = 0;
-             index < counts[(int)ConsolePartType.PrecisionQuat];
+             index < counts[(int)XAnimPartType.PrecisionQuat];
              index++, boneIndex++)
         {
             string field = $"bone {boneIndex} precision quaternion";
@@ -425,7 +415,7 @@ internal static class ConsoleXAnimReader
         }
 
         for (int index = 0;
-             index < counts[(int)ConsolePartType.SimpleQuatNoSize];
+             index < counts[(int)XAnimPartType.SimpleQuatNoSize];
              index++, boneIndex++)
         {
             string field = $"bone {boneIndex} constant simple quaternion";
@@ -442,7 +432,7 @@ internal static class ConsoleXAnimReader
         }
 
         for (int index = 0;
-             index < counts[(int)ConsolePartType.NormalQuatNoSize];
+             index < counts[(int)XAnimPartType.NormalQuatNoSize];
              index++, boneIndex++)
         {
             string field = $"bone {boneIndex} constant normal quaternion";
@@ -459,7 +449,7 @@ internal static class ConsoleXAnimReader
         }
 
         for (int index = 0;
-             index < counts[(int)ConsolePartType.PrecisionQuatNoSize];
+             index < counts[(int)XAnimPartType.PrecisionQuatNoSize];
              index++, boneIndex++)
         {
             string field = $"bone {boneIndex} constant precision quaternion";
@@ -496,7 +486,7 @@ internal static class ConsoleXAnimReader
         var assigned = new bool[bones.Length];
 
         for (int index = 0;
-             index < counts[(int)ConsolePartType.SmallTrans];
+             index < counts[(int)XAnimPartType.SmallTrans];
              index++)
         {
             int bone = ReadTranslationBone(cursor, assigned, assetName);
@@ -530,7 +520,7 @@ internal static class ConsoleXAnimReader
         }
 
         for (int index = 0;
-             index < counts[(int)ConsolePartType.Trans];
+             index < counts[(int)XAnimPartType.Trans];
              index++)
         {
             int bone = ReadTranslationBone(cursor, assigned, assetName);
@@ -564,7 +554,7 @@ internal static class ConsoleXAnimReader
         }
 
         for (int index = 0;
-             index < counts[(int)ConsolePartType.TransNoSize];
+             index < counts[(int)XAnimPartType.TransNoSize];
              index++)
         {
             int bone = ReadTranslationBone(cursor, assigned, assetName);
@@ -579,7 +569,7 @@ internal static class ConsoleXAnimReader
         }
 
         for (int index = 0;
-             index < counts[(int)ConsolePartType.NoTrans];
+             index < counts[(int)XAnimPartType.NoTrans];
              index++)
         {
             int bone = ReadTranslationBone(cursor, assigned, assetName);
@@ -1264,22 +1254,6 @@ internal static class ConsoleXAnimReader
         string assetName,
         string message) =>
         new($"XAnim '{assetName}' {message}");
-
-    private enum ConsolePartType
-    {
-        NoQuat = 0,
-        SimpleQuat = 1,
-        NormalQuat = 2,
-        PrecisionQuat = 3,
-        SimpleQuatNoSize = 4,
-        NormalQuatNoSize = 5,
-        PrecisionQuatNoSize = 6,
-        SmallTrans = 7,
-        Trans = 8,
-        TransNoSize = 9,
-        NoTrans = 10,
-        All = 11
-    }
 
     private sealed class FlatCursor
     {

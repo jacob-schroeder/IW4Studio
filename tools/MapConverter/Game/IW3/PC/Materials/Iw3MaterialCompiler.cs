@@ -748,7 +748,7 @@ internal static class Iw3MaterialCompiler
         }
     }
 
-    private static (MaterialSortKey SortKey, GfxCameraRegionType CameraRegion)
+    internal static (MaterialSortKey SortKey, GfxCameraRegionType CameraRegion)
         ConvertSortAndCameraRegion(
             byte sourceSortKey,
             GfxCameraRegionType sourceCameraRegion,
@@ -760,14 +760,19 @@ internal static class Iw3MaterialCompiler
         bool emissive = stateEntries[(int)MaterialTechniqueType.Emissive].StateBitsIndex != byte.MaxValue;
         bool ui = !lit && !emissive &&
             sourceCameraRegion == GfxCameraRegionType.None && techniqueSetName == "2d";
+        bool shadow = !lit && !emissive &&
+            sourceCameraRegion == GfxCameraRegionType.None &&
+            (sourceSortKey is 4 or 12) &&
+            (stateEntries[(int)MaterialTechniqueType.BuildShadowmapDepth].StateBitsIndex != byte.MaxValue ||
+             techniqueSetName == "w_tools");
         GfxCameraRegionType expectedSourceRegion = lit
             ? sourceSortKey < 24 ? GfxCameraRegionType.LitOpaque : GfxCameraRegionType.LitTrans
             : emissive ? GfxCameraRegionType.Emissive : GfxCameraRegionType.None;
-        if ((lit && emissive) || (!lit && !emissive && !ui) ||
+        if ((lit && emissive) || (!lit && !emissive && !ui && !shadow) ||
             sourceCameraRegion != expectedSourceRegion)
         {
             throw MaterialError(assetName,
-                "source sort/camera routing does not match its lit, emissive, or 2d technique family");
+                "source sort/camera routing does not match its lit, emissive, 2d, or shadow technique family");
         }
 
         // IW3 partitions lit/emissive materials before sorting their authored
@@ -780,9 +785,11 @@ internal static class Iw3MaterialCompiler
                 "distortion_scale" or "distortion_scale_zfeather" or
                 "sm2/distortion_scale" or "sm2/distortion_scale_zfeather" => MaterialSortKey.Distortion,
             3 when lit => MaterialSortKey.OpaqueAmbient,
+            4 or 12 when shadow => (MaterialSortKey)34,
             4 when lit => MaterialSortKey.Opaque,
             4 when ui => MaterialSortKey.AdditiveBlend,
             5 when lit => MaterialSortKey.Sky,
+            9 when lit => MaterialSortKey.DecalBottom1,
             10 when lit => MaterialSortKey.DecalBottom2,
             11 when lit => MaterialSortKey.DecalBottom3,
             12 when lit => MaterialSortKey.DecalStatic,
@@ -790,6 +797,7 @@ internal static class Iw3MaterialCompiler
             24 when emissive && techniqueSetName is "effect_nofog" or "sm2/effect_nofog" =>
                 MaterialSortKey.EffectAutoSort,
             29 when lit => MaterialSortKey.DecalTop1,
+            30 when lit => MaterialSortKey.DecalTop2,
             36 when lit => MaterialSortKey.TransparentWater,
             38 when lit => MaterialSortKey.WindowInside,
             39 when lit => MaterialSortKey.WindowOutside,

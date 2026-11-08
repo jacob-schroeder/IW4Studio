@@ -75,6 +75,26 @@ public sealed class D3dbspLinkResult
 
 public static class D3dbspAssetLinker
 {
+    public static IReadOnlyList<string> ReadNamedEntityModelNames(ReadOnlySpan<byte> sourceEntities) =>
+        D3dbspMapEntsCodec.DecodeNamedEntityModelNames(sourceEntities);
+
+    public static MapEntsAsset CreateMapEnts(
+        string assetName, ReadOnlySpan<byte> sourceEntities,
+        ClipMapAsset collision, int sunPrimaryLightIndex, string modelNamePrefix = "")
+    {
+        ArgumentNullException.ThrowIfNull(collision);
+        ValidateAssetName(assetName);
+        var stages = D3dbspMapEntsCodec.DecodeStages(sourceEntities, sunPrimaryLightIndex);
+        var (text, triggers) = D3dbspMapEntsCodec.DecodeMapTriggers(sourceEntities,
+            collision.CModels, collision.LeafBrushNodes, collision.Brushes,
+            collision.BrushBounds, collision.BrushContents, modelNamePrefix: modelNamePrefix);
+        return new MapEntsAsset
+        {
+            Name = assetName, EntityStringBytes = text, NumEntityChars = text.Length,
+            Trigger = triggers, Stages = stages, StageCount = checked((byte)stages.Count)
+        };
+    }
+
     public static string GetWorldMaterialName(string sourceName) =>
         AssetKey.FromDefinition(CreateMaterialReference(sourceName, 0)).NormalizedName;
 

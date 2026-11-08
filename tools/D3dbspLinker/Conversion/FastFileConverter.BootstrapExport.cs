@@ -41,7 +41,8 @@ internal static partial class FastFileConverter
 {
     /// <summary>Offline extraction only. Normal builds never open the original fastfile.</summary>
     internal static void ExportBootstrap(string input, string imageLibrary, string output)
-        => ExportSourceAssets(input, imageLibrary, output, BootstrapXModelNames, Ps3MapBootstrap.FactionMaterials, bootstrap: true);
+        => ExportSourceAssets(input, imageLibrary, output, Ps3MapStartupAssets.XModelNames,
+            Ps3MapStartupAssets.FactionMaterialNames, bootstrap: true);
 
     internal static void ExportSourceAssets(string input, string imageLibrary, string output,
         IReadOnlyList<string> modelNames, IReadOnlyList<string> materialNames, bool bootstrap = false,

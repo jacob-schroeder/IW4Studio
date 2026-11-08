@@ -118,64 +118,6 @@ public sealed class FastFilePreparedSources
 
 internal static partial class FastFileConverter
 {
-    // Exact PS3 FFA startup closure for the us_army/opforce_airborne factions.
-    private static readonly string[] BootstrapXModelNames =
-    [
-        "mp_body_army_sniper",
-        "head_allies_us_army_sniper",
-        "viewhands_sniper_us_army",
-        "mp_body_us_army_lmg",
-        "head_us_army_a",
-        "head_us_army_b",
-        "head_us_army_c",
-        "head_us_army_d",
-        "head_us_army_f",
-        "viewhands_us_army",
-        "mp_body_us_army_lmg_b",
-        "mp_body_us_army_lmg_c",
-        "mp_body_us_army_assault_a",
-        "mp_body_us_army_assault_b",
-        "mp_body_us_army_assault_c",
-        "mp_body_us_army_shotgun",
-        "mp_body_us_army_shotgun_b",
-        "mp_body_us_army_shotgun_c",
-        "mp_body_us_army_smg",
-        "mp_body_us_army_smg_b",
-        "mp_body_us_army_smg_c",
-        "mp_body_us_army_riot",
-        "head_us_army_e",
-        "mp_body_airborne_assault_a",
-        "head_airborne_a",
-        "head_airborne_b",
-        "head_airborne_c",
-        "head_airborne_d",
-        "head_airborne_e",
-        "viewhands_russian_airborne",
-        "mp_body_airborne_assault_b",
-        "mp_body_airborne_assault_c",
-        "mp_body_airborne_lmg",
-        "mp_body_airborne_lmg_b",
-        "mp_body_airborne_lmg_c",
-        "mp_body_airborne_shotgun",
-        "mp_body_airborne_shotgun_b",
-        "mp_body_airborne_shotgun_c",
-        "mp_body_airborne_smg",
-        "mp_body_airborne_smg_b",
-        "mp_body_airborne_smg_c",
-        "mp_body_op_airborne_sniper",
-        "head_op_airborne_sniper",
-        "viewhands_sniper_op_airborne",
-        "mp_body_riot_op_airborne",
-        "head_riot_op_airborne",
-        "mp_body_ally_sniper_ghillie_urban",
-        "head_allies_sniper_ghillie_urban",
-        "viewhands_ghillie_urban",
-        "mp_body_op_sniper_ghillie_urban",
-        "head_op_sniper_ghillie_urban",
-        "com_plasticcase_rangers",
-        "com_plasticcase_ussr"
-    ];
-
     internal static FastFilePreparedSources PrepareDiskDependencies(FastFileDependencyPreflightRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -186,12 +128,12 @@ internal static partial class FastFileConverter
         var bootstrapModels = new ModelSourceCompiler(request.BootstrapDirectory, bootstrapMaterials);
         CancellationToken cancellationToken = request.CancellationToken;
 
-        foreach (string name in BootstrapXModelNames)
+        foreach (string name in Ps3MapStartupAssets.XModelNames)
         {
             cancellationToken.ThrowIfCancellationRequested();
             bootstrapModels.LoadModel(name);
         }
-        foreach (string name in Ps3MapBootstrap.FactionMaterials)
+        foreach (string name in Ps3MapStartupAssets.FactionMaterialNames)
         {
             cancellationToken.ThrowIfCancellationRequested();
             bootstrapMaterials.LoadMaterial(name);
@@ -764,10 +706,10 @@ internal static partial class FastFileConverter
             .ToHashSet();
         cancellationToken.ThrowIfCancellationRequested();
         var bootstrapXModelGraph = bootstrapModels is not null
-            ? ResolveDiskModelGraph(bootstrapModels, BootstrapXModelNames) : ResolveXModelGraph(
+            ? ResolveDiskModelGraph(bootstrapModels, Ps3MapStartupAssets.XModelNames) : ResolveXModelGraph(
             RequireTemplate(),
             templatePath,
-            BootstrapXModelNames,
+            Ps3MapStartupAssets.XModelNames,
             mapMaterialKeys,
             "required PS3 FFA bootstrap",
             externalizeOnlyDependencyProvidedReferences: false);
@@ -903,7 +845,7 @@ internal static partial class FastFileConverter
                 "The generated PS3 deathmatch configstring baseline has no mapcrc value.");
 
         if (bootstrapMaterials is not null)
-            foreach (string name in Ps3MapBootstrap.FactionMaterials)
+            foreach (string name in Ps3MapStartupAssets.FactionMaterialNames)
                 bootstrapMaterials.LoadMaterial(name);
 
         var imageParts = bootstrapMaterials?.ImageStreamPayloads.ToDictionary(
@@ -1150,7 +1092,7 @@ internal static partial class FastFileConverter
         foreach (XModelAsset model in characterModels)
             roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:faction:xmodel:{model.Name}", model));
         if (bootstrapMaterials is not null)
-            foreach (string name in Ps3MapBootstrap.FactionMaterials)
+            foreach (string name in Ps3MapStartupAssets.FactionMaterialNames)
                 roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:bootstrap:material:{name}", bootstrapMaterials.LoadMaterial(name)));
         foreach (RawFileAsset rawFile in turretDependencies.OfType<RawFileAsset>())
             roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:turret:rawfile:{rawFile.Name}", rawFile));
@@ -1166,7 +1108,7 @@ internal static partial class FastFileConverter
         for (int index = 0; index < bootstrapXModelGraph.Models.Count; index++)
         {
             roots.Add(CreateNamedOwnedRoot(
-                $"d3dbsplinker:bootstrap:xmodel:{index}:{BootstrapXModelNames[index]}",
+                $"d3dbsplinker:bootstrap:xmodel:{index}:{Ps3MapStartupAssets.XModelNames[index]}",
                 bootstrapXModelGraph.Models[index]));
         }
         for (int index = 0; index < additionalXModelGraph.Models.Count; index++)

@@ -22,6 +22,7 @@
     <Folder Include="Bootstrap\Material\" />
     <Folder Include="Bootstrap\XModel\" />
     <Folder Include="Game\IW3\PS3\" />
+    <Content Include="../../Resources/Bootstrap/ps3/**/*" Link="bootstrap/ps3/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <Target Name="BuildLocalShaderTools" BeforeTargets="CoreCompile" Condition="$([MSBuild]::IsOSPlatform('OSX'))">

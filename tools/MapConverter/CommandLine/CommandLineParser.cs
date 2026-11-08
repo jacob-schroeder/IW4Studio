@@ -8,12 +8,13 @@ internal static class CommandLineParser
     internal const string HelpText =
         """
         Usage:
+          mapconverter --game iw3 --platform ps3 --map <path> --load <path> --source-fastfiles <directory> --imagefile-index -1 --output <directory>
           mapconverter --game iw3 --platform pc --map <path> --load <path> [--iwd <path>] [--source-fastfiles <directory>] [--source-library <directory>] [--allow-missing-sounds] [--imagefile-index <-1|1-20>] --output <directory>
           mapconverter --game iw3 --platform pc --map <path> --world-template <iw4.ff> [--bootstrap-fastfile <iw4.ff>] --output <directory>
 
         Options:
           --game <game>              Source game. Supported: iw3.
-          --platform <platform>      Source platform. Supported: pc.
+          --platform <platform>      Source platform. Supported: pc, ps3.
           --map <path>               Source map fastfile.
           --load <path>              Source loading-screen fastfile.
           --world-template <iw4.ff>  Self-contained IW4 model-bootstrap fastfile.
@@ -33,8 +34,8 @@ internal static class CommandLineParser
                                      Searches fastfiles and IWD archives recursively
                                      for stock assets. Requires --imagefile-index;
                                      cannot be combined with --world-template.
-                                     Supported PS3 asset graphs can be cataloged;
-                                     PS3 asset export is not supported yet.
+                                     PS3 map conversion reads native shaders and
+                                     images from code_post_gfx_mp.ff and common_mp.ff.
           --allow-missing-sounds     Requires --source-library. Record absent sound
                                      payloads as TODOs in source provenance and
                                      continue. Sound payloads remain unconverted;
@@ -151,11 +152,14 @@ internal static class CommandLineParser
                 $"Unsupported game '{values["--game"]}'. Supported game: iw3.");
         }
 
-        if (!string.Equals(values["--platform"], "pc", StringComparison.OrdinalIgnoreCase))
+        bool sourceIsPs3 = string.Equals(values["--platform"], "ps3", StringComparison.OrdinalIgnoreCase);
+        if (!sourceIsPs3 && !string.Equals(values["--platform"], "pc", StringComparison.OrdinalIgnoreCase))
         {
             return CommandLineParseResult.Failure(
-                $"Unsupported platform '{values["--platform"]}'. Supported platform: pc.");
+                $"Unsupported platform '{values["--platform"]}'. Supported platforms: pc, ps3.");
         }
+        if (sourceIsPs3 && worldOnly)
+            return CommandLineParseResult.Failure("PS3 source conversion does not use '--world-template'.");
 
         var hasIwd = values.TryGetValue("--iwd", out var iwdPath);
         var hasSourceFastFiles = values.TryGetValue(
@@ -213,7 +217,7 @@ internal static class CommandLineParser
 
         var options = new MapConverterOptions(
             SourceGame.Iw3,
-            SourcePlatform.Pc,
+            sourceIsPs3 ? SourcePlatform.Ps3 : SourcePlatform.Pc,
             values["--map"],
             values.GetValueOrDefault("--load"),
             iwdPath,

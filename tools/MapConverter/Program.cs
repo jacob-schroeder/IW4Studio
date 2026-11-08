@@ -1,5 +1,6 @@
 using MapConverter.CommandLine;
 using MapConverter.Game.IW3.PC.Conversion;
+using MapConverter.Game.IW3.PS3.Conversion;
 
 CommandLineParseResult parse = CommandLineParser.Parse(args);
 if (parse.HelpRequested)
@@ -17,6 +18,18 @@ if (!parse.IsSuccess || parse.Options is null)
 
 try
 {
+    if (parse.Options.Platform == SourcePlatform.Ps3)
+    {
+        var converted = Iw3Ps3MapConverter.Convert(parse.Options);
+        Console.WriteLine($"map: {converted.Map}");
+        Console.WriteLine($"load: {converted.Load}");
+        Console.WriteLine($"imagefile: {converted.Images}");
+        Console.WriteLine($"assets: {converted.AssetCount}; native PS3 shader programs retained");
+        Console.WriteLine("omitted: custom map FX, source sound aliases and impact table");
+        if (converted.DynamicShadowMaskDisabled)
+            Console.Error.WriteLine("warning: COD4 dynamic-shadow visibility masks use neutral white; sun-shadow-map bindings are retained");
+        return 0;
+    }
     if (parse.Options.WorldTemplatePath is not null)
     {
         var world = await Iw3PcMapConverter.ConvertWorldOnlyAsync(parse.Options);

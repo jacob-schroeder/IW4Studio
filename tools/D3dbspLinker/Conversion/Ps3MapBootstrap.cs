@@ -6,8 +6,6 @@ namespace D3dbspLinker.Conversion;
 /// <summary>Link settings accompanying the repository's native startup source assets.</summary>
 internal sealed record Ps3MapBootstrap
 {
-    internal static readonly string[] FactionMaterials =
-        ["faction_128_rangers", "faction_128_rangers_fade", "faction_128_ussr", "faction_128_ussr_fade"];
     internal const string FileName = "bootstrap.json";
     internal static JsonSerializerOptions JsonOptions { get; } = new()
     {

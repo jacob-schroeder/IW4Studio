@@ -124,7 +124,8 @@ internal static class D3dbspMapEntsCodec
         IReadOnlyList<CBrush> brushes,
         IReadOnlyList<Bounds> brushBounds,
         IReadOnlyList<uint> brushContents,
-        bool omitNamedModelEntities = false)
+        bool omitNamedModelEntities = false,
+        string modelNamePrefix = "")
     {
         ArgumentNullException.ThrowIfNull(collisionModels);
         ArgumentNullException.ThrowIfNull(leafBrushNodes);
@@ -142,6 +143,13 @@ internal static class D3dbspMapEntsCodec
             entities = entities.Where(entity => !HasNamedModel(entity)).ToArray();
         Dictionary<int, int> brushModelReferenceCounts = CountBrushModelReferences(entities);
         var replacements = new Dictionary<int, string>();
+        if (modelNamePrefix.Length != 0)
+        {
+            foreach (ParsedEntity entity in entities)
+                if (entity.TryGetValue("model", out string model) && model.Length != 0 &&
+                    model[0] is not ('*' or '?'))
+                    replacements.Add(entity.Begin, modelNamePrefix + model);
+        }
         var triggerModels = new List<TriggerModel>();
         var triggerHulls = new List<TriggerHull>();
         var triggerSlabs = new List<TriggerSlab>();

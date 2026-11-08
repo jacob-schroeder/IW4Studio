@@ -144,7 +144,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
                 constant.LinksPointer.Untyped,
                 $"{fieldPath}[{index}].Links");
 
-            writer.WriteInt32(constant.NodeType);
+            writer.WriteInt32((int)constant.NodeType);
             writer.WriteUInt16(constant.SpawnFlags);
             writer.Skip(5 * sizeof(ushort));
             writer.WriteInt32(constant.AnimScriptFunc);
@@ -153,7 +153,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
             writer.WriteSingle(constant.ForwardX);
             writer.WriteSingle(constant.ForwardY);
             writer.WriteSingle(constant.Radius);
-            writer.WriteSingle(constant.MinUseDistSq);
+            writer.WriteUInt32(constant.MinUseDistSqOrErrorBits);
             writer.WriteUInt16(unchecked((ushort)constant.OverlapNode0));
             writer.WriteUInt16(unchecked((ushort)constant.OverlapNode1));
             writer.WriteUInt16(constant.TotalLinkCount);

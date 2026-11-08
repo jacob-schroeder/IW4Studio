@@ -65,7 +65,7 @@ internal sealed record Iw3PcMapConversionResult(
 internal static class Iw3PcMapConverter
 {
     private const uint LanguageMask = 1;
-    private const int FragmentProgramUploadCapacity = 0x1a0000;
+    internal const int FragmentProgramUploadCapacity = 0x1a0000;
     private const string LoadBriefingMaterialName = "$levelbriefing";
     internal const string ElectricBoxRawFileName = "maps/mp/_electricbox.gsc";
     internal const string ElectricBoxFxName = "explosions/tv_explosion_mp";
@@ -1816,7 +1816,7 @@ internal static class Iw3PcMapConverter
         return result.ToArray();
     }
 
-    private static byte[] CompileVisionFile(byte[] content)
+    internal static byte[] CompileVisionFile(byte[] content)
     {
         const int maxTokenLength = 1023;
         // IW3 ignores these five fields. IW4 recognizes them, but supplies
@@ -2087,7 +2087,7 @@ internal static class Iw3PcMapConverter
         return loadPath;
     }
 
-    private static byte[] LinkAndPackage(
+    internal static byte[] LinkAndPackage(
         string zoneDescription,
         IReadOnlyList<BaseAsset> rootAssets,
         IReadOnlyList<BaseAsset> providerOnlyAssets,

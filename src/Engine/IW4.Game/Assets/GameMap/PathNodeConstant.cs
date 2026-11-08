@@ -8,7 +8,7 @@ public sealed class PathNodeConstant
 {
     public const int SerializedSize = 0x40;
 
-    public int NodeType { get; init; }
+    public PathNodeType NodeType { get; init; }
     public ushort SpawnFlags { get; init; }
     public ScriptStringReference TargetName { get; init; } = NullScriptString();
     public ScriptStringReference ScriptLinkName { get; init; } = NullScriptString();
@@ -21,7 +21,25 @@ public sealed class PathNodeConstant
     public float ForwardX { get; init; }
     public float ForwardY { get; init; }
     public float Radius { get; init; }
-    public float MinUseDistSq { get; init; }
+    /// <summary>Uninterpreted dword at +0x30, preserved by the loader and linker.</summary>
+    public uint MinUseDistSqOrErrorBits { get; init; }
+
+    public float MinUseDistSq
+    {
+        get => BitConverter.Int32BitsToSingle(unchecked((int)MinUseDistSqOrErrorBits));
+        init => MinUseDistSqOrErrorBits = unchecked((uint)BitConverter.SingleToInt32Bits(value));
+    }
+
+    /// <summary>
+    /// Alternative PC-correlated view of +0x30. This view does not determine
+    /// whether the node currently holds an error or a distance.
+    /// </summary>
+    public PathNodeErrorCode Error
+    {
+        get => (PathNodeErrorCode)unchecked((int)MinUseDistSqOrErrorBits);
+        init => MinUseDistSqOrErrorBits = unchecked((uint)value);
+    }
+
     public short OverlapNode0 { get; init; }
     public short OverlapNode1 { get; init; }
     public ushort TotalLinkCount { get; init; }

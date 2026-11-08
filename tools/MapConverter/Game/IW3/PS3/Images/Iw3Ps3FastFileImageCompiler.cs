@@ -445,11 +445,12 @@ internal static class Iw3Ps3FastFileImageCompiler
         }
     }
 
-    private static bool TryReadImageHeader(
+    internal static bool TryReadImageHeader(
         ReadOnlySpan<byte> window,
         int offset,
         int availableStructuralEnd,
-        out SourceImageHeader header)
+        out SourceImageHeader header,
+        bool requireStreaming = true)
     {
         header = default;
         if (offset < 0 ||
@@ -497,7 +498,7 @@ internal static class Iw3Ps3FastFileImageCompiler
             payloadByteCount is 0 or > 0x10000000 ||
             payloadByteCount % 0x80 != 0 ||
             category > 7 ||
-            streaming != 1)
+            streaming > 1 || (requireStreaming && streaming != 1))
         {
             return false;
         }
@@ -548,7 +549,8 @@ internal static class Iw3Ps3FastFileImageCompiler
             depth,
             category,
             name,
-            mapType);
+            mapType,
+            streaming != 0);
         return true;
     }
 
@@ -660,7 +662,7 @@ internal static class Iw3Ps3FastFileImageCompiler
         }
     }
 
-    private readonly record struct SourceImageHeader(
+    internal readonly record struct SourceImageHeader(
         byte Format,
         byte MipCount,
         byte Dimension,
@@ -676,5 +678,6 @@ internal static class Iw3Ps3FastFileImageCompiler
         ushort Depth,
         byte Category,
         string? Name,
-        uint MapType);
+        uint MapType,
+        bool IsDeferred);
 }

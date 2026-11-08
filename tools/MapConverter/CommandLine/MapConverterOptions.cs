@@ -8,6 +8,7 @@ internal enum SourceGame
 internal enum SourcePlatform
 {
     Pc,
+    Ps3,
 }
 
 internal sealed record MapConverterOptions(
