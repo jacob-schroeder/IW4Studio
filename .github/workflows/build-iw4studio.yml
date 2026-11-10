@@ -86,8 +86,7 @@ jobs:
           -p:Version=${{ needs.version.outputs.public_version }}
           -p:FileVersion=${{ needs.version.outputs.file_version }}
           -p:InformationalVersion=${{ needs.version.outputs.informational_version }}
-          -p:PublishTrimmed=true
-          -p:TrimMode=partial
+          -p:PublishTrimmed=false
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:DebugSymbols=false
