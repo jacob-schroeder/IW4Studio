@@ -12,6 +12,7 @@
     <Compile Include="ConsoleXAnimReader.fs" />
     <Compile Include="CompiledXAnimReader.fs" />
     <Compile Include="CompiledXAnimWriter.fs" />
+    <Compile Include="NativeXAnimCodec.fs" />
     <Compile Include="XAnimPlaybackClip.fs" />
   </ItemGroup>
 </Project>
