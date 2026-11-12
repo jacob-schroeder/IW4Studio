@@ -592,23 +592,8 @@ public static class D3dbspAssetLinker
         };
     }
 
-    private static StringTableCell CreateStringTableCell(string value) =>
-        new()
-        {
-            String = value,
-            Hash = CalculateStringTableHash(value)
-        };
-
-    private static StringTableCell CloneStringTableCell(StringTableCell source) =>
-        new()
-        {
-            String = source.String,
-            Hash = source.Hash
-        };
-
-    private static int CalculateStringTableHash(string value)
+    private static StringTableCell CreateStringTableCell(string value)
     {
-        uint hash = 0;
         foreach (char character in value)
         {
             if (character > 0x7f)
@@ -616,15 +601,21 @@ public static class D3dbspAssetLinker
                 throw new InvalidDataException(
                     $"PS3 configstring value '{value}' contains a non-ASCII character.");
             }
-
-            byte current = (byte)character;
-            if (current is >= (byte)'A' and <= (byte)'Z')
-                current += (byte)('a' - 'A');
-            hash = unchecked(hash * 31 + current);
         }
 
-        return unchecked((int)hash);
+        return new StringTableCell
+        {
+            String = value,
+            Hash = StringTableCell.CalculateHash(value)
+        };
     }
+
+    private static StringTableCell CloneStringTableCell(StringTableCell source) =>
+        new()
+        {
+            String = source.String,
+            Hash = source.Hash
+        };
 
     private static IReadOnlyList<IReadOnlyList<T>> EmptyDynamicLists<T>() =>
         Array.AsReadOnly<IReadOnlyList<T>>(

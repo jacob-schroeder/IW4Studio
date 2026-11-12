@@ -11,7 +11,7 @@ public sealed class StringTableExchange
 {
     /// <summary>
     /// Imports CSV values, treating every record as data. CSV has no stored
-    /// hashes, so imported cells start with zero hashes like new editor cells.
+    /// hashes, so each imported cell's hash is calculated from its value.
     /// </summary>
     public StringTableAsset ReadCsv(TextReader reader, string? assetName)
     {
@@ -126,10 +126,11 @@ public sealed class StringTableExchange
         {
             for (int column = 0; column < columnCount; column++)
             {
+                string value = column < row.Count ? row[column] : string.Empty;
                 cells[index++] = new StringTableCell
                 {
-                    String = column < row.Count ? row[column] : string.Empty,
-                    Hash = 0
+                    String = value,
+                    Hash = StringTableCell.CalculateHash(value)
                 };
             }
         }

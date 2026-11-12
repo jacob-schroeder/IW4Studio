@@ -914,7 +914,7 @@ public sealed class StringTableDraft
     public void SetCellValue(int row, int column, string? value)
     {
         int index = checked(row * ColumnCount + column);
-        _cells[index] = _cells[index] with { Value = value };
+        _cells[index] = new StringTableCellDraft(value, StringTableCell.CalculateHash(value));
     }
 
     public void AddColumn()

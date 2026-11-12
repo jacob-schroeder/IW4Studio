@@ -17,7 +17,7 @@ public sealed class StringTableRowEditorViewModel
     private readonly bool _canEdit;
     private readonly bool _hasConfigStringFooters;
     private readonly IReadOnlyDictionary<int, string?>? _configStringValues;
-    private readonly Action<int, int, string?> _applyValue;
+    private readonly Func<int, int, string?, int?> _applyValue;
     private IReadOnlyList<StringTableCellEditorViewModel>? _cells;
 
     internal StringTableRowEditorViewModel(
@@ -27,7 +27,7 @@ public sealed class StringTableRowEditorViewModel
         bool canEdit,
         bool hasConfigStringFooters,
         IReadOnlyDictionary<int, string?>? configStringValues,
-        Action<int, int, string?> applyValue)
+        Func<int, int, string?, int?> applyValue)
     {
         ArgumentNullException.ThrowIfNull(sourceCells);
         ArgumentNullException.ThrowIfNull(applyValue);
@@ -72,18 +72,17 @@ public sealed class StringTableRowEditorViewModel
 }
 
 /// <summary>
-/// One row-major cell projection. Editing the value updates only the local
-/// staged draft; the serialized hash remains an explicit, preserved source
-/// value.
+/// One row-major cell projection. Editing a value updates its staged hash.
 /// </summary>
 public sealed class StringTableCellEditorViewModel : ObservableObject
 {
-    private readonly Action<int, int, string?> _applyValue;
+    private readonly Func<int, int, string?, int?> _applyValue;
     private readonly bool _hasConfigStringFooter;
     private readonly IReadOnlyDictionary<int, string?>? _configStringValues;
     private readonly string? _configStringIndexValue;
     private string _valueInput;
     private bool _isNull;
+    private int _hash;
 
     internal StringTableCellEditorViewModel(
         int row,
@@ -93,14 +92,14 @@ public sealed class StringTableCellEditorViewModel : ObservableObject
         bool hasConfigStringFooter,
         IReadOnlyDictionary<int, string?>? configStringValues,
         string? configStringIndexValue,
-        Action<int, int, string?> applyValue)
+        Func<int, int, string?, int?> applyValue)
     {
         ArgumentNullException.ThrowIfNull(cell);
         _applyValue = applyValue
             ?? throw new ArgumentNullException(nameof(applyValue));
         Row = row;
         Column = column;
-        Hash = cell.Hash;
+        _hash = cell.Hash;
         CanEdit = canEdit;
         _hasConfigStringFooter = hasConfigStringFooter;
         _configStringValues = configStringValues;
@@ -111,7 +110,19 @@ public sealed class StringTableCellEditorViewModel : ObservableObject
 
     public int Row { get; }
     public int Column { get; }
-    public int Hash { get; }
+    public int Hash
+    {
+        get => _hash;
+        private set
+        {
+            if (!SetProperty(ref _hash, value))
+                return;
+
+            OnPropertyChanged(nameof(HashText));
+            OnPropertyChanged(nameof(FooterText));
+            OnPropertyChanged(nameof(FooterToolTipText));
+        }
+    }
     public bool CanEdit { get; }
     public string CoordinateText => $"Row {Row}, column {Column}";
     public string HashText => $"0x{unchecked((uint)Hash):X8}";
@@ -128,8 +139,8 @@ public sealed class StringTableCellEditorViewModel : ObservableObject
             _ => HashText
         };
     public string FooterToolTipText => !_hasConfigStringFooter || Column > 1
-        ? "Preserved serialized hash"
-        : $"{FooterText}{Environment.NewLine}Preserved serialized hash: {HashText}";
+        ? "Serialized hash"
+        : $"{FooterText}{Environment.NewLine}Serialized hash: {HashText}";
     public bool IsValueReadOnly => !CanEdit || IsNull;
 
     public string ValueInput
@@ -146,7 +157,7 @@ public sealed class StringTableCellEditorViewModel : ObservableObject
             if (IsNull)
                 return;
 
-            _applyValue(Row, Column, value);
+            Hash = _applyValue(Row, Column, value) ?? Hash;
         }
     }
 
@@ -161,7 +172,7 @@ public sealed class StringTableCellEditorViewModel : ObservableObject
             OnPropertyChanged(nameof(IsValueReadOnly));
             OnPropertyChanged(nameof(FooterText));
             OnPropertyChanged(nameof(FooterToolTipText));
-            _applyValue(Row, Column, value ? null : ValueInput);
+            Hash = _applyValue(Row, Column, value ? null : ValueInput) ?? Hash;
         }
     }
 
@@ -311,8 +322,8 @@ public sealed class StringTableEditorViewModel
       IAssetEditorStagingState
 {
     private readonly AssetEditorSession _editorSession;
-    private readonly Action<int, int, string?> _stageCellValue;
-    private readonly Dictionary<int, string?> _pendingOriginalValues = [];
+    private readonly Func<int, int, string?, int?> _stageCellValue;
+    private readonly Dictionary<int, StringTableCellDraft> _pendingOriginalCells = [];
     private bool _hasStructuralChanges;
     private StringTableDraft? _draft;
     private StringTableReadOnlySnapshot? _readOnlySnapshot;
@@ -387,7 +398,7 @@ public sealed class StringTableEditorViewModel
         !IsGeneratedConfigStringBaseline;
     public bool CanApply =>
         IsEditable && _draft is not null &&
-        (_hasStructuralChanges || _pendingOriginalValues.Count != 0);
+        (_hasStructuralChanges || _pendingOriginalCells.Count != 0);
     public bool HasUnappliedChanges => CanApply;
     public bool CanRevert => IsEditable;
     public bool HasTable => _draft is not null || _readOnlySnapshot is not null;
@@ -463,7 +474,7 @@ public sealed class StringTableEditorViewModel
         new("Columns", ColumnCount.ToString("N0")),
         new("Cells", CellCount.ToString("N0")),
         new("Null values", NullCellCount.ToString("N0")),
-        new("Hashes", "Preserved source values")
+        new("Hashes", "Recalculated when values change")
     ];
 
     public void AddColumn() => StageStructureChange(
@@ -495,7 +506,7 @@ public sealed class StringTableEditorViewModel
         {
             mutation(_draft);
             _hasStructuralChanges = true;
-            _pendingOriginalValues.Clear();
+            _pendingOriginalCells.Clear();
             StatusMessage = statusMessage;
             RefreshTable();
         }
@@ -523,7 +534,7 @@ public sealed class StringTableEditorViewModel
         StringTableDraft stagedDraft = _draft;
         bool hasStructuralChanges = _hasStructuralChanges;
         int columnCount = stagedDraft.ColumnCount;
-        var changes = _pendingOriginalValues.Keys
+        var changes = _pendingOriginalCells.Keys
             .Order()
             .Select(index => (
                 Row: index / columnCount,
@@ -552,14 +563,14 @@ public sealed class StringTableEditorViewModel
                 },
                 out _);
 
-            _pendingOriginalValues.Clear();
+            _pendingOriginalCells.Clear();
             _hasStructuralChanges = false;
             Diagnostics = _editorSession.Validation.Issues;
             StatusMessage = hasStructuralChanges
                 ? $"Applied table changes: {RowCount:N0} rows × {ColumnCount:N0} columns."
                 : changes.Length == 1
-                    ? "Applied 1 cell change; its stored hash was preserved."
-                    : $"Applied {changes.Length:N0} cell changes; their stored hashes were preserved.";
+                    ? "Applied 1 cell change; its hash was recalculated."
+                    : $"Applied {changes.Length:N0} cell changes; their hashes were recalculated.";
             RefreshTable();
         }
         catch (Exception exception) when (
@@ -583,7 +594,7 @@ public sealed class StringTableEditorViewModel
 
         _ = _editorSession.Revert();
         _draft = _editorSession.ReadDraft<StringTableDraft>();
-        _pendingOriginalValues.Clear();
+        _pendingOriginalCells.Clear();
         _hasStructuralChanges = false;
         Diagnostics = _editorSession.Validation.Issues;
         StatusMessage =
@@ -591,47 +602,50 @@ public sealed class StringTableEditorViewModel
         RefreshTable();
     }
 
-    private void StageCellValue(int row, int column, string? value)
+    private int? StageCellValue(int row, int column, string? value)
     {
         if (!IsEditable || _draft is null)
         {
             StatusMessage = IsGeneratedConfigStringBaseline
                 ? "Generated configstring baselines cannot be edited directly; edit the owning map, scripts, or assets instead."
                 : "This StringTable is read-only or its content is unavailable.";
-            return;
+            return null;
         }
 
         try
         {
             int index = CheckedCellIndex(_draft, row, column);
-            string? previousValue = _draft.Cells[index].Value;
+            StringTableCellDraft previousCell = _draft.Cells[index];
+            string? previousValue = previousCell.Value;
             if (string.Equals(previousValue, value, StringComparison.Ordinal))
-                return;
+                return previousCell.Hash;
 
-            bool hadPendingChanges = _pendingOriginalValues.Count != 0;
-            bool wasPending = _pendingOriginalValues.TryGetValue(
+            bool hadPendingChanges = _pendingOriginalCells.Count != 0;
+            bool wasPending = _pendingOriginalCells.TryGetValue(
                 index,
-                out string? originalValue);
+                out StringTableCellDraft? originalCell);
             if (!wasPending)
-                originalValue = previousValue;
+                originalCell = previousCell;
 
             _draft.SetCellValue(row, column, value);
-            if (string.Equals(originalValue, value, StringComparison.Ordinal))
+            StringTableCellDraft updatedCell = _draft.Cells[index];
+            if (updatedCell == originalCell)
             {
-                _pendingOriginalValues.Remove(index);
+                _pendingOriginalCells.Remove(index);
             }
             else if (!wasPending)
             {
-                _pendingOriginalValues.Add(index, originalValue);
+                _pendingOriginalCells.Add(index, previousCell);
             }
 
-            StatusMessage = _pendingOriginalValues.ContainsKey(index)
+            StatusMessage = _pendingOriginalCells.ContainsKey(index)
                 ? $"Staged row {row}, column {column}."
                 : $"Restored row {row}, column {column} to its applied value.";
-            if (hadPendingChanges != (_pendingOriginalValues.Count != 0))
+            if (hadPendingChanges != (_pendingOriginalCells.Count != 0))
                 NotifyStagingStateChanged();
             if ((previousValue is null) != (value is null))
                 OnPropertyChanged(nameof(EditorProperties));
+            return updatedCell.Hash;
         }
         catch (Exception exception) when (
             exception is ArgumentException or
@@ -639,6 +653,7 @@ public sealed class StringTableEditorViewModel
             OverflowException)
         {
             StatusMessage = exception.Message;
+            return null;
         }
     }
 

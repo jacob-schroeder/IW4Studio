@@ -12,4 +12,22 @@ public sealed class StringTableCell
 
     // 0x04: copied int32 hash.
     public int Hash { get; init; }
+
+    /// <summary>Hashes cell text with ASCII case folding and 32-bit overflow.</summary>
+    public static int CalculateHash(string? value)
+    {
+        int hash = 0;
+        if (value is null)
+            return hash;
+
+        foreach (char character in value)
+        {
+            int current = character is >= 'A' and <= 'Z'
+                ? character + ('a' - 'A')
+                : character;
+            hash = unchecked(hash * 31 + current);
+        }
+
+        return hash;
+    }
 }
