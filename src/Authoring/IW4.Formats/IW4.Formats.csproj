@@ -9,6 +9,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\Engine\IW4.Game\IW4.Game.csproj" />
+      <ProjectReference Include="..\IW4.Formats.XAnim\IW4.Formats.XAnim.fsproj" />
       <PackageReference Include="Evergine.Bindings.MeshOptimizer" Version="2026.8.3.18" />
     </ItemGroup>
 

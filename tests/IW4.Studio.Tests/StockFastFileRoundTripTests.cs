@@ -38,7 +38,7 @@ public sealed class StockFastFileRoundTripTests
         DiscoverStockFastFiles().Select(path => new object[] { path });
 
     [Theory]
-    [MemberData(nameof(StockFastFiles))]
+    [MemberData(nameof(StockFastFiles), DisableDiscoveryEnumeration = true)]
     public void Source_layout_relinker_preserves_stock_decoded_zone_and_header_envelope(
         string sourcePath)
     {
@@ -122,7 +122,7 @@ public sealed class StockFastFileRoundTripTests
     }
 
     [Theory]
-    [MemberData(nameof(StockFastFiles))]
+    [MemberData(nameof(StockFastFiles), DisableDiscoveryEnumeration = true)]
     public void Canonical_save_as_preserves_stock_zone_and_reaches_a_fixed_point(
         string sourcePath)
     {
