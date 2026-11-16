@@ -61,15 +61,15 @@ internal static partial class Iw3Ps3FastFileCatalog
                     Fx(U32(start + 0x6c4), address.Add(0x6c4));
                     WeaponSoundNamePrefix(U32(start + 0x6c8), address.Add(0x6c8));
                     ReadString(U32(start + 0x76c));
-                    ReadArray(U32(start + 0x774), 4,
-                        Size(Count(U32(start + 0x784)), 8), "weapon-accuracy-graph-0");
-                    ReadArray(U32(start + 0x77c), 4,
-                        Size(Count(U32(start + 0x784)), 8), "weapon-accuracy-graph-1");
+                    WeaponAccuracyGraph(U32(start + 0x774), Count(U32(start + 0x784)),
+                        "weapon-accuracy-graph-0");
+                    WeaponAccuracyGraph(U32(start + 0x77c), Count(U32(start + 0x784)),
+                        "weapon-accuracy-graph-1");
                     ReadString(U32(start + 0x770));
-                    ReadArray(U32(start + 0x778), 4,
-                        Size(Count(U32(start + 0x788)), 8), "weapon-accuracy-graph-2");
-                    ReadArray(U32(start + 0x780), 4,
-                        Size(Count(U32(start + 0x788)), 8), "weapon-accuracy-graph-3");
+                    WeaponAccuracyGraph(U32(start + 0x778), Count(U32(start + 0x788)),
+                        "weapon-accuracy-graph-2");
+                    WeaponAccuracyGraph(U32(start + 0x780), Count(U32(start + 0x788)),
+                        "weapon-accuracy-graph-3");
                     foreach (int offset in new[] { 0x7dc, 0x7e0, 0x7f4, 0x868, 0x86c })
                         ReadString(U32(start + offset));
                     return Remember(new Pointer("weapon", root, []));
@@ -85,6 +85,18 @@ internal static partial class Iw3Ps3FastFileCatalog
             SetAlias(cell, wrapper);
             if (wrapper is not null && raw == uint.MaxValue)
                 ReadString(U32(wrapper.Region.FileOffset));
+        }
+
+        private void WeaponAccuracyGraph(uint raw, int count, string field)
+        {
+            if (raw is not (0 or uint.MaxValue))
+            {
+                // These graphs are source-only. A packed offset consumes no
+                // stream bytes and need not point to a separately indexed row.
+                Decode(raw, field);
+                return;
+            }
+            ReadArray(raw, 4, Size(count, 8), field);
         }
     }
 }

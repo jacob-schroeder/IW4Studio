@@ -3,6 +3,8 @@ using IW4.Game.Assets.Fx;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.XModel;
 using IW4.Game.Pointers;
+using MapConverter.Game.IW3.PS3.Materials;
+using MapConverter.Game.IW3.PS3.Rules;
 
 namespace MapConverter.Game.IW3.PS3.Extraction;
 
@@ -13,13 +15,16 @@ internal static partial class Iw3Ps3FastFileCatalog
         // COD4 PS3 d1748/d16b8: 0x20-byte effect and 0xfc-byte element rows.
         private Pointer? Fx(uint raw, Address cell) => AssetPointer(raw, cell, "fx", 0x20, root =>
         {
+            bool previousConversion = _converting;
             Push(4);
             try
             {
                 int start = root.FileOffset;
                 string? sourceName = ReadString(U32(start));
-                if (_converting && sourceName?.StartsWith(',') == true)
-                    throw Unsupported("external COD4 Fx reference without a converted provider");
+                bool reference = sourceName?.StartsWith(',') == true;
+                if (_effectNames is not null)
+                    _converting = !reference && sourceName is not null &&
+                        _effectNames.Contains(sourceName);
                 int looping = Count(U32(start + 0x10));
                 int oneShot = Count(U32(start + 0x14));
                 int emission = Count(U32(start + 0x18));
@@ -28,7 +33,8 @@ internal static partial class Iw3Ps3FastFileCatalog
                 FxElemDef[] elements = FxElements(U32(start + 0x1c), count, dependencies);
                 var effect = new FxEffectDefAsset
                 {
-                    Name = sourceName is null ? null : _ownedNamePrefix + sourceName,
+                    Name = sourceName is null ? null :
+                        EffectRules.ReferenceName(_ownedNamePrefix, sourceName),
                     Flags = unchecked((int)U32(start + 4)),
                     TotalSize = unchecked((int)U32(start + 8)),
                     MsecLoopingLife = unchecked((int)U32(start + 0xc)),
@@ -38,9 +44,9 @@ internal static partial class Iw3Ps3FastFileCatalog
                     ElemDefs = elements
                 };
                 return Named("fx", sourceName, root, dependencies,
-                    _converting ? effect : null);
+                    ConvertFx && !reference ? effect : null);
             }
-            finally { Pop(); }
+            finally { _converting = previousConversion; Pop(); }
         });
 
         private FxElemDef[] FxElements(uint raw, int count, HashSet<int> dependencies)
@@ -48,7 +54,7 @@ internal static partial class Iw3Ps3FastFileCatalog
             Pointer? table = ReadArray(raw, 4, Size(count, FxElemDef.SerializedSize), "fx-elements");
             if (table is null)
             {
-                if (_converting && count != 0) throw Invalid("Fx element table is absent");
+                if (ConvertFx && count != 0) throw Invalid("Fx element table is absent");
                 return [];
             }
             var result = new FxElemDef[count];
@@ -62,12 +68,9 @@ internal static partial class Iw3Ps3FastFileCatalog
         {
             // d1500: velocity, visual state, visual arm, three Fx names, trail.
             byte sourceType = _data[row + 0xb0];
-            FxElemType type = sourceType switch
-            {
-                <= 4 => (FxElemType)sourceType,
-                <= 10 => (FxElemType)(sourceType + 2),
-                _ => throw Unsupported($"COD4 Fx element type {sourceType}")
-            };
+            var mappedType = EffectRules.ElementType(sourceType);
+            if (mappedType.IsError) throw Unsupported(mappedType.ErrorValue);
+            FxElemType type = mappedType.ResultValue;
             byte visualCount = _data[row + 0xb1];
             byte velIntervals = _data[row + 0xb2];
             byte visIntervals = _data[row + 0xb3];
@@ -79,7 +82,7 @@ internal static partial class Iw3Ps3FastFileCatalog
             FxEffectDefRef death = FxReference(U32(row + 0xdc));
             FxEffectDefRef emitted = FxReference(U32(row + 0xe0));
             FxElemExtendedDef? extended = FxTrail(U32(row + 0xf4));
-            if (_converting && extended is not null && type != FxElemType.Trail)
+            if (ConvertFx && extended is not null && type != FxElemType.Trail)
                 throw Unsupported("non-trail COD4 Fx extended data");
 
             return new FxElemDef
@@ -129,7 +132,7 @@ internal static partial class Iw3Ps3FastFileCatalog
         {
             if (raw == 0)
             {
-                if (_converting && count != 1)
+                if (ConvertFx && count != 1)
                     throw Invalid("Fx velocity intervals have no sample array");
                 return [];
             }
@@ -148,7 +151,7 @@ internal static partial class Iw3Ps3FastFileCatalog
         {
             if (raw == 0)
             {
-                if (_converting && count != 1)
+                if (ConvertFx && count != 1)
                     throw Invalid("Fx visual intervals have no sample array");
                 return [];
             }
@@ -172,7 +175,7 @@ internal static partial class Iw3Ps3FastFileCatalog
             if (type == FxElemType.Decal)
             {
                 Pointer? table = ReadArray(raw, 4, Size(count, 8), "fx-mark-visuals");
-                if (_converting && table is null && count != 0)
+                if (ConvertFx && table is null && count != 0)
                     throw Invalid("Fx decal marks are absent");
                 var marks = new FxElemMarkVisuals[table is null ? 0 : count];
                 if (table is { } present)
@@ -197,7 +200,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                 Pointer? table = ReadArray(raw, 4, Size(count, 4), "fx-visuals");
                 if (table is null)
                 {
-                    if (_converting) throw Invalid("Fx visual table is absent");
+                    if (ConvertFx) throw Invalid("Fx visual table is absent");
                     return (new FxElemDefVisuals(), [], []);
                 }
                 var visuals = new FxElemDefVisuals[count];
@@ -230,8 +233,15 @@ internal static partial class Iw3Ps3FastFileCatalog
                     visual = new FxNoChildVisual { Reserved = unchecked((int)raw) };
                     break;
                 case FxElemType.Sound:
-                    visual = new FxSoundVisual { SoundName = ReadString(raw) };
+                {
+                    string? soundName = ReadString(raw);
+                    visual = new FxSoundVisual
+                    {
+                        SoundName = soundName is null ? null :
+                            EffectRules.ReferenceName(_ownedNamePrefix, soundName)
+                    };
                     break;
+                }
                 case FxElemType.Runner:
                     visual = new FxEffectVisual { EffectDef = FxReference(raw) };
                     break;
@@ -252,11 +262,10 @@ internal static partial class Iw3Ps3FastFileCatalog
         private FxEffectDefRef FxReference(uint raw)
         {
             string? name = ReadString(raw);
-            if (_converting && name?.StartsWith(',') == true)
-                throw Unsupported("external COD4 Fx reference without a converted provider");
             return new FxEffectDefRef
             {
-                Name = name is null ? null : _ownedNamePrefix + name
+                Name = name is null ? null :
+                    EffectRules.ReferenceName(_ownedNamePrefix, name)
             };
         }
 
@@ -267,14 +276,15 @@ internal static partial class Iw3Ps3FastFileCatalog
             if (pointer is null) throw Invalid("Fx trail is absent");
             int row = pointer.Region.FileOffset;
             int splitDistance = unchecked((int)U32(row + 8));
-            if (_converting && splitDistance < 0)
-                throw Invalid("Fx trail split distance is negative");
+            var split = EffectRules.TrailSplit(splitDistance, ConvertFx);
+            if (split.IsError) throw Invalid(split.ErrorValue);
+            var (inverseDistance, inverseArcDistance, inverseTime) = split.ResultValue;
             int vertCount = Count(U32(row + 0xc));
             uint rawVerts = U32(row + 0x10);
-            byte[] verts = rawVerts == 0 && !_converting ? [] : FxBytes(rawVerts, 4,
+            byte[] verts = rawVerts == 0 && !ConvertFx ? [] : FxBytes(rawVerts, 4,
                 Size(vertCount, FxTrailDef.VertexSerializedSize), "trail vertices");
             var vertices = new FxTrailVertex[rawVerts == 0 ? 0 : vertCount];
-            for (int index = 0; index < vertCount; index++)
+            for (int index = 0; index < vertices.Length; index++)
             {
                 int offset = index * FxTrailDef.VertexSerializedSize;
                 vertices[index] = new FxTrailVertex(
@@ -284,10 +294,10 @@ internal static partial class Iw3Ps3FastFileCatalog
             }
             int indCount = Count(U32(row + 0x14));
             uint rawIndices = U32(row + 0x18);
-            byte[] inds = rawIndices == 0 && !_converting ? [] :
+            byte[] inds = rawIndices == 0 && !ConvertFx ? [] :
                 FxBytes(rawIndices, 2, Size(indCount, 2), "trail indices");
             var indices = new ushort[rawIndices == 0 ? 0 : indCount];
-            for (int index = 0; index < indCount; index++)
+            for (int index = 0; index < indices.Length; index++)
                 indices[index] = BinaryPrimitives.ReadUInt16BigEndian(inds.AsSpan(index * 2));
             return new FxElemExtendedDef
             {
@@ -296,11 +306,9 @@ internal static partial class Iw3Ps3FastFileCatalog
                 {
                     ScrollTimeMsec = unchecked((int)U32(row)),
                     RepeatDist = unchecked((int)U32(row + 4)),
-                    // COD4 stores only splitDist; the two later split modes
-                    // are absent, so zero disables those IW4 additions.
-                    InvSplitDist = splitDistance == 0 ? 0 : 1f / splitDistance,
-                    InvSplitArcDist = 0,
-                    InvSplitTime = 0,
+                    InvSplitDist = inverseDistance,
+                    InvSplitArcDist = inverseArcDistance,
+                    InvSplitTime = inverseTime,
                     VertCount = vertCount,
                     Verts = vertices,
                     IndCount = indCount,
@@ -338,19 +346,10 @@ internal static partial class Iw3Ps3FastFileCatalog
             Enumerable.Range(0, count).Select(index => FxRange(row + index * 8)).ToArray();
         private Bounds FxBounds(int row)
         {
-            float[] mins = [MapFloat(row), MapFloat(row + 4), MapFloat(row + 8)];
-            float[] maxs = [MapFloat(row + 12), MapFloat(row + 16), MapFloat(row + 20)];
-            float[] mid = new float[3], half = new float[3];
-            for (int axis = 0; axis < 3; axis++)
-            {
-                if (_converting && (!float.IsFinite(mins[axis]) ||
-                    !float.IsFinite(maxs[axis]) || mins[axis] > maxs[axis]))
-                    throw Invalid("Fx collision bounds are invalid");
-                mid[axis] = (float)(((double)mins[axis] + maxs[axis]) * .5);
-                half[axis] = mid[axis] - mins[axis];
-            }
-            return new Bounds(new Vec3(mid[0], mid[1], mid[2]),
-                new Vec3(half[0], half[1], half[2]));
+            var minimum = new Vec3(MapFloat(row), MapFloat(row + 4), MapFloat(row + 8));
+            var maximum = new Vec3(MapFloat(row + 12), MapFloat(row + 16), MapFloat(row + 20));
+            var bounds = EffectRules.CollisionBounds(minimum, maximum, ConvertFx);
+            return bounds.IsOk ? bounds.ResultValue : throw Invalid(bounds.ErrorValue);
         }
 
         private static Vec3 FxVector(byte[] data, int row) => new(
@@ -361,8 +360,45 @@ internal static partial class Iw3Ps3FastFileCatalog
         private T? FxAsset<T>(Pointer? pointer, string field) where T : class
         {
             if (pointer is null) return null;
-            if (!_converting) return null;
-            return pointer.Value as T ?? throw Invalid($"Fx {field} has no converted {typeof(T).Name}");
+            if (!ConvertFx) return null;
+            if (pointer.Value is T converted)
+            {
+                if (converted is MaterialAsset material) RetainFxMaterial(material);
+                if (converted is XModelAsset model)
+                    foreach (MaterialAsset? modelMaterial in model.Materials)
+                        if (modelMaterial is not null) RetainFxMaterial(modelMaterial);
+                return converted;
+            }
+            string name = _assets[pointer.Dependencies.Single()].Name;
+            Iw3Ps3ShaderLibrary sources = _stockSources ??
+                throw Invalid("Fx conversion has no stock source library");
+            if (typeof(T) == typeof(MaterialAsset))
+            {
+                Iw3Ps3MaterialSource source = pointer.Value as Iw3Ps3MaterialSource ??
+                    sources.ResolveMaterial(name);
+                MaterialAsset material = (_materialCompiler ??
+                    throw Invalid("Fx conversion has no material compiler")).Compile(source);
+                RetainFxMaterial(material);
+                return (T)(object)material;
+            }
+            if (typeof(T) == typeof(XModelAsset))
+            {
+                Iw3Ps3ModelSource source = pointer.Value as Iw3Ps3ModelSource ??
+                    sources.ResolveModel(name);
+                XModelAsset model = CompileModelSource(source, null);
+                if (!_definitions.Contains(model)) _definitions.Add(model);
+                foreach (MaterialAsset? modelMaterial in model.Materials)
+                    if (modelMaterial is not null) RetainFxMaterial(modelMaterial);
+                return (T)(object)model;
+            }
+            throw Invalid($"Fx {field} has no converted {typeof(T).Name}");
+        }
+
+        private void RetainFxMaterial(MaterialAsset material)
+        {
+            if (!_definitions.Contains(material)) _definitions.Add(material);
+            if (material.TechniqueSet is { } set && !_definitions.Contains(set))
+                _definitions.Add(set);
         }
     }
 }

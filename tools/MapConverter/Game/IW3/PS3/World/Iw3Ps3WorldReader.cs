@@ -5,6 +5,8 @@ using IW4.Game.Assets.Material;
 using IW4.Game.Assets.XModel;
 using IW4.Game.Math;
 using IW4.Game.Pointers;
+using MapConverter.Game.IW3.PS3.Rules;
+using Microsoft.FSharp.Core;
 
 namespace MapConverter.Game.IW3.PS3.Extraction;
 
@@ -203,6 +205,9 @@ internal static partial class Iw3Ps3FastFileCatalog
                 Pointer? image = Image(U32(row + 0xc), table.Region.Address.Add(index * 0x10 + 0xc));
                 Add(dependencies, image);
                 images[index] = WorldAsset<GfxImageAsset>(image, "reflection-probe image");
+                if (images[index] is { } probeImage)
+                    (_imageLibrary ?? throw Invalid("conversion has no image library"))
+                        .FoldWorldReflectionProbe(probeImage);
             }
             return (origins, images);
         }
@@ -292,15 +297,23 @@ internal static partial class Iw3Ps3FastFileCatalog
                 ushort[] modelIndices = WorldUInt16Array(U32(row + 0x20), 2,
                     modelIndexCount, "AABB static-model indices",
                     allowPrimitiveSpan: true);
+                ushort childCount = U16(row + 0x18);
+                ushort surfaceCount = U16(row + 0x1a);
+                uint modelPointer = U32(row + 0x20);
+                int childrenOffset = unchecked((int)U32(row + 0x24));
+                var bounds = WorldRules.AabbTreeBounds(
+                    WorldFloats(row, 3), WorldFloats(row + 12, 3),
+                    childCount, surfaceCount, (ushort)modelIndexCount,
+                    modelPointer, childrenOffset);
                 result[index] = new GfxAabbTree
                 {
-                    Bounds = WorldEndpointBounds(row),
-                    ChildCount = U16(row + 0x18),
-                    SurfaceCount = U16(row + 0x1a),
+                    Bounds = bounds.IsOk ? bounds.ResultValue : throw Invalid(bounds.ErrorValue),
+                    ChildCount = childCount,
+                    SurfaceCount = surfaceCount,
                     StartSurfIndex = U16(row + 0x1c),
                     SModelIndexCount = (ushort)modelIndexCount,
                     SModelIndexes = modelIndices,
-                    ChildrenOffset = unchecked((int)U32(row + 0x24))
+                    ChildrenOffset = childrenOffset
                 };
             }
             return result;
@@ -456,23 +469,9 @@ internal static partial class Iw3Ps3FastFileCatalog
                 int row = index * 0x38;
                 uint modelSurfaceCount = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(row + 48));
                 uint firstSurface = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(row + 52));
-                if (modelSurfaceCount > ushort.MaxValue ||
-                    firstSurface > ushort.MaxValue &&
-                    !(modelSurfaceCount == 0 && firstSurface == uint.MaxValue))
-                    throw Unsupported($"GfxWorld brush model {index} surface range exceeds IW4 field widths");
-                Bounds bounds = WorldBounds(WorldFloats(data, row + 24, 3),
-                    WorldFloats(data, row + 36, 3));
-                Vec3 half = bounds.HalfSize;
-                result[index] = new GfxBrushModel
-                {
-                    BoundsMins = [bounds.MidPoint.X, bounds.MidPoint.Y, bounds.MidPoint.Z],
-                    BoundsMaxs = [half.X, half.Y, half.Z],
-                    Radius = MathF.Sqrt(half.X * half.X + half.Y * half.Y +
-                        half.Z * half.Z),
-                    SurfaceCount = (ushort)modelSurfaceCount,
-                    StartSurfIndex = firstSurface == uint.MaxValue
-                        ? ushort.MaxValue : (ushort)firstSurface
-                };
+                result[index] = ResolveWorldRule(WorldRules.BrushModel(
+                    WorldFloats(data, row + 24, 3), WorldFloats(data, row + 36, 3),
+                    modelSurfaceCount, firstSurface, index));
             }
             return result;
         }
@@ -627,13 +626,15 @@ internal static partial class Iw3Ps3FastFileCatalog
             int staticSurfaceCount = WorldCount(start + 4, "static surface count");
             int modelVisCount = WorldCount(start + 0x20, "static-model visibility count");
             int surfaceVisCount = WorldCount(start + 0x24, "surface visibility count");
+            // d0290 passes word counts to b6f60 (four bytes per element).
+            // The +0x40 allocation doubles the visibility count, not modelCount.
             for (int index = 0; index < 3; index++)
                 WorldRuntimeReserve(U32(start + 0x28 + index * 4),
-                    modelVisCount, 4);
+                    Size(modelVisCount, 4), 4);
             for (int index = 0; index < 3; index++)
                 WorldRuntimeReserve(U32(start + 0x34 + index * 4),
-                    surfaceVisCount, 4);
-            WorldRuntimeReserve(U32(start + 0x40), Size(modelCount, 2), 2);
+                    Size(surfaceVisCount, 4), 4);
+            WorldRuntimeReserve(U32(start + 0x40), Size(modelVisCount, 8), 4);
 
             ushort[] sorted = WorldUInt16Array(U32(start + 0x44), 2,
                 staticSurfaceCount, "sorted surface indices");
@@ -647,10 +648,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                 Bounds bounds = WorldEndpointBounds(instanceBytes, row);
                 uint sourceGroundLighting = BinaryPrimitives.ReadUInt32BigEndian(
                     instanceBytes.AsSpan(row + 24));
-                // IW3 PS3 0x3006fc/0x300714 uploads this ARGB word unchanged.
-                // IW4 0x363940 instead packs its authored RGBA bytes into ARGB.
-                groundLighting[index] = new GfxColor(
-                    (sourceGroundLighting << 8) | (sourceGroundLighting >> 24));
+                groundLighting[index] = WorldRules.GroundLighting(sourceGroundLighting);
                 instances[index] = new GfxStaticModelInst
                 {
                     Bounds = bounds,
@@ -749,43 +747,14 @@ internal static partial class Iw3Ps3FastFileCatalog
             }
 
             WorldRuntimeReserve(U32(start + 0x58), Size(surfaceCount, 8), 4);
-            WorldRuntimeReserve(U32(start + 0x5c), surfaceVisCount, 4);
+            WorldRuntimeReserve(U32(start + 0x5c), Size(surfaceVisCount, 4), 4);
             uint opaqueEnd = U32(start + 0x10);
             uint litEnd = U32(start + 0x1c);
             uint shadowEnd = litEnd;
             if (_converting)
             {
-                // These boundaries describe the material-sorted physical
-                // surface table produced by IW4's post-load pass. SortedSurfIndex
-                // is a separate spatial ordering: cell AABB ranges and sky
-                // entries address its positions, which must remain unchanged.
-                var rangeCounts = new uint[4];
-                var seen = new HashSet<ushort>();
-                foreach (ushort surfaceIndex in sorted)
-                {
-                    if (surfaceIndex >= surfaces.Length || !seen.Add(surfaceIndex))
-                        throw Invalid("GfxWorld has an invalid or duplicate sorted surface index");
-                    MaterialAsset material = surfaces[surfaceIndex].Material ??
-                        throw Invalid($"GfxWorld surface {surfaceIndex} has no converted material");
-                    int range = material.CameraRegion switch
-                    {
-                        GfxCameraRegionType.LitOpaque => 0,
-                        GfxCameraRegionType.LitTrans => 1,
-                        GfxCameraRegionType.None => 2,
-                        GfxCameraRegionType.Emissive => 3,
-                        _ => throw Unsupported($"world material '{material.Info.Name}' camera region")
-                    };
-                    rangeCounts[range]++;
-                }
-                for (int index = 0; index < skyStartSurfs.Length; index++)
-                {
-                    int sourcePosition = skyStartSurfs[index];
-                    if ((uint)sourcePosition >= (uint)sorted.Length)
-                        throw Invalid("GfxWorld sky refers to an invalid sorted surface position");
-                }
-                opaqueEnd = rangeCounts[0];
-                litEnd = opaqueEnd + rangeCounts[1];
-                shadowEnd = litEnd + rangeCounts[2];
+                (opaqueEnd, litEnd, shadowEnd) = ResolveWorldRule(
+                    WorldRules.SurfaceRangeEnds(surfaces, sorted, skyStartSurfs));
             }
             return new GfxWorldDpvsStatic
             {
@@ -905,6 +874,11 @@ internal static partial class Iw3Ps3FastFileCatalog
                         throw Invalid($"GfxWorld surface {index} has an index outside its vertex slice");
                 }
             }
+            StaticModelConversion staticModels = ConvertStaticModels(dpvs, cellTrees, shadow);
+            dpvs = staticModels.Dpvs;
+            cellTrees = staticModels.CellTrees;
+            cellTreeCounts = staticModels.CellTreeCounts;
+            shadow = staticModels.ShadowGeometry;
             return new GfxWorldAsset
             {
                 Name = name,
@@ -977,20 +951,15 @@ internal static partial class Iw3Ps3FastFileCatalog
 
         private Bounds WorldBounds(float[] mins, float[] maxs)
         {
-            float[] middle = new float[3], half = new float[3];
-            for (int axis = 0; axis < 3; axis++)
-            {
-                if (!float.IsFinite(mins[axis]) || !float.IsFinite(maxs[axis]) ||
-                    mins[axis] > maxs[axis])
-                    throw Invalid("GfxWorld has invalid source endpoint bounds");
-                middle[axis] = (float)(((double)mins[axis] + maxs[axis]) * 0.5);
-                half[axis] = middle[axis] - mins[axis];
-            }
-            return new Bounds
-            {
-                MidPoint = new Vec3 { X = middle[0], Y = middle[1], Z = middle[2] },
-                HalfSize = new Vec3 { X = half[0], Y = half[1], Z = half[2] }
-            };
+            var result = WorldRules.EndpointBounds(mins, maxs);
+            return result.IsOk ? result.ResultValue : throw Invalid(result.ErrorValue);
+        }
+
+        private T ResolveWorldRule<T>(FSharpResult<T, WorldRuleError> result)
+        {
+            if (result.IsOk) return result.ResultValue;
+            WorldRuleError error = result.ErrorValue;
+            throw error.IsUnsupported ? Unsupported(error.Message) : Invalid(error.Message);
         }
 
         private T? WorldAsset<T>(Pointer? pointer, string field) where T : class

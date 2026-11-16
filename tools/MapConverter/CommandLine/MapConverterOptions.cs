@@ -1,3 +1,5 @@
+using MapConverter.Game.IW3.PS3.Rules;
+
 namespace MapConverter.CommandLine;
 
 internal enum SourceGame
@@ -23,4 +25,5 @@ internal sealed record MapConverterOptions(
     string? BootstrapFastFilePath,
     int? ImageFileIndex,
     string OutputDirectory,
-    string? WorldTemplatePath);
+    string? WorldTemplatePath,
+    FactionProfile Factions = FactionProfile.UsRussia);

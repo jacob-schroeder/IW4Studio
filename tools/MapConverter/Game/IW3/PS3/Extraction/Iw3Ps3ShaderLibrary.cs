@@ -146,7 +146,12 @@ internal sealed class Iw3Ps3ShaderLibrary
         }
         var copy = new Iw3Ps3MaterialSource(source.Name, source.Root.ToArray(), set,
             source.Textures.Select(texture => new Iw3Ps3TextureSource(
-                texture.Root.ToArray(), null, texture.ImageName)).ToArray(),
+                texture.Root.ToArray(), null, texture.ImageName,
+                texture.Water is { } water ? water with
+                {
+                    Root = water.Root.ToArray(), H0X = water.H0X.ToArray(),
+                    H0Y = water.H0Y.ToArray(), WTerm = water.WTerm.ToArray(), Image = null
+                } : null)).ToArray(),
             source.Constants.Select(bytes => (ReadOnlyMemory<byte>)bytes.ToArray()).ToArray(),
             source.States.Select(bytes => (ReadOnlyMemory<byte>)bytes.ToArray()).ToArray());
         if (_materials.TryGetValue(source.Name, out Iw3Ps3MaterialSource? previous))
@@ -265,13 +270,23 @@ internal sealed class Iw3Ps3ShaderLibrary
             Iw3Ps3TextureSource a = left.Textures[index], b = right.Textures[index];
             if (a.Root.Length != 12 || b.Root.Length != 12 ||
                 !a.Root.Span[..8].SequenceEqual(b.Root.Span[..8]) ||
-                a.ImageName != b.ImageName) return false;
+                a.ImageName != b.ImageName || !SameWater(a.Water, b.Water)) return false;
         }
         for (int index = 0; index < left.Constants.Count; index++)
             if (!left.Constants[index].Span.SequenceEqual(right.Constants[index].Span)) return false;
         for (int index = 0; index < left.States.Count; index++)
             if (!left.States[index].Span.SequenceEqual(right.States[index].Span)) return false;
         return true;
+    }
+
+    private static bool SameWater(Iw3Ps3WaterSource? left, Iw3Ps3WaterSource? right)
+    {
+        if (left is null || right is null) return left is null && right is null;
+        return left.Root.Length == 0x48 && right.Root.Length == 0x48 &&
+            left.Root.Span[..4].SequenceEqual(right.Root.Span[..4]) &&
+            left.Root.Span[0x10..0x44].SequenceEqual(right.Root.Span[0x10..0x44]) &&
+            left.H0X.Span.SequenceEqual(right.H0X.Span) && left.H0Y.Span.SequenceEqual(right.H0Y.Span) &&
+            left.WTerm.Span.SequenceEqual(right.WTerm.Span) && left.ImageName == right.ImageName;
     }
 
     private Iw3Ps3TechniqueSource? CopyTechnique(Iw3Ps3TechniqueSource? source)

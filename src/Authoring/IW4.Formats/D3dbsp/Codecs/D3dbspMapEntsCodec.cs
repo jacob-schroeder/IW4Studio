@@ -80,6 +80,85 @@ internal static class D3dbspMapEntsCodec
         ReadOnlySpan<byte> source) =>
         Array.AsReadOnly(ParseEntities(source).Select(entity => entity.Values).ToArray());
 
+    public static byte[] AppendSpawnPointCopies(ReadOnlySpan<byte> source,
+        Func<IReadOnlyList<IReadOnlyDictionary<string, string>>, IReadOnlyList<(int SourceIndex, string Classname)>> select)
+    {
+        ArgumentNullException.ThrowIfNull(select);
+        IReadOnlyList<ParsedEntity> entities = ParseEntities(source);
+        IReadOnlyList<(int SourceIndex, string Classname)> copies =
+            select(entities.Select(entity => entity.Values).ToArray()) ??
+                throw new InvalidDataException("Spawn-point selection must return a list.");
+        if (copies.Count == 0) return source.ToArray();
+        int terminator = source.IndexOf((byte)0);
+        using var output = new MemoryStream(source.Length);
+        output.Write(terminator < 0 ? source : source[..terminator]);
+        foreach (var (index, classname) in copies)
+        {
+            if ((uint)index >= (uint)entities.Count || string.IsNullOrEmpty(classname) ||
+                classname.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '_'))
+                throw new InvalidDataException("Spawn-point selection has an invalid entity index or classname.");
+            WriteSyntheticSpawn(output, entities[index], classname);
+        }
+        WriteLatin1(output, "\n");
+        if (terminator >= 0) output.Write(source[terminator..]);
+        return output.ToArray();
+    }
+
+    public static byte[] FilterEntities(ReadOnlySpan<byte> source,
+        Func<IReadOnlyList<IReadOnlyDictionary<string, string>>, IReadOnlyList<bool>> retain)
+    {
+        ArgumentNullException.ThrowIfNull(retain);
+        IReadOnlyList<ParsedEntity> entities = ParseEntities(source);
+        IReadOnlyList<bool> keep = retain(entities.Select(entity => entity.Values).ToArray());
+        if (keep is null || keep.Count != entities.Count)
+            throw new InvalidDataException("Entity filter must return one decision per source entity.");
+        using var output = new MemoryStream(source.Length);
+        int position = 0;
+        for (int index = 0; index < entities.Count; index++)
+        {
+            if (keep[index]) continue;
+            ParsedEntity entity = entities[index];
+            output.Write(source[position..entity.Begin]);
+            position = entity.End;
+        }
+        output.Write(source[position..]);
+        return output.ToArray();
+    }
+
+    public static byte[] RewriteEntityPropertyValues(ReadOnlySpan<byte> source,
+        Func<IReadOnlyDictionary<string, string>, string, string, string> rewrite)
+    {
+        ArgumentNullException.ThrowIfNull(rewrite);
+        var replacements = new List<(int Begin, int End, string Value)>();
+        foreach (ParsedEntity entity in ParseEntities(source))
+        {
+            IReadOnlyDictionary<string, string> values = entity.Values;
+            foreach ((string key, string value) in values)
+            {
+                string replacement = rewrite(values, key, value);
+                if (replacement == value) continue;
+                if (replacement is null || replacement.Any(c => c == 0 || c > byte.MaxValue))
+                    throw new InvalidDataException("Entity property replacement must be non-null Latin1 text without NULs.");
+                if (!entity.TryGetValueSpan(key, out int begin, out int end))
+                    throw new InvalidDataException($"Entity property '{key}' has no source token span.");
+                replacements.Add((begin, end, replacement));
+            }
+        }
+        if (replacements.Count == 0) return source.ToArray();
+        using var output = new MemoryStream(source.Length);
+        int position = 0;
+        foreach (var replacement in replacements.OrderBy(item => item.Begin))
+        {
+            output.Write(source[position..replacement.Begin]);
+            string quoted = replacement.Value.Replace("\\", "\\\\", StringComparison.Ordinal)
+                .Replace("\"", "\\\"", StringComparison.Ordinal);
+            WriteLatin1(output, $"\"{quoted}\"");
+            position = replacement.End;
+        }
+        output.Write(source[position..]);
+        return output.ToArray();
+    }
+
     public static byte[] RemoveEntityProperties(ReadOnlySpan<byte> source, IReadOnlySet<string> names)
     {
         ArgumentNullException.ThrowIfNull(names);
@@ -125,7 +204,8 @@ internal static class D3dbspMapEntsCodec
         IReadOnlyList<Bounds> brushBounds,
         IReadOnlyList<uint> brushContents,
         bool omitNamedModelEntities = false,
-        string modelNamePrefix = "")
+        string modelNamePrefix = "",
+        IReadOnlySet<string>? unprefixedModelNames = null)
     {
         ArgumentNullException.ThrowIfNull(collisionModels);
         ArgumentNullException.ThrowIfNull(leafBrushNodes);
@@ -147,7 +227,8 @@ internal static class D3dbspMapEntsCodec
         {
             foreach (ParsedEntity entity in entities)
                 if (entity.TryGetValue("model", out string model) && model.Length != 0 &&
-                    model[0] is not ('*' or '?'))
+                    model[0] is not ('*' or '?') &&
+                    unprefixedModelNames?.Contains(model) != true)
                     replacements.Add(entity.Begin, modelNamePrefix + model);
         }
         var triggerModels = new List<TriggerModel>();

@@ -793,6 +793,7 @@ internal static class Iw3MaterialCompiler
             10 when lit => MaterialSortKey.DecalBottom2,
             11 when lit => MaterialSortKey.DecalBottom3,
             12 when lit => MaterialSortKey.DecalStatic,
+            14 when lit => MaterialSortKey.DecalMiddle2,
             24 when lit => MaterialSortKey.DecalWeaponImpact,
             24 when emissive && techniqueSetName is "effect_nofog" or "sm2/effect_nofog" =>
                 MaterialSortKey.EffectAutoSort,

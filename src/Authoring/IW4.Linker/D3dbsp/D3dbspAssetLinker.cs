@@ -78,16 +78,30 @@ public static class D3dbspAssetLinker
     public static IReadOnlyList<string> ReadNamedEntityModelNames(ReadOnlySpan<byte> sourceEntities) =>
         D3dbspMapEntsCodec.DecodeNamedEntityModelNames(sourceEntities);
 
+    public static byte[] AppendSpawnPointCopies(ReadOnlySpan<byte> sourceEntities,
+        Func<IReadOnlyList<IReadOnlyDictionary<string, string>>, IReadOnlyList<(int SourceIndex, string Classname)>> select) =>
+        D3dbspMapEntsCodec.AppendSpawnPointCopies(sourceEntities, select);
+
+    public static byte[] RewriteEntityPropertyValues(ReadOnlySpan<byte> sourceEntities,
+        Func<IReadOnlyDictionary<string, string>, string, string, string> rewrite) =>
+        D3dbspMapEntsCodec.RewriteEntityPropertyValues(sourceEntities, rewrite);
+
+    public static byte[] FilterEntities(ReadOnlySpan<byte> sourceEntities,
+        Func<IReadOnlyList<IReadOnlyDictionary<string, string>>, IReadOnlyList<bool>> retain) =>
+        D3dbspMapEntsCodec.FilterEntities(sourceEntities, retain);
+
     public static MapEntsAsset CreateMapEnts(
         string assetName, ReadOnlySpan<byte> sourceEntities,
-        ClipMapAsset collision, int sunPrimaryLightIndex, string modelNamePrefix = "")
+        ClipMapAsset collision, int sunPrimaryLightIndex, string modelNamePrefix = "",
+        IReadOnlySet<string>? unprefixedModelNames = null)
     {
         ArgumentNullException.ThrowIfNull(collision);
         ValidateAssetName(assetName);
         var stages = D3dbspMapEntsCodec.DecodeStages(sourceEntities, sunPrimaryLightIndex);
         var (text, triggers) = D3dbspMapEntsCodec.DecodeMapTriggers(sourceEntities,
             collision.CModels, collision.LeafBrushNodes, collision.Brushes,
-            collision.BrushBounds, collision.BrushContents, modelNamePrefix: modelNamePrefix);
+            collision.BrushBounds, collision.BrushContents, modelNamePrefix: modelNamePrefix,
+            unprefixedModelNames: unprefixedModelNames);
         return new MapEntsAsset
         {
             Name = assetName, EntityStringBytes = text, NumEntityChars = text.Length,

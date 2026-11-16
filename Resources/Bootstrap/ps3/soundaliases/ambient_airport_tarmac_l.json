@@ -1,0 +1,298 @@
+{
+  "version": 1,
+  "assetType": "Sound",
+  "name": "ambient_airport_tarmac_l",
+  "count": 1,
+  "aliases": [
+    {
+      "aliasName": "ambient_airport_tarmac_l",
+      "subtitle": null,
+      "secondaryAliasName": null,
+      "chainAliasName": null,
+      "mixerGroup": "ambience",
+      "sequence": 0,
+      "volumeMin": 0.8277,
+      "volumeMax": 0.8277,
+      "pitchMin": 1,
+      "pitchMax": 1,
+      "distanceMin": 2000,
+      "distanceMax": 2700,
+      "velocityMin": 0,
+      "flags": 10013,
+      "slavePercentage": 0.8,
+      "probability": 1,
+      "lfePercentage": 0.3,
+      "centerPercentage": 0,
+      "startDelay": 0,
+      "volumeFalloffCurveName": "$default",
+      "volumeFalloffCurveStatus": "materialized",
+      "volumeFalloffCurve": {
+        "name": "$default",
+        "knotCount": 2,
+        "padding": 0,
+        "knots": [
+          {
+            "x": 0,
+            "y": 1
+          },
+          {
+            "x": 1,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          }
+        ]
+      },
+      "envelopMin": 1000,
+      "envelopMax": 1800,
+      "envelopPercentage": 0.65,
+      "speakerMap": {
+        "isDefault": 1,
+        "padding": "AAAA",
+        "name": "",
+        "channels": [
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "soundFileCount": 1,
+      "soundFiles": [
+        {
+          "languageIndex": 0,
+          "type": 2,
+          "exists": 1,
+          "padding": 0,
+          "fileIndex": 1,
+          "streamFileOffset": 32350208,
+          "streamFileLength": 2622349,
+          "streamPayloadPath": "soundaliases/ambient_airport_tarmac_l.payloads/0000-0000.stream.bin",
+          "streamPayloadStatus": "exported"
+        }
+      ]
+    }
+  ]
+}

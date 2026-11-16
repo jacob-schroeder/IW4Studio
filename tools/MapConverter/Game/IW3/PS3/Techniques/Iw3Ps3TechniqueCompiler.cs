@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using IW4.Game.Assets.TechniqueSet;
 using MapConverter.Game.IW3.PC.Techniques;
+using MapConverter.Game.IW3.PS3.Rules;
 
 namespace MapConverter.Game.IW3.PS3.Techniques;
 
@@ -58,8 +59,7 @@ internal sealed class Iw3Ps3TechniqueCompiler(
         var slots = new MaterialTechniqueSlot[(int)MaterialTechniqueType.Count];
         for (int targetIndex = 0; targetIndex < slots.Length; targetIndex++)
         {
-            Iw3TechniqueSlot? pcSlot = Iw3TechniqueSlotMapping.Iw4Slots[targetIndex];
-            int? sourceIndex = pcSlot is null ? null : SourceSlotIndex(pcSlot.Value);
+            int? sourceIndex = TechniqueRules.SourceSlotIndexForTarget(targetIndex);
             Iw3Ps3TechniqueSource? technique = sourceIndex is { } index
                 ? source.Slots[index]
                 : null;
@@ -85,27 +85,6 @@ internal sealed class Iw3Ps3TechniqueCompiler(
             .OfType<MaterialShaderAsset>()
             .Distinct<MaterialShaderAsset>(ReferenceEqualityComparer.Instance)
             .ToArray());
-
-    private static int? SourceSlotIndex(Iw3TechniqueSlot slot)
-    {
-        int index = (int)slot;
-        // The 26 console slots omit PC instanced slots 14..20 and the final
-        // instanced debug slot 33. All remaining slots keep semantic order.
-        return index switch
-        {
-            <= 13 => index,
-            >= 21 and <= 32 => index - 7,
-            _ => null
-        };
-    }
-
-    internal static int? SourceSlotIndexForTarget(int targetIndex)
-    {
-        if ((uint)targetIndex >= Iw3TechniqueSlotMapping.Iw4Slots.Count)
-            throw new ArgumentOutOfRangeException(nameof(targetIndex));
-        Iw3TechniqueSlot? slot = Iw3TechniqueSlotMapping.Iw4Slots[targetIndex];
-        return slot is null ? null : SourceSlotIndex(slot.Value);
-    }
 
     private MaterialTechniqueAsset CompileTechnique(Iw3Ps3TechniqueSource source)
     {
@@ -291,6 +270,8 @@ internal sealed class Iw3Ps3TechniqueCompiler(
         {
             string parameter = ReadParameterName(pixelShader, destination, vertexConstant: false,
                 sampler: true);
+            if (TechniqueRules.CodeSamplerAlias(value, pixelShader?.Name, parameter) is { } aliasedSource)
+                return new MaterialShaderArgumentAsset(0, type, destination, (int)aliasedSource, literal);
             // IW3's 2D dynamic-shadow visibility mask has no IW4 code-image
             // source. Its lit-sun shader multiplies the sampled visibility
             // into illumination, so white disables that source-only mask.
@@ -302,7 +283,9 @@ internal sealed class Iw3Ps3TechniqueCompiler(
                 return new MaterialShaderArgumentAsset(0, type, destination, value, literal);
             }
             if (!Iw3TechniqueBindingFacts.TryGetSampler(parameter, out Iw3CodeSamplerBinding binding))
-                throw new InvalidDataException($"IW3 PS3 code sampler '{parameter}' has no IW4 binding.");
+                throw new InvalidDataException(
+                    $"IW3 PS3 code sampler '{parameter}' in shader '{pixelShader?.Name}' " +
+                    $"(source {value}, destination {destination}) has no IW4 binding.");
             if (binding.Frequency == MaterialUpdateFrequency.Custom)
             {
                 customSamplers = binding.CustomFlags;

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using MapConverter.Game.IW3.PS3.Rules;
 using MapConverter.Game.IW3.PS3.Materials;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.Physics;
@@ -108,36 +109,42 @@ internal static partial class Iw3Ps3FastFileCatalog
             for (int index = 0; index < materials.Length; index++)
             {
                 string? materialName = source.MaterialNames[index];
-                if (mapMaterials is not null)
+                materials[index] = mapMaterials?[index]?.Value as MaterialAsset;
+                if (materials[index] is null && materialName is not null)
                 {
-                    materials[index] = mapMaterials[index]?.Value as MaterialAsset;
-                    if (mapMaterials[index] is not null && materials[index] is null)
-                        throw Unsupported($"model '{source.Name}' material {index} has no converted definition");
-                }
-                else if (materialName is not null)
-                {
-                    Iw3Ps3MaterialSource material = (_stockSources ??
-                        throw Invalid("conversion has no stock source library"))
-                        .ResolveMaterial(materialName);
+                    Iw3Ps3MaterialSource material = _sourceMaterials.TryGetValue(materialName,
+                        out Iw3Ps3MaterialSource? localMaterial) ? localMaterial :
+                        (_stockSources ?? throw Invalid("conversion has no stock source library"))
+                            .ResolveMaterial(materialName);
                     materials[index] = (_materialCompiler ??
                         throw Invalid("conversion has no material compiler")).Compile(material);
-                    MaterialAsset compiled = materials[index] ??
-                        throw Invalid($"model '{source.Name}' material {index} is unresolved");
+                }
+                if (mapMaterials?[index] is not null && materials[index] is null)
+                    throw Unsupported($"model '{source.Name}' material {index} has no converted definition");
+                // A requested tail model may reuse a techset traversed earlier
+                // without conversion. Retain the compiled graph for both local
+                // material pointers and source-library material resolution.
+                if (materials[index] is { } compiled)
+                {
                     if (!_definitions.Contains(compiled)) _definitions.Add(compiled);
                     if (compiled.TechniqueSet is { } set && !_definitions.Contains(set))
                         _definitions.Add(set);
                 }
             }
             PhysPresetAsset? preset = mapPreset?.Value as PhysPresetAsset;
-            if (mapPreset is not null && preset is null)
-                throw Unsupported($"model '{source.Name}' has an unresolved physics preset");
-            if (mapMaterials is null && source.PresetName is { } presetName)
+            // Tail vehicle parts can alias a preset traversed while conversion
+            // was disabled. Resolve its captured source just as for stock models.
+            if (preset is null && source.PresetName is { } presetName)
             {
-                var stock = (_stockSources ?? throw Invalid("conversion has no stock source library"))
-                    .ResolvePreset(presetName);
+                var stock = _sourcePresets.TryGetValue(presetName, out var localPreset)
+                    ? localPreset
+                    : (_stockSources ?? throw Invalid("conversion has no stock source library"))
+                        .ResolvePreset(presetName);
                 preset = CompilePresetSource(presetName, stock.Root, stock.SoundPrefix);
                 if (!_definitions.Contains(preset)) _definitions.Add(preset);
             }
+            if (mapPreset is not null && preset is null)
+                throw Unsupported($"model '{source.Name}' has an unresolved physics preset");
             return BuildModel(source, materials, preset, physCollmap);
         }
 
@@ -411,15 +418,7 @@ internal static partial class Iw3Ps3FastFileCatalog
         private static Bounds ReadMinMaxBounds(ReadOnlySpan<byte> bytes, int minOffset, int maxOffset)
         {
             Vec3 min = ReadVec3(bytes, minOffset), max = ReadVec3(bytes, maxOffset);
-            if (min.X > max.X || min.Y > max.Y || min.Z > max.Z)
-                throw new InvalidDataException("An IW3 PS3 model has inverted bounds.");
-            return new Bounds
-            {
-                MidPoint = new Vec3 { X = (min.X + max.X) / 2, Y = (min.Y + max.Y) / 2,
-                    Z = (min.Z + max.Z) / 2 },
-                HalfSize = new Vec3 { X = (max.X - min.X) / 2, Y = (max.Y - min.Y) / 2,
-                    Z = (max.Z - min.Z) / 2 }
-            };
+            return CollisionRules.BoundsFromEndpoints(min, max);
         }
 
         private static Vec3 ReadVec3(ReadOnlySpan<byte> bytes, int offset) =>

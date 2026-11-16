@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using MapConverter.Game.IW3.PS3.Rules;
 using IW4.Game.Assets.ColMap;
 using FxEffectDefAsset = IW4.Game.Assets.Fx.FxEffectDefAsset;
 using IW4.Game.Assets.GfxMap;
@@ -279,7 +280,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                 if (_converting)
                 {
                     uint checksum = Be32(header, 0x118);
-                    SModelAabbNode staticModelRoot = CreateClipStaticModelRoot(staticModels);
+                    SModelAabbNode staticModelRoot = CollisionRules.CreateClipStaticModelRoot(staticModels);
                     ClipMapAsset Build(MapEntsAsset? finalMapEnts) => new()
                     {
                         SerializedType = XAssetType.ColMapMp,
@@ -319,11 +320,38 @@ internal static partial class Iw3Ps3FastFileCatalog
                     var sourceMapEnts = mapEnts?.Value as MapEntsAsset;
                     if (sourceMapEnts is null || string.IsNullOrEmpty(sourceMapEnts.Name))
                         throw Unsupported("clipmap has no resolved map entities for trigger conversion");
+                    byte[] sourceEntities = D3dbspAssetLinker.FilterEntities(
+                        sourceMapEnts.EntityStringBytes.ToArray(), EntityRules.RetainGameplayEntities);
+                    sourceEntities = D3dbspAssetLinker.AppendSpawnPointCopies(
+                        sourceEntities, EntityRules.DemolitionSpawnCopies);
+                    sourceEntities = D3dbspAssetLinker.RewriteEntityPropertyValues(
+                        sourceEntities, EntityRules.TurretPropertyValue);
+                    var vehicleTypes = new HashSet<string>(StringComparer.Ordinal);
+                    sourceEntities = D3dbspAssetLinker.RewriteEntityPropertyValues(
+                        sourceEntities, (entity, key, property) =>
+                        {
+                            if (key == "targetname" && DestructibleVehicleRules.SourceType(entity) is { } type)
+                                vehicleTypes.Add(type);
+                            return DestructibleVehicleRules.EntityPropertyValue(
+                                _ownedNamePrefix, entity, key, property);
+                        });
+                    if (vehicleTypes.Count != 0)
+                    {
+                        VehicleRecipes = DestructibleVehicleRules.Compile(_vehicleRecipeSource ??
+                            throw Invalid("source destructible vehicle recipes are absent"),
+                            _ownedNamePrefix, vehicleTypes);
+                        _requestedTailModelNames.UnionWith(VehicleRecipes.ModelNames);
+                    }
+                    IReadOnlySet<string> nativeModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        EntityRules.NativeTurretModel
+                    };
                     // Entity model names are strings, so normal asset-pointer
                     // traversal does not discover their stock definitions.
                     foreach (string modelName in D3dbspAssetLinker.ReadNamedEntityModelNames(
-                        sourceMapEnts.EntityStringBytes.ToArray()))
+                        sourceEntities))
                     {
+                        if (nativeModels.Contains(modelName)) continue;
                         string targetName = _ownedNamePrefix + modelName;
                         if (_definitions.OfType<XModelAsset>().Any(model => model.Name == targetName))
                             continue;
@@ -335,8 +363,8 @@ internal static partial class Iw3Ps3FastFileCatalog
                         throw Unsupported("clipmap needs a converted render world for stage conversion");
                     ClipMapAsset geometry = Build(null);
                     MapEntsAsset finalMapEnts = D3dbspAssetLinker.CreateMapEnts(
-                        sourceMapEnts.Name, sourceMapEnts.EntityStringBytes.ToArray(), geometry,
-                        world.SunPrimaryLightIndex, _ownedNamePrefix);
+                        sourceMapEnts.Name, sourceEntities, geometry,
+                        world.SunPrimaryLightIndex, _ownedNamePrefix, nativeModels);
                     _definitions.Add(finalMapEnts);
                     value = Build(finalMapEnts);
                 }
@@ -390,7 +418,7 @@ internal static partial class Iw3Ps3FastFileCatalog
             ReadOnlySpan<byte> bytes = _data.AsSpan(row, 0x50);
             return new ClipStaticModel
             {
-                XModel = model?.Value as XModelAsset,
+                XModel = StaticCollisionModel(model?.Value as XModelAsset),
                 Origin = ReadVec3(bytes, 8),
                 InvScaledAxis = [ReadVec3(bytes, 0x14), ReadVec3(bytes, 0x20),
                     ReadVec3(bytes, 0x2c)],
@@ -532,26 +560,14 @@ internal static partial class Iw3Ps3FastFileCatalog
             for (int index = 0; index < count; index++)
             {
                 ReadOnlySpan<byte> row = bytes.Slice(index * 0x20, 0x20);
-                result[index] = new CollisionAabbTree
-                {
-                    // IW3 stores both vectors before the material/child fields;
-                    // the IW4 wire layout places those fields between vectors.
-                    Origin = ReadVec3(row, 0), HalfSize = ReadVec3(row, 12),
-                    MaterialIndex = Be16(row, 24), ChildCount = Be16(row, 26),
-                    FirstChildOrPartitionIndex = BinaryPrimitives.ReadInt32BigEndian(row[28..])
-                };
-                CollisionAabbTree tree = result[index];
-                if (!float.IsFinite(tree.Origin.X) || !float.IsFinite(tree.Origin.Y) ||
-                    !float.IsFinite(tree.Origin.Z) || !float.IsFinite(tree.HalfSize.X) ||
-                    !float.IsFinite(tree.HalfSize.Y) || !float.IsFinite(tree.HalfSize.Z) ||
-                    tree.HalfSize.X < 0 || tree.HalfSize.Y < 0 || tree.HalfSize.Z < 0 ||
-                    tree.MaterialIndex >= materialCount)
-                    throw Invalid($"clipmap AABB {index} has invalid bounds or material");
-                int first = tree.FirstChildOrPartitionIndex;
-                if (first < 0 || (tree.ChildCount == 0
-                    ? first >= partitionCount
-                    : (long)first + tree.ChildCount > count))
-                    throw Invalid($"clipmap AABB {index} has an invalid child or partition range");
+                // IW3 stores both vectors before the material/child fields;
+                // the IW4 wire layout places those fields between vectors.
+                var tree = CollisionRules.CreateAabb(
+                    ReadVec3(row, 0), ReadVec3(row, 12), Be16(row, 24), Be16(row, 26),
+                    BinaryPrimitives.ReadInt32BigEndian(row[28..]), index, count,
+                    materialCount, partitionCount);
+                if (tree.IsError) throw Invalid(tree.ErrorValue);
+                result[index] = tree.ResultValue;
             }
             return result;
         }
@@ -571,36 +587,6 @@ internal static partial class Iw3Ps3FastFileCatalog
                 };
             }
             return result;
-        }
-
-        private static SModelAabbNode CreateClipStaticModelRoot(IReadOnlyList<ClipStaticModel> models)
-        {
-            // IW4 starts point traces at node zero even with no static models.
-            if (models.Count == 0) return new SModelAabbNode();
-            Vec3 mins = new()
-            {
-                X = models.Min(model => model.Bounds.MidPoint.X - model.Bounds.HalfSize.X),
-                Y = models.Min(model => model.Bounds.MidPoint.Y - model.Bounds.HalfSize.Y),
-                Z = models.Min(model => model.Bounds.MidPoint.Z - model.Bounds.HalfSize.Z)
-            };
-            Vec3 maxs = new()
-            {
-                X = models.Max(model => model.Bounds.MidPoint.X + model.Bounds.HalfSize.X),
-                Y = models.Max(model => model.Bounds.MidPoint.Y + model.Bounds.HalfSize.Y),
-                Z = models.Max(model => model.Bounds.MidPoint.Z + model.Bounds.HalfSize.Z)
-            };
-            return new SModelAabbNode
-            {
-                Bounds = new Bounds
-                {
-                    MidPoint = new Vec3 { X = (mins.X + maxs.X) * 0.5f,
-                        Y = (mins.Y + maxs.Y) * 0.5f, Z = (mins.Z + maxs.Z) * 0.5f },
-                    HalfSize = new Vec3 { X = (maxs.X - mins.X) * 0.5f,
-                        Y = (maxs.Y - mins.Y) * 0.5f, Z = (maxs.Z - mins.Z) * 0.5f }
-                },
-                FirstChild = 0,
-                ChildCount = checked((ushort)models.Count)
-            };
         }
 
         private void ReadBrushSideChild(int cell, Pointer? planeTable, IReadOnlyList<CPlane> planes)

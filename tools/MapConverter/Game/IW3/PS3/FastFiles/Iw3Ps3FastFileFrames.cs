@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace MapConverter.Game.IW3.PS3.FastFiles;
 
@@ -58,6 +60,7 @@ internal static class Iw3Ps3FastFileFrames
 
         byte[] encodedFrame = new byte[ushort.MaxValue];
         byte[] decodedFrame = new byte[DecodedFrameSize];
+        using var decodedHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         bool sawTerminator = false;
         while (TryReadPackedSize(stream, out ushort encodedSize))
         {
@@ -65,7 +68,7 @@ internal static class Iw3Ps3FastFileFrames
             if (encodedSize == PackedStreamTerminator)
             {
                 sawTerminator = true;
-                ValidateTrailingTerminator(stream);
+                ValidateTrailingTerminator(stream, decodedHash);
                 break;
             }
 
@@ -90,6 +93,7 @@ internal static class Iw3Ps3FastFileFrames
                     decodedFrame);
             }
 
+            decodedHash.AppendData(decodedFrame.AsSpan(0, decodedLength));
             processFrame(decodedFrame.AsMemory(0, decodedLength));
         }
 
@@ -192,7 +196,7 @@ internal static class Iw3Ps3FastFileFrames
         return true;
     }
 
-    private static void ValidateTrailingTerminator(Stream stream)
+    private static void ValidateTrailingTerminator(Stream stream, IncrementalHash decodedHash)
     {
         int high = stream.ReadByte();
         if (high < 0)
@@ -202,6 +206,39 @@ internal static class Iw3Ps3FastFileFrames
         {
             throw new EndOfStreamException(
                 "the packed stream has one trailing byte after its terminator.");
+        }
+        if (high == 'I' && low == 'W')
+        {
+            // Some extracted COD4 UI inputs carry a menu-restoration archive
+            // outside the packed zone. Accept only that bounded, hash-bound
+            // format; arbitrary bytes after the terminator remain an error.
+            Span<byte> header = stackalloc byte[10];
+            ReadExactly(stream, header, "IW3 menu archive header");
+            if (!header[..6].SequenceEqual("3MENU1"u8))
+                throw new InvalidDataException("unknown archive after the IW3 packed stream.");
+            uint length = BinaryPrimitives.ReadUInt32BigEndian(header[6..]);
+            if (length > 16 * 1024 * 1024 || length == 0 || length != stream.Length - stream.Position)
+                throw new InvalidDataException("invalid IW3 menu archive length.");
+            byte[] compressed = new byte[(int)length];
+            ReadExactly(stream, compressed, "IW3 menu archive payload");
+            using var input = new MemoryStream(compressed, writable: false);
+            using var inflater = new ZLibStream(input, CompressionMode.Decompress);
+            using var json = new MemoryStream();
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = inflater.Read(buffer)) != 0)
+            {
+                if (json.Length + read > 64 * 1024 * 1024)
+                    throw new InvalidDataException("IW3 menu archive exceeds its decoded size limit.");
+                json.Write(buffer, 0, read);
+            }
+            using var archive = JsonDocument.Parse(json.GetBuffer().AsMemory(0, (int)json.Length));
+            JsonElement root = archive.RootElement;
+            if (!root.TryGetProperty("schema", out var schema) || !schema.TryGetInt32(out int version) || version != 1 ||
+                !root.TryGetProperty("zone_sha256", out var hash) || hash.ValueKind != JsonValueKind.String ||
+                !string.Equals(hash.GetString(), Convert.ToHexString(decodedHash.GetHashAndReset()), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("IW3 menu archive schema or decoded-zone hash differs.");
+            return;
         }
         if (((high << 8) | low) != PackedStreamTerminator)
         {

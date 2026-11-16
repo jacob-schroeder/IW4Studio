@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using IW4.Game.Assets.Image;
 using MapConverter.Game.IW3.PC.Images;
 using MapConverter.Game.IW3.PS3.Extraction;
+using MapConverter.Game.IW3.PS3.Rules;
 
 namespace MapConverter.Game.IW3.PS3.Images;
 
@@ -12,6 +13,7 @@ internal sealed class Iw3Ps3ImageLibrary(string ownedNamePrefix)
     private readonly Dictionary<(string Path, int RootOffset), (byte[] Root, ReadOnlyMemory<byte> Payload)>
         _sourcesByLocation = [];
     private readonly Dictionary<string, Iw3Iwi6StreamedImageCompilation> _compiled = new(StringComparer.Ordinal);
+    private readonly HashSet<GfxImageAsset> _convertedReflectionProbes = new(ReferenceEqualityComparer.Instance);
 
     internal void AddFastFile(string path, CancellationToken token)
     {
@@ -74,18 +76,43 @@ internal sealed class Iw3Ps3ImageLibrary(string ownedNamePrefix)
         return Resolve(name);
     }
 
+    internal GfxImageAsset ResolvePreviewAt(string path, int rootOffset, string mapName)
+    {
+        if (!_sourcesByLocation.TryGetValue((Path.GetFullPath(path), rootOffset), out var source))
+            throw new InvalidDataException($"Missing COD4 preview image at 0x{rootOffset:X} in '{path}'.");
+        return MapUiRules.PreviewImage(mapName, source.Root, source.Payload);
+    }
+
     internal GfxImageAsset Resolve(string name)
     {
         name = name.TrimStart(',');
         if (_compiled.TryGetValue(name, out var image)) return image.Image;
         if (!_sources.TryGetValue(name, out var source))
-            throw new InvalidDataException($"Missing COD4 PS3 image '{name}'.");
-        image = Compile(ownedNamePrefix + name, source.Root, source.Payload);
+        {
+            if (name != "default")
+                throw new InvalidDataException($"Missing COD4 PS3 image '{name}'.");
+            // The engine owns this image; retain the same native reference used
+            // by the IW4 loading zone instead of inventing a map-owned payload.
+            image = new(new GfxImageAsset { Name = ",default" }, []);
+        }
+        else image = Compile(ownedNamePrefix + name, source.Root, source.Payload);
         _compiled.Add(name, image);
         return image.Image;
     }
 
     internal IReadOnlyList<Iw3Iwi6StreamedImageCompilation> Compiled => _compiled.Values.ToArray();
+
+    internal void FoldWorldReflectionProbe(GfxImageAsset image)
+    {
+        if (_convertedReflectionProbes.Contains(image)) return;
+        // ResidentImage owns this array; source bytes in _sources remain intact.
+        // Keep the provider instance already held by world/material references
+        // and reader definitions, so no stale duplicate wins during linking.
+        if (image.PayloadBytes is not byte[] pixels)
+            throw new InvalidDataException($"COD4 reflection probe '{image.Name}' has no owned resident payload.");
+        ImageRules.ReflectionProbePixels(image).CopyTo(pixels, 0);
+        _convertedReflectionProbes.Add(image);
+    }
 
     internal static Iw3Iwi6StreamedImageCompilation Compile(
         string name, ReadOnlySpan<byte> root, ReadOnlyMemory<byte> payload)
@@ -99,20 +126,6 @@ internal sealed class Iw3Ps3ImageLibrary(string ownedNamePrefix)
             remap == 0x0001aae4 && format is 0x85 or 0x86 or 0x87 or 0x88)
             return Iw3Iwi6StreamedImageCompiler.CompileTopLevelFirstPs3Payload(name, format,
                 root[5], width, height, payload, TextureSemantic.TwoDimensional, useSrgbReads: false);
-        return new(new GfxImageAsset
-        {
-            Name = name, Format = format, LevelCount = root[5],
-            DimensionCount = (GfxImageDimension)root[6], MultiFaceControl = root[7],
-            TextureControl1 = remap, Width = width, Height = height, Depth = depth,
-            MemoryLocation = (GfxImageMemoryLocation)root[0x12], MinLodControl = root[0x13],
-            RenderTargetPitch = BinaryPrimitives.ReadUInt32BigEndian(root[0x14..]),
-            MapType = (MapType)BinaryPrimitives.ReadUInt32BigEndian(root),
-            Category = (ImageCategory)root[0x2a],
-            BaseWidth = width, BaseHeight = height, BaseDepth = depth, BaseLevelCount = root[5],
-            // Inline fastfile pixels belong to the zone. Cached images enter
-            // IW4's independent card-memory release path.
-            CardMemory = checked((uint)payload.Length), Cached = GfxImageCached.No,
-            PayloadByteCount = payload.Length, PayloadBytes = payload.ToArray()
-        }, []);
+        return new(ImageRules.ResidentImage(name, root, payload, useSrgbReads: false), []);
     }
 }

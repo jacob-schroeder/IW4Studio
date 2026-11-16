@@ -24,8 +24,10 @@ try
         Console.WriteLine($"map: {converted.Map}");
         Console.WriteLine($"load: {converted.Load}");
         Console.WriteLine($"imagefile: {converted.Images}");
+        Console.WriteLine($"soundfile: {converted.Sounds}");
+        Console.WriteLine($"ui: {converted.Ui}");
         Console.WriteLine($"assets: {converted.AssetCount}; native PS3 shader programs retained");
-        Console.WriteLine("omitted: custom map FX, source sound aliases and impact table");
+        Console.WriteLine("omitted: source impact table; native IW4 impact effects retained");
         if (converted.DynamicShadowMaskDisabled)
             Console.Error.WriteLine("warning: COD4 dynamic-shadow visibility masks use neutral white; sun-shadow-map bindings are retained");
         return 0;

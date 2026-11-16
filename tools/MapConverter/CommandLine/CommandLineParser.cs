@@ -1,5 +1,6 @@
 using System.Globalization;
 using IW4.Game.Database.Streaming;
+using MapConverter.Game.IW3.PS3.Rules;
 
 namespace MapConverter.CommandLine;
 
@@ -36,6 +37,9 @@ internal static class CommandLineParser
                                      cannot be combined with --world-template.
                                      PS3 map conversion reads native shaders and
                                      images from code_post_gfx_mp.ff and common_mp.ff.
+                                     Per-map UI also reads ui_mp.ff and English
+                                     StringEd files in english/localizedstrings
+                                     beneath --source-library (or --source-fastfiles).
           --allow-missing-sounds     Requires --source-library. Record absent sound
                                      payloads as TODOs in source provenance and
                                      continue. Sound payloads remain unconverted;
@@ -48,7 +52,11 @@ internal static class CommandLineParser
                                      Required with an image source. Use -1 for
                                      the map's named .pak shared with its _load
                                      fastfile, or 1-20 for imagefileN.pak.
+          --factions <profile>      PS3 only: us/russia (default) or tf141/opfor.
+                                     Selects native player models and faction assets.
           --output <directory>       Destination directory.
+                                     PS3 writes <map>.ff, <map>_load.ff, <map>.pak,
+                                     <map>_snd.pak, and resident <map>_ui.ff.
           --help                     Show this help text.
 
         Extraction tools:
@@ -72,6 +80,7 @@ internal static class CommandLineParser
         "--source-library",
         "--bootstrap-fastfile",
         "--imagefile-index",
+        "--factions",
         "--output",
     ];
 
@@ -160,6 +169,15 @@ internal static class CommandLineParser
         }
         if (sourceIsPs3 && worldOnly)
             return CommandLineParseResult.Failure("PS3 source conversion does not use '--world-template'.");
+        FactionProfile factions = FactionProfile.UsRussia;
+        if (values.TryGetValue("--factions", out string? factionValue))
+        {
+            if (!sourceIsPs3)
+                return CommandLineParseResult.Failure("Option '--factions' is supported only for PS3 source conversion.");
+            if (FactionRules.Parse(factionValue) is not { } selected)
+                return CommandLineParseResult.Failure("Option '--factions' must be us/russia or tf141/opfor.");
+            factions = selected;
+        }
 
         var hasIwd = values.TryGetValue("--iwd", out var iwdPath);
         var hasSourceFastFiles = values.TryGetValue(
@@ -227,7 +245,7 @@ internal static class CommandLineParser
             values.GetValueOrDefault("--bootstrap-fastfile"),
             imageFileIndex,
             values["--output"],
-            values.GetValueOrDefault("--world-template"));
+            values.GetValueOrDefault("--world-template"), factions);
 
         return CommandLineParseResult.Success(options);
     }

@@ -3,6 +3,7 @@ using IW4.Game.Assets.Image;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.TechniqueSet;
 using MapConverter.Game.IW3.PC.Materials;
+using MapConverter.Game.IW3.PS3.Rules;
 using MapConverter.Game.IW3.PS3.Techniques;
 
 namespace MapConverter.Game.IW3.PS3.Materials;
@@ -50,7 +51,7 @@ internal sealed class Iw3Ps3MaterialCompiler(
         var inlineStates = new ushort[MaterialAsset.TechniqueSlotCount];
         for (int targetIndex = 0; targetIndex < entries.Length; targetIndex++)
         {
-            int? sourceIndex = Iw3Ps3TechniqueCompiler.SourceSlotIndexForTarget(targetIndex);
+            int? sourceIndex = TechniqueRules.SourceSlotIndexForTarget(targetIndex);
             if (sourceIndex is not { } index)
             {
                 entries[targetIndex] = new MaterialStateBitsEntry(byte.MaxValue);
@@ -63,18 +64,21 @@ internal sealed class Iw3Ps3MaterialCompiler(
             entries[targetIndex] = new MaterialStateBitsEntry(stateIndex);
             inlineStates[targetIndex] = BinaryPrimitives.ReadUInt16BigEndian(root[(0x38 + index * 2)..]);
         }
-        GfxCameraRegionType sourceCameraRegion = root[0x36] switch
-        {
-            0 => GfxCameraRegionType.LitOpaque,
-            1 => GfxCameraRegionType.LitTrans,
-            2 => GfxCameraRegionType.Emissive,
-            3 => GfxCameraRegionType.None,
-            byte value => throw new InvalidDataException(
-                $"IW3 PS3 material '{source.Name}' has unsupported source camera region {value}.")
-        };
+        GfxCameraRegionType sourceCameraRegion = MaterialRules.SourceCameraRegion(root[0x36], source.Name);
+        string setName = sourceTechniqueSet.Name.TrimStart(',');
+        MaterialSortKey? particleSort = MaterialRules.ParticleCloudSort(
+            root[5], sourceCameraRegion, setName, source.Name);
+        MaterialSortKey? decalSort = MaterialRules.LitDecalSort(root[5], sourceCameraRegion, entries);
+        MaterialSortKey? toolSort = MaterialRules.ToolMaterialSort(root[5], sourceCameraRegion, setName, entries);
         (MaterialSortKey sortKey, GfxCameraRegionType cameraRegion) =
-            Iw3MaterialCompiler.ConvertSortAndCameraRegion(root[5], sourceCameraRegion,
-                entries, sourceTechniqueSet.Name.TrimStart(','), source.Name);
+            decalSort is { } decal
+                ? (decal, GfxCameraRegionType.LitTrans)
+                : particleSort is { } mapped
+                ? (mapped, sourceCameraRegion)
+                : toolSort is { } mappedTool
+                ? (mappedTool, sourceCameraRegion)
+                : Iw3MaterialCompiler.ConvertSortAndCameraRegion(root[5], sourceCameraRegion,
+                    entries, setName, source.Name);
 
         MaterialTextureDef[] textures = source.Textures.Select((texture, index) =>
             CompileTexture(texture, source.Name, index)).ToArray();
@@ -82,12 +86,14 @@ internal sealed class Iw3Ps3MaterialCompiler(
             CompileConstant(constant, source.Name, index)).ToArray();
         GfxStateBits[] states = source.States.Select((state, index) =>
             CompileState(state, source.Name, index)).ToArray();
+        MaterialGameFlags gameFlags = MaterialRules.ShadowFlags(
+            source.Name, (MaterialGameFlags)root[4], entries, states);
         var result = new MaterialAsset
         {
             Info = new MaterialInfo
             {
                 Name = techniques.OwnedNamePrefix + source.Name,
-                GameFlags = (MaterialGameFlags)root[4],
+                GameFlags = gameFlags,
                 SortKey = sortKey,
                 TextureAtlasRowCount = root[6],
                 TextureAtlasColumnCount = root[7],
@@ -125,7 +131,18 @@ internal sealed class Iw3Ps3MaterialCompiler(
         if (root.Length != 12)
             throw new InvalidDataException($"IW3 PS3 material '{materialName}' texture {index} has an invalid root.");
         if (root[7] == (byte)TextureSemantic.WaterMap)
-            throw new InvalidDataException($"IW3 PS3 material '{materialName}' has an unsupported water texture.");
+        {
+            Iw3Ps3WaterSource water = source.Water ??
+                throw new InvalidDataException($"IW3 PS3 material '{materialName}' has no captured water simulation.");
+            GfxImageAsset waterImage = water.Image ?? (water.ImageName is { } name ? _resolveImage(name) : null) ??
+                throw new InvalidDataException($"IW3 PS3 material '{materialName}' water has no resolved image.");
+            return new MaterialTextureDef
+            {
+                NameHash = BinaryPrimitives.ReadUInt32BigEndian(root), NameStart = root[4], NameEnd = root[5],
+                SamplerState = (MaterialSamplerState)root[6], Semantic = TextureSemantic.WaterMap,
+                Water = MaterialRules.Water(water.Root.Span, water.H0X, water.H0Y, water.WTerm, waterImage)
+            };
+        }
         GfxImageAsset? image = source.Image ?? (source.ImageName is null
             ? null : _resolveImage(source.ImageName));
         if (BinaryPrimitives.ReadUInt32BigEndian(root[8..]) != 0 && image is null)

@@ -190,6 +190,12 @@ internal static class Iw4LoadZoneBuilder
         return bytes.ToArray();
     }
 
+    internal static MaterialAsset CreateCompassMaterial(string name, GfxImageAsset image) =>
+        CreateBackdropMaterial(name, 0xbc00180000000000, image,
+            MaterialSamplerState.FilterLinear | MaterialSamplerState.MipMapNearest | MaterialSamplerState.ClampMask,
+            TextureSemantic.TwoDimensional, 0x19655165,
+            new MaterialTechniqueSetAsset { Name = ",2d" }, (MaterialSortKey)47);
+
     internal static MaterialAsset CreateBackdropMaterial(
         string name,
         ulong drawSurf,

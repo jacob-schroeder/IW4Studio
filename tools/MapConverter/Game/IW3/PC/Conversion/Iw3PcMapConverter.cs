@@ -642,11 +642,7 @@ internal static class Iw3PcMapConverter
             GfxImageAsset compassImage = images.AssetsBySourceName[compassImageRequest.ImageName];
             if (IsExternal(compassImage) || images.FallbackImageNames.Contains(compassImageRequest.ImageName, StringComparer.OrdinalIgnoreCase))
                 throw new InvalidDataException($"The source minimap image '{compassImageRequest.ImageName}' has no source-owned pixels.");
-            materials.Add(Iw4LoadZoneBuilder.CreateBackdropMaterial(
-                compassMaterialName, 0xbc00180000000000, compassImage,
-                MaterialSamplerState.FilterLinear | MaterialSamplerState.MipMapNearest | MaterialSamplerState.ClampMask,
-                TextureSemantic.TwoDimensional, 0x19655165,
-                new MaterialTechniqueSetAsset { Name = ",2d" }, (MaterialSortKey)47));
+            materials.Add(Iw4LoadZoneBuilder.CreateCompassMaterial(compassMaterialName, compassImage));
         }
         if (compassMaterialName is not null || damageFx.EffectNames.Count != 0 || objectives is not null)
         {
