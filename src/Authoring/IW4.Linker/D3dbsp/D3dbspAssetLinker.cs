@@ -75,6 +75,9 @@ public sealed class D3dbspLinkResult
 
 public static class D3dbspAssetLinker
 {
+    public static IReadOnlyList<IReadOnlyDictionary<string, string>> ReadEntities(ReadOnlySpan<byte> sourceEntities) =>
+        D3dbspMapEntsCodec.DecodeEntities(sourceEntities);
+
     public static IReadOnlyList<string> ReadNamedEntityModelNames(ReadOnlySpan<byte> sourceEntities) =>
         D3dbspMapEntsCodec.DecodeNamedEntityModelNames(sourceEntities);
 

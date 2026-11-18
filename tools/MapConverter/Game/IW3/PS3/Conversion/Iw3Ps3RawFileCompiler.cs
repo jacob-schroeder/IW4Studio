@@ -8,14 +8,7 @@ namespace MapConverter.Game.IW3.PS3.Conversion;
 /// <summary>Retains authored COD4 map scripts while retargeting owned asset names.</summary>
 internal static class Iw3Ps3RawFileCompiler
 {
-    internal static IReadOnlyList<string> ReadEffectNames(IEnumerable<RawFileAsset> scripts) =>
-        ReadAssetNames(scripts, "loadfx", includeSoundFields: false);
-
-    internal static IReadOnlyList<string> ReadSoundNames(IEnumerable<RawFileAsset> scripts, bool ambientOnly = false) =>
-        ReadAssetNames(scripts, "ambientPlay", includeSoundFields: !ambientOnly);
-
-    private static IReadOnlyList<string> ReadAssetNames(IEnumerable<RawFileAsset> scripts,
-        string function, bool includeSoundFields)
+    internal static IReadOnlyList<string> ReadEffectNames(IEnumerable<RawFileAsset> scripts)
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (RawFileAsset script in scripts.Where(raw => raw.Name?.EndsWith(".gsc", StringComparison.OrdinalIgnoreCase) == true))
@@ -24,21 +17,118 @@ internal static class Iw3Ps3RawFileCompiler
             List<Token> tokens = Lex(text);
             for (int index = 0; index < tokens.Count; index++)
             {
-                if (tokens[index].Kind == TokenKind.Identifier && Is(text, tokens[index], function) &&
+                if (tokens[index].Kind == TokenKind.Identifier && Is(text, tokens[index], "loadfx") &&
                     index + 3 < tokens.Count && Is(text, tokens[index + 1], "("))
                 {
                     string name = Literal(text, tokens[index + 2]) ??
-                        throw new NotSupportedException($"Map script '{script.Name}' requires a literal {function} asset name.");
+                        throw new NotSupportedException($"Map script '{script.Name}' requires a literal loadfx asset name.");
                     names.Add(name);
                 }
-                else if (includeSoundFields && index + 3 < tokens.Count &&
-                    Literal(text, tokens[index]) is "soundalias" or "loopsound" &&
-                    Is(text, tokens[index + 1], "]") && Is(text, tokens[index + 2], "=") &&
-                    Literal(text, tokens[index + 3]) is { Length: > 0 } alias && alias != "nil")
-                    names.Add(alias);
             }
         }
         return names.Order(StringComparer.Ordinal).ToArray();
+    }
+
+    internal static IReadOnlyList<string> ReadSoundNames(IEnumerable<RawFileAsset> scripts, bool ambientOnly = false)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (RawFileAsset script in scripts.Where(raw => raw.Name?.EndsWith(".gsc", StringComparison.OrdinalIgnoreCase) == true))
+        {
+            string text = Encoding.Latin1.GetString(LogicalBytes(script));
+            foreach ((Token _, string alias) in ReadSoundReferences(text, Lex(text), script.Name, ambientOnly))
+                names.Add(alias);
+        }
+        return names.Order(StringComparer.Ordinal).ToArray();
+    }
+
+    internal static IReadOnlyList<string> ReadSharedPrefabSoundNames(RawFileAsset script,
+        IReadOnlyList<IReadOnlyDictionary<string, string>> entities)
+    {
+        string text = Encoding.Latin1.GetString(LogicalBytes(script));
+        List<Token> tokens = Lex(text);
+        var declarations = new List<(string Target, string Alias)>();
+        for (int index = 0; index + 1 < tokens.Count; index++)
+        {
+            if (tokens[index].Kind != TokenKind.Identifier || !Is(text, tokens[index], "global_FX") ||
+                !Is(text, tokens[index + 1], "(")) continue;
+            var arguments = new List<(int Start, int Count)>();
+            int start = index + 2, depth = 0, cursor = start;
+            for (; cursor < tokens.Count; cursor++)
+            {
+                Token token = tokens[cursor];
+                if (Is(text, token, ")") && depth == 0)
+                {
+                    arguments.Add((start, cursor - start));
+                    break;
+                }
+                if (Is(text, token, ",") && depth == 0)
+                {
+                    arguments.Add((start, cursor - start));
+                    start = cursor + 1;
+                }
+                else if (Is(text, token, "(") || Is(text, token, "[") || Is(text, token, "{")) depth++;
+                else if (Is(text, token, ")") || Is(text, token, "]") || Is(text, token, "}")) depth--;
+            }
+            int line = text.AsSpan(0, tokens[index].Start).Count('\n') + 1;
+            if (cursor == tokens.Count)
+                throw new InvalidDataException($"Shared script '{script.Name}' line {line} has an unterminated global_FX call.");
+            // The function declaration has variable parameters; only calls declare dependencies.
+            if (cursor + 1 < tokens.Count && Is(text, tokens[cursor + 1], "{")) continue;
+            if (arguments.Count == 4) continue;
+            if (arguments.Count != 5 || arguments[0].Count != 1 || arguments[4].Count != 1 ||
+                Literal(text, tokens[arguments[0].Start]) is not { Length: > 0 } target ||
+                Literal(text, tokens[arguments[4].Start]) is not { Length: > 0 } alias)
+                throw new NotSupportedException($"Shared script '{script.Name}' line {line} requires literal global_FX target and sound alias arguments.");
+            declarations.Add((target, alias));
+            index = cursor;
+        }
+        return SoundRules.SharedPrefabAliases(entities, declarations);
+    }
+
+    private static IEnumerable<(Token Literal, string Name)> ReadSoundReferences(
+        string text, List<Token> tokens, string? scriptName, bool ambientOnly = false)
+    {
+        int braceDepth = 0;
+        for (int index = 0; index < tokens.Count; index++)
+        {
+            Token token = tokens[index];
+            if (Is(text, token, "{")) { braceDepth++; continue; }
+            if (Is(text, token, "}")) { braceDepth--; continue; }
+
+            bool field = !ambientOnly && index > 0 && index + 2 < tokens.Count &&
+                Is(text, tokens[index - 1], "[") && Literal(text, token) is "soundalias" or "loopsound" &&
+                Is(text, tokens[index + 1], "]") && Is(text, tokens[index + 2], "=") &&
+                !(index + 3 < tokens.Count && Is(text, tokens[index + 3], "="));
+            int aliasIndex = index + 3;
+            if (!field)
+            {
+                // Function declarations occur outside script bodies. The :: form names a script helper.
+                if (braceDepth == 0 || token.Kind != TokenKind.Identifier || index + 1 >= tokens.Count ||
+                    !Is(text, tokens[index + 1], "(") ||
+                    (index >= 2 && Is(text, tokens[index - 2], ":") && Is(text, tokens[index - 1], ":")))
+                    continue;
+                ScriptSoundAliasArgument argument = SoundRules.ScriptAliasArgument(
+                    text.Substring(token.Start, token.Length), ambientOnly);
+                if (argument == ScriptSoundAliasArgument.None) continue;
+                aliasIndex = index + 2;
+                if (argument == ScriptSoundAliasArgument.Optional && aliasIndex < tokens.Count &&
+                    Is(text, tokens[aliasIndex], ")")) continue;
+            }
+
+            if (aliasIndex + 1 < tokens.Count && Literal(text, tokens[aliasIndex]) is { } alias &&
+                (field ? Is(text, tokens[aliasIndex + 1], ";") :
+                    Is(text, tokens[aliasIndex + 1], ")") || Is(text, tokens[aliasIndex + 1], ",")))
+            {
+                if (!field || alias is not ("" or "nil")) yield return (tokens[aliasIndex], alias);
+                continue;
+            }
+
+            int line = 1;
+            for (int position = 0; position < token.Start; position++)
+                if (text[position] == '\n' || (text[position] == '\r' && text[position + 1] != '\n')) line++;
+            string reference = text.Substring(token.Start, token.Length);
+            throw new NotSupportedException($"Map script '{scriptName}' line {line} requires a literal sound alias for {reference}.");
+        }
     }
 
     internal static IReadOnlyList<string> ReadMinimapMaterialNames(RawFileAsset main)
@@ -95,7 +185,7 @@ internal static class Iw3Ps3RawFileCompiler
             byte[] scriptContent = name == $"maps/createfx/{mapName}_fx.gsc"
                 ? Encoding.Latin1.GetBytes(ScriptRules.CreateFxHelpers(Encoding.Latin1.GetString(content))) : content;
             byte[] converted = name.EndsWith(".gsc", StringComparison.OrdinalIgnoreCase)
-                ? RewriteScript(scriptContent, name == mainName, ownedNamePrefix,
+                ? RewriteScript(scriptContent, name, name == mainName, ownedNamePrefix,
                     fx, models, materials, sounds, splitStaticModelNames, hasVehicleRecipes, factions)
                 : Iw3PcMapConverter.CompileVisionFile(content);
             result[index] = converted.AsSpan().SequenceEqual(content) ? raw : new RawFileAsset
@@ -128,7 +218,7 @@ internal static class Iw3Ps3RawFileCompiler
         return buffer.AsSpan(0, raw.Len).ToArray();
     }
 
-    private static byte[] RewriteScript(byte[] content, bool main, string ownedNamePrefix,
+    private static byte[] RewriteScript(byte[] content, string scriptName, bool main, string ownedNamePrefix,
         IReadOnlyDictionary<string, string> fx,
         IReadOnlyDictionary<string, string> models,
         IReadOnlyDictionary<string, string> materials,
@@ -140,6 +230,12 @@ internal static class Iw3Ps3RawFileCompiler
         string text = Encoding.Latin1.GetString(content);
         List<Token> tokens = Lex(text);
         var replacements = new List<Replacement>();
+        foreach ((Token literal, string alias) in ReadSoundReferences(text, tokens, scriptName))
+        {
+            if (!sounds.TryGetValue(ownedNamePrefix + alias, out string? ownedSound))
+                throw new InvalidDataException($"Source map sound alias '{alias}' has no converted provider.");
+            replacements.Add(ReplaceLiteral(literal, ownedSound));
+        }
         int vehicleStartupCalls = 0;
         string[] nativeStartup = ["maps", "\\", "mp", "\\", "_load", ":", ":", "main", "(", ")", ";"];
         for (int index = 0; index < tokens.Count; index++)
@@ -150,14 +246,6 @@ internal static class Iw3Ps3RawFileCompiler
             {
                 replacements.Add(new Replacement(token.Start, 0, ScriptRules.VehicleStartupCall(ownedNamePrefix)));
                 vehicleStartupCalls++;
-            }
-            if (Literal(text, token) is "soundalias" or "loopsound" && index + 3 < tokens.Count &&
-                Is(text, tokens[index + 1], "]") && Is(text, tokens[index + 2], "=") &&
-                Literal(text, tokens[index + 3]) is { Length: > 0 } alias && alias != "nil")
-            {
-                if (!sounds.TryGetValue(ownedNamePrefix + alias, out string? ownedSound))
-                    throw new InvalidDataException($"Source map sound alias '{alias}' has no converted provider.");
-                replacements.Add(ReplaceLiteral(tokens[index + 3], ownedSound));
             }
             if (token.Kind != TokenKind.Identifier) continue;
             if (main && Is(text, token, "game") && index + 6 < tokens.Count &&
@@ -185,13 +273,12 @@ internal static class Iw3Ps3RawFileCompiler
                     "scripted model instances require their own part expansion.");
             IReadOnlyDictionary<string, string>? available =
                 Is(text, token, "loadfx") ? fx :
-                Is(text, token, "ambientPlay") ? sounds :
                 Is(text, token, "precacheModel") || Is(text, token, "setModel") ? models :
                 Is(text, token, "precacheShader") || Is(text, token, "setupMiniMap") ? materials : null;
             if (available is not null && available.TryGetValue(
                     ownedNamePrefix + assetName, out string? owned))
                 replacements.Add(ReplaceLiteral(tokens[index + 2], owned));
-            else if (Is(text, token, "loadfx") || Is(text, token, "ambientPlay"))
+            else if (Is(text, token, "loadfx"))
                 throw new InvalidDataException($"Source map asset '{assetName}' has no converted provider.");
         }
         if (main && hasVehicleRecipes && vehicleStartupCalls != 1)

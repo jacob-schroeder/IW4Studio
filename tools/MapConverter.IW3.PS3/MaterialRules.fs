@@ -44,6 +44,8 @@ module internal MaterialRules =
 
     /// COD4 material.gdf ordinals 13 and 15 are decal-middle-1 and -3.
     /// Native IW4 PS3 lit decals use keys 10 and 12 in the litTrans region.
+    /// COD4 PS3 sort 31 also maps to litTrans: the native w/ and wc/
+    /// ch_rubble_clump01_decal counterparts use DecalTop3 (16).
     let LitDecalSort(sourceSort: byte, sourceRegion: GfxCameraRegionType,
                      entries: IReadOnlyList<MaterialStateBitsEntry>) : Nullable<MaterialSortKey> =
         if (sourceSort = 13uy || sourceSort = 15uy) &&
@@ -52,6 +54,10 @@ module internal MaterialRules =
            entries[int MaterialTechniqueType.Emissive].StateBitsIndex = Byte.MaxValue then
             Nullable (if sourceSort = 13uy then MaterialSortKey.DecalMiddle1
                       else MaterialSortKey.DecalMiddle3)
+        elif sourceSort = 31uy && sourceRegion = GfxCameraRegionType.LitTrans &&
+             entries[int MaterialTechniqueType.Lit].StateBitsIndex <> Byte.MaxValue &&
+             entries[int MaterialTechniqueType.Emissive].StateBitsIndex = Byte.MaxValue then
+            Nullable MaterialSortKey.DecalTop3
         else Nullable()
 
     /// Native PS3 IW4 materials/cloud_dust_mote.json has emissive

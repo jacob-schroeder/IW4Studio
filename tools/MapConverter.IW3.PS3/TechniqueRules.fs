@@ -184,6 +184,8 @@ module internal TechniqueRules =
             match material.TechniqueSet.Name with
             | name when name = prefix + "w_l_sm_r0c0n0s0" ->
                 Some ("iw4_local_light_r0c0n0", 0x18128928u)
+            | name when name = prefix + "wc_l_sm_r0c0n0s0" ->
+                Some ("iw4_local_light_r0c0n0_vertex_color", 0x18128928u)
             | name when name = prefix + "l_sm_r0c0n0s0_b1c1n1" ||
                         name = prefix + "l_sm_r0c0n0s0_b1c1n1s1" ->
                 Some ("iw4_local_light_r0c0n0b1c1n1", 0x18128922u)

@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using IW4.Formats.SourceFormat.Sound;
 using IW4.Game.Assets;
 using IW4.Game.Assets.Sound;
+using IW4.Linker.Contracts;
 using IW4.Linker.Packaging;
 using MapConverter.Game.IW3.PS3.Extraction;
 using MapConverter.Game.IW3.PS3.Rules;
@@ -13,13 +14,14 @@ internal static class Iw3Ps3AudioCompiler
     internal static (IReadOnlyList<BaseAsset> Assets, byte[] SoundPackage) Capture(
         string sourceDirectory, string bootstrapDirectory,
         string ownedPrefix, IReadOnlySet<string> ambientAliases,
-        IReadOnlySet<string> requiredAliases,
+        IReadOnlySet<string> requiredAliases, IReadOnlySet<string> sharedAliases,
         IReadOnlyDictionary<string, Iw3Ps3SourceSound> mapSounds, CancellationToken token)
     {
         string[] sourceFiles =
         [Path.Combine(sourceDirectory, "common_mp.ff"), Path.Combine(sourceDirectory, "code_post_gfx_mp.ff"),
             Path.Combine(sourceDirectory, "ui_mp.ff")];
-        var wanted = requiredAliases.Concat(ambientAliases).ToHashSet(StringComparer.Ordinal);
+        var mapOwnedAliases = requiredAliases.Concat(ambientAliases).ToHashSet(StringComparer.Ordinal);
+        var wanted = mapOwnedAliases.Concat(sharedAliases).ToHashSet(StringComparer.Ordinal);
         var captured = new Dictionary<string, Iw3Ps3SourceSound>(StringComparer.Ordinal);
         while (true)
         {
@@ -56,8 +58,12 @@ internal static class Iw3Ps3AudioCompiler
             foreach (Iw3Ps3SourceSound sound in captured.Values)
                 foreach (Iw3Ps3SourceSoundRow row in sound.Rows)
                 {
-                    if (!string.IsNullOrWhiteSpace(row.SecondaryAlias)) wanted.Add(row.SecondaryAlias);
-                    if (!string.IsNullOrWhiteSpace(row.ChainAlias)) wanted.Add(row.ChainAlias);
+                    foreach (string? reference in new[] { row.SecondaryAlias, row.ChainAlias })
+                        if (!string.IsNullOrWhiteSpace(reference))
+                        {
+                            wanted.Add(reference);
+                            mapOwnedAliases.Add(reference);
+                        }
                 }
         }
 
@@ -112,7 +118,9 @@ internal static class Iw3Ps3AudioCompiler
             token.ThrowIfCancellationRequested();
             bool ambient = SoundRules.IsAmbientAlias(sound.Name, ambientAliases);
             SndAlias donor = donors[SoundRules.DonorName(sound.Name, ambient)];
-            var rows = new List<SndAlias>(sound.Rows.Count);
+            var aliases = SoundRules.ExportNames(ownedPrefix, sound.Name,
+                    mapOwnedAliases.Contains(sound.Name), sharedAliases.Contains(sound.Name))
+                .ToDictionary(name => name, _ => new List<SndAlias>(sound.Rows.Count), StringComparer.Ordinal);
             foreach (Iw3Ps3SourceSoundRow source in sound.Rows)
             {
                 byte[] payload = source.LoadedPayload ??
@@ -123,45 +131,67 @@ internal static class Iw3Ps3AudioCompiler
                     throw new NotSupportedException($"COD4 PS3 sound '{sound.Name}' is not an ID3 MP3 payload.");
                 StreamedSound stream = package.AddPayload(payload);
                 int flags = SoundRules.TargetStreamFlags(donor.Flags, source.Flags, ambient);
-                rows.Add(new SndAlias
+                foreach (var (aliasName, rows) in aliases)
                 {
-                    AliasName = SoundRules.OwnedName(ownedPrefix, sound.Name),
-                    SecondaryAliasName = SoundRules.ReferenceName(ownedPrefix, source.SecondaryAlias),
-                    ChainAliasName = SoundRules.ReferenceName(ownedPrefix, source.ChainAlias),
-                    MixerGroup = donor.MixerGroup,
-                    SoundFileCount = 1,
-                    SoundFiles = [new SoundFile
+                    rows.Add(new SndAlias
                     {
-                        Type = SndAliasType.Streamed, Exists = 1, Payload = stream
-                    }],
-                    Sequence = source.Sequence,
-                    VolumeMin = source.VolumeMin,
-                    VolumeMax = source.VolumeMax,
-                    PitchMin = source.PitchMin,
-                    PitchMax = source.PitchMax,
-                    DistanceMin = source.DistanceMin,
-                    DistanceMax = source.DistanceMax,
-                    Flags = flags,
-                    SlavePercentage = source.SlavePercentage,
-                    Probability = source.Probability,
-                    LfePercentage = source.LfePercentage,
-                    CenterPercentage = source.CenterPercentage,
-                    StartDelay = source.StartDelay,
-                    EnvelopMin = source.EnvelopMin,
-                    EnvelopMax = source.EnvelopMax,
-                    EnvelopPercentage = source.EnvelopPercentage,
-                    VolumeFalloffCurve = mapCurve,
-                    SpeakerMap = source.SpeakerMap is { } map
-                        ? ReadSpeakerMap(map, source.SpeakerMapName ?? sound.Name)
-                        : donor.SpeakerMap
+                        AliasName = aliasName,
+                        SecondaryAliasName = SoundRules.ReferenceName(ownedPrefix, source.SecondaryAlias),
+                        ChainAliasName = SoundRules.ReferenceName(ownedPrefix, source.ChainAlias),
+                        MixerGroup = donor.MixerGroup,
+                        SoundFileCount = 1,
+                        SoundFiles = [new SoundFile
+                        {
+                            Type = SndAliasType.Streamed, Exists = 1, Payload = stream
+                        }],
+                        Sequence = source.Sequence,
+                        VolumeMin = source.VolumeMin,
+                        VolumeMax = source.VolumeMax,
+                        PitchMin = source.PitchMin,
+                        PitchMax = source.PitchMax,
+                        DistanceMin = source.DistanceMin,
+                        DistanceMax = source.DistanceMax,
+                        Flags = flags,
+                        SlavePercentage = source.SlavePercentage,
+                        Probability = source.Probability,
+                        LfePercentage = source.LfePercentage,
+                        CenterPercentage = source.CenterPercentage,
+                        StartDelay = source.StartDelay,
+                        EnvelopMin = source.EnvelopMin,
+                        EnvelopMax = source.EnvelopMax,
+                        EnvelopPercentage = source.EnvelopPercentage,
+                        VolumeFalloffCurve = mapCurve,
+                        SpeakerMap = source.SpeakerMap is { } map
+                            ? ReadSpeakerMap(map, source.SpeakerMapName ?? sound.Name)
+                            : donor.SpeakerMap
+                    });
+                }
+            }
+            foreach (var (aliasName, rows) in aliases)
+            {
+                definitions.Add(new SoundAliasListAsset
+                {
+                    AliasName = aliasName,
+                    Count = rows.Count, Aliases = rows
                 });
             }
-            definitions.Add(new SoundAliasListAsset
-            {
-                AliasName = SoundRules.OwnedName(ownedPrefix, sound.Name),
-                Count = rows.Count, Aliases = rows
-            });
         }
+        var nativeDependencies = new Dictionary<AssetKey, BaseAsset>();
+        foreach (string name in SoundRules.NativeRuntimeAliases())
+        {
+            token.ThrowIfCancellationRequested();
+            SoundAliasListAsset sound = exchange.Link(bootstrapDirectory, name, package.AddPayload);
+            definitions.Add(sound);
+            foreach (SndAlias alias in sound.Aliases)
+            {
+                if (alias.VolumeFalloffCurve is { } curve)
+                    nativeDependencies.TryAdd(AssetKey.FromDefinition(curve), curve);
+                foreach (LoadedSound sample in alias.SoundFiles
+                             .Select(file => file.Loaded?.LoadedSound).OfType<LoadedSound>())
+                    nativeDependencies.TryAdd(AssetKey.FromDefinition(sample), sample);
+            }
+        }
+        definitions.AddRange(nativeDependencies.Values);
         return (definitions, package.ToArray());
 
         static bool Usable(Iw3Ps3SourceSound sound) => sound.Rows.Count != 0 &&

@@ -105,6 +105,12 @@ internal static class Iw3Ps3MapConverter
             definitions.Add(Iw4LoadZoneBuilder.CreateCompassMaterial(prefix + compassName, compassImage));
         }
         string bootstrapDirectory = Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3");
+        RawFileAsset globalFx = Iw3Ps3FastFileCatalog.FindInlineRawFile(
+            Path.Combine(sourceDirectory, "common_mp.ff"), "maps/mp/_global_fx.gsc", token) ??
+            throw new InvalidDataException("Missing COD4 shared prefab script 'maps/mp/_global_fx.gsc'.");
+        var sharedSoundNames = Iw3Ps3RawFileCompiler.ReadSharedPrefabSoundNames(globalFx,
+            D3dbspAssetLinker.ReadEntities(definitions.OfType<MapEntsAsset>().Single()
+                .EntityStringBytes.ToArray())).ToHashSet(StringComparer.Ordinal);
         var soundNames = Iw3Ps3RawFileCompiler.ReadSoundNames(sourceScripts).ToHashSet(StringComparer.Ordinal);
         soundNames.UnionWith(vehicleRecipes.SoundNames);
         foreach (FxElemDef element in definitions.OfType<FxEffectDefAsset>().SelectMany(effect => effect.ElemDefs))
@@ -113,7 +119,7 @@ internal static class Iw3Ps3MapConverter
                     soundNames.Add(sound.StartsWith(prefix, StringComparison.Ordinal) ? sound[prefix.Length..] : sound);
         var audio = Iw3Ps3AudioCompiler.Capture(sourceDirectory, bootstrapDirectory, prefix,
             Iw3Ps3RawFileCompiler.ReadSoundNames(sourceScripts, ambientOnly: true).ToHashSet(StringComparer.Ordinal),
-            soundNames, mapSounds, token);
+            soundNames, sharedSoundNames, mapSounds, token);
         definitions.AddRange(audio.Assets);
         Iw3Ps3MaterialRoutingCompiler.Apply(definitions, prefix, bootstrapDirectory);
         var bootstrapMaterials = new MaterialSourceCompiler(bootstrapDirectory);

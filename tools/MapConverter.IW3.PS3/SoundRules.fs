@@ -2,9 +2,50 @@ namespace MapConverter.Game.IW3.PS3.Rules
 
 open System
 open System.Collections.Generic
+open IW4.Game.Assets.Material
 open IW4.Game.Assets.Sound
 
+type internal ScriptSoundAliasArgument =
+    | None = 0
+    | Required = 1
+    | Optional = 2
+
 module internal SoundRules =
+    /// Native runtime names whose definitions belong to the map fastfile.
+    let NativeRuntimeAliases() =
+        [| yield "ui_pulse_text_type"
+           yield "ui_pulse_text_delete"
+           for surface in Enum.GetValues<MaterialSurfaceType>() do
+               if surface <> MaterialSurfaceType.Count then
+                   yield "rocket_explode_" + surface.ToString().ToLowerInvariant()
+           yield "rocket_explode_brick_layer"
+           yield "rocket_explode_concrete_layer"
+           yield "rocket_explode_sand_layer"
+           yield "bullet_small_snow"
+           yield "bullet_large_snow"
+           yield "bulletspray_small_snow"
+           for surface in [ "dirt"; "metal"; "sand"; "snow" ] do
+               yield "step_run_plr_" + surface
+               yield "step_walk_plr_" + surface
+           yield "step_sprint_plr_metal"
+           yield "step_sprint_plr_snow"
+           for surface in [ "metal"; "sand"; "snow" ] do
+               yield "Land_" + surface
+               yield "Land_plr_" + surface
+           yield "phy_cargocontainer_default"
+           yield "physics_tire_default" |]
+
+    let ScriptAliasArgument(functionName: string, ambientOnly: bool) =
+        match functionName.ToLowerInvariant() with
+        | "ambientplay" -> ScriptSoundAliasArgument.Required
+        | _ when ambientOnly -> ScriptSoundAliasArgument.None
+        | "playlocalsound"
+        | "playsound"
+        | "playsoundasmaster"
+        | "playloopsound" -> ScriptSoundAliasArgument.Required
+        | "stoploopsound" -> ScriptSoundAliasArgument.Optional
+        | _ -> ScriptSoundAliasArgument.None
+
     /// These native turret aliases belong to IW4 common_mp. Reuse them without
     /// importing their shared LoadedSound/SndCurve graph into the converted map.
     /// Other aliases, including the ten minigun_gatling aliases, remain map-owned.
@@ -31,6 +72,29 @@ module internal SoundRules =
             "ambient_airport_tarmac_l"
 
     let OwnedName(prefix: string, sourceName: string) = prefix + sourceName
+
+    /// The stock _global_fx script selects prefab emitters by script_struct
+    /// targetname. Its literal alias arguments must remain available by their
+    /// original names because that shared script is not rewritten per map.
+    let SharedPrefabAliases
+        (entities: IReadOnlyList<IReadOnlyDictionary<string, string>>,
+         declarations: IReadOnlyList<struct (string * string)>) =
+        let targets = HashSet<string>(StringComparer.Ordinal)
+        for entity in entities do
+            match entity.TryGetValue "classname", entity.TryGetValue "targetname" with
+            | (true, "script_struct"), (true, target) -> targets.Add target |> ignore
+            | _ -> ()
+        declarations
+        |> Seq.choose (fun struct (target, alias) -> if targets.Contains target then Some alias else None)
+        |> Seq.distinct
+        |> Seq.sortWith (fun left right -> String.CompareOrdinal(left, right))
+        |> Seq.toArray
+
+    /// Emit only identities with a current consumer. A shared-script alias
+    /// and a map-owned alias can refer to the same packaged sample ranges.
+    let ExportNames(prefix: string, sourceName: string, mapOwned: bool, shared: bool) =
+        [| if mapOwned then yield OwnedName(prefix, sourceName)
+           if shared then yield sourceName |]
 
     let ReferenceName(prefix: string, sourceName: string) =
         if String.IsNullOrWhiteSpace(sourceName) then null

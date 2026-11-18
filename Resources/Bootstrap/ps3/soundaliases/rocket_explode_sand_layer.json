@@ -1,0 +1,1748 @@
+{
+  "version": 1,
+  "assetType": "Sound",
+  "name": "rocket_explode_sand_layer",
+  "count": 6,
+  "aliases": [
+    {
+      "aliasName": "rocket_explode_sand_layer",
+      "subtitle": null,
+      "secondaryAliasName": "rocket_explode_layer_2",
+      "chainAliasName": null,
+      "mixerGroup": null,
+      "sequence": 0,
+      "volumeMin": 0.621095,
+      "volumeMax": 0.65763,
+      "pitchMin": 1,
+      "pitchMax": 1.3,
+      "distanceMin": 200,
+      "distanceMax": 4500,
+      "velocityMin": 0,
+      "flags": 12548,
+      "slavePercentage": 0.5,
+      "probability": 1,
+      "lfePercentage": 0.5,
+      "centerPercentage": 0,
+      "startDelay": 0,
+      "volumeFalloffCurveName": ",reaction",
+      "volumeFalloffCurveStatus": "materialized",
+      "volumeFalloffCurve": {
+        "name": ",reaction",
+        "knotCount": 0,
+        "padding": 0,
+        "knots": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          }
+        ]
+      },
+      "envelopMin": 100,
+      "envelopMax": 500,
+      "envelopPercentage": 0.65,
+      "speakerMap": {
+        "isDefault": 1,
+        "padding": "AAAA",
+        "name": "",
+        "channels": [
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "soundFileCount": 1,
+      "soundFiles": [
+        {
+          "languageIndex": 0,
+          "type": 2,
+          "exists": 1,
+          "padding": 0,
+          "fileIndex": 1,
+          "streamFileOffset": 549622961,
+          "streamFileLength": 49671,
+          "streamPayloadPath": "soundaliases/rocket_explode_sand_layer.payloads/0000-0000.stream.bin",
+          "streamPayloadStatus": "exported"
+        }
+      ]
+    },
+    {
+      "aliasName": "rocket_explode_sand_layer",
+      "subtitle": null,
+      "secondaryAliasName": "rocket_explode_layer_2",
+      "chainAliasName": null,
+      "mixerGroup": null,
+      "sequence": 0,
+      "volumeMin": 0.621095,
+      "volumeMax": 0.65763,
+      "pitchMin": 1,
+      "pitchMax": 1.3,
+      "distanceMin": 200,
+      "distanceMax": 4500,
+      "velocityMin": 0,
+      "flags": 12548,
+      "slavePercentage": 0.5,
+      "probability": 1,
+      "lfePercentage": 0.5,
+      "centerPercentage": 0,
+      "startDelay": 0,
+      "volumeFalloffCurveName": ",reaction",
+      "volumeFalloffCurveStatus": "materialized",
+      "volumeFalloffCurve": {
+        "name": ",reaction",
+        "knotCount": 0,
+        "padding": 0,
+        "knots": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          }
+        ]
+      },
+      "envelopMin": 100,
+      "envelopMax": 500,
+      "envelopPercentage": 0.65,
+      "speakerMap": {
+        "isDefault": 1,
+        "padding": "AAAA",
+        "name": "",
+        "channels": [
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "soundFileCount": 1,
+      "soundFiles": [
+        {
+          "languageIndex": 0,
+          "type": 2,
+          "exists": 1,
+          "padding": 0,
+          "fileIndex": 1,
+          "streamFileOffset": 549672632,
+          "streamFileLength": 40647,
+          "streamPayloadPath": "soundaliases/rocket_explode_sand_layer.payloads/0001-0000.stream.bin",
+          "streamPayloadStatus": "exported"
+        }
+      ]
+    },
+    {
+      "aliasName": "rocket_explode_sand_layer",
+      "subtitle": null,
+      "secondaryAliasName": "rocket_explode_layer_2",
+      "chainAliasName": null,
+      "mixerGroup": null,
+      "sequence": 0,
+      "volumeMin": 0.621095,
+      "volumeMax": 0.65763,
+      "pitchMin": 1,
+      "pitchMax": 1.3,
+      "distanceMin": 200,
+      "distanceMax": 4500,
+      "velocityMin": 0,
+      "flags": 12548,
+      "slavePercentage": 0.5,
+      "probability": 1,
+      "lfePercentage": 0.5,
+      "centerPercentage": 0,
+      "startDelay": 0,
+      "volumeFalloffCurveName": ",reaction",
+      "volumeFalloffCurveStatus": "materialized",
+      "volumeFalloffCurve": {
+        "name": ",reaction",
+        "knotCount": 0,
+        "padding": 0,
+        "knots": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          }
+        ]
+      },
+      "envelopMin": 100,
+      "envelopMax": 500,
+      "envelopPercentage": 0.65,
+      "speakerMap": {
+        "isDefault": 1,
+        "padding": "AAAA",
+        "name": "",
+        "channels": [
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "soundFileCount": 1,
+      "soundFiles": [
+        {
+          "languageIndex": 0,
+          "type": 2,
+          "exists": 1,
+          "padding": 0,
+          "fileIndex": 1,
+          "streamFileOffset": 549713279,
+          "streamFileLength": 41953,
+          "streamPayloadPath": "soundaliases/rocket_explode_sand_layer.payloads/0002-0000.stream.bin",
+          "streamPayloadStatus": "exported"
+        }
+      ]
+    },
+    {
+      "aliasName": "rocket_explode_sand_layer",
+      "subtitle": null,
+      "secondaryAliasName": "rocket_explode_layer_2",
+      "chainAliasName": null,
+      "mixerGroup": null,
+      "sequence": 0,
+      "volumeMin": 0.621095,
+      "volumeMax": 0.65763,
+      "pitchMin": 1,
+      "pitchMax": 1.3,
+      "distanceMin": 200,
+      "distanceMax": 4500,
+      "velocityMin": 0,
+      "flags": 12548,
+      "slavePercentage": 0.5,
+      "probability": 1,
+      "lfePercentage": 0.5,
+      "centerPercentage": 0,
+      "startDelay": 0,
+      "volumeFalloffCurveName": ",reaction",
+      "volumeFalloffCurveStatus": "materialized",
+      "volumeFalloffCurve": {
+        "name": ",reaction",
+        "knotCount": 0,
+        "padding": 0,
+        "knots": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          }
+        ]
+      },
+      "envelopMin": 100,
+      "envelopMax": 500,
+      "envelopPercentage": 0.65,
+      "speakerMap": {
+        "isDefault": 1,
+        "padding": "AAAA",
+        "name": "",
+        "channels": [
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "soundFileCount": 1,
+      "soundFiles": [
+        {
+          "languageIndex": 0,
+          "type": 2,
+          "exists": 1,
+          "padding": 0,
+          "fileIndex": 1,
+          "streamFileOffset": 549755232,
+          "streamFileLength": 51784,
+          "streamPayloadPath": "soundaliases/rocket_explode_sand_layer.payloads/0003-0000.stream.bin",
+          "streamPayloadStatus": "exported"
+        }
+      ]
+    },
+    {
+      "aliasName": "rocket_explode_sand_layer",
+      "subtitle": null,
+      "secondaryAliasName": "rocket_explode_layer_2",
+      "chainAliasName": null,
+      "mixerGroup": null,
+      "sequence": 0,
+      "volumeMin": 0.621095,
+      "volumeMax": 0.65763,
+      "pitchMin": 1,
+      "pitchMax": 1.3,
+      "distanceMin": 200,
+      "distanceMax": 4500,
+      "velocityMin": 0,
+      "flags": 12548,
+      "slavePercentage": 0.5,
+      "probability": 1,
+      "lfePercentage": 0.5,
+      "centerPercentage": 0,
+      "startDelay": 0,
+      "volumeFalloffCurveName": ",reaction",
+      "volumeFalloffCurveStatus": "materialized",
+      "volumeFalloffCurve": {
+        "name": ",reaction",
+        "knotCount": 0,
+        "padding": 0,
+        "knots": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          }
+        ]
+      },
+      "envelopMin": 100,
+      "envelopMax": 500,
+      "envelopPercentage": 0.65,
+      "speakerMap": {
+        "isDefault": 1,
+        "padding": "AAAA",
+        "name": "",
+        "channels": [
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "soundFileCount": 1,
+      "soundFiles": [
+        {
+          "languageIndex": 0,
+          "type": 2,
+          "exists": 1,
+          "padding": 0,
+          "fileIndex": 1,
+          "streamFileOffset": 549807016,
+          "streamFileLength": 50535,
+          "streamPayloadPath": "soundaliases/rocket_explode_sand_layer.payloads/0004-0000.stream.bin",
+          "streamPayloadStatus": "exported"
+        }
+      ]
+    },
+    {
+      "aliasName": "rocket_explode_sand_layer",
+      "subtitle": null,
+      "secondaryAliasName": "rocket_explode_layer_2",
+      "chainAliasName": null,
+      "mixerGroup": null,
+      "sequence": 0,
+      "volumeMin": 0.621095,
+      "volumeMax": 0.65763,
+      "pitchMin": 1,
+      "pitchMax": 1.3,
+      "distanceMin": 200,
+      "distanceMax": 4500,
+      "velocityMin": 0,
+      "flags": 12548,
+      "slavePercentage": 0.5,
+      "probability": 1,
+      "lfePercentage": 0.5,
+      "centerPercentage": 0,
+      "startDelay": 0,
+      "volumeFalloffCurveName": ",reaction",
+      "volumeFalloffCurveStatus": "materialized",
+      "volumeFalloffCurve": {
+        "name": ",reaction",
+        "knotCount": 0,
+        "padding": 0,
+        "knots": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 0
+          }
+        ]
+      },
+      "envelopMin": 100,
+      "envelopMax": 500,
+      "envelopPercentage": 0.65,
+      "speakerMap": {
+        "isDefault": 1,
+        "padding": "AAAA",
+        "name": "",
+        "channels": [
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 1,
+                    "level0": 0.5,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 1,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "outputs": [
+              {
+                "entryCount": 2,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 0,
+                    "numLevels": 0,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              },
+              {
+                "entryCount": 6,
+                "speakers": [
+                  {
+                    "speaker": 0,
+                    "numLevels": 2,
+                    "level0": 1,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 1,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 1
+                  },
+                  {
+                    "speaker": 2,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 3,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 4,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  },
+                  {
+                    "speaker": 5,
+                    "numLevels": 2,
+                    "level0": 0,
+                    "level1": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "soundFileCount": 1,
+      "soundFiles": [
+        {
+          "languageIndex": 0,
+          "type": 2,
+          "exists": 1,
+          "padding": 0,
+          "fileIndex": 1,
+          "streamFileOffset": 549857551,
+          "streamFileLength": 50505,
+          "streamPayloadPath": "soundaliases/rocket_explode_sand_layer.payloads/0005-0000.stream.bin",
+          "streamPayloadStatus": "exported"
+        }
+      ]
+    }
+  ]
+}
