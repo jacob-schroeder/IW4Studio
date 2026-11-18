@@ -98,7 +98,7 @@ public sealed class FastFileWorkspace : IDisposable
             out reason);
     }
 
-    private bool TryGetSoundPayloadResolver(
+    internal bool TryGetSoundPayloadResolver(
         SoundAliasListAsset sound,
         long? preferredProviderId,
         string? displayName,

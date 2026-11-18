@@ -110,7 +110,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     assetReferencePicker,
                     workspace,
                     OpenPhysPreset,
-                    OpenCharacterReference);
+                    OpenAssetReference);
             editorViewRegistry.Register(new FontViewFactory(
                 menuMaterialResolver));
             editorViewRegistry.Register(new MenuEditorViewFactory(
@@ -1044,7 +1044,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         NotifyCenterSelectionChanged();
     }
 
-    private void OpenCharacterReference(XAssetType type, string name)
+    private void OpenAssetReference(XAssetType type, string name)
     {
         var target = FastFileAssets.AllRows.FirstOrDefault(row => row.AssetType == type &&
             row.Origin == WorkspaceAssetOrigin.TargetOwnedDefinition &&
@@ -1061,7 +1061,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         if (slot is not null)
             _selectionContext.Select(slot.ToSelection());
         else
-            ConsoleOutput.Append(ConsoleOutputLevel.Warning, "Character",
+            ConsoleOutput.Append(ConsoleOutputLevel.Warning, "Asset Pool",
                 $"The workspace has no loaded {type} definition for '{name}'.");
     }
 

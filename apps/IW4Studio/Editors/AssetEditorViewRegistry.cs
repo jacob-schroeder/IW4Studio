@@ -21,6 +21,7 @@ using IW4.Studio.Desktop.Editors.Tracer;
 using IW4.Studio.Desktop.Editors.XAnim;
 using IW4.Studio.Desktop.Editors.XModel;
 using IW4.Studio.Desktop.Editors.Weapon;
+using IW4.Studio.Desktop.Editors.Vehicle;
 using IW4.Studio.Desktop.Workbench.Tools.GscUsages;
 using IW4.Studio.Desktop.Editors.AssetReferences;
 
@@ -81,7 +82,7 @@ public sealed class AssetEditorViewRegistry
         AssetReferencePickerService? assetReferencePicker = null,
         FastFileWorkspace? workspace = null,
         Action<PhysPresetAsset>? openPhysPreset = null,
-        Action<XAssetType, string>? openCharacterReference = null)
+        Action<XAssetType, string>? openAssetReference = null)
     {
         var registry = new AssetEditorViewRegistry();
         registry.Register(new RawFileViewFactory(
@@ -89,7 +90,7 @@ public sealed class AssetEditorViewRegistry
             gscWorkspace,
             gscSourceNavigator,
             gscUsagesPresenter,
-            openCharacterReference));
+            openAssetReference));
         registry.Register(new SoundViewFactory(workspace));
         registry.Register(new StringTableViewFactory());
         registry.Register(new StructuredDataDefViewFactory());
@@ -106,6 +107,7 @@ public sealed class AssetEditorViewRegistry
         registry.Register(new XAnimViewFactory(workspace));
         registry.Register(new XModelViewFactory(assetReferencePicker, openPhysPreset));
         registry.Register(new WeaponViewFactory(assetReferencePicker));
+        registry.Register(new VehicleViewFactory(assetReferencePicker, openAssetReference));
         return registry;
     }
 

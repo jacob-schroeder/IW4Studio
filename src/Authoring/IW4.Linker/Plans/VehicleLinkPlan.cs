@@ -101,7 +101,8 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
             definition.Phys.PhysPresetPointer.Untyped,
             definition.Phys.PhysPreset,
             XAssetType.PhysPreset,
-            "Vehicle.Phys.PhysPreset");
+            "Vehicle.Phys.PhysPreset",
+            allowExternalReference: AllowsExternalReference(freeze, definition.Phys.PhysPreset?.SerializedAssetName));
         LinkStorageSymbol? accelGraphName = FreezeOptionalXString(
             freeze,
             definition.Phys.AccelGraphName,
@@ -116,17 +117,20 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
             definition.TurretWeaponPointer.Untyped,
             definition.TurretWeapon,
             XAssetType.Weapon,
-            "Vehicle.TurretWeapon");
+            "Vehicle.TurretWeapon",
+            allowExternalReference: AllowsExternalReference(freeze, definition.TurretWeapon?.SerializedAssetName));
         AssetDependency? compassFriendly = FreezeProviderDependency(
             definition.CompassFriendlyIconPointer.Untyped,
             definition.CompassFriendlyIcon,
             XAssetType.Material,
-            "Vehicle.CompassFriendlyIcon");
+            "Vehicle.CompassFriendlyIcon",
+            allowExternalReference: AllowsExternalReference(freeze, definition.CompassFriendlyIcon?.SerializedAssetName));
         AssetDependency? compassEnemy = FreezeProviderDependency(
             definition.CompassEnemyIconPointer.Untyped,
             definition.CompassEnemyIcon,
             XAssetType.Material,
-            "Vehicle.CompassEnemyIcon");
+            "Vehicle.CompassEnemyIcon",
+            allowExternalReference: AllowsExternalReference(freeze, definition.CompassEnemyIcon?.SerializedAssetName));
         LinkStorageSymbol? surfaceSoundPrefix = FreezeOptionalXString(
             freeze,
             definition.SurfaceSoundPrefix,
@@ -159,6 +163,9 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
                 soundFields,
                 definition.TrophyTags));
     }
+
+    private static bool AllowsExternalReference(LinkAssetFreezeScope freeze, string? name) =>
+        freeze.IsAuthoredDetached && name?.StartsWith(',') == true;
 
     private IEnumerable<LinkOperation> RootOperations(
         LinkStorageSymbol root,

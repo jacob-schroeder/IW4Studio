@@ -67,10 +67,10 @@ public sealed class CharacterEditorViewModel : RawFileEditorViewModel
 
     private void RefreshOptions()
     {
-        var models = _session.CharacterReferenceNames(XAssetType.XModel);
+        var models = _session.EditorReferenceNames(XAssetType.XModel);
         BodyOptions = models.OrderByDescending(name => name.Contains("body", StringComparison.OrdinalIgnoreCase)).ToArray();
         HandsOptions = models.OrderByDescending(name => name.Contains("hands", StringComparison.OrdinalIgnoreCase)).ToArray();
-        HeadOptions = _session.CharacterReferenceNames(XAssetType.RawFile)
+        HeadOptions = _session.EditorReferenceNames(XAssetType.RawFile)
             .Where(name => name.StartsWith(AliasFolder, StringComparison.OrdinalIgnoreCase) &&
                 name.EndsWith(".gsc", StringComparison.OrdinalIgnoreCase))
             .Select(name => name[AliasFolder.Length..^4]).ToArray();
@@ -146,7 +146,7 @@ public sealed class CharacterEditorViewModel : RawFileEditorViewModel
         if (!CanEditHead) return;
         try
         {
-            var alias = _session.ResolveCharacterReference<RawFileAsset>(XAssetType.RawFile, path, out _)
+            var alias = _session.ResolveEditorReference<RawFileAsset>(XAssetType.RawFile, path, out _)
                 ?? throw new InvalidOperationException($"Load the fastfile containing '{path}' to copy this alias.");
             string localName = AvailableName("alias_" + CharacterName, HeadOptions);
             if (!_projection.TryReplace(CharacterFieldKind.HeadAlias, localName, out string source, out string? reason))
@@ -166,7 +166,7 @@ public sealed class CharacterEditorViewModel : RawFileEditorViewModel
         try
         {
             string oldName = viewHands ? ViewHands : BodyModel;
-            var template = _session.ResolveCharacterReference<XModelAsset>(XAssetType.XModel, oldName, out _)
+            var template = _session.ResolveEditorReference<XModelAsset>(XAssetType.XModel, oldName, out _)
                 ?? throw new InvalidOperationException($"Load the fastfile containing template '{oldName}' before importing.");
             string newName = AvailableName(CharacterName + (viewHands ? "_viewhands" : "_body"), BodyOptions);
             var compiled = await Task.Run(() =>
@@ -228,7 +228,7 @@ public sealed class CharacterEditorViewModel : RawFileEditorViewModel
                 XModelRenderScene? Build(string name, string label, out XModelAsset? asset)
                 {
                     token.ThrowIfCancellationRequested();
-                    asset = _session.ResolveCharacterReference<XModelAsset>(XAssetType.XModel, name, out var providers);
+                    asset = _session.ResolveEditorReference<XModelAsset>(XAssetType.XModel, name, out var providers);
                     if (asset is not null && !_session.Workspace.IsBlank)
                     {
                         var source = WorkspaceRenderAssetSource.Create(_session.Workspace, "character models");
@@ -241,14 +241,14 @@ public sealed class CharacterEditorViewModel : RawFileEditorViewModel
 
                 var body = Build(names.Body, "body", out var bodyModel);
                 string head = "";
-                var alias = _session.ResolveCharacterReference<RawFileAsset>(XAssetType.RawFile, AliasPath(names.Head), out _);
+                var alias = _session.ResolveEditorReference<RawFileAsset>(XAssetType.RawFile, AliasPath(names.Head), out _);
                 if (alias is not null)
                 {
                     var raw = new RawFileDraft(alias);
                     if (raw.GetContentClassification().TextEncoding is { } encoding &&
                         CharacterScriptProjection.TryReadHeadAlias(
                             RawFileContentClassifier.DecodeText(raw.GetLogicalContentCopy(), encoding), out var heads, out _))
-                        head = heads.FirstOrDefault(model => _session.ResolveCharacterReference<XModelAsset>(XAssetType.XModel, model, out _) is not null) ?? "";
+                        head = heads.FirstOrDefault(model => _session.ResolveEditorReference<XModelAsset>(XAssetType.XModel, model, out _) is not null) ?? "";
                 }
                 var headScene = Build(head, "head", out var headModel);
                 var hands = Build(names.Hands, "view hands", out _);

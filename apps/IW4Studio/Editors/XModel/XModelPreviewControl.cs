@@ -16,6 +16,8 @@ using Silk.NET.OpenGL;
 
 namespace IW4.Studio.Desktop.Editors.XModel;
 
+public enum XModelCameraPreset { Model, Character, Vehicle, Side }
+
 /// <summary>
 /// Avalonia host and camera input for the retained Silk.NET XModel
 /// renderer in IW4.Render.OpenGl.
@@ -43,8 +45,8 @@ public sealed class XModelPreviewControl : OpenGlControlBase
     public static readonly StyledProperty<bool> ShowCollisionProperty =
         AvaloniaProperty.Register<XModelPreviewControl, bool>(nameof(ShowCollision));
 
-    public static readonly StyledProperty<bool> UseCharacterCameraProperty =
-        AvaloniaProperty.Register<XModelPreviewControl, bool>(nameof(UseCharacterCamera));
+    public static readonly StyledProperty<XModelCameraPreset> CameraPresetProperty =
+        AvaloniaProperty.Register<XModelPreviewControl, XModelCameraPreset>(nameof(CameraPreset));
 
     public static readonly StyledProperty<bool> UseCheckerboardProperty =
         AvaloniaProperty.Register<XModelPreviewControl, bool>(nameof(UseCheckerboard), true);
@@ -149,10 +151,10 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         set => SetValue(ShowCollisionProperty, value);
     }
 
-    public bool UseCharacterCamera
+    public XModelCameraPreset CameraPreset
     {
-        get => GetValue(UseCharacterCameraProperty);
-        set => SetValue(UseCharacterCameraProperty, value);
+        get => GetValue(CameraPresetProperty);
+        set => SetValue(CameraPresetProperty, value);
     }
 
     public bool UseCheckerboard
@@ -195,9 +197,13 @@ public sealed class XModelPreviewControl : OpenGlControlBase
 
     public void Fit()
     {
-        _yaw = MathF.PI * (UseCharacterCamera ? 0.18f : 0.75f);
-        _pitch = MathF.PI * (UseCharacterCamera ? 0.035f : 0.18f);
-        _zoom = UseCharacterCamera ? 1.16f : 1f;
+        (_yaw, _pitch, _zoom) = CameraPreset switch
+        {
+            XModelCameraPreset.Character => (MathF.PI * 0.18f, MathF.PI * 0.035f, 1.16f),
+            XModelCameraPreset.Side => (-MathF.PI * 0.5f, 0f, 1.3f),
+            XModelCameraPreset.Vehicle => (MathF.PI * 0.34f, MathF.PI * 0.065f, 1.45f),
+            _ => (MathF.PI * 0.75f, MathF.PI * 0.18f, 1f)
+        };
         _panOffset = Vector3.Zero;
         RefreshProjectedBoneTags();
         RequestNextFrameRendering();
@@ -379,7 +385,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
             Fit();
             UpdateMaterialAnimationClock();
         }
-        else if (change.Property == UseCharacterCameraProperty)
+        else if (change.Property == CameraPresetProperty)
         {
             Fit();
         }

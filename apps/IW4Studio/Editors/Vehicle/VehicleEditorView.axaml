@@ -1,0 +1,299 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vehicle="using:IW4.Studio.Desktop.Editors.Vehicle"
+             xmlns:sound="using:IW4.Studio.Desktop.Editors.Sound"
+             xmlns:xmodel="using:IW4.Studio.Desktop.Editors.XModel"
+             xmlns:vm="using:IW4.Studio.Desktop.ViewModels"
+             xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="IW4.Studio.Desktop.Editors.Vehicle.VehicleEditorView"
+             x:DataType="vm:VehicleEditorViewModel">
+  <UserControl.Styles>
+    <Style Selector="Border.vehiclePanel">
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style Selector="Border.vehicleHeader">
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceRaisedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Padding" Value="12,9" />
+    </Style>
+    <Style Selector="TextBlock.vehicleTitle">
+      <Setter Property="FontSize" Value="17" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.vehicleMuted">
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="TextBlock.vehicleFieldError">
+      <Setter Property="Foreground" Value="{DynamicResource StudioErrorBrush}" />
+      <Setter Property="FontSize" Value="10" />
+    </Style>
+    <Style Selector="TabStrip.vehicleTabs > TabStripItem">
+      <Setter Property="Padding" Value="13,7" />
+      <Setter Property="BorderThickness" Value="0,0,0,2" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="TabStrip.vehicleTabs > TabStripItem:selected">
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioAccentBrush}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="ListBox.vehicleRail, ListBox.vehicleSlots">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.vehicleRail ListBoxItem, ListBox.vehicleSlots ListBoxItem">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="9,7" />
+      <Setter Property="BorderThickness" Value="2,0,0,0" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.vehicleRail ListBoxItem:selected, ListBox.vehicleSlots ListBoxItem:selected">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentBrush}" />
+    </Style>
+    <Style Selector="Expander.vehicleGroup">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="8,4" />
+    </Style>
+    <Style Selector="TextBox.vehicleInput, ComboBox.vehicleInput">
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="6,3" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*" RowSpacing="8">
+    <Border Classes="vehiclePanel">
+      <Grid RowDefinitions="Auto,Auto">
+        <Grid ColumnDefinitions="*,Auto" Margin="13,8,11,6" ColumnSpacing="10">
+          <StackPanel Spacing="2">
+            <TextBlock Text="Vehicle" Classes="vehicleMuted" />
+            <TextBlock Text="{Binding Name}" FontSize="23" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding Status}" Classes="vehicleMuted" TextWrapping="Wrap" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center"
+                      IsVisible="{Binding IsEditable}">
+            <Button Classes="ghost" Content="Revert" IsEnabled="{Binding CanRevert}" Click="Revert_Click" />
+            <Button Classes="primary" Content="Apply" IsEnabled="{Binding CanApply}" Click="Apply_Click" />
+          </StackPanel>
+        </Grid>
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="7,0,11,0">
+          <TabStrip x:Name="Pages" Classes="vehicleTabs" SelectedIndex="0" SelectionChanged="Pages_Changed">
+            <TabStripItem Content="Overview" />
+            <TabStripItem Content="Handling" />
+            <TabStripItem Content="References" />
+          </TabStrip>
+          <ToggleButton x:Name="AllFieldsButton" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,4"
+                        Click="AllFields_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <icons:MaterialIcon Kind="Magnify" Width="15" Height="15" />
+              <TextBlock Text="All fields" />
+            </StackPanel>
+          </ToggleButton>
+        </Grid>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1">
+      <Grid x:Name="OverviewPage" ColumnDefinitions="1.7*,*" ColumnSpacing="8">
+        <Border Classes="vehiclePanel" Background="{DynamicResource StudioSurfaceSunkenBrush}">
+          <Grid RowDefinitions="*,Auto">
+            <Grid>
+              <xmodel:XModelPreviewControl x:Name="Preview" Scene="{Binding PreviewScene}" CameraPreset="Vehicle" UseCheckerboard="False" />
+              <Grid x:Name="PreviewInput" Background="Transparent" />
+              <TextBlock x:Name="PreviewMessage" Text="{Binding PreviewStatus}" Classes="vehicleMuted"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="270"
+                         TextAlignment="Center" TextWrapping="Wrap" IsHitTestVisible="False" />
+              <StackPanel Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Left" Spacing="6" Margin="10">
+                <Button Classes="ghost" Content="Fit" Click="Fit_Click" />
+                <ComboBox SelectedIndex="0" SelectionChanged="PreviewMode_Changed"
+                          AutomationProperties.Name="Preview shading">
+                  <ComboBoxItem Content="Lit" />
+                  <ComboBoxItem Content="Wireframe" />
+                </ComboBox>
+              </StackPanel>
+            </Grid>
+            <Border Grid.Row="1" Classes="vehicleHeader" BorderThickness="0,1,0,0">
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                <TextBlock Text="Preview model" VerticalAlignment="Center" />
+                <TextBox Grid.Column="1" Classes="vehicleInput" IsReadOnly="True" Text="{Binding PreviewModel, Mode=OneWay}"
+                         PlaceholderText="No XModel selected" AutomationProperties.Name="Preview model" />
+                <Button Grid.Column="2" Classes="ghost" Content="Choose…" Click="PickPreview_Click" />
+              </Grid>
+            </Border>
+          </Grid>
+        </Border>
+
+        <Border Grid.Column="1" Classes="vehiclePanel">
+          <Grid RowDefinitions="Auto,*">
+            <Border Classes="vehicleHeader">
+              <TextBlock Text="Vehicle properties" Classes="vehicleTitle" />
+            </Border>
+            <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel x:Name="OverviewFields" Margin="8" Spacing="7" />
+            </ScrollViewer>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <Grid x:Name="HandlingPage" ColumnDefinitions="Auto,1.4*,*" ColumnSpacing="8" IsVisible="False">
+        <Border Classes="vehiclePanel" MinWidth="118">
+          <Grid RowDefinitions="Auto,*">
+            <Border Classes="vehicleHeader">
+              <TextBlock Text="Handling" Classes="vehicleTitle" />
+            </Border>
+            <ListBox x:Name="HandlingGroups" Grid.Row="1" Classes="vehicleRail" Margin="5"
+                     SelectionChanged="HandlingGroup_Changed" />
+          </Grid>
+        </Border>
+        <Border Grid.Column="1" Classes="vehiclePanel" Background="{DynamicResource StudioSurfaceSunkenBrush}">
+          <Grid RowDefinitions="Auto,*,Auto">
+            <Border Classes="vehicleHeader">
+              <TextBlock x:Name="HandlingPreviewTitle" Text="Suspension travel" Classes="vehicleTitle" />
+            </Border>
+            <Grid Grid.Row="1" RowDefinitions="*,*">
+              <vehicle:VehicleSuspensionDiagram x:Name="Suspension" Grid.Row="1"
+                                                 Accent="{DynamicResource StudioAccentBrush}"
+                                                 Guide="{DynamicResource StudioBorderBrush}"
+                                                 Label="{DynamicResource StudioTextMutedBrush}" />
+              <xmodel:XModelPreviewControl x:Name="HandlingPreview" Scene="{Binding PreviewScene}"
+                                           ShowWireframe="True" CameraPreset="Vehicle" UseCheckerboard="False" IsVisible="False" />
+              <TextBlock x:Name="SuspensionUnavailable" Grid.RowSpan="2" Text="Choose a preview model on the Overview tab."
+                         Classes="vehicleMuted" Margin="16" MaxWidth="225" TextAlignment="Center" TextWrapping="Wrap"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Grid>
+            <Border x:Name="CompareFooter" Grid.Row="2" Classes="vehicleHeader" BorderThickness="0,1,0,0">
+              <WrapPanel Orientation="Horizontal">
+                <CheckBox x:Name="CompareSaved" Content="Compare with saved" IsChecked="True"
+                          IsCheckedChanged="CompareSaved_Changed" Margin="0,0,12,0" />
+                <TextBlock Text="— Draft" VerticalAlignment="Center"
+                           Foreground="{DynamicResource StudioAccentBrush}" Margin="0,0,12,0" />
+                <TextBlock x:Name="SavedLegend" Text="┄ Saved" VerticalAlignment="Center"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+              </WrapPanel>
+            </Border>
+          </Grid>
+        </Border>
+        <Border Grid.Column="2" Classes="vehiclePanel">
+          <Grid RowDefinitions="Auto,*">
+            <Border Classes="vehicleHeader">
+              <TextBlock Text="Physics tuning" Classes="vehicleTitle" />
+            </Border>
+            <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel x:Name="HandlingFields" Margin="8" Spacing="7" />
+            </ScrollViewer>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <Grid x:Name="ReferencesPage" ColumnDefinitions="Auto,1.2*,*" ColumnSpacing="8" IsVisible="False">
+        <Border Classes="vehiclePanel" MinWidth="130">
+          <Grid RowDefinitions="Auto,*">
+            <Border Classes="vehicleHeader">
+              <TextBlock Text="Bindings" Classes="vehicleTitle" />
+            </Border>
+            <ListBox x:Name="ReferenceGroups" Grid.Row="1" Classes="vehicleRail" Margin="5"
+                     SelectionChanged="ReferenceGroup_Changed" />
+          </Grid>
+        </Border>
+        <Border Grid.Column="1" Classes="vehiclePanel">
+          <Grid RowDefinitions="Auto,Auto,*,Auto">
+            <Border Classes="vehicleHeader">
+              <TextBlock x:Name="ReferenceTitle" Classes="vehicleTitle" TextTrimming="CharacterEllipsis" />
+            </Border>
+            <TextBox x:Name="SlotFilter" Grid.Row="1" Classes="vehicleInput" PlaceholderText="Filter slots"
+                     AutomationProperties.Name="Filter reference slots" TextChanged="ReferenceFilter_Changed" Margin="8" />
+            <Grid Grid.Row="2" RowDefinitions="Auto,*">
+              <Border Classes="vehicleHeader">
+                <Grid ColumnDefinitions="*,1.4*" ColumnSpacing="10">
+                  <TextBlock Text="Slot" FontWeight="SemiBold" />
+                  <TextBlock x:Name="AssignedHeading" Grid.Column="1" Text="Assigned asset" FontWeight="SemiBold" />
+                </Grid>
+              </Border>
+              <TextBlock x:Name="NoSlotsMessage" Grid.Row="1" Classes="vehicleMuted" Margin="12"
+                         Text="No matching slots." IsVisible="False" />
+              <ListBox x:Name="Slots" Grid.Row="1" Classes="vehicleSlots" SelectionChanged="Slot_Changed">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:VehicleEditorField">
+                    <Grid ColumnDefinitions="*,1.4*" ColumnSpacing="10">
+                      <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Key}" />
+                      <Grid Grid.Column="1">
+                        <TextBlock Text="Unassigned" Classes="vehicleMuted"
+                                   IsVisible="{Binding Value, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+                        <TextBlock Text="{Binding Value}" TextTrimming="CharacterEllipsis"
+                                   ToolTip.Tip="{Binding Value}" />
+                      </Grid>
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Grid>
+            <CheckBox x:Name="ShowEmptySlots" Grid.Row="3" Content="Show empty slots" IsChecked="True"
+                      IsCheckedChanged="ReferenceFilter_Changed" Margin="8" />
+          </Grid>
+        </Border>
+        <Border Grid.Column="2" Classes="vehiclePanel">
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="12" Spacing="9">
+              <TextBlock x:Name="SlotTitle" Text="Select a slot" Classes="vehicleTitle" TextWrapping="Wrap" />
+              <ContentControl x:Name="SlotDetail" HorizontalContentAlignment="Stretch" />
+              <TextBlock x:Name="AudioUnavailable" Text="No playable alias is available in this workspace."
+                         Classes="vehicleMuted" TextWrapping="Wrap" IsVisible="False" />
+              <ContentControl x:Name="AudioPanel" Content="{Binding AudioPreview}" IsVisible="False"
+                              HorizontalContentAlignment="Stretch">
+                <ContentControl.ContentTemplate>
+                  <DataTemplate x:DataType="vm:SoundPreviewViewModel">
+                    <StackPanel Spacing="6">
+                      <Border Classes="vehiclePanel" Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                              IsVisible="{Binding HasVisualization}">
+                        <sound:SoundLevelVisualizer Height="104" Margin="5" FrameGainProfile="{Binding FrameGainProfile}"
+                                                    LiveLevels="{Binding LiveLevels}" Progress="{Binding Progress}"
+                                                    RestingBrush="{DynamicResource StudioAccentBrush}"
+                                                    PlayedBrush="{DynamicResource StudioTextBrush}" />
+                      </Border>
+                      <WrapPanel Orientation="Horizontal">
+                        <Button Content="Audition" IsVisible="{Binding !IsPlaying}" IsEnabled="{Binding CanPlay}" Click="Audition_Click" />
+                        <Button Content="Pause" IsVisible="{Binding IsPlaying}" Click="Audition_Click" />
+                        <TextBlock Text="{Binding PositionText}" VerticalAlignment="Center" Margin="7,0,2,0" />
+                        <TextBlock Text="/" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding DurationText}" VerticalAlignment="Center" Margin="2,0" />
+                      </WrapPanel>
+                      <TextBlock Text="{Binding PlaybackStatus}" Classes="vehicleMuted" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ContentControl.ContentTemplate>
+              </ContentControl>
+              <WrapPanel x:Name="ReferenceActions" Orientation="Horizontal" IsVisible="False">
+                <Button x:Name="ReplaceSlot" Content="Replace…" Click="ReplaceSlot_Click" Margin="0,0,5,4" />
+                <Button x:Name="OpenSlot" Classes="ghost" Content="Open" Click="OpenSlot_Click" Margin="0,0,5,4" />
+                <Button x:Name="ClearSlot" Classes="ghost" Content="Clear slot" Click="ClearSlot_Click" Margin="0,0,0,4" />
+              </WrapPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </Border>
+      </Grid>
+
+      <Border x:Name="AllFieldsPage" Classes="vehiclePanel" IsVisible="False">
+        <Grid RowDefinitions="Auto,*">
+          <Border Classes="vehicleHeader">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="15">
+              <TextBlock Text="All fields" Classes="vehicleTitle" VerticalAlignment="Center" />
+              <TextBox x:Name="FieldFilter" Grid.Column="1" Classes="vehicleInput" PlaceholderText="Search by field name, group, or value"
+                       AutomationProperties.Name="Search vehicle fields" TextChanged="FieldFilter_Changed" />
+            </Grid>
+          </Border>
+          <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="AllFields" Margin="10" Spacing="5" />
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -189,6 +189,8 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
                 material.RefreshSessionState();
             if (editorHost.HostedViewModel is ImageEditorViewModel image)
                 image.RefreshSessionState();
+            if (editorHost.HostedViewModel is VehicleEditorViewModel vehicle)
+                vehicle.RefreshSavedValues();
         }
     }
 

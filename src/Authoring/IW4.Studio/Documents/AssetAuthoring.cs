@@ -137,6 +137,7 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new StructuredDataAdapter());
         registry.Register(new SoundAdapter());
         registry.Register(new TracerAdapter());
+        registry.Register(new VehicleAdapter());
         foreach (XAssetType assetType in D3dbspAssetTypeFacts.MultiplayerTypes)
             registry.Register(new D3dbspAssetAdapter(assetType));
         return registry;
@@ -414,12 +415,18 @@ public sealed partial class AssetEditorSession : AssetEditorSurface
 
     public T ReadDraft<T>() where T : notnull => OpenDraft<T>();
 
-    private object CloneCurrentDraft()
+    public T ReadSavedDraft<T>() where T : notnull
+    {
+        ThrowIfClosed();
+        return (T)CloneCurrentDraft(saved: true);
+    }
+
+    private object CloneCurrentDraft(bool saved = false)
     {
         if (_rowIdentity is { } row)
-            return _session.CloneCurrentDraft(row, _adapter);
+            return _session.CloneCurrentDraft(row, _adapter, saved);
         if (_providerIdentity is { } provider)
-            return _session.CloneCurrentProviderDraft(provider);
+            return _session.CloneCurrentProviderDraft(provider, saved);
         return _adapter.CloneDraft(_readOnlyDraft ?? throw new InvalidOperationException(
             "This editor has no draft."));
     }

@@ -171,7 +171,7 @@
       <Grid RowDefinitions="*,8,Auto">
         <Border Classes="characterPanel" Background="{DynamicResource StudioSurfaceSunkenBrush}">
           <Grid>
-            <xmodel:XModelPreviewControl x:Name="AssemblyPreview" UseCharacterCamera="True" UseCheckerboard="False"
+            <xmodel:XModelPreviewControl x:Name="AssemblyPreview" CameraPreset="Character" UseCheckerboard="False"
                                         ToolTip.Tip="Drag to orbit, right-drag to pan, scroll to zoom" />
             <TextBlock x:Name="AssemblyPreviewMessage" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="235"
                        HorizontalAlignment="Center" VerticalAlignment="Center" Classes="characterMuted"
@@ -395,7 +395,7 @@
                   Background="{DynamicResource StudioSurfaceSunkenBrush}"
                   BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
             <Grid>
-              <xmodel:XModelPreviewControl x:Name="ReferencePreview" UseCharacterCamera="True" UseCheckerboard="False"
+              <xmodel:XModelPreviewControl x:Name="ReferencePreview" CameraPreset="Character" UseCheckerboard="False"
                                           ToolTip.Tip="Drag to orbit, right-drag to pan, scroll to zoom" />
               <TextBlock x:Name="ReferencePreviewMessage" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="230"
                          HorizontalAlignment="Center" VerticalAlignment="Center" Classes="characterMuted"
@@ -474,7 +474,7 @@
               </StackPanel>
             </Border>
             <Grid Grid.Row="1" Background="{DynamicResource StudioSurfaceSunkenBrush}">
-              <xmodel:XModelPreviewControl x:Name="SourcePreview" UseCharacterCamera="True" UseCheckerboard="False"
+              <xmodel:XModelPreviewControl x:Name="SourcePreview" CameraPreset="Character" UseCheckerboard="False"
                                           ToolTip.Tip="Drag to orbit, right-drag to pan, scroll to zoom" />
               <TextBlock x:Name="SourcePreviewMessage" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="230"
                          HorizontalAlignment="Center" VerticalAlignment="Center" Classes="characterMuted"

@@ -8,6 +8,7 @@ using IW4.Game.Assets.RawFile;
 using IW4.Game.Assets.Sound;
 using IW4.Game.Assets.StringTable;
 using IW4.Game.Assets.TechniqueSet;
+using IW4.Game.Assets.Vehicle;
 using IW4.Game.Assets.XModel;
 using IW4.Formats.D3dbsp;
 using IW4.Game.Database;
@@ -1695,12 +1696,12 @@ public sealed partial class FastFileEditingSession : IDisposable
 
     internal object CloneCurrentDraft(
         TargetZoneRowIdentity identity,
-        IAssetAuthoringAdapter adapter)
+        IAssetAuthoringAdapter adapter, bool saved = false)
     {
         lock (_gate)
         {
             DraftState state = RequireDraft(identity, adapter);
-            return state.CloneCurrent();
+            return saved ? state.CloneSaved() : state.CloneCurrent();
         }
     }
 
@@ -1720,12 +1721,13 @@ public sealed partial class FastFileEditingSession : IDisposable
         }
     }
 
-    internal object CloneCurrentProviderDraft(WorkspaceDependencyAssetIdentity identity)
+    internal object CloneCurrentProviderDraft(WorkspaceDependencyAssetIdentity identity, bool saved = false)
     {
         lock (_gate)
         {
             ThrowIfDisposedCore();
-            return _providerDrafts[identity].CloneCurrent();
+            var state = _providerDrafts[identity];
+            return saved ? state.CloneSaved() : state.CloneCurrent();
         }
     }
 
@@ -2391,9 +2393,17 @@ public sealed partial class FastFileEditingSession : IDisposable
                 "An editor cannot change a hosted asset's stable identity.");
         }
 
-        LinkAssetProviderSource provider = detachedCandidate is ImageDraft image
-            ? CreateEditedImageProviderSource(state, image, definition)
-            : new LinkAssetProviderSource(definition).AsAuthoredDetached();
+        LinkAssetProviderSource provider = detachedCandidate switch
+        {
+            ImageDraft image => CreateEditedImageProviderSource(state, image, definition),
+            VehicleDraft when !Workspace.IsBlank &&
+                state.Identity.SerializedIndex < Workspace.InitialLinkRequest.Roots.Count &&
+                state.Entry.Definition is VehicleDefAsset imported =>
+                LoadedZoneLinkExtensions.CreateCapturedProviderSource(
+                    Workspace.LoadedZone, definition, imported, state.Entry.OriginalName,
+                    LinkAssetProviderSourceDisposition.AuthoredDetached),
+            _ => new LinkAssetProviderSource(definition).AsAuthoredDetached()
+        };
         LinkAssetPool authoredAssets = _authoredAssets
             .WithoutProviders([candidateKey])
             .WithHighestPrecedenceProviders([provider]);
