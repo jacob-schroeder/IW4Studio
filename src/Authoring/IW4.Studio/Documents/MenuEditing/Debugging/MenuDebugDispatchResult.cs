@@ -90,14 +90,51 @@ public sealed class MenuDebugQueuedScriptTraceEntry : MenuDebugDispatchTraceEntr
     internal MenuDebugQueuedScriptTraceEntry(
         int sequence,
         string handlerPath,
-        string script)
-        : base(sequence, handlerPath) => Script = script;
+        string script,
+        IReadOnlyList<string>? commandTokens)
+        : base(sequence, handlerPath)
+    {
+        Script = script;
+        CommandTokens = commandTokens ?? [];
+    }
 
     /// <summary>
     /// Authored command text that is outside the debugger-safe runtime subset
     /// and remains queued for inspection or an external runtime.
     /// </summary>
     public string Script { get; }
+
+    /// <summary>Tokens from a parsed command fragment, when available.</summary>
+    public IReadOnlyList<string> CommandTokens { get; }
+}
+
+/// <summary>A stock layout command queued by exec for the active controller.</summary>
+public sealed class MenuDebugQueuedProfileLayout(
+    int sequence, string handlerPath, string field, string layout)
+    : MenuDebugDispatchTraceEntry(sequence, handlerPath)
+{
+    public string Field { get; } = field;
+    public string Layout { get; } = layout;
+}
+
+public sealed class MenuDebugDvarTraceEntry : MenuDebugDispatchTraceEntry
+{
+    internal MenuDebugDvarTraceEntry(
+        int sequence,
+        string handlerPath,
+        string name,
+        MenuDebugValue? previousValue,
+        MenuDebugValue value)
+        : base(sequence, handlerPath)
+    {
+        Name = name;
+        PreviousValue = previousValue;
+        Value = value;
+    }
+
+    public string Name { get; }
+    public MenuDebugValue? PreviousValue { get; }
+    public MenuDebugValue Value { get; }
 }
 
 public enum MenuDebugItemColorTarget

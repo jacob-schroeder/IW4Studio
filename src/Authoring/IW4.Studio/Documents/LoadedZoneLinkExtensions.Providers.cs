@@ -75,15 +75,28 @@ public static partial class LoadedZoneLinkExtensions
             provider.IsReferencePlaceholder ? "," + provider.Name : provider.Name);
         bool nameWasNormalized = !string.Equals(serializedName,
             provider.Asset.SerializedAssetName, StringComparison.Ordinal);
+        return CreateCapturedProviderSource(
+            zone, provider.Asset, provider.Asset, serializedName,
+            nameWasNormalized
+                ? LinkAssetProviderSourceDisposition.AuthoredDetached
+                : LinkAssetProviderSourceDisposition.PreserveImportedIdentity);
+    }
+
+    internal static LinkAssetProviderSource CreateCapturedProviderSource(
+        LoadedXZone zone,
+        BaseAsset definition,
+        BaseAsset importedDefinition,
+        string? serializedName,
+        LinkAssetProviderSourceDisposition disposition)
+    {
         ZoneObjectImport import = ZoneObjectObservationTranslator.Translate(zone.Observation ??
             throw new InvalidOperationException($"Zone '{zone.SourceName}' was loaded without canonical linker capture."));
         return new LinkAssetProviderSource(
-            provider.Asset,
+            definition,
             import.Resolver,
-            FreezeImageStreamReferences(zone, provider.Asset),
-            nameWasNormalized
-                ? LinkAssetProviderSourceDisposition.AuthoredDetached
-                : LinkAssetProviderSourceDisposition.PreserveImportedIdentity,
+            FreezeImageStreamReferences(zone, definition),
+            disposition,
+            importedDefinition,
             serializedName: serializedName);
     }
 

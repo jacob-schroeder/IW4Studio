@@ -1,0 +1,65 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:image="using:IW4.Studio.Desktop.Editors.Image"
+        x:Class="IW4.Studio.Desktop.Editors.Image.ImageReplacementWindow"
+        x:DataType="image:ImageReplacementReview"
+        Title="Review image replacement" Width="570" MinWidth="440" SizeToContent="Height"
+        CanResize="False" WindowStartupLocation="CenterOwner">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="ImagePreviewBrushes.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Window.Resources>
+  <Window.Styles>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+    </Style>
+    <Style Selector="Border.preview">
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="ClipToBounds" Value="True" />
+      <Setter Property="Padding" Value="8" />
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceSunkenBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+  </Window.Styles>
+  <Grid Margin="18" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
+    <TextBlock Text="{Binding FileName}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+    <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12">
+      <Border Classes="preview">
+        <StackPanel Spacing="6">
+          <Border Background="{StaticResource Checkerboard}"><Image Source="{Binding Before}" Height="126" Stretch="Uniform" /></Border>
+          <TextBlock Text="{Binding BeforeLabel}" Classes="muted" FontSize="11" />
+        </StackPanel>
+      </Border>
+      <Border Grid.Column="1" Classes="preview">
+        <StackPanel Spacing="6">
+          <Border Background="{StaticResource Checkerboard}"><Image Source="{Binding After}" Height="126" Stretch="Uniform" /></Border>
+          <TextBlock Text="Replacement · Mip 0" Classes="muted" FontSize="11" />
+        </StackPanel>
+      </Border>
+    </Grid>
+    <Grid Grid.Row="2" RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="0.8*,*,*" RowSpacing="6" ColumnSpacing="8">
+        <TextBlock Grid.Row="0" Text="Dimensions" Classes="muted" />
+        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Current.Dimensions}" />
+        <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding Replacement.Dimensions}" />
+        <TextBlock Grid.Row="1" Text="Mip chain" Classes="muted" />
+        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Current.MipChain}" />
+        <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding Replacement.MipChain}" />
+        <TextBlock Grid.Row="2" Text="Format" Classes="muted" />
+        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Current.Format}" />
+        <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding Replacement.Format}" />
+        <TextBlock Grid.Row="3" Text="Storage" Classes="muted" />
+        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Current.Storage}" />
+        <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding Replacement.Storage}" />
+    </Grid>
+    <TextBlock Grid.Row="3" Classes="muted" FontSize="11" TextWrapping="Wrap"
+               Text="This replaces the pixels wherever this Image is referenced." />
+    <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="7" HorizontalAlignment="Right">
+      <Button Content="Cancel" IsCancel="True" Click="Cancel_Click" />
+      <Button Classes="primary" Content="Stage replacement" Click="Stage_Click" />
+    </StackPanel>
+  </Grid>
+</Window>

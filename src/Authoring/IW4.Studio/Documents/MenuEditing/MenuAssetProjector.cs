@@ -288,7 +288,7 @@ internal static class MenuAssetProjector
             });
 
     public static IReadOnlyList<AssetValidationIssue> Validate(
-        MenuEditorSnapshot snapshot) => MenuEditorValidation.Validate(snapshot);
+        MenuEditorSnapshot snapshot) => snapshot.ValidationIssues;
 
     public static IReadOnlyList<AssetValidationIssue> Validate(
         MenuFileEditorSnapshot snapshot) => MenuEditorValidation.Validate(snapshot);

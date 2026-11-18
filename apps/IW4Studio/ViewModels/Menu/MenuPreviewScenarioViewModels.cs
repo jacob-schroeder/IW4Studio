@@ -17,9 +17,8 @@ public sealed record MenuPreviewBooleanOption(bool? Value, string Label)
 }
 
 /// <summary>
-/// One explicit value in the editor-only simulation. Unset is a first-class
-/// state: it asks the evaluator to report missing runtime state instead of
-/// silently assuming a false, zero, or empty value.
+/// One editable input in the editor-only simulation. An unset input inherits
+/// its baseline when available and otherwise leaves the runtime value unresolved.
 /// </summary>
 public sealed class MenuPreviewScenarioInputViewModel : ObservableObject
 {
@@ -33,11 +32,13 @@ public sealed class MenuPreviewScenarioInputViewModel : ObservableObject
         });
 
     private readonly Action _changed;
+    private readonly string? _playerBaseline;
     private bool _isRequired;
     private bool _isSet;
     private decimal? _numericInput;
     private string _textInput;
     private string _valueInput;
+    private string? _configDefault;
 
     internal MenuPreviewScenarioInputViewModel(
         MenuDebugDependency dependency,
@@ -45,8 +46,27 @@ public sealed class MenuPreviewScenarioInputViewModel : ObservableObject
         bool isSet = false,
         string? valueInput = null)
     {
-        Dependency = dependency ?? throw new ArgumentNullException(
-            nameof(dependency));
+        ArgumentNullException.ThrowIfNull(dependency);
+        var sampleValues = dependency.Operation switch
+        {
+            OperationEnum.OP_GETPLAYERDATA => MenuPreviewSimulationViewModel.SamplePlayer.Data,
+            OperationEnum.OP_GETPROFILEDATA => MenuPreviewSimulationViewModel.SamplePlayer.Profile,
+            _ => null
+        };
+        if (sampleValues is not null && sampleValues.TryGetValue(dependency.Name, out MenuDebugValue sample))
+        {
+            dependency = dependency with { ValueKind = sample.Kind };
+            string value = sample.Kind switch
+            {
+                MenuDebugValueKind.Boolean when sample.TryGetBoolean(out bool flag) => flag.ToString(),
+                MenuDebugValueKind.Float when sample.TryGetFloat(out float number) => number.ToString("G", CultureInfo.InvariantCulture),
+                _ => sample.AsString()
+            };
+            _playerBaseline = dependency.Operation == OperationEnum.OP_GETPROFILEDATA
+                ? $"Sample controller profile · {value}"
+                : $"Simulated player · {value}";
+        }
+        Dependency = dependency;
         _changed = changed ?? throw new ArgumentNullException(nameof(changed));
         _isSet = isSet;
         _valueInput = valueInput ?? DefaultValue(dependency.ValueKind);
@@ -69,6 +89,9 @@ public sealed class MenuPreviewScenarioInputViewModel : ObservableObject
     {
         MenuDebugDependencyKind.Dvar => "Game variable",
         MenuDebugDependencyKind.LocalVariable => "Menu local",
+        MenuDebugDependencyKind.Environment when Dependency.Operation == OperationEnum.OP_GETPLAYERDATA => "Player data",
+        MenuDebugDependencyKind.Environment when Dependency.Operation == OperationEnum.OP_GETPLAYERDATAANYBOOLTRUE => "Any flag set in player data",
+        MenuDebugDependencyKind.Environment when Dependency.Operation == OperationEnum.OP_GETPROFILEDATA => "Controller profile",
         MenuDebugDependencyKind.Environment => "Runtime value",
         MenuDebugDependencyKind.Menu => "Open menu",
         _ => Dependency.Kind.ToString()
@@ -76,9 +99,45 @@ public sealed class MenuPreviewScenarioInputViewModel : ObservableObject
 
     public string Name => Dependency.Name;
 
+    public string DisplayName => (Dependency.Operation, Name) switch
+    {
+        (OperationEnum.OP_GETPLAYERDATA, "experience") => "Experience (XP)",
+        (OperationEnum.OP_GETPLAYERDATA, "prestige") => "Prestige",
+        (OperationEnum.OP_GETPROFILEDATA, "gpadButtonsConfig") => "Button layout",
+        (OperationEnum.OP_GETPROFILEDATA, "gpadSticksConfig") => "Stick layout",
+        (OperationEnum.OP_GETPROFILEDATA, "viewSensitivity") => "Look sensitivity",
+        (OperationEnum.OP_GETPROFILEDATA, "invertedPitch") => "Invert look",
+        (OperationEnum.OP_GETPROFILEDATA, "rumble") => "Vibration",
+        _ => Name
+    };
+
     public string ValueHint => Dependency.ValueKind?.ToString() ?? "String";
 
-    public string Detail => $"{KindLabel} · {ValueHint} · {ValueState}";
+    public string? ConfigDefault
+    {
+        get => _configDefault;
+        internal set
+        {
+            if (!SetProperty(ref _configDefault, value))
+                return;
+            OnPropertyChanged(nameof(HasBaseline));
+            OnPropertyChanged(nameof(BaselineText));
+            OnPropertyChanged(nameof(Detail));
+        }
+    }
+
+    public bool HasBaseline => ConfigDefault is not null || _playerBaseline is not null;
+
+    public string? BaselineText => _playerBaseline ?? (ConfigDefault switch
+        {
+            null => null,
+            "" => "Config default · empty string",
+            var value => $"Config default · {value}"
+        });
+
+    public string Detail => !IsSet && BaselineText is { } baseline
+        ? baseline
+        : $"{KindLabel} · {ValueHint} · {ValueState}";
 
     public string ValueState => !IsSet
         ? "Unset"
@@ -367,9 +426,28 @@ public sealed class MenuPreviewScenarioInputViewModel : ObservableObject
 /// </summary>
 public sealed class MenuPreviewSimulationViewModel : ObservableObject
 {
+    // getProfileData reads controller profile fields independently of cfg dvars.
+    // The layouts occur in PS3 startup traces. The remaining values select
+    // the stock Medium, non-inverted and vibration-enabled preview variants.
+    internal static MenuDebugPlayer SamplePlayer { get; } = new(
+        data: new Dictionary<string, MenuDebugValue>
+        {
+            ["experience"] = MenuDebugValue.FromInt(0),
+            ["prestige"] = MenuDebugValue.FromInt(0)
+        },
+        profile: new Dictionary<string, MenuDebugValue>
+        {
+            ["gpadSticksConfig"] = MenuDebugValue.FromString("thumbstick_default"),
+            ["gpadButtonsConfig"] = MenuDebugValue.FromString("buttons_default"),
+            ["viewSensitivity"] = MenuDebugValue.FromFloat(1),
+            ["invertedPitch"] = MenuDebugValue.FromBoolean(false),
+            ["rumble"] = MenuDebugValue.FromBoolean(true)
+        });
+
     private readonly Action _inputsChanged;
     private readonly Action _timeChanged;
     private IReadOnlyList<MenuPreviewScenarioInputViewModel> _inputs = [];
+    private string _inputFilter = string.Empty;
     private IReadOnlyList<string> _unsupportedInputLines = [];
     private int _milliseconds;
     private bool _isBatching;
@@ -397,8 +475,30 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
     /// in place while the simulation clock advances; replacing or reordering
     /// this source would discard focused editors and open ComboBox popups.
     /// </summary>
-    public IReadOnlyList<MenuPreviewScenarioInputViewModel> OrderedInputs =>
-        Inputs;
+    public IReadOnlyList<MenuPreviewScenarioInputViewModel> FilteredInputs { get; private set; } = [];
+
+    public string InputFilter
+    {
+        get => _inputFilter;
+        set
+        {
+            if (SetProperty(ref _inputFilter, value ?? string.Empty))
+                RefreshFilter();
+        }
+    }
+
+    public bool NoMatchingInputs => HasInputs && FilteredInputs.Count == 0;
+
+    private void RefreshFilter()
+    {
+        string query = InputFilter.Trim();
+        FilteredInputs = query.Length == 0 ? Inputs : Inputs.Where(input =>
+            input.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            input.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            input.KindLabel.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        OnPropertyChanged(nameof(FilteredInputs));
+        OnPropertyChanged(nameof(NoMatchingInputs));
+    }
 
     public IReadOnlyList<MenuPreviewScenarioInputViewModel> MissingInputs =>
         Array.AsReadOnly(Inputs
@@ -447,21 +547,27 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
     public ViewModelCommand ClearOverridesCommand { get; }
     public ViewModelCommand OpenConfigurationCommand { get; }
 
-    internal void ReplaceDocument(MenuEditorSnapshot? snapshot)
+    internal void ReplaceDocument(MenuEditorSnapshot? snapshot) =>
+        ReplaceDependencies(snapshot?.DebugProgram.Dependencies ?? []);
+
+    internal void ReplaceDependencies(
+        IEnumerable<MenuDebugDependency> values,
+        IReadOnlyList<MenuPreviewScenarioInputViewModel>? previousInputs = null)
     {
-        var previous = Inputs.ToDictionary(
+        var previous = (previousInputs ?? Inputs).ToDictionary(
             value => value.Identity,
             value => (value.IsSet, value.ValueInput),
             StringComparer.OrdinalIgnoreCase);
-        MenuDebugDependency[] dependencies = snapshot?.DebugProgram.Dependencies
+        MenuDebugDependency[] dependencies = values
             .Where(IsEditableInput)
             .GroupBy(
                 MenuPreviewScenarioInputViewModel.StorageKey,
                 StringComparer.OrdinalIgnoreCase)
             .Select(CollapseDependency)
-            .OrderBy(value => value.Kind)
+            .OrderByDescending(value => value.Operation == OperationEnum.OP_GETPLAYERDATA && SamplePlayer.Data.ContainsKey(value.Name))
+            .ThenBy(value => value.Kind)
             .ThenBy(value => value.Name, StringComparer.OrdinalIgnoreCase)
-            .ToArray() ?? [];
+            .ToArray();
         _inputs = Array.AsReadOnly(dependencies.Select(dependency =>
         {
             var probe = new MenuPreviewScenarioInputViewModel(
@@ -477,11 +583,12 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
         }).ToArray());
 
         _unsupportedInputLines = Array.AsReadOnly(
-            (snapshot?.DebugProgram.Dependencies ?? [])
+            values
                 .Where(value => string.Equals(
                     value.Name,
                     "<dynamic>",
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase) &&
+                    !(value.Operation is { } op && MenuExpressionEvaluator.UsesWorkspaceStringTable(op)))
                 .Select(FormatUnsupportedInput)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Order(StringComparer.OrdinalIgnoreCase)
@@ -513,15 +620,24 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
     }
 
     internal MenuDebugScenario BuildScenario(
-        MenuDebugLocalizationResolver? localizationResolver)
+        MenuDebugLocalizationResolver? localizationResolver,
+        MenuDebugStringTableResolver? stringTableResolver = null,
+        bool includeSamplePlayer = true,
+        IReadOnlyDictionary<string, string>? dvarDefaults = null)
     {
         var dvars = new Dictionary<string, MenuDebugValue>(
             StringComparer.OrdinalIgnoreCase);
+        if (dvarDefaults is not null)
+        {
+            foreach ((string name, string value) in dvarDefaults)
+                dvars[name] = MenuDebugValue.FromString(value);
+        }
         var locals = new Dictionary<string, MenuDebugValue>(
             StringComparer.OrdinalIgnoreCase);
-        var environment = new Dictionary<
-            MenuDebugEnvironmentKey,
-            MenuDebugValue>();
+        MenuDebugPlayer baseline = includeSamplePlayer ? SamplePlayer : MenuDebugPlayer.Empty;
+        var playerData = new Dictionary<string, MenuDebugValue>(baseline.Data, StringComparer.OrdinalIgnoreCase);
+        var profile = new Dictionary<string, MenuDebugValue>(baseline.Profile, StringComparer.OrdinalIgnoreCase);
+        var environment = new Dictionary<MenuDebugEnvironmentKey, MenuDebugValue>();
         var openMenus = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (MenuPreviewScenarioInputViewModel input in Inputs)
         {
@@ -539,6 +655,14 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
                     break;
                 case MenuDebugDependencyKind.LocalVariable:
                     locals[dependency.Name] = value;
+                    break;
+                case MenuDebugDependencyKind.Environment when
+                    dependency.Operation == OperationEnum.OP_GETPLAYERDATA && SamplePlayer.Data.ContainsKey(dependency.Name):
+                    playerData[dependency.Name] = value;
+                    break;
+                case MenuDebugDependencyKind.Environment when
+                    dependency.Operation == OperationEnum.OP_GETPROFILEDATA && SamplePlayer.Profile.ContainsKey(dependency.Name):
+                    profile[dependency.Name] = value;
                     break;
                 case MenuDebugDependencyKind.Environment when
                     dependency.Operation is { } operation:
@@ -560,7 +684,19 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
             environment,
             openMenus,
             focusedItemId: null,
-            localizationResolver);
+            localizationResolver,
+            player: new MenuDebugPlayer(playerData, profile),
+            stringTableResolver: stringTableResolver);
+    }
+
+    internal void SetConfigDefaultLabels(IReadOnlyDictionary<string, string>? defaults)
+    {
+        foreach (MenuPreviewScenarioInputViewModel input in Inputs)
+        {
+            input.ConfigDefault = input.Dependency.Kind == MenuDebugDependencyKind.Dvar
+                ? defaults?.GetValueOrDefault(input.Name)
+                : null;
+        }
     }
 
     private void ClearOverrides()
@@ -599,7 +735,7 @@ public sealed class MenuPreviewSimulationViewModel : ObservableObject
     private void NotifyInputMembershipChanged()
     {
         OnPropertyChanged(nameof(Inputs));
-        OnPropertyChanged(nameof(OrderedInputs));
+        RefreshFilter();
         OnPropertyChanged(nameof(HasInputs));
         NotifyInputStateChanged();
         OnPropertyChanged(nameof(UnsupportedInputLines));

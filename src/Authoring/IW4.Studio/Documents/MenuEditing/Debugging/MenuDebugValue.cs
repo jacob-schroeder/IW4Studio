@@ -104,6 +104,37 @@ public readonly record struct MenuDebugValue
         _ => string.Empty
     };
 
+    internal int AsLocalInteger() => Kind switch
+    {
+        // PowerPC fctiwz returns a signed word, saturated on overflow.
+        MenuDebugValueKind.Float when double.IsNaN(_float) || _float <= int.MinValue => int.MinValue,
+        MenuDebugValueKind.Float when _float >= int.MaxValue => int.MaxValue,
+        MenuDebugValueKind.Float => (int)_float,
+        MenuDebugValueKind.String => ParseAtoi(_string, limitUnsignedMagnitude: true),
+        _ => unchecked((int)_integer)
+    };
+
+    internal string AsFormattedExpressionString()
+    {
+        const int maximumPayloadLength = 255;
+        string text = AsString();
+        int terminator = text.IndexOf('\0');
+        if (terminator >= 0)
+            text = text[..terminator];
+        if (text.Length <= maximumPayloadLength)
+            return text;
+
+        // Loaded and authored XStrings are Latin-1. Scenario Unicode may
+        // have no known native byte representation.
+        foreach (char character in text.AsSpan(0, maximumPayloadLength))
+        {
+            if (character > byte.MaxValue)
+                return text;
+        }
+
+        return text[..maximumPayloadLength];
+    }
+
     public override string ToString() => AsString();
 
     internal void GetEngineStringNumbers(out int integer, out double floatingPoint)
@@ -114,7 +145,7 @@ public readonly record struct MenuDebugValue
         floatingPoint = ParseAtof(_string);
     }
 
-    private static int ParseAtoi(string? text)
+    private static int ParseAtoi(string? text, bool limitUnsignedMagnitude = false)
     {
         ReadOnlySpan<char> source = text.AsSpan();
         int index = SkipWhitespace(source);
@@ -125,13 +156,17 @@ public readonly record struct MenuDebugValue
             index++;
         }
 
-        int value = 0;
+        uint value = 0;
         while (index < source.Length && source[index] is >= '0' and <= '9')
         {
-            value = unchecked(value * 10 + source[index] - '0');
+            uint digit = (uint)(source[index] - '0');
+            if (limitUnsignedMagnitude && value > (uint.MaxValue - digit) / 10)
+                return -1;
+            value = unchecked(value * 10 + digit);
             index++;
         }
-        return negative ? unchecked(-value) : value;
+        int signedValue = unchecked((int)value);
+        return negative ? unchecked(-signedValue) : signedValue;
     }
 
     private static double ParseAtof(string? text)

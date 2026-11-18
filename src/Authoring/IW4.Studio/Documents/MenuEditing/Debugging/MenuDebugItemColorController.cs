@@ -4,7 +4,7 @@ namespace IW4.Studio.Documents.MenuEditing.Debugging;
 
 /// <summary>
 /// Applies the bounded setItemColor command to runtime-only Item Window color
-/// overrides. Targets resolve as self, exact Item name, or exact Item group.
+/// overrides for the event Item or Items selected by name or group.
 /// </summary>
 internal sealed class MenuDebugItemColorController
 {
@@ -42,7 +42,8 @@ internal sealed class MenuDebugItemColorController
                 "Color components must be finite invariant-culture numbers.");
         }
 
-        MenuDebugItemProgram[] matches = ResolveTargets(
+        MenuDebugItemProgram[] matches = MenuDebugRuntimeController.ResolveTargets(
+            _program,
             tokens[1],
             contextItemId).ToArray();
         if (matches.Length == 0)
@@ -87,30 +88,6 @@ internal sealed class MenuDebugItemColorController
         };
         _state.SetItemRuntimeState(item.Id, updated);
         _trace.AddItemColor(path, item.Id, target, previous, color);
-    }
-
-    private IEnumerable<MenuDebugItemProgram> ResolveTargets(
-        string target,
-        MenuNodeId? contextItemId)
-    {
-        if (target.Equals("self", StringComparison.OrdinalIgnoreCase))
-        {
-            if (contextItemId is { } selfId &&
-                _program.Items.FirstOrDefault(item => item.Id == selfId) is { } self)
-            {
-                yield return self;
-            }
-            yield break;
-        }
-
-        foreach (MenuDebugItemProgram item in _program.Items)
-        {
-            if (string.Equals(item.Name, target, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(item.Group, target, StringComparison.OrdinalIgnoreCase))
-            {
-                yield return item;
-            }
-        }
     }
 
     private static bool TryTarget(

@@ -592,7 +592,7 @@ public sealed partial class FxLayerEditorWindow : Window
     private sealed class MaterialNameDialog : Window
     {
         private readonly FastFileWorkspace _workspace;
-        private readonly Image _image = new() { Stretch = Stretch.Uniform };
+        private readonly Avalonia.Controls.Image _image = new() { Stretch = Stretch.Uniform };
         private readonly TextBlock _previewStatus = new()
         {
             Text = "Select a material to preview it.", TextWrapping = TextWrapping.Wrap,

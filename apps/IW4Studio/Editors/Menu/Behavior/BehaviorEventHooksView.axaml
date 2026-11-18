@@ -23,55 +23,37 @@
     <ScrollViewer Grid.Row="2"
                   HorizontalScrollBarVisibility="Disabled"
                   VerticalScrollBarVisibility="Auto">
-      <StackPanel Spacing="8">
-        <ItemsControl ItemsSource="{Binding Slots}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="behavior:BehaviorEventSlotViewModel">
-              <Border Margin="0,0,0,8"
-                      Padding="11"
-                      CornerRadius="6"
-                      Background="{DynamicResource StudioSurfaceSunkenBrush}"
-                      BorderBrush="{DynamicResource StudioBorderBrush}"
-                      BorderThickness="1">
-                <Grid RowDefinitions="Auto,3,Auto,8,*">
+      <ItemsControl ItemsSource="{Binding Slots}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="behavior:BehaviorEventSlotViewModel">
+            <Expander Margin="0,0,0,6"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Stretch"
+                      IsExpanded="{Binding IsExpanded, Mode=TwoWay}">
+              <Expander.Header>
+                <StackPanel Spacing="2">
                   <TextBlock Text="{Binding Title}"
                              FontSize="12"
                              FontWeight="SemiBold"
                              Foreground="{DynamicResource StudioTextBrush}" />
-                  <TextBlock Grid.Row="2"
-                             Text="{Binding Description}"
-                             FontSize="9"
-                             TextWrapping="Wrap"
+                  <TextBlock Text="{Binding HandlerSummary}"
+                             ToolTip.Tip="{Binding HandlerSummary}"
+                             TextTrimming="CharacterEllipsis"
+                             FontSize="10"
                              Foreground="{DynamicResource StudioTextMutedBrush}" />
-                  <behavior:BehaviorEventHandlerSetView Grid.Row="4"
-                                                        DataContext="{Binding Handlers}" />
-                </Grid>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <Border Padding="11"
-                CornerRadius="6"
-                IsVisible="{Binding SupportsListBoxDoubleClick}"
-                Background="{DynamicResource StudioSurfaceSunkenBrush}"
-                BorderBrush="{DynamicResource StudioBorderBrush}"
-                BorderThickness="1">
-          <Grid RowDefinitions="Auto,3,Auto,8,*">
-            <TextBlock Text="{Binding ListBoxDoubleClick.Title}"
-                       FontSize="12"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource StudioTextBrush}" />
-            <TextBlock Grid.Row="2"
-                       Text="{Binding ListBoxDoubleClick.Description}"
-                       FontSize="9"
-                       TextWrapping="Wrap"
-                       Foreground="{DynamicResource StudioTextMutedBrush}" />
-            <behavior:BehaviorEventHandlerSetView Grid.Row="4"
-                                                  DataContext="{Binding ListBoxDoubleClick.Handlers}" />
-          </Grid>
-        </Border>
-      </StackPanel>
+                </StackPanel>
+              </Expander.Header>
+              <StackPanel Spacing="8">
+                <TextBlock Text="{Binding Description}"
+                           FontSize="10"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+                <behavior:BehaviorEventHandlerSetView DataContext="{Binding Handlers}" />
+              </StackPanel>
+            </Expander>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
     </ScrollViewer>
   </Grid>
 </UserControl>

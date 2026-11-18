@@ -132,7 +132,7 @@ internal sealed class DebugExpressionCompiler
                 "<focused>",
                 call.Operation == OperationEnum.OP_GETFOCUSEDITEMNAME
                     ? MenuDebugValueKind.String
-                    : MenuDebugValueKind.Float,
+                    : MenuDebugValueKind.Integer,
                 call.Operation),
             OperationEnum.OP_GETITEMX or
             OperationEnum.OP_GETITEMY or
@@ -140,7 +140,7 @@ internal sealed class DebugExpressionCompiler
             OperationEnum.OP_GETITEMHEIGHT => new MenuDebugDependency(
                 MenuDebugDependencyKind.ItemGeometry,
                 argument ?? "<dynamic>",
-                MenuDebugValueKind.Float,
+                MenuDebugValueKind.Integer,
                 call.Operation),
             OperationEnum.OP_INT or
             OperationEnum.OP_FLOAT or
@@ -153,7 +153,7 @@ internal sealed class DebugExpressionCompiler
                 MenuDebugDependencyKind.Environment,
                 qualifier ?? call.Operation.ToString(),
                 MenuExpressionOperationMetadata.EnvironmentResultKind(
-                    call.Operation),
+                    call.Operation, qualifier),
                 call.Operation)
         };
     }

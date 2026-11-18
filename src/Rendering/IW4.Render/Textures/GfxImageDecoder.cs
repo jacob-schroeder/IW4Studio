@@ -70,11 +70,12 @@ internal static class GfxImageDecoder
         int width,
         int height,
         out DecodedGfxImage decoded,
-        out string reason)
+        out string reason,
+        bool sampleNativeChannels = false)
     {
         decoded = default;
 
-        if (!TryDecodeRgba(image, payloadBytes, width, height, out DecodedRgbaGfxImage rgba, out reason))
+        if (!TryDecodeRgba(image, payloadBytes, width, height, out DecodedRgbaGfxImage rgba, out reason, sampleNativeChannels))
             return false;
 
         decoded = new DecodedGfxImage(
@@ -94,7 +95,8 @@ internal static class GfxImageDecoder
         int width,
         int height,
         out DecodedRgbaGfxImage decoded,
-        out string reason)
+        out string reason,
+        bool sampleNativeChannels = false)
     {
         decoded = default;
         reason = string.Empty;
@@ -181,6 +183,16 @@ internal static class GfxImageDecoder
         {
             reason = ex.Message;
             return false;
+        }
+
+        // Native BC decodes expose the same RGBA channels as the GPU upload.
+        // Other formats can use preview-specific expansion or quantization.
+        if (sampleNativeChannels && IsGcmFormat(image.Format) &&
+            image.FormatEncoding.BaseFormat is GfxImageBaseFormat.CompressedDxt1 or
+                GfxImageBaseFormat.CompressedDxt23 or GfxImageBaseFormat.CompressedDxt45)
+        {
+            RsxTextureSwizzleDecoder.Decode(RsxTextureCommandBuilder.FromImage(image))
+                .ApplyToRgba(rgba);
         }
 
         decoded = new DecodedRgbaGfxImage(

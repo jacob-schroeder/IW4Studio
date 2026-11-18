@@ -279,7 +279,7 @@ public static partial class UiMaterialDrawPlanner
                 diagnostics,
                 UiMaterialExecutionDiagnosticCode.UnsupportedMaterialState,
                 "The selected pass is outside the proven UI state contract: " +
-                string.Join(", ", stateBlockers) + ".");
+                string.Join(", ", stateBlockers) + ".", textureRow);
         }
 
         UiMaterialAtlasState atlas = ResolveAtlas(
@@ -402,6 +402,6 @@ public static partial class UiMaterialDrawPlanner
             state,
             execution,
             Array.AsReadOnly(diagnostics.ToArray()));
-        return new UiMaterialDrawPlan(packet, diagnostics);
+        return new UiMaterialDrawPlan(packet, diagnostics, textureRow);
     }
 }

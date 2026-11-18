@@ -17,6 +17,7 @@ public sealed record MenuItemSnapshot(
 public sealed class MenuEditorSnapshot
 {
     private readonly IReadOnlyList<MenuItemSnapshot> _items;
+    private readonly Lazy<IReadOnlyList<AssetValidationIssue>> _validation;
 
     public MenuEditorSnapshot(
         MenuNodeId id,
@@ -45,11 +46,13 @@ public sealed class MenuEditorSnapshot
         ExpressionSupport = expressionSupport;
         DebugProgram = debugProgram;
         IsComplete = isComplete;
+        _validation = new(() => MenuEditorValidation.Validate(this));
     }
 
     public MenuNodeId Id { get; }
     public string? Name => Window.Value.Name;
     public bool IsComplete { get; }
+    public IReadOnlyList<AssetValidationIssue> ValidationIssues => _validation.Value;
     public MenuSettingsValue Settings { get; }
     public MenuWindowSnapshot Window { get; }
     public IReadOnlyList<MenuItemSnapshot> Items => _items;

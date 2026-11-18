@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using IW4.Studio.Desktop.ViewModels;
+using IW4.Studio.Desktop.ViewModels.Menu;
 using IW4.Studio.Documents.MenuEditing.Behavior;
 using IW4.Studio.Documents.MenuEditing.Behavior.Expressions;
 
@@ -28,7 +29,6 @@ public sealed class BehaviorKeyHandlersViewModel : ObservableObject
         foreach (MenuBehaviorKeyHandlerBinding binding in source.Handlers)
             AddDraft(new BehaviorKeyHandlerDraftViewModel(
                 binding, _expressionSupport, OnHandlerChanged));
-        AddKeyHandlerCommand = new ViewModelCommand(AddKeyHandler);
         DiscardImportedTailCommand = new ViewModelCommand(
             DiscardImportedTail,
             () => HasTruncatedImportedTail);
@@ -51,8 +51,6 @@ public sealed class BehaviorKeyHandlersViewModel : ObservableObject
         ? "No key handlers"
         : $"{Handlers.Count} key handler{Plural(Handlers.Count)}";
 
-    public ViewModelCommand AddKeyHandlerCommand { get; }
-
     public ViewModelCommand DiscardImportedTailCommand { get; }
 
     internal MenuBehaviorKeyHandlerBindings ToDomain() => new(
@@ -73,13 +71,14 @@ public sealed class BehaviorKeyHandlersViewModel : ObservableObject
         return messages;
     }
 
-    private void AddKeyHandler()
+    internal BehaviorKeyHandlerDraftViewModel AddKeyHandler()
     {
-        AddDraft(new BehaviorKeyHandlerDraftViewModel(
-            _expressionSupport, OnHandlerChanged));
+        var handler = new BehaviorKeyHandlerDraftViewModel(_expressionSupport, OnHandlerChanged);
+        AddDraft(handler);
         RefreshOrdering();
         RefreshDuplicateKeys();
         NotifyChanged();
+        return handler;
     }
 
     private void DiscardImportedTail()
@@ -159,11 +158,14 @@ public sealed class BehaviorKeyHandlersViewModel : ObservableObject
 
 public sealed class BehaviorKeyHandlerDraftViewModel : ObservableObject
 {
+    private static readonly MenuKeyGroup[] Groups = Enum.GetValues<MenuKeyGroup>();
     private readonly MenuBehaviorKeyHandlerBinding? _source;
     private readonly BehaviorExpressionSupportDraftViewModel _expressionSupport;
     private readonly Action _changed;
     private BehaviorKeyHandlersViewModel? _owner;
+    private MenuKeyGroup _keyGroup = MenuKeyGroup.Controller;
     private string _keyText;
+    private int _position;
     private bool _canMoveUp;
     private bool _canMoveDown;
 
@@ -175,6 +177,7 @@ public sealed class BehaviorKeyHandlerDraftViewModel : ObservableObject
             throw new ArgumentNullException(nameof(expressionSupport));
         _changed = changed ?? throw new ArgumentNullException(nameof(changed));
         _keyText = string.Empty;
+        IsExpanded = true;
         Action = new BehaviorEventHandlerSetDraftViewModel(
             null, _expressionSupport, _changed);
         Action.EnsurePresent();
@@ -195,6 +198,7 @@ public sealed class BehaviorKeyHandlerDraftViewModel : ObservableObject
             throw new ArgumentNullException(nameof(expressionSupport));
         _changed = changed ?? throw new ArgumentNullException(nameof(changed));
         _keyText = source.Key.ToString(CultureInfo.InvariantCulture);
+        _keyGroup = MenuKeyChoice.Find(source.Key)?.Group ?? MenuKeyGroup.Custom;
         Action = new BehaviorEventHandlerSetDraftViewModel(
             source.Action, _expressionSupport, _changed);
         MoveUpCommand = new ViewModelCommand(
@@ -203,6 +207,48 @@ public sealed class BehaviorKeyHandlerDraftViewModel : ObservableObject
             () => _owner?.Move(this, 1), () => CanMoveDown);
         RemoveCommand = new ViewModelCommand(() => _owner?.Remove(this));
     }
+
+    public IReadOnlyList<MenuKeyGroup> KeyGroups => Groups;
+
+    public MenuKeyGroup KeyGroup
+    {
+        get => _keyGroup;
+        set
+        {
+            if (!SetProperty(ref _keyGroup, value))
+                return;
+
+            OnPropertyChanged(nameof(KeyOptions));
+            OnPropertyChanged(nameof(SelectedKey));
+            OnPropertyChanged(nameof(IsCustomKey));
+            OnPropertyChanged(nameof(KeyGroupHint));
+            OnPropertyChanged(nameof(KeyErrorText));
+        }
+    }
+
+    public IReadOnlyList<MenuKeyChoice> KeyOptions => MenuKeyChoice.Options
+        .Where(choice => choice.Group == KeyGroup)
+        .ToArray();
+
+    public MenuKeyChoice? SelectedKey
+    {
+        get => !IsCustomKey && TryGetKey(out int key) && MenuKeyChoice.Find(key) is { } choice &&
+            choice.Group == KeyGroup ? choice : null;
+        set
+        {
+            if (value is not null && value.Group == KeyGroup)
+                KeyText = value.Code.ToString(CultureInfo.InvariantCulture);
+        }
+    }
+
+    public bool IsCustomKey => KeyGroup == MenuKeyGroup.Custom;
+
+    public string? KeyGroupHint => KeyGroup switch
+    {
+        MenuKeyGroup.Controller => "Confirm and Cancel follow the PS3 system’s Cross/Circle assignment.",
+        MenuKeyGroup.Character => "Character keys are case-sensitive.",
+        _ => null
+    };
 
     public string KeyText
     {
@@ -213,13 +259,21 @@ public sealed class BehaviorKeyHandlerDraftViewModel : ObservableObject
             if (!SetProperty(ref _keyText, value))
                 return;
 
+            OnPropertyChanged(nameof(SelectedKey));
             OnPropertyChanged(nameof(HasKeyError));
             OnPropertyChanged(nameof(KeyErrorText));
+            OnPropertyChanged(nameof(Heading));
             _changed();
         }
     }
 
     public BehaviorEventHandlerSetDraftViewModel Action { get; }
+
+    public bool IsExpanded { get; set; }
+
+    public string Heading => TryGetKey(out int key)
+        ? $"{_position}. {MenuKeyChoice.Describe(key)}"
+        : $"{_position}. Choose a key";
 
     internal int KeyValue
     {
@@ -247,11 +301,20 @@ public sealed class BehaviorKeyHandlerDraftViewModel : ObservableObject
 
     public bool HasKeyError => !TryGetKey(out _) || IsDuplicateKey;
 
-    public string KeyErrorText => HasKeyError
-        ? IsDuplicateKey
-            ? "Each key code can have only one handler."
-            : "Enter a signed integer engine key code."
-        : string.Empty;
+    public string KeyErrorText
+    {
+        get
+        {
+            if (IsDuplicateKey)
+                return "Each key code can have only one handler.";
+            if (TryGetKey(out _))
+                return string.Empty;
+
+            return IsCustomKey
+                ? "Enter a signed integer engine key code."
+                : "Choose a key or enter a custom code.";
+        }
+    }
 
     public bool CanMoveUp
     {
@@ -296,10 +359,8 @@ public sealed class BehaviorKeyHandlerDraftViewModel : ObservableObject
     internal IReadOnlyList<string> Validate(string path)
     {
         var messages = new List<string>();
-        if (!TryGetKey(out _))
-            messages.Add($"{path}: enter a signed integer engine key code.");
-        else if (IsDuplicateKey)
-            messages.Add($"{path}: each key code can have only one handler.");
+        if (HasKeyError)
+            messages.Add($"{path}: {KeyErrorText}");
         messages.AddRange(Action.Validate($"{path} actions"));
         return messages;
     }
@@ -310,6 +371,7 @@ public sealed class BehaviorKeyHandlerDraftViewModel : ObservableObject
     internal void RefreshOrdering()
     {
         int index = _owner?.Handlers.IndexOf(this) ?? -1;
+        SetProperty(ref _position, index + 1, nameof(Heading));
         CanMoveUp = index > 0;
         CanMoveDown = _owner is not null && index >= 0 &&
             index < _owner.Handlers.Count - 1;

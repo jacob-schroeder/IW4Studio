@@ -1,0 +1,13 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <DrawingBrush x:Key="Checkerboard" DestinationRect="0,0,16,16" TileMode="Tile">
+    <DrawingBrush.Drawing>
+      <DrawingGroup>
+        <DrawingGroup.Children>
+          <GeometryDrawing Brush="{DynamicResource StudioSurfaceSunkenBrush}" Geometry="M0,0 H16 V16 H0 Z" />
+          <GeometryDrawing Brush="{DynamicResource StudioSurfaceRaisedBrush}" Geometry="M0,0 H8 V8 H0 Z M8,8 H16 V16 H8 Z" />
+        </DrawingGroup.Children>
+      </DrawingGroup>
+    </DrawingBrush.Drawing>
+  </DrawingBrush>
+</ResourceDictionary>

@@ -1,0 +1,220 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:image="using:IW4.Studio.Desktop.Editors.Image"
+             xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="IW4.Studio.Desktop.Editors.Image.ImageEditorView"
+             x:DataType="image:ImageEditorViewModel">
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="ImagePreviewBrushes.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+      <ItemsPanelTemplate x:Key="HorizontalItems"><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate>
+    </ResourceDictionary>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="Border.panel">
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}" />
+      <Setter Property="ClipToBounds" Value="True" />
+      <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="Border.section">
+      <Setter Property="Padding" Value="14,12" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+    <Style Selector="TextBlock.heading">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.value">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="TextAlignment" Value="Right" />
+    </Style>
+    <Style Selector="ListBox.strip">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+    </Style>
+    <Style Selector="ListBox.strip ListBoxItem">
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Padding" Value="7,3" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="ListBox.strip ListBoxItem:selected">
+      <Setter Property="Background" Value="{DynamicResource StudioAccentSurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+    </Style>
+    <Style Selector="Button.compact">
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="Padding" Value="9,4" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="Button.replace">
+      <Setter Property="Background" Value="{DynamicResource StudioAccentSecondarySurfaceBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8" DragDrop.AllowDrop="True">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="4,2">
+      <StackPanel Spacing="3" VerticalAlignment="Center">
+        <TextBlock Text="{Binding Name}" FontSize="19" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <icons:MaterialIcon Kind="LayersOutline" Width="14" Height="14" Foreground="{DynamicResource StudioAccentBrush}" />
+          <TextBlock Classes="muted" Text="{Binding Info.Summary}" />
+        </StackPanel>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <TextBlock Classes="muted" Text="Read only" IsVisible="{Binding IsReadOnly}" />
+        <Button Classes="compact ghost" Content="Revert" IsVisible="{Binding !IsReadOnly}" IsEnabled="{Binding CanRevert}"
+                ToolTip.Tip="Discard staged changes, or restore the saved Image" Click="Revert_Click" />
+        <Button Classes="compact primary" Content="Apply changes" IsVisible="{Binding !IsReadOnly}" IsEnabled="{Binding CanApply}"
+                Click="Apply_Click" />
+      </StackPanel>
+    </Grid>
+
+    <Grid x:Name="Panels" Grid.Row="1" ColumnDefinitions="*,290" RowDefinitions="*,0" ColumnSpacing="8">
+      <Border Classes="panel">
+        <Grid RowDefinitions="Auto,*,Auto,Auto">
+          <Border Classes="section" Padding="10,7">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <icons:MaterialIcon Kind="ImageOutline" Width="16" Height="16" Foreground="{DynamicResource StudioAccentBrush}" />
+                <TextBlock Classes="heading" Text="Texture preview" />
+              </StackPanel>
+              <ListBox Grid.Column="1" Classes="strip" ItemsSource="{Binding Channels}"
+                       SelectedIndex="{Binding ChannelIndex, Mode=TwoWay}" ItemsPanel="{StaticResource HorizontalItems}"
+                       AutomationProperties.Name="Preview channel" />
+            </Grid>
+          </Border>
+          <Grid Grid.Row="1" Background="{DynamicResource StudioSurfaceSunkenBrush}" ClipToBounds="True">
+            <image:ImagePixelViewport x:Name="Viewport" Margin="12" Source="{Binding Preview}"
+                                      Magnification="{Binding Magnification}" TransparencyBrush="{StaticResource Checkerboard}"
+                                      RenderOptions.BitmapInterpolationMode="None"
+                                      ToolTip.Tip="Drag to pan a magnified image" />
+            <TextBlock Classes="muted" Text="{Binding PreviewStatus}" IsVisible="{Binding !HasPreview}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360" Margin="12" TextWrapping="Wrap" />
+          </Grid>
+          <Border Grid.Row="2" Classes="section" Padding="10,5">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock Classes="muted" Text="{Binding SelectedMip.Description}" />
+                <TextBlock Classes="muted" IsVisible="{Binding HasPreviewNote}" Text="{Binding PreviewStatus}" TextWrapping="Wrap" />
+              </StackPanel>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <ToggleButton x:Name="CheckerToggle" IsChecked="True" Click="Checker_Click" Padding="5,2"
+                              AutomationProperties.Name="Transparency checkerboard" ToolTip.Tip="Transparency checkerboard">
+                  <icons:MaterialIcon Kind="Checkerboard" Width="15" Height="15" />
+                </ToggleButton>
+                <ComboBox Width="75" MinHeight="24" Padding="5,2" FontSize="11" ItemsSource="{Binding ZoomOptions}"
+                          SelectedIndex="{Binding ZoomIndex, Mode=TwoWay}" AutomationProperties.Name="Preview zoom" />
+              </StackPanel>
+            </Grid>
+          </Border>
+          <StackPanel Grid.Row="3" Margin="10,7" Spacing="5" IsVisible="{Binding HasMips}">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Classes="heading" Text="Mip levels" />
+              <TextBlock Grid.Column="1" Classes="muted" Text="{Binding Info.MipChain}" />
+            </Grid>
+            <ListBox Classes="strip" ItemsSource="{Binding Mips}" ItemsPanel="{StaticResource HorizontalItems}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectedItem="{Binding SelectedMip, Mode=TwoWay}"
+                     AutomationProperties.Name="Preview mip level">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="image:ImageMipItem">
+                  <StackPanel MinWidth="39" Spacing="3" ToolTip.Tip="{Binding Description}">
+                    <Image Source="{Binding Thumbnail}" Height="27" Stretch="Uniform" StretchDirection="DownOnly"
+                           RenderOptions.BitmapInterpolationMode="None" />
+                    <TextBlock Text="{Binding Dimensions}" FontSize="9" HorizontalAlignment="Center" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border x:Name="Inspector" Grid.Column="1" Classes="panel">
+        <Grid RowDefinitions="Auto,*">
+          <Border Classes="section" Padding="13,9">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <icons:MaterialIcon Kind="TuneVariant" Width="16" Height="16" Foreground="{DynamicResource StudioAccentBrush}" />
+              <TextBlock Classes="heading" Text="Image properties" />
+            </StackPanel>
+          </Border>
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+              <Border Classes="section">
+                <StackPanel Spacing="9">
+                  <TextBlock Classes="heading" Text="Source pixels" />
+                  <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*" ColumnSpacing="8" RowSpacing="4">
+                <TextBlock Grid.Row="0" Classes="muted" Text="Dimensions" />
+                <TextBlock Grid.Row="0" Grid.Column="1" Classes="value" Text="{Binding Info.Dimensions}" />
+                <TextBlock Grid.Row="1" Classes="muted" Text="Mip chain" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Classes="value" Text="{Binding Info.MipChain}" />
+                <TextBlock Grid.Row="2" Classes="muted" Text="Storage" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Classes="value" Text="{Binding Info.Storage}" />
+                  </Grid>
+                  <WrapPanel>
+                    <Button Classes="compact replace" Margin="0,0,5,2" Content="Replace image…" IsEnabled="{Binding CanReplace}"
+                            ToolTip.Tip="Choose or drop a PNG to review a replacement" Click="Replace_Click" />
+                    <Button Classes="compact" Margin="0,0,0,2" Content="Export PNG" IsEnabled="{Binding CanExport}"
+                            ToolTip.Tip="Export the full-resolution RGBA image" Click="Export_Click" />
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
+              <Border Classes="section">
+                <StackPanel Spacing="6">
+                  <TextBlock Classes="heading" Text="Interpretation" />
+                  <TextBlock Classes="muted" Text="Texture role" />
+                  <ComboBox ItemsSource="{Binding TextureRoles}" SelectedItem="{Binding SelectedRole, Mode=TwoWay}"
+                            IsEnabled="{Binding CanEditMetadata}" HorizontalAlignment="Stretch" MinHeight="28"
+                            AutomationProperties.Name="Texture role">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="image:ImageTextureRole"><TextBlock Text="{Binding Label}" FontSize="12" /></DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <TextBlock Classes="muted" Text="Color reads" Margin="0,3,0,0" />
+                  <ListBox Classes="strip" ItemsSource="{Binding ColorReadModes}" SelectedIndex="{Binding ColorReadIndex, Mode=TwoWay}"
+                           IsEnabled="{Binding CanEditMetadata}" AutomationProperties.Name="Color reads">
+                    <ListBox.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate></ListBox.ItemsPanel>
+                  </ListBox>
+                  <TextBlock Classes="muted" Text="{Binding ColorReadDescription}" TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+              <Expander Header="Storage details" Padding="8,4" HorizontalContentAlignment="Stretch">
+                <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*" ColumnSpacing="6" RowSpacing="5">
+                <TextBlock Grid.Row="0" Classes="muted" Text="Native format" />
+                <TextBlock Grid.Row="0" Grid.Column="1" Classes="value" Text="{Binding Info.NativeFormat}" />
+                <TextBlock Grid.Row="1" Classes="muted" Text="Resident header" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Classes="value" Text="{Binding Info.ResidentHeader}" />
+                <TextBlock Grid.Row="2" Classes="muted" Text="Inline payload" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Classes="value" Text="{Binding Info.InlinePayload}" />
+                </Grid>
+              </Expander>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Grid>
+    <TextBlock Grid.Row="2" Classes="muted" Text="{Binding Status}" Margin="4,0" TextWrapping="Wrap" />
+  </Grid>
+</UserControl>

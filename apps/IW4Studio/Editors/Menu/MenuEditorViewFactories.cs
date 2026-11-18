@@ -46,7 +46,7 @@ public sealed class MenuEditorViewFactory : IAssetEditorViewFactory
             canSelectAssetReferences: true,
             isAssetReferenceResolved: _assetReferencePicker.IsResolved);
         var view = new MenuEditorView(viewModel, _assetReferencePicker);
-        return new AssetEditorViewHost(view, viewModel);
+        return new AssetEditorViewHost(view, viewModel, usesWorkbenchScrollViewer: false);
     }
 }
 
@@ -89,6 +89,6 @@ public sealed class MenuFileEditorViewFactory : IAssetEditorViewFactory
             canSelectAssetReferences: true,
             isAssetReferenceResolved: _assetReferencePicker.IsResolved);
         var view = new MenuFileEditorView(viewModel, _assetReferencePicker);
-        return new AssetEditorViewHost(view, viewModel);
+        return new AssetEditorViewHost(view, viewModel, usesWorkbenchScrollViewer: false);
     }
 }

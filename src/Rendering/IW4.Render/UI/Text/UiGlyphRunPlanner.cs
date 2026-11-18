@@ -5,13 +5,147 @@ namespace IW4.Render.UI.Text;
 
 /// <summary>
 /// Produces virtual-space atlas quads using the IW4 Font metrics. The planner
-/// performs no localization, asset-pool lookup, material execution, clipping,
-/// alignment, or physical-screen placement.
+/// supports single-line and auto-wrapped layout in virtual coordinates.
 /// </summary>
 public static class UiGlyphRunPlanner
 {
     private const int NativeFallbackGlyphOrdinal = 14;
     private const int NativeAsciiGlyphCount = 96;
+    private const int NativeWrappedLineBufferSize = 1024;
+
+    /// <summary>Plans independently aligned lines for an auto-wrapped IW4 item.</summary>
+    public static UiGlyphRunPlan PlanWrapped(
+        FontAsset font,
+        UiGlyphRunRequest request,
+        UiGlyphRunPlan measurement,
+        float containerWidth,
+        int horizontalAlignment)
+    {
+        if (!measurement.CanRender || !float.IsFinite(containerWidth))
+            return Plan(font, request);
+
+        // PS3 wrapped text (0x246E20) advances by the integer UI_TextHeight.
+        float lineHeight = MathF.Truncate(measurement.PixelHeight * measurement.NormalizedScale);
+        int widthLimit = (int)Math.Clamp((double)containerWidth, 0, int.MaxValue);
+        int lineWidth = horizontalAlignment == 1
+            ? BalancedWrapWidth(font, request.Text, measurement, widthLimit)
+            : widthLimit;
+
+        var quads = new List<UiGlyphQuad>(measurement.Quads.Count);
+        var colorRuns = new List<UiGlyphColorRun>();
+        var diagnostics = new List<UiTextDiagnostic>();
+        float baselineY = request.BaselineY;
+        float maxAdvance = 0;
+        float endPenX = request.BaselineX;
+        for (int start = 0; start < request.Text.Length && request.Text[start] != '\0';)
+        {
+            int end = WrapPosition(font, request.Text, start, lineWidth, measurement.NormalizedScale);
+            UiGlyphRunPlan line = Plan(font, new UiGlyphRunRequest(request.Text[start..end], 0, 0, request.TextScale));
+            float width = MathF.Truncate(line.MaxLineAdvance);
+            float baselineX = request.BaselineX + (horizontalAlignment switch
+            {
+                0 => 0,
+                1 => (containerWidth - width) * 0.5f,
+                _ => containerWidth - width
+            });
+            foreach (UiGlyphQuad quad in line.Quads)
+            {
+                quads.Add(quad with
+                {
+                    SourceUtf16Index = start + quad.SourceUtf16Index,
+                    ColorRunIndex = colorRuns.Count + quad.ColorRunIndex,
+                    Bounds = quad.Bounds with { X = baselineX + quad.Bounds.X, Y = baselineY + quad.Bounds.Y }
+                });
+            }
+            int firstLineQuad = quads.Count - line.Quads.Count;
+            foreach (UiGlyphColorRun run in line.ColorRuns)
+                colorRuns.Add(run with { FirstQuadIndex = firstLineQuad + run.FirstQuadIndex });
+            diagnostics.AddRange(line.Diagnostics);
+            endPenX = baselineX + line.MaxLineAdvance;
+            maxAdvance = MathF.Max(maxAdvance, line.MaxLineAdvance);
+            baselineY += lineHeight;
+            start = SkipWrapSpace(request.Text, end);
+        }
+
+        return new UiGlyphRunPlan(measurement.FontName, measurement.PixelHeight,
+            measurement.MaterialName, measurement.GlowMaterialName, measurement.NormalizedScale,
+            maxAdvance, endPenX, baselineY, quads, colorRuns, diagnostics);
+    }
+
+    private static int BalancedWrapWidth(
+        FontAsset font,
+        string text,
+        UiGlyphRunPlan measurement,
+        int widthLimit)
+    {
+        float width = MathF.Truncate(measurement.MaxLineAdvance);
+        if (widthLimit == 0 || width <= widthLimit)
+            return widthLimit;
+
+        float lines = MathF.Ceiling(width / widthLimit);
+        int guess = (int)MathF.Ceiling(width / lines);
+        while (guess < widthLimit)
+        {
+            int count = 0;
+            for (int start = 0; start < text.Length && text[start] != '\0'; count++)
+                start = SkipWrapSpace(text, WrapPosition(font, text, start, guess, measurement.NormalizedScale));
+            if (count == lines)
+                return guess;
+            guess = (int)Math.Min((long)widthLimit, guess + 8L);
+        }
+        return widthLimit;
+    }
+
+    private static int WrapPosition(FontAsset font, string text, int start, int maxWidth, float normalizedScale)
+    {
+        IReadOnlyList<FontGlyph> glyphs = font.Glyphs ?? [];
+        int breakAt = -1;
+        int advance = 0;
+        int index = start;
+        while (index < text.Length && text[index] != '\0')
+        {
+            int before = index;
+            char character = text[index++];
+            if (character == '\n')
+                return index;
+            if (character == '\r')
+            {
+                advance = 0;
+                continue;
+            }
+
+            if (IsCaretColorEscape(text, before))
+            {
+                index++;
+            }
+            else
+            {
+                if (char.IsHighSurrogate(character) && index < text.Length && char.IsLowSurrogate(text[index]))
+                    index++;
+                FontGlyph? glyph = !char.IsSurrogate(character) && TryResolveNativeGlyph(glyphs, character, out FontGlyph? found)
+                    ? found
+                    : glyphs[NativeFallbackGlyphOrdinal];
+                advance += glyph?.Dx ?? 0;
+                if (before != start && IsWrapSpace(character))
+                    breakAt = before;
+            }
+
+            if (breakAt >= 0 && advance * normalizedScale > maxWidth)
+                return breakAt;
+            if (index - start >= NativeWrappedLineBufferSize)
+                return breakAt >= 0 ? breakAt : before;
+        }
+        return index;
+    }
+
+    private static int SkipWrapSpace(string text, int index)
+    {
+        while (index < text.Length && IsWrapSpace(text[index]))
+            index++;
+        return index;
+    }
+
+    private static bool IsWrapSpace(char character) => character is ' ' or '\t' or '\v' or '\f' or '\r';
 
     public static UiGlyphRunPlan Plan(
         FontAsset font,

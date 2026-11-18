@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Collections.Frozen;
 using IW4.Game.Assets.Menu;
+using IW4.Game.Assets.StringTable;
 
 namespace IW4.Studio.Documents.MenuEditing.Debugging;
 
@@ -34,15 +35,36 @@ public readonly struct MenuDebugEnvironmentKey : IEquatable<MenuDebugEnvironment
 }
 
 public delegate string? MenuDebugLocalizationResolver(string reference);
+public delegate StringTableAsset? MenuDebugStringTableResolver(string name);
+
+/// <summary>Player progression and controller profile for one preview session.</summary>
+public sealed class MenuDebugPlayer
+{
+    public static MenuDebugPlayer Empty { get; } = new();
+
+    public MenuDebugPlayer(
+        IReadOnlyDictionary<string, MenuDebugValue>? data = null,
+        IReadOnlyDictionary<string, MenuDebugValue>? profile = null)
+    {
+        Data = data?.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase)
+            ?? FrozenDictionary<string, MenuDebugValue>.Empty;
+        Profile = profile?.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase)
+            ?? FrozenDictionary<string, MenuDebugValue>.Empty;
+    }
+
+    public IReadOnlyDictionary<string, MenuDebugValue> Data { get; }
+    public IReadOnlyDictionary<string, MenuDebugValue> Profile { get; }
+}
 
 /// <summary>
-/// Runtime-only Window color overrides produced by debugger-safe Menu script
-/// commands. Null channels continue to use the authored value.
+/// Runtime-only Item Window overrides produced by debugger-safe Menu script
+/// commands. Null fields continue to use the authored value.
 /// </summary>
 public sealed record MenuDebugItemRuntimeState(
     MenuColorValue? ForeColor = null,
     MenuColorValue? BackColor = null,
-    MenuColorValue? BorderColor = null);
+    MenuColorValue? BorderColor = null,
+    bool? Visible = null);
 
 /// <summary>
 /// Immutable input snapshot for one deterministic menu evaluation. Scenario
@@ -66,7 +88,9 @@ public sealed class MenuDebugScenario
         MenuNodeId? focusedItemId = null,
         MenuDebugLocalizationResolver? localizationResolver = null,
         IReadOnlyDictionary<MenuNodeId, MenuDebugItemRuntimeState>?
-            itemRuntimeStates = null)
+            itemRuntimeStates = null,
+        MenuDebugPlayer? player = null,
+        MenuDebugStringTableResolver? stringTableResolver = null)
     {
         Milliseconds = milliseconds;
         _dvars = CopyNamedValues(dvars);
@@ -85,6 +109,8 @@ public sealed class MenuDebugScenario
                         itemRuntimeStates));
         FocusedItemId = focusedItemId;
         LocalizationResolver = localizationResolver;
+        Player = player ?? MenuDebugPlayer.Empty;
+        StringTableResolver = stringTableResolver;
     }
 
     public static MenuDebugScenario Empty { get; } = new();
@@ -98,6 +124,21 @@ public sealed class MenuDebugScenario
         ItemRuntimeStates => _itemRuntimeStates;
     public MenuNodeId? FocusedItemId { get; }
     public MenuDebugLocalizationResolver? LocalizationResolver { get; }
+    public MenuDebugPlayer Player { get; }
+    public MenuDebugStringTableResolver? StringTableResolver { get; }
+
+    public MenuDebugScenario ApplyQueuedProfileLayouts(IEnumerable<MenuDebugQueuedProfileLayout> writes)
+    {
+        Dictionary<string, MenuDebugValue>? profile = null;
+        foreach (MenuDebugQueuedProfileLayout write in writes)
+        {
+            profile ??= new Dictionary<string, MenuDebugValue>(Player.Profile, StringComparer.OrdinalIgnoreCase);
+            profile[write.Field] = MenuDebugValue.FromString(write.Layout);
+        }
+        return profile is null ? this : new MenuDebugScenario(
+            Milliseconds, Dvars, LocalVariables, Environment, OpenMenus, FocusedItemId,
+            LocalizationResolver, ItemRuntimeStates, new MenuDebugPlayer(Player.Data, profile), StringTableResolver);
+    }
 
     private static IReadOnlyDictionary<string, MenuDebugValue> CopyNamedValues(
         IReadOnlyDictionary<string, MenuDebugValue>? values) =>

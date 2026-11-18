@@ -30,5 +30,8 @@ public enum WindowStyle : int
     /// <summary>
     /// Draw a cinematic/movie-backed window.
     /// </summary>
-    WINDOW_STYLE_CINEMATIC = 5
+    WINDOW_STYLE_CINEMATIC = 5,
+
+    /// <summary>Draw the background material up to the fastfile load fraction.</summary>
+    WINDOW_STYLE_LOADBAR = 6
 }

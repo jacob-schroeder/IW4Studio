@@ -34,9 +34,14 @@ internal static class MenuPreviewEvaluationRelevance
         var active = new List<MenuEvaluationTraceEntry>();
         Add(active, state.Window.IsVisible);
         Add(active, state.Window.Rectangle);
-        foreach (MenuEvaluatedItemState item in state.Items.Where(value =>
-            projectedNodes.Contains(value.Id)))
+        foreach (MenuEvaluatedItemState item in state.Items)
         {
+            if (!projectedNodes.Contains(item.Id))
+            {
+                if (state.Window.IsVisible.Value && !item.IsVisible.IsKnown)
+                    Add(active, item.IsVisible);
+                continue;
+            }
             Add(active, item.IsVisible);
             Add(active, item.IsDisabled);
             Add(active, item.Rectangle);

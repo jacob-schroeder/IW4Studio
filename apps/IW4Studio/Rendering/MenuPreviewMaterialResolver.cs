@@ -280,7 +280,8 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
 
         UiMaterialPreviewPlan plan = UiMaterialPreviewPlanner.Plan(
             material,
-            (_, row) => ResolveCanonicalImage(pool, row));
+            (_, row) => ResolveCanonicalImage(pool, row),
+            executionPlan);
         if (!plan.CanAttemptTextureDecode ||
             plan.SelectedImage is not GfxImageAsset image)
         {
@@ -294,12 +295,8 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
                 executionPlan.Diagnostics);
         }
 
-        UiMaterialCpuPreviewPlan? cpuPreviewPlan = PlanCpuPreview(
-            material,
-            plan,
-            executionPlan);
         string payloadSource = _imagePayloads.DescribeSource(image);
-        if (!GfxImagePreviewDecoder.TryDecodeBestAvailable(
+        if (!GfxImagePreviewDecoder.TryDecodeSampledBestAvailable(
                 image,
                 _imagePayloads,
                 out GfxImagePreviewSnapshot? preview,
@@ -315,19 +312,25 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
                 executionPlan.Diagnostics);
         }
 
+        var mipTail = plan.SelectedSamplerState is { MipFilter: TextureFilter.Point, MinLodControl: 0 }
+            ? GfxImagePreviewDecoder.DecodeEmbeddedMipTail(image, preview)
+            : null;
+        var cpuPreviewPlan = PlanCpuPreview(material, plan, executionPlan, mipTail is not null);
+
         return MenuPreviewMaterialResolution.Resolved(
             new MenuPreviewMaterialSnapshot(
                 plan,
                 preview,
                 executionPlan,
-                cpuPreviewPlan),
+                cpuPreviewPlan, mipTail),
             poolRevision);
     }
 
     private UiMaterialCpuPreviewPlan? PlanCpuPreview(
         MaterialAsset material,
         UiMaterialPreviewPlan previewPlan,
-        UiMaterialDrawPlan executionPlan)
+        UiMaterialDrawPlan executionPlan,
+        bool hasMipChain)
     {
         if (executionPlan.Packet is null &&
             !HasOnlyMaterialStateBlocker(executionPlan))
@@ -342,7 +345,6 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
                 "this material's atlas frame has not been evaluated.");
         }
         if (previewPlan.SelectedSamplerState is not { } sampler ||
-            sampler.MipFilter != TextureFilter.None ||
             sampler.MinFilter is not (
                 TextureFilter.Point or
                 TextureFilter.Linear) ||
@@ -351,8 +353,13 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
                 TextureFilter.Linear))
         {
             return UiMaterialCpuPreviewPlan.Blocked(
-                "The Menu CPU compositor supports only decoded point or " +
-                "linear base-level sampler filtering.");
+                "The preview supports point and linear texture filtering.");
+        }
+        if (sampler.MinLodControl != 0 || (sampler.MipFilter != TextureFilter.None &&
+            (sampler.MipFilter != TextureFilter.Point || !hasMipChain)))
+        {
+            return UiMaterialCpuPreviewPlan.Blocked(
+                "The preview could not reproduce this mip filter with the available texture levels.");
         }
         if (!RenderStateDecoder.TryDecode(
                 material,

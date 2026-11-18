@@ -16,6 +16,7 @@ internal enum MenuDebugFocusTransition
 internal sealed class MenuDebugDispatchState
 {
     private readonly MenuDebugScenario _original;
+    private Dictionary<string, MenuDebugValue>? _dvars;
     private readonly Dictionary<string, MenuDebugValue> _localVariables;
     private readonly HashSet<string> _openMenus;
     private readonly Dictionary<MenuNodeId, MenuDebugItemRuntimeState>
@@ -38,6 +39,23 @@ internal sealed class MenuDebugDispatchState
     }
 
     public MenuNodeId? FocusedItemId { get; private set; }
+
+    public MenuDebugValue? SetDvar(string name, MenuDebugValue value)
+    {
+        IReadOnlyDictionary<string, MenuDebugValue> current = _dvars ?? _original.Dvars;
+        MenuDebugValue? previous = current.TryGetValue(name, out MenuDebugValue existing)
+            ? existing
+            : null;
+        if (previous != value)
+        {
+            _dvars ??= new Dictionary<string, MenuDebugValue>(
+                current, StringComparer.OrdinalIgnoreCase);
+            _dvars[name] = value;
+            _changed = true;
+        }
+
+        return previous;
+    }
 
     public bool TryGetLocal(string name, out MenuDebugValue value) =>
         _localVariables.TryGetValue(name, out value);
@@ -86,13 +104,15 @@ internal sealed class MenuDebugDispatchState
     public MenuDebugScenario ToScenario() => _changed
         ? new MenuDebugScenario(
             _original.Milliseconds,
-            _original.Dvars,
+            _dvars ?? _original.Dvars,
             _localVariables,
             _original.Environment,
             _openMenus,
             FocusedItemId,
             _original.LocalizationResolver,
-            _itemRuntimeStates)
+            _itemRuntimeStates,
+            _original.Player,
+            _original.StringTableResolver)
         : _original;
 }
 
@@ -137,11 +157,25 @@ internal sealed class MenuDebugDispatchTraceBuilder
             dependencies,
             expressionTrace));
 
-    public void AddScript(string path, string script) => _entries.Add(
+    public void AddScript(
+        string path,
+        string script,
+        IReadOnlyList<string>? commandTokens = null) => _entries.Add(
         new MenuDebugQueuedScriptTraceEntry(
             _entries.Count,
             path,
-            script));
+            script,
+            commandTokens));
+
+    public void QueueProfileLayout(string path, string field, string layout) =>
+        _entries.Add(new MenuDebugQueuedProfileLayout(_entries.Count, path, field, layout));
+
+    public void AddDvar(
+        string path,
+        string name,
+        MenuDebugValue? previousValue,
+        MenuDebugValue value) => _entries.Add(
+        new MenuDebugDvarTraceEntry(_entries.Count, path, name, previousValue, value));
 
     public void AddFocus(
         string path,

@@ -16,7 +16,7 @@
               Background="{DynamicResource StudioControlBrush}"
               BorderBrush="{DynamicResource StudioBorderBrush}"
               BorderThickness="1">
-        <Grid RowDefinitions="Auto,6,Auto"
+        <Grid RowDefinitions="Auto,6,Auto,6,Auto"
               ColumnDefinitions="*,Auto"
               ColumnSpacing="7">
           <TextBlock Text="SCRIPT"
@@ -35,8 +35,10 @@
                    AcceptsReturn="True"
                    TextWrapping="Wrap"
                    Text="{Binding Script, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                   PlaceholderText="Raw game script text"
+                   PlaceholderText="Choose a command or enter native menu script"
                    AutomationProperties.Name="Event script" />
+          <Button Grid.Row="4" Grid.ColumnSpan="2" HorizontalAlignment="Left"
+                  Content="{Binding PickerButtonLabel}" Click="ChooseCommand_Click" />
         </Grid>
       </Border>
     </DataTemplate>
@@ -147,7 +149,7 @@
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
               <TextBox Text="{Binding Expression.Formula, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                        IsEnabled="{Binding Expression.IsFormulaEditable}"
-                       PlaceholderText="{Binding ExpectedResultKindText}"
+                       PlaceholderText="Expression"
                        AutomationProperties.Name="Set local formula" />
               <Button Grid.Column="1" IsVisible="{Binding Expression.IsOpaqueImported}"
                       Command="{Binding Expression.BeginReplacementCommand}" Content="Replace" />
@@ -199,11 +201,12 @@
   </UserControl.DataTemplates>
 
   <Grid RowDefinitions="Auto,7,*">
-    <StackPanel Orientation="Horizontal" Spacing="5">
-      <Button Content="Add script" Command="{Binding AddScriptCommand}" ToolTip.Tip="Add a raw game-script handler" />
-      <Button Content="Add if" Command="{Binding AddConditionalCommand}" ToolTip.Tip="Add a conditional handler" />
-      <Button Content="Add set local" Command="{Binding AddSetLocalCommand}" ToolTip.Tip="Set a typed local variable" />
-    </StackPanel>
+    <WrapPanel>
+      <Button Margin="0,0,5,4" Content="Add action…" Click="ChooseCommand_Click" ToolTip.Tip="Choose a menu script command" />
+      <Button Margin="0,0,5,4" Content="Add if" Command="{Binding AddConditionalCommand}" ToolTip.Tip="Add a conditional handler" />
+      <Button Margin="0,0,5,4" Content="Add set local" Command="{Binding AddSetLocalCommand}" ToolTip.Tip="Set a typed local variable" />
+      <Button Margin="0,0,0,4" Content="Add raw script" Command="{Binding AddScriptCommand}" ToolTip.Tip="Enter native menu script directly" />
+    </WrapPanel>
     <ItemsControl Grid.Row="2" ItemsSource="{Binding Handlers}" />
   </Grid>
 </UserControl>

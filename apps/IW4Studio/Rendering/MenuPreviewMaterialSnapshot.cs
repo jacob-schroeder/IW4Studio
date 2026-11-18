@@ -13,6 +13,7 @@ public sealed class MenuPreviewMaterialSnapshot
 {
     private readonly byte[] _rgbaBytes;
     private readonly byte[] _pngBytes;
+    private readonly IReadOnlyList<ReadOnlyMemory<byte>> _mipTail;
     private readonly IReadOnlyList<UiMaterialPreviewDiagnostic> _diagnostics;
     private readonly IReadOnlyList<UiMaterialExecutionDiagnostic>
         _executionDiagnostics;
@@ -23,7 +24,8 @@ public sealed class MenuPreviewMaterialSnapshot
         UiMaterialPreviewPlan plan,
         GfxImagePreviewSnapshot preview,
         UiMaterialDrawPlan? executionPlan = null,
-        UiMaterialCpuPreviewPlan? cpuPreviewPlan = null)
+        UiMaterialCpuPreviewPlan? cpuPreviewPlan = null,
+        IReadOnlyList<ReadOnlyMemory<byte>>? mipTail = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(preview);
@@ -48,6 +50,9 @@ public sealed class MenuPreviewMaterialSnapshot
             cpuPreviewPlan?.Diagnostics.ToArray() ?? []);
         _rgbaBytes = preview.GetRgbaBytesCopy();
         _pngBytes = preview.GetPngBytesCopy();
+        _mipTail = mipTail ?? [];
+        RetainedByteCount = _rgbaBytes.LongLength + _pngBytes.LongLength +
+            _mipTail.Sum(level => (long)level.Length);
     }
 
     public string MaterialName { get; }
@@ -66,8 +71,23 @@ public sealed class MenuPreviewMaterialSnapshot
 
     public int RgbaByteCount => _rgbaBytes.Length;
 
-    public long RetainedByteCount => checked(
-        _rgbaBytes.LongLength + _pngBytes.LongLength);
+    public long RetainedByteCount { get; }
+
+    internal int SelectMipLevel(double drawWidth, double drawHeight)
+    {
+        if (_mipTail.Count == 0 || SamplerState is not { } sampler ||
+            !(drawWidth > 0 && drawHeight > 0))
+            return 0;
+
+        // NV4097_SET_TEXTURE_FILTER packs the signed 4.8 LOD bias in bits 0..12.
+        int signedBias = (int)(sampler.RsxTexFilterPayload << 19) >> 19;
+        double footprint = Math.Max(Width / drawWidth, Height / drawHeight);
+        double lod = Math.Log2(footprint) + signedBias / 256d;
+        double maxLod = ((sampler.RsxTexEnablePayload >> 7) & 0xfff) / 256d;
+        return (int)Math.Floor(Math.Clamp(lod, 0, Math.Min(maxLod, _mipTail.Count)) + 0.5);
+    }
+
+    internal ReadOnlyMemory<byte> MipPixels(int level) => level == 0 ? _rgbaBytes : _mipTail[level - 1];
 
     public UiMaterialPreviewFidelity Fidelity { get; }
 

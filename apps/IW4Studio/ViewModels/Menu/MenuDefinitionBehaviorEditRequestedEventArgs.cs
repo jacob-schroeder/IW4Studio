@@ -15,6 +15,8 @@ public sealed class MenuDefinitionBehaviorEditRequestedEventArgs : EventArgs
         string menuTitle,
         MenuDefinitionBehaviorBindings value,
         BehaviorExpressionSupport expressionSupport,
+        IReadOnlyList<string> menuNames,
+        IReadOnlyList<string> itemNames,
         Action<MenuDefinitionBehaviorBindings> apply)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(menuTitle);
@@ -22,6 +24,8 @@ public sealed class MenuDefinitionBehaviorEditRequestedEventArgs : EventArgs
         Value = value ?? throw new ArgumentNullException(nameof(value));
         ExpressionSupport = expressionSupport ??
             throw new ArgumentNullException(nameof(expressionSupport));
+        MenuNames = menuNames ?? throw new ArgumentNullException(nameof(menuNames));
+        ItemNames = itemNames ?? throw new ArgumentNullException(nameof(itemNames));
         _apply = apply ?? throw new ArgumentNullException(nameof(apply));
     }
 
@@ -30,6 +34,10 @@ public sealed class MenuDefinitionBehaviorEditRequestedEventArgs : EventArgs
     public MenuDefinitionBehaviorBindings Value { get; }
 
     public BehaviorExpressionSupport ExpressionSupport { get; }
+
+    internal IReadOnlyList<string> MenuNames { get; }
+
+    internal IReadOnlyList<string> ItemNames { get; }
 
     public void Apply(MenuDefinitionBehaviorBindings value)
     {

@@ -27,26 +27,34 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
         MenuItemBehaviorBindings? bindings = null,
         string? scopeText = null,
         BehaviorExpressionSupport? expressionSupport = null,
-        bool supportsListBoxDoubleClick = true)
+        bool supportsListBoxDoubleClick = true,
+        IReadOnlyList<string>? menuNames = null,
+        IReadOnlyList<string>? itemNames = null)
         : this(
             bindings ?? MenuItemBehaviorBindings.Empty,
             menuBindings: null,
             scopeText,
             expressionSupport,
-            supportsListBoxDoubleClick)
+            supportsListBoxDoubleClick,
+            menuNames,
+            itemNames)
     {
     }
 
     internal MenuItemBehaviorBuilderSessionViewModel(
         MenuDefinitionBehaviorBindings bindings,
         string? scopeText = null,
-        BehaviorExpressionSupport? expressionSupport = null)
+        BehaviorExpressionSupport? expressionSupport = null,
+        IReadOnlyList<string>? menuNames = null,
+        IReadOnlyList<string>? itemNames = null)
         : this(
             itemBindings: null,
             bindings ?? throw new ArgumentNullException(nameof(bindings)),
             scopeText,
             expressionSupport,
-            supportsListBoxDoubleClick: false)
+            supportsListBoxDoubleClick: false,
+            menuNames,
+            itemNames)
     {
     }
 
@@ -55,10 +63,14 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
         MenuDefinitionBehaviorBindings? menuBindings,
         string? scopeText,
         BehaviorExpressionSupport? expressionSupport,
-        bool supportsListBoxDoubleClick)
+        bool supportsListBoxDoubleClick,
+        IReadOnlyList<string>? menuNames,
+        IReadOnlyList<string>? itemNames)
     {
         _itemSource = itemBindings ?? MenuItemBehaviorBindings.Empty;
         _menuSource = menuBindings ?? MenuDefinitionBehaviorBindings.Empty;
+        MenuNames = menuNames ?? [];
+        ItemNames = itemNames ?? [];
         IsMenuDefinition = menuBindings is not null;
         ScopeText = string.IsNullOrWhiteSpace(scopeText)
             ? (IsMenuDefinition ? "Selected MenuDef" : "Selected ItemDef")
@@ -133,6 +145,10 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
     public string Heading { get; }
 
     public string Description { get; }
+
+    public IReadOnlyList<string> MenuNames { get; }
+
+    public IReadOnlyList<string> ItemNames { get; }
 
     internal bool IsMenuDefinition { get; }
 

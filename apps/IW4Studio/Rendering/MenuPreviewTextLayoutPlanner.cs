@@ -74,8 +74,10 @@ public static class MenuPreviewTextLayoutPlanner
         float textHeight = MathF.Truncate(
             measurement.PixelHeight * measurement.NormalizedScale);
         MenuRectangleValue bounds = text.Placement.VirtualRectangle;
-        float baselineX = bounds.X + text.BorderInset + text.OffsetX +
-            HorizontalAdjustment(text.Alignment & 3, bounds.Width, textWidth);
+        int horizontalAlignment = text.Alignment & 3;
+        float baselineX = bounds.X + text.BorderInset + text.OffsetX;
+        if (!text.AutoWrapped)
+            baselineX += HorizontalAdjustment(horizontalAlignment, bounds.Width, textWidth);
         float baselineY = bounds.Y + text.BorderInset + text.OffsetY +
             VerticalAdjustment(
                 text.Alignment & 0xC,
@@ -93,13 +95,10 @@ public static class MenuPreviewTextLayoutPlanner
                 $"Vertical text alignment {text.Alignment & 0xC} is invalid; IW4's asserted bottom-aligned branch is shown.");
         }
 
-        UiGlyphRunPlan glyphRun = UiGlyphRunPlanner.Plan(
-            font.Font,
-            new UiGlyphRunRequest(
-                localized.DisplayText,
-                baselineX,
-                baselineY,
-                text.Scale));
+        var request = new UiGlyphRunRequest(localized.DisplayText, baselineX, baselineY, text.Scale);
+        UiGlyphRunPlan glyphRun = text.AutoWrapped
+            ? UiGlyphRunPlanner.PlanWrapped(font.Font, request, measurement, bounds.Width, horizontalAlignment)
+            : UiGlyphRunPlanner.Plan(font.Font, request);
         foreach (UiGlyphColorRun colorRun in glyphRun.ColorRuns)
         {
             if (colorRun.CaretColorCode is '8' or '9')
@@ -226,5 +225,7 @@ public sealed class MenuPreviewTextLayout
         string displayText,
         IEnumerable<string> diagnostics,
         MenuTextResourceRevision resourceRevision) =>
-        new(source, displayText, null, 0, 0, diagnostics, resourceRevision);
+        new(source, displayText, null, 0, 0, source.AutoWrapped
+            ? diagnostics.Append("Auto-wrapped text requires a usable IW4 font for game line breaks.")
+            : diagnostics, resourceRevision);
 }

@@ -14,7 +14,8 @@ public static class UiMaterialPreviewPlanner
     public static UiMaterialPreviewPlan Plan(
         MaterialAsset material,
         Func<int, MaterialTextureDef,
-            UiMaterialPreviewImageResolution?>? resolveImage = null)
+            UiMaterialPreviewImageResolution?>? resolveImage = null,
+        UiMaterialDrawPlan? drawPlan = null)
     {
         ArgumentNullException.ThrowIfNull(material);
 
@@ -76,9 +77,11 @@ public static class UiMaterialPreviewPlanner
                 "texture atlas will be shown."));
         }
 
-        EditorMaterialTextureBinding? selected = SelectTexture(
-            textureTable,
-            diagnostics);
+        // The draw planner already matched the shader's material sampler to
+        // a unique row. The texture-table roles describe authored tuples.
+        EditorMaterialTextureBinding? selected = SelectDrawTexture(
+            material, textureTable, drawPlan?.BaseColorRow) ??
+            SelectTexture(textureTable, diagnostics);
         UiMaterialPreviewImageAuthority selectedAuthority =
             UiMaterialPreviewImageAuthority.None;
         UiMaterialPreviewImageMetadata? selectedImageMetadata = null;
@@ -173,6 +176,19 @@ public static class UiMaterialPreviewPlanner
             ? UiMaterialPreviewImageResolution.Unavailable(
                 "The material texture row has no resolved image.")
             : UiMaterialPreviewImageResolution.MaterialRowFallback(row.Image);
+
+    private static EditorMaterialTextureBinding? SelectDrawTexture(
+        MaterialAsset material,
+        EditorMaterialTexturePlan textureTable,
+        MaterialTextureDef? baseColorRow)
+    {
+        if (baseColorRow?.Image?.RuntimeAddress?.AssetPoolAddress is not { } imageSlot)
+            return null;
+
+        return textureTable.Bindings.FirstOrDefault(binding =>
+            ReferenceEquals(material.Textures[binding.TextureTableOrdinal], baseColorRow) &&
+            binding.Image?.RuntimeAddress?.AssetPoolAddress == imageSlot);
+    }
 
     private static EditorMaterialTextureBinding? SelectTexture(
         EditorMaterialTexturePlan textureTable,

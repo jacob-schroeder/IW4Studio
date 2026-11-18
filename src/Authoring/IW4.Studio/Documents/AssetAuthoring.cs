@@ -126,6 +126,7 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new MenuAdapter());
         registry.Register(new MenuFileAdapter());
         registry.Register(new MaterialAdapter());
+        registry.Register(new ImageAdapter());
         registry.Register(new XModelAdapter());
         registry.Register(new FontAdapter());
         registry.Register(new FxAdapter());

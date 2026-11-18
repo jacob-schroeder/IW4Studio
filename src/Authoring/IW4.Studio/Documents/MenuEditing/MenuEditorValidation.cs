@@ -86,7 +86,7 @@ internal static class MenuEditorValidation
             if (registration.IsEditableDefinition && registration.Menu is null)
                 Error(path, "The owned Menu registration has no detached definition.", issues);
             if (registration.Menu is { } menu)
-                issues.AddRange(Validate(menu));
+                issues.AddRange(menu.ValidationIssues);
         }
 
         return Array.AsReadOnly(issues.ToArray());

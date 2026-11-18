@@ -16,12 +16,13 @@ public sealed partial class MenuPreviewView : UserControl
         TimeSpan.FromMilliseconds(16);
 
     private readonly DispatcherTimer _simulationClock =
-        new(DispatcherPriority.Render)
+        new(DispatcherPriority.Background)
         {
             Interval = SimulationClockInterval
         };
     private readonly ContextMenu _previewItemContextMenu;
     private MenuDesignerViewModel? _viewModel;
+    private MenuPlayWindow? _playWindow;
     private long _simulationClockStartTimestamp;
     private int _simulationClockStartMilliseconds;
     private bool _isAttached;
@@ -57,6 +58,9 @@ public sealed partial class MenuPreviewView : UserControl
         base.OnDetachedFromVisualTree(e);
     }
 
+    private void EditBehavior_Click(object? sender, RoutedEventArgs e) =>
+        (DataContext as MenuDesignerViewModel)?.EditSelectedBehavior();
+
     private void PreviewControl_NodeSelected(
         object? sender,
         MenuPreviewNodeSelectedEventArgs e)
@@ -66,6 +70,37 @@ public sealed partial class MenuPreviewView : UserControl
             viewModel.SelectPreviewNode(e.NodeId);
             viewModel.RequestPropertiesReveal();
         }
+    }
+
+    private void Play_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MenuDesignerViewModel
+                { IsDisposed: false, Snapshot: { IsComplete: true } snapshot } viewModel ||
+            TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            return;
+        }
+
+        if (_playWindow is { } existing && existing.Designer == viewModel &&
+            ReferenceEquals(existing.Snapshot, snapshot))
+        {
+            existing.Activate();
+            return;
+        }
+
+        _playWindow?.Close();
+        var window = new MenuPlayWindow(viewModel, snapshot);
+        _playWindow = window;
+        window.Closed += (_, _) =>
+        {
+            if (_playWindow == window)
+            {
+                _playWindow = null;
+                UpdateSimulationClock();
+            }
+        };
+        window.Show(owner);
+        UpdateSimulationClock();
     }
 
     private void PreviewControl_ContextRequested(
@@ -229,7 +264,8 @@ public sealed partial class MenuPreviewView : UserControl
         PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(MenuPreviewDebugViewModel.Mode) or
-            nameof(MenuPreviewDebugViewModel.IsSimulating))
+            nameof(MenuPreviewDebugViewModel.IsSimulating) or
+            nameof(MenuPreviewDebugViewModel.RunClock))
         {
             UpdateSimulationClock();
         }
@@ -321,9 +357,9 @@ public sealed partial class MenuPreviewView : UserControl
     private bool ShouldAdvanceSimulation()
     {
         MenuDesignerViewModel? viewModel = _viewModel;
-        return _isAttached &&
+        return _isAttached && _playWindow is null &&
             !_isEditingSimulationTime &&
             viewModel is { HasDocument: true, IsComplete: true } &&
-            viewModel.PreviewDebug.IsSimulating;
+            viewModel.PreviewDebug is { IsSimulating: true, RunClock: true };
     }
 }

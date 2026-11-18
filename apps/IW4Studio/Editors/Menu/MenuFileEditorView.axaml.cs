@@ -1,7 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using IW4.Game.Zone;
 using IW4.Studio.Desktop.Editors.AssetReferences;
 using IW4.Studio.Desktop.Editors.Menu.Behavior;
@@ -13,7 +12,7 @@ public sealed partial class MenuFileEditorView : UserControl
 {
     private AssetReferencePickerService? _assetReferencePicker;
 
-    public MenuFileEditorView() => AvaloniaXamlLoader.Load(this);
+    public MenuFileEditorView() => InitializeComponent();
 
     private void ApplyChangesButton_Click(
         object? sender,
@@ -41,6 +40,8 @@ public sealed partial class MenuFileEditorView : UserControl
         ArgumentNullException.ThrowIfNull(assetReferencePicker);
         _assetReferencePicker = assetReferencePicker;
         DataContext = viewModel;
+        if (viewModel.MenuCount == 1 && viewModel.Designer.HasDocument)
+            NavigationTabs.SelectedItem = ItemOutlineTab;
         viewModel.AssetReferenceSelectionRequested +=
             async (_, args) =>
             {

@@ -13,6 +13,8 @@ internal sealed class MenuEvaluationSession
     private readonly MenuDebugProgram _program;
     private readonly Dictionary<MenuNodeId, MenuEvaluatedRectangle> _rectangles = [];
     private readonly HashSet<MenuNodeId> _rectangleStack = [];
+    private readonly Dictionary<ItemFloatExpressionTarget, MenuEvaluation<float>> _menuOrigins = [];
+    private readonly HashSet<ItemFloatExpressionTarget> _menuOriginStack = [];
     private readonly List<MenuEvaluationTraceEntry> _trace = [];
     private readonly EvaluationContext _context;
 
@@ -23,18 +25,19 @@ internal sealed class MenuEvaluationSession
     {
         _evaluator = evaluator;
         _program = program;
-        _context = new EvaluationContext(program, scenario, ResolveItemRectangle);
+        _context = new EvaluationContext(program, scenario, ResolveItemWindowCoordinate);
     }
 
     public MenuEvaluatedState Evaluate()
     {
         DebugMenuDefinition root = _program.Definition;
-        MenuEvaluatedRectangle rootRectangle = EvaluateRectangle(
-            root.Rectangle,
-            root.RectX,
-            root.RectY,
-            root.RectWidth,
-            root.RectHeight);
+        var rootRectangle = new MenuEvaluatedRectangle(
+            ResolveMenuOrigin(ItemFloatExpressionTarget.RectX),
+            ResolveMenuOrigin(ItemFloatExpressionTarget.RectY),
+            EvaluateFloat(root.RectWidth, root.Rectangle.Width),
+            EvaluateFloat(root.RectHeight, root.Rectangle.Height),
+            root.Rectangle.HorizontalAlignment,
+            root.Rectangle.VerticalAlignment);
         bool isCurrentMenuOpen =
             !string.IsNullOrWhiteSpace(_program.Name) &&
             _context.Scenario.OpenMenus.Contains(_program.Name);
@@ -65,22 +68,23 @@ internal sealed class MenuEvaluationSession
     {
         DebugItemDefinition definition = item.Definition;
         MenuEvaluatedRectangle rectangle = ResolveItemRectangle(item.Id);
-        MenuEvaluation<bool> visible = definition.IsResolved
-            ? EvaluateVisibility(definition.AuthoredVisible, definition.Visible)
-            : MenuEvaluation<bool>.Known(false);
+        MenuDebugItemRuntimeState? runtime = _context.Scenario.ItemRuntimeStates
+            .GetValueOrDefault(item.Id);
+        MenuEvaluation<bool> visible = EvaluateItemVisibility(definition, runtime);
         MenuEvaluation<bool> disabled = EvaluateBoolean(definition.Disabled, false);
+        if ((definition.DvarFlags & (ItemDvarFlags.Enable | ItemDvarFlags.Disable)) != 0 &&
+            !(disabled.IsKnown && disabled.Value))
+            disabled = CombineDvarGate(disabled, EvaluateDvarGate(definition, ItemDvarFlags.Enable), blocked: true);
         MenuEvaluation<string?> text = EvaluateString(
             definition.Text,
             definition.AuthoredText,
-            localize: true);
+            itemText: true);
         MenuEvaluation<string?> material = EvaluateString(
             definition.Material,
             definition.AuthoredMaterial,
-            localize: false);
+            itemText: false);
 
         var floatResults = new Dictionary<ItemFloatExpressionTarget, MenuEvaluation<float>>();
-        MenuDebugItemRuntimeState? runtime = _context.Scenario.ItemRuntimeStates
-            .GetValueOrDefault(item.Id);
         MenuEvaluatedColor foreColor = runtime?.ForeColor is { } runtimeFore
             ? Color(runtimeFore)
             : Color(definition.ForeColor);
@@ -178,6 +182,60 @@ internal sealed class MenuEvaluationSession
         }
     }
 
+    private MenuEvaluation<float> ResolveItemWindowCoordinate(
+        MenuNodeId id,
+        ItemFloatExpressionTarget target)
+    {
+        MenuEvaluatedRectangle rect = ResolveItemRectangle(id);
+        MenuEvaluation<float> component = target switch
+        {
+            ItemFloatExpressionTarget.RectX => rect.X,
+            ItemFloatExpressionTarget.RectY => rect.Y,
+            ItemFloatExpressionTarget.RectW => rect.Width,
+            ItemFloatExpressionTarget.RectH => rect.Height,
+            _ => throw new ArgumentOutOfRangeException(nameof(target))
+        };
+        if (!component.IsKnown || target is not (ItemFloatExpressionTarget.RectX or ItemFloatExpressionTarget.RectY))
+            return component;
+
+        // Item_SetScreenCoords composes Window.Rect in virtual coordinates.
+        // ScreenPlacement is applied separately when the menu is drawn.
+        MenuEvaluation<float> origin = ResolveMenuOrigin(target);
+        var dependencies = component.Dependencies.Concat(origin.Dependencies);
+        var trace = component.Trace.Concat(origin.Trace);
+        float border = _program.Items.First(item => item.Id == id).Definition.BorderInset;
+        return origin.Status switch
+        {
+            MenuEvaluationStatus.Known => MenuEvaluation<float>.Known(
+                component.Value + origin.Value + _program.Definition.BorderInset + border,
+                dependencies,
+                trace),
+            MenuEvaluationStatus.Unknown => MenuEvaluation<float>.Unknown(default, dependencies, trace),
+            _ => MenuEvaluation<float>.Error(default, dependencies, trace)
+        };
+    }
+
+    private MenuEvaluation<float> ResolveMenuOrigin(ItemFloatExpressionTarget target)
+    {
+        if (_menuOrigins.TryGetValue(target, out MenuEvaluation<float>? existing))
+            return existing;
+
+        DebugMenuDefinition root = _program.Definition;
+        bool isX = target == ItemFloatExpressionTarget.RectX;
+        float fallback = isX ? root.Rectangle.X : root.Rectangle.Y;
+        if (!_menuOriginStack.Add(target))
+        {
+            return MenuEvaluation<float>.Error(fallback, [],
+                [new MenuEvaluationTraceEntry(MenuEvaluationStatus.Error,
+                    $"Menu {target} depends on its own origin through item geometry.")]);
+        }
+
+        MenuEvaluation<float> origin = EvaluateFloat(isX ? root.RectX : root.RectY, fallback);
+        _menuOriginStack.Remove(target);
+        _menuOrigins.Add(target, origin);
+        return origin;
+    }
+
     private MenuEvaluatedRectangle ResolveItemRectangle(MenuNodeId id)
     {
         if (_rectangles.TryGetValue(id, out MenuEvaluatedRectangle? existing))
@@ -219,6 +277,43 @@ internal sealed class MenuEvaluationSession
             EvaluateFloat(height, authored.Height),
             authored.HorizontalAlignment,
             authored.VerticalAlignment);
+
+    private MenuEvaluation<bool> EvaluateItemVisibility(
+        DebugItemDefinition item, MenuDebugItemRuntimeState? runtime)
+    {
+        // PS3 0x254ef8 checks the Window bit and dvar gate before the expression.
+        if (!item.IsResolved || !(runtime?.Visible ?? item.AuthoredVisible))
+            return MenuEvaluation<bool>.Known(false);
+        if ((item.DvarFlags & (ItemDvarFlags.Show | ItemDvarFlags.Hide)) == 0)
+            return EvaluateBoolean(item.Visible, item.Visible is null);
+
+        var gate = EvaluateDvarGate(item, ItemDvarFlags.Show);
+        if (!gate.Value || item.Visible is null)
+            return gate;
+        return CombineDvarGate(EvaluateBoolean(item.Visible, false), gate, blocked: false);
+    }
+
+    private MenuEvaluation<bool> EvaluateDvarGate(DebugItemDefinition item, ItemDvarFlags requested)
+    {
+        var gate = MenuDvarPredicate.Allows(item, _context.Scenario, requested);
+        Capture(gate);
+        return gate;
+    }
+
+    private static MenuEvaluation<bool> CombineDvarGate(
+        MenuEvaluation<bool> expression, MenuEvaluation<bool> gate, bool blocked)
+    {
+        var dependencies = expression.Dependencies.Concat(gate.Dependencies);
+        var trace = expression.Trace.Concat(gate.Trace);
+        if ((gate.IsKnown && !gate.Value) || (expression.IsKnown && expression.Value == blocked))
+            return MenuEvaluation<bool>.Known(blocked, dependencies, trace);
+        bool result = gate.Value ? expression.Value : blocked;
+        if (gate.Status == MenuEvaluationStatus.Error || expression.Status == MenuEvaluationStatus.Error)
+            return MenuEvaluation<bool>.Error(result, dependencies, trace);
+        return gate.IsKnown && expression.IsKnown
+            ? MenuEvaluation<bool>.Known(result, dependencies, trace)
+            : MenuEvaluation<bool>.Unknown(result, dependencies, trace);
+    }
 
     private MenuEvaluation<bool> EvaluateVisibility(
         bool authoredVisible,
@@ -292,25 +387,31 @@ internal sealed class MenuEvaluationSession
     private MenuEvaluation<string?> EvaluateString(
         MenuDebugExpression? expression,
         string? fallback,
-        bool localize)
+        bool itemText)
     {
         MenuEvaluation<MenuDebugValue> result = expression is null
             ? MenuEvaluation<MenuDebugValue>.Known(
                 MenuDebugValue.FromString(fallback ?? string.Empty))
             : EvaluateExpression(expression);
-        if (result.IsKnown && localize && result.Value.AsString().StartsWith('@'))
+        string? value = result.IsKnown
+            ? itemText && expression is not null
+                ? result.Value.AsFormattedExpressionString()
+                : result.Value.AsString()
+            : null;
+        if (itemText && value is not null && value.StartsWith('@'))
         {
             result = MenuExpressionEvaluator.ResolveLocalization(
-                result.Value.AsString(),
+                value,
                 operation: null,
                 _context,
                 result);
+            value = result.IsKnown ? result.Value.AsString() : null;
         }
 
         MenuEvaluation<string?> converted = result.Status switch
         {
             MenuEvaluationStatus.Known => MenuEvaluation<string?>.Known(
-                result.Value.AsString(),
+                value,
                 result.Dependencies,
                 result.Trace),
             MenuEvaluationStatus.Unknown => MenuEvaluation<string?>.Unknown(

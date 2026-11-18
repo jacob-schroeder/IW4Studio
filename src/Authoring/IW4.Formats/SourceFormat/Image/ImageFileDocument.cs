@@ -19,6 +19,18 @@ public sealed class ImageFileDocument
         UsesSrgbReads = usesSrgbReads;
     }
 
+    /// <summary>Creates a two-dimensional source with one tightly packed RGBA8 mip.</summary>
+    public static ImageFileDocument FromRgba(int width, int height, ReadOnlyMemory<byte> rgbaBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        if ((long)width * height != rgbaBytes.Length / 4 || rgbaBytes.Length % 4 != 0)
+            throw new ArgumentException("The RGBA8 buffer must match the image dimensions.", nameof(rgbaBytes));
+
+        return new ImageFileDocument(
+            [new ImageSourceMipLevel(width, height, 1, rgbaBytes)], ImageFileShape.TwoDimensional, usesSrgbReads: null);
+    }
+
     public IReadOnlyList<ImageSourceMipLevel> MipLevels { get; }
 
     /// <summary>

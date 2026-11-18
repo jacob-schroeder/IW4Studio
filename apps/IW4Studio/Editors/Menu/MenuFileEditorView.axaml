@@ -5,6 +5,7 @@
              xmlns:menu="using:IW4.Studio.Desktop.Editors.Menu"
              xmlns:menuVm="using:IW4.Studio.Desktop.ViewModels.Menu"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Name="FileEditor"
              x:Class="IW4.Studio.Desktop.Editors.Menu.MenuFileEditorView"
              x:DataType="menuVm:MenuFileEditorViewModel"
              mc:Ignorable="d"
@@ -22,11 +23,17 @@
           <TextBlock Text="{Binding Name}"
                      FontSize="16"
                      FontWeight="SemiBold"
+                     TextWrapping="Wrap"
+                     MaxLines="2"
                      TextTrimming="CharacterEllipsis"
+                     ToolTip.Tip="{Binding Name}"
                      Foreground="{DynamicResource StudioTextBrush}" />
           <TextBlock Text="{Binding StatusMessage}"
-                     FontSize="9"
+                     FontSize="11"
+                     TextWrapping="Wrap"
+                     MaxLines="2"
                      TextTrimming="CharacterEllipsis"
+                     ToolTip.Tip="{Binding StatusMessage}"
                      Foreground="{DynamicResource StudioTextMutedBrush}" />
         </StackPanel>
 
@@ -39,6 +46,7 @@
                   MinHeight="30"
                   Padding="7,4"
                   Command="{Binding RevertCommand}"
+                  AutomationProperties.Name="Revert MenuFile draft"
                   ToolTip.Tip="Revert MenuFile draft">
             <materialIcons:MaterialIcon Kind="Undo" Width="15" Height="15" />
           </Button>
@@ -46,6 +54,7 @@
                   MinHeight="30"
                   Padding="12,5"
                   IsEnabled="{Binding Designer.HasStagedInput}"
+                  AutomationProperties.Name="Apply staged property value"
                   ToolTip.Tip="Apply the staged Properties value to the selected Menu draft; use Save As to write the fastfile"
                   Click="ApplyChangesButton_Click">
             <StackPanel Orientation="Horizontal" Spacing="6">
@@ -57,132 +66,121 @@
       </Grid>
     </Border>
 
-    <ScrollViewer Grid.Row="2"
-                  HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto">
-      <Grid>
-        <Grid.RowDefinitions>
-          <RowDefinition Height="Auto" MinHeight="480" />
-          <RowDefinition Height="10" />
-          <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-        <menu:MenuPreviewView DataContext="{Binding Designer}" />
-
-        <Grid Grid.Row="2"
-              ColumnDefinitions="225,10,*">
-          <Border Padding="8"
-                  CornerRadius="7"
-                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
-                  BorderBrush="{DynamicResource StudioBorderBrush}"
-                  BorderThickness="1">
-            <Grid RowDefinitions="Auto,8,*,8,Auto">
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="REGISTRATIONS"
-                           VerticalAlignment="Center"
-                           FontSize="9"
-                           FontWeight="Bold"
-                           LetterSpacing="0.8"
-                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
-                <TextBlock Grid.Column="1"
-                           Text="{Binding MenuCount}"
-                           FontSize="9"
+    <menu:MenuDesignerView Grid.Row="2" DataContext="{Binding Designer}"
+                           NavigationCaption="Items &amp; registrations">
+      <menu:MenuDesignerView.NavigationPane>
+        <TabControl x:Name="NavigationTabs" Padding="0" Margin="0,0,4,0"
+                    x:DataType="menuVm:MenuFileEditorViewModel"
+                    DataContext="{Binding #FileEditor.((menuVm:MenuFileEditorViewModel)DataContext)}">
+          <TabControl.Styles>
+            <Style Selector="TabItem">
+              <Setter Property="Padding" Value="7,4" />
+              <Setter Property="MinHeight" Value="32" />
+            </Style>
+          </TabControl.Styles>
+          <TabItem>
+            <TabItem.Header><TextBlock Text="Registrations" FontSize="12" FontWeight="SemiBold" /></TabItem.Header>
+            <Border Padding="8"
+                    CornerRadius="7"
+                    Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                    BorderBrush="{DynamicResource StudioBorderBrush}"
+                    BorderThickness="1">
+              <Grid RowDefinitions="Auto,8,*,8,Auto">
+                <TextBlock Text="{Binding MenuCount, StringFormat='{}{0:N0} registered'}"
+                           FontSize="11"
                            Foreground="{DynamicResource StudioTextMutedBrush}" />
-              </Grid>
 
-              <ListBox Grid.Row="2"
-                       ItemsSource="{Binding Registrations}"
-                       SelectedItem="{Binding SelectedRegistration, Mode=TwoWay}"
-                       AutoScrollToSelectedItem="True"
-                       Background="Transparent"
-                       BorderThickness="0"
-                       ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                       ScrollViewer.VerticalScrollBarVisibility="Auto">
-                <ListBox.ContextMenu>
-                  <ContextMenu Placement="Pointer">
-                    <MenuItem Header="Add existing Menu registration…"
-                              IsEnabled="{Binding CanAddRegistration}"
-                              Click="AddExistingMenu_Click" />
-                  </ContextMenu>
-                </ListBox.ContextMenu>
-                <ListBox.ItemTemplate>
-                  <DataTemplate x:DataType="menuVm:MenuFileRegistrationViewModel">
-                    <Grid ColumnDefinitions="*,Auto"
-                          ColumnSpacing="6"
-                          MinHeight="30"
-                          Margin="2"
-                          PointerReleased="RegistrationRow_PointerReleased">
-                      <StackPanel VerticalAlignment="Center">
+                <ListBox Grid.Row="2" Classes="studioNavigatorList menuNavigator"
+                         ItemsSource="{Binding Registrations}"
+                         SelectedItem="{Binding SelectedRegistration, Mode=TwoWay}"
+                         AutomationProperties.Name="Menu registrations"
+                         AutoScrollToSelectedItem="True"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                  <ListBox.ContextMenu>
+                    <ContextMenu Placement="Pointer">
+                      <MenuItem Header="Add existing Menu registration…"
+                                IsEnabled="{Binding CanAddRegistration}"
+                                Click="AddExistingMenu_Click" />
+                    </ContextMenu>
+                  </ListBox.ContextMenu>
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="menuVm:MenuFileRegistrationViewModel">
+                      <StackPanel Spacing="2"
+                                  Background="Transparent"
+                                  ToolTip.Tip="{Binding Name}"
+                                  PointerReleased="RegistrationRow_PointerReleased">
                         <TextBlock Text="{Binding Name}"
+                                   TextWrapping="Wrap"
+                                   MaxLines="2"
                                    TextTrimming="CharacterEllipsis"
-                                   FontSize="10"
+                                   FontSize="12"
                                    Foreground="{DynamicResource StudioTextBrush}" />
-                        <TextBlock Text="{Binding Index, StringFormat='Registration {0:N0}'}"
-                                   FontSize="8"
-                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                          <TextBlock Text="{Binding Position, StringFormat='Registration {0:N0}'}"
+                                     FontSize="10"
+                                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+                          <TextBlock Text="{Binding Status}"
+                                     Grid.Column="1"
+                                     FontSize="10"
+                                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+                        </Grid>
                       </StackPanel>
-                      <Border Grid.Column="1"
-                              Padding="5,2"
-                              CornerRadius="3"
-                              VerticalAlignment="Center"
-                              Background="{DynamicResource StudioControlBrush}">
-                        <TextBlock Text="{Binding Status}"
-                                   FontSize="7"
-                                   FontWeight="Bold"
-                                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
-                      </Border>
-                    </Grid>
-                  </DataTemplate>
-                </ListBox.ItemTemplate>
-              </ListBox>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
 
-              <Grid Grid.Row="4"
-                    RowDefinitions="Auto,4,Auto"
-                    ColumnDefinitions="*,*,*"
-                    ColumnSpacing="4">
-                <Button Classes="ghost" MinHeight="29" Padding="5"
-                        IsEnabled="{Binding CanAddRegistration}"
-                        Click="AddExistingMenu_Click"
-                        ToolTip.Tip="Add an existing Menu asset">
-                  <StackPanel Orientation="Horizontal" Spacing="4">
-                    <materialIcons:MaterialIcon Kind="Plus" Width="13" Height="13" />
-                    <TextBlock Text="Add" FontSize="9" />
-                  </StackPanel>
-                </Button>
-                <Button Grid.Column="1" Classes="ghost" MinHeight="29" Padding="5"
-                        IsEnabled="{Binding CanRetargetRegistration}"
-                        Click="RetargetRegistration_Click"
-                        ToolTip.Tip="Retarget the selected registration">
-                  <TextBlock Text="Retarget" FontSize="9" />
-                </Button>
-                <Button Grid.Column="2" Classes="ghost" MinHeight="29" Padding="5"
-                        IsEnabled="{Binding CanDuplicateRegistration}"
-                        Click="DuplicateRegistration_Click"
-                        ToolTip.Tip="Duplicate the inline definition as a new Menu asset">
-                  <materialIcons:MaterialIcon Kind="ContentDuplicate" Width="14" Height="14" />
-                </Button>
-                <Button Grid.Row="2" Classes="ghost" MinHeight="29" Padding="5"
-                        Command="{Binding MoveRegistrationUpCommand}"
-                        ToolTip.Tip="Move registration up">
-                  <materialIcons:MaterialIcon Kind="ArrowUp" Width="14" Height="14" />
-                </Button>
-                <Button Grid.Row="2" Grid.Column="1" Classes="ghost" MinHeight="29" Padding="5"
-                        Command="{Binding MoveRegistrationDownCommand}"
-                        ToolTip.Tip="Move registration down">
-                  <materialIcons:MaterialIcon Kind="ArrowDown" Width="14" Height="14" />
-                </Button>
-                <Button Grid.Row="2" Grid.Column="2" Classes="ghost" MinHeight="29" Padding="5"
-                        Command="{Binding RemoveRegistrationCommand}"
-                        ToolTip.Tip="Remove selected registration">
-                  <materialIcons:MaterialIcon Kind="DeleteOutline" Width="14" Height="14" />
-                </Button>
+                <TextBlock Grid.Row="2"
+                           IsVisible="{Binding HasNoRegistrations}"
+                           Text="No menu registrations"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Center"
+                           FontSize="12"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+
+                <Grid Grid.Row="4" RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,*"
+                      RowSpacing="4" ColumnSpacing="4">
+                  <Grid.Styles>
+                    <Style Selector="Button">
+                      <Setter Property="MinHeight" Value="29" />
+                      <Setter Property="Padding" Value="5,3" />
+                      <Setter Property="FontSize" Value="11" />
+                      <Setter Property="HorizontalAlignment" Value="Stretch" />
+                    </Style>
+                  </Grid.Styles>
+                  <Button Content="Add menu…"
+                          IsEnabled="{Binding CanAddRegistration}"
+                          Click="AddExistingMenu_Click"
+                          ToolTip.Tip="Register an existing Menu asset" />
+                  <Button Grid.Column="1" Content="Retarget…"
+                          IsEnabled="{Binding CanRetargetRegistration}"
+                          Click="RetargetRegistration_Click"
+                          ToolTip.Tip="Choose a different Menu for this registration" />
+                  <Button Grid.Row="1" Content="Duplicate…"
+                          IsEnabled="{Binding CanDuplicateRegistration}"
+                          Click="DuplicateRegistration_Click"
+                          ToolTip.Tip="Duplicate the inline definition as a new Menu asset" />
+                  <Button Grid.Row="1" Grid.Column="1" Content="Remove"
+                          Command="{Binding RemoveRegistrationCommand}"
+                          ToolTip.Tip="Remove selected registration" />
+                  <Button Grid.Row="2" Content="Move up"
+                          Command="{Binding MoveRegistrationUpCommand}"
+                          ToolTip.Tip="Move registration up" />
+                  <Button Grid.Row="2" Grid.Column="1" Content="Move down"
+                          Command="{Binding MoveRegistrationDownCommand}"
+                          ToolTip.Tip="Move registration down" />
+                </Grid>
               </Grid>
-            </Grid>
-          </Border>
-
-          <menu:MenuOutlineView Grid.Column="2"
-                                DataContext="{Binding Designer}" />
-        </Grid>
-      </Grid>
-    </ScrollViewer>
+            </Border>
+          </TabItem>
+          <TabItem x:Name="ItemOutlineTab">
+            <TabItem.Header><TextBlock Text="Item outline" FontSize="12" FontWeight="SemiBold" /></TabItem.Header>
+            <menu:MenuOutlineView DataContext="{Binding Designer}" />
+          </TabItem>
+        </TabControl>
+      </menu:MenuDesignerView.NavigationPane>
+    </menu:MenuDesignerView>
   </Grid>
 </UserControl>

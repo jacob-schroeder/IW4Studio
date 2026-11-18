@@ -211,12 +211,13 @@ public static partial class UiMaterialDrawPlanner
     private static UiMaterialDrawPlan Block(
         ICollection<UiMaterialExecutionDiagnostic> diagnostics,
         UiMaterialExecutionDiagnosticCode code,
-        string message)
+        string message,
+        MaterialTextureDef? baseColorRow = null)
     {
         diagnostics.Add(new UiMaterialExecutionDiagnostic(
             code,
             UiDiagnosticSeverity.Blocker,
             message));
-        return new UiMaterialDrawPlan(null, diagnostics.ToArray());
+        return new UiMaterialDrawPlan(null, diagnostics.ToArray(), baseColorRow);
     }
 }

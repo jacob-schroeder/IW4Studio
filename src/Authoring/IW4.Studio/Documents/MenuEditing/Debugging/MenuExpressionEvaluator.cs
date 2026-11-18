@@ -318,7 +318,7 @@ public sealed partial class MenuExpressionEvaluator
         var dependency = new MenuDebugDependency(
             MenuDebugDependencyKind.ItemGeometry,
             "<focused>",
-            MenuDebugValueKind.Float,
+            MenuDebugValueKind.Integer,
             operation);
         if (context.Scenario.FocusedItemId is not { } focusedId)
             return Unknown("No focused item is configured.", operation, [dependency]);
@@ -338,7 +338,7 @@ public sealed partial class MenuExpressionEvaluator
         var dependency = new MenuDebugDependency(
             MenuDebugDependencyKind.ItemGeometry,
             itemName,
-            MenuDebugValueKind.Float,
+            MenuDebugValueKind.Integer,
             expression.Operation);
         MenuDebugItemProgram? item = context.Program.Items.FirstOrDefault(value =>
             string.Equals(value.Name, itemName, StringComparison.OrdinalIgnoreCase));
@@ -360,15 +360,15 @@ public sealed partial class MenuExpressionEvaluator
         EvaluationContext context,
         params MenuEvaluation<MenuDebugValue>[] inputs)
     {
-        MenuEvaluatedRectangle rectangle = context.ResolveItemRectangle(itemId);
-        MenuEvaluation<float> component = operation switch
+        ItemFloatExpressionTarget target = operation switch
         {
-            OperationEnum.OP_GETFOCUSEDITEMX or OperationEnum.OP_GETITEMX => rectangle.X,
-            OperationEnum.OP_GETFOCUSEDITEMY or OperationEnum.OP_GETITEMY => rectangle.Y,
-            OperationEnum.OP_GETFOCUSEDITEMWIDTH or OperationEnum.OP_GETITEMWIDTH => rectangle.Width,
-            OperationEnum.OP_GETFOCUSEDITEMHEIGHT or OperationEnum.OP_GETITEMHEIGHT => rectangle.Height,
+            OperationEnum.OP_GETFOCUSEDITEMX or OperationEnum.OP_GETITEMX => ItemFloatExpressionTarget.RectX,
+            OperationEnum.OP_GETFOCUSEDITEMY or OperationEnum.OP_GETITEMY => ItemFloatExpressionTarget.RectY,
+            OperationEnum.OP_GETFOCUSEDITEMWIDTH or OperationEnum.OP_GETITEMWIDTH => ItemFloatExpressionTarget.RectW,
+            OperationEnum.OP_GETFOCUSEDITEMHEIGHT or OperationEnum.OP_GETITEMHEIGHT => ItemFloatExpressionTarget.RectH,
             _ => throw new InvalidOperationException($"'{operation}' is not a geometry operation.")
         };
+        MenuEvaluation<float> component = context.ResolveItemWindowCoordinate(itemId, target);
         IEnumerable<MenuDebugDependency> dependencies = inputs
             .SelectMany(value => value.Dependencies)
             .Concat(component.Dependencies)
@@ -378,10 +378,15 @@ public sealed partial class MenuExpressionEvaluator
             .Concat(component.Trace);
         return component.Status switch
         {
-            MenuEvaluationStatus.Known => MenuEvaluation<MenuDebugValue>.Known(
-                MenuDebugValue.FromFloat(component.Value),
+            // PS3 getFocusedItemY (0x22d578) and getItemY (0x22d09c)
+            // read Window.Rect and truncate the component with fctiwz.
+            MenuEvaluationStatus.Known when MenuDebugValue.FromFloat(component.Value).TryGetInt(out int coordinate) =>
+                MenuEvaluation<MenuDebugValue>.Known(MenuDebugValue.FromInt(coordinate), dependencies, trace),
+            MenuEvaluationStatus.Known => MenuEvaluation<MenuDebugValue>.Error(
+                default,
                 dependencies,
-                trace),
+                trace.Append(new MenuEvaluationTraceEntry(MenuEvaluationStatus.Error,
+                    "Item geometry is outside the integer operand range.", operation, dependency))),
             MenuEvaluationStatus.Unknown => MenuEvaluation<MenuDebugValue>.Unknown(
                 default,
                 dependencies,
@@ -405,23 +410,43 @@ public sealed partial class MenuExpressionEvaluator
             : string.Join(",", arguments.Select(value => value.Value.AsString()));
         MenuDebugValueKind? resultKind =
             MenuExpressionOperationMetadata.EnvironmentResultKind(
-                expression.Operation);
+                expression.Operation, qualifier);
         var dependency = EnvironmentDependency(
             expression.Operation,
             qualifier,
             resultKind);
-        if (!context.Scenario.Environment.TryGetValue(
-                new MenuDebugEnvironmentKey(expression.Operation, qualifier),
-                out MenuDebugValue value) &&
+        var key = new MenuDebugEnvironmentKey(expression.Operation, qualifier);
+        // The native predicate reads a Boolean array at the requested path.
+        // Preview inputs supply that path's aggregate result.
+        if (expression.Operation == OperationEnum.OP_GETPLAYERDATAANYBOOLTRUE)
+        {
+            if (arguments.Count == 0)
+                return AtLeastOneArityError(expression.Operation);
+            if (key.Qualifier is null ||
+                !context.Scenario.Environment.TryGetValue(key, out MenuDebugValue anyTrue))
+            {
+                return Unknown(
+                    $"No simulated Boolean array result was supplied for '{key}'.",
+                    expression.Operation,
+                    [dependency],
+                    arguments);
+            }
+            return Convert(anyTrue, MenuDebugValueKind.Boolean, expression.Operation, [dependency], arguments);
+        }
+
+        if (!context.Scenario.Environment.TryGetValue(key, out MenuDebugValue value) &&
             !context.Scenario.Environment.TryGetValue(
                 new MenuDebugEnvironmentKey(expression.Operation),
-                out value))
+                out value) &&
+            !TryGetPlayerValue(
+                expression.Operation, context.Scenario, arguments.Count == 1 ? qualifier : null, out value))
         {
-            return Unknown(
-                $"No simulated environment value was supplied for '{new MenuDebugEnvironmentKey(expression.Operation, qualifier)}'.",
-                expression.Operation,
-                arguments.SelectMany(item => item.Dependencies).Append(dependency),
-                arguments);
+            return EvaluateStringTableOperation(expression.Operation, context.Scenario, arguments, dependency)
+                ?? Unknown(
+                    $"No simulated environment value was supplied for '{key}'.",
+                    expression.Operation,
+                    [dependency],
+                    arguments);
         }
 
         if (resultKind is { } expectedKind)
@@ -438,6 +463,27 @@ public sealed partial class MenuExpressionEvaluator
             value,
             arguments.SelectMany(item => item.Dependencies).Append(dependency),
             arguments.SelectMany(item => item.Trace));
+    }
+
+    private static bool TryGetPlayerValue(
+        OperationEnum operation,
+        MenuDebugScenario scenario,
+        string? field,
+        out MenuDebugValue value)
+    {
+        if (field is not null)
+        {
+            switch (operation)
+            {
+                case OperationEnum.OP_GETPLAYERDATA:
+                    return scenario.Player.Data.TryGetValue(field, out value);
+                case OperationEnum.OP_GETPROFILEDATA:
+                    return scenario.Player.Profile.TryGetValue(field, out value);
+            }
+        }
+
+        value = default;
+        return false;
     }
 
     private MenuEvaluation<MenuDebugValue> EvaluateArgument(
@@ -664,4 +710,4 @@ public sealed partial class MenuExpressionEvaluator
 internal sealed record EvaluationContext(
     MenuDebugProgram Program,
     MenuDebugScenario Scenario,
-    Func<MenuNodeId, MenuEvaluatedRectangle> ResolveItemRectangle);
+    Func<MenuNodeId, ItemFloatExpressionTarget, MenuEvaluation<float>> ResolveItemWindowCoordinate);

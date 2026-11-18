@@ -73,7 +73,8 @@ public sealed class MenuEditorViewModel
             () => IsEditable,
             isAssetReferenceResolved,
             RequestItemBehaviorEdit,
-            RequestMenuBehaviorEdit);
+            RequestMenuBehaviorEdit,
+            _coordinator);
         Designer.PropertyChanged += Designer_PropertyChanged;
         Designer.PropertiesRevealRequested += Designer_PropertiesRevealRequested;
         _coordinator.Changed += Coordinator_Changed;

@@ -1,0 +1,161 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:behavior="using:IW4.Studio.Desktop.Editors.Menu.Behavior"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="IW4.Studio.Desktop.Editors.Menu.Behavior.MenuScriptCommandPickerWindow"
+        Title="Add Menu Script Command"
+        Width="660"
+        Height="535"
+        MinWidth="540"
+        MinHeight="385"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <Style Selector="TextBlock.commandArgumentHint">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </Window.Styles>
+  <Border Padding="18,16"
+          Background="{DynamicResource StudioBackgroundBrush}">
+    <Grid RowDefinitions="Auto,*,Auto"
+          RowSpacing="12">
+      <TextBox x:Name="SearchBox"
+               PlaceholderText="Search actions or engine commands"
+               AutomationProperties.Name="Search commands"
+               ToolTip.Tip="Use ↑ or ↓ to browse results and Enter to focus the arguments."
+               TextChanged="SearchBox_TextChanged">
+        <TextBox.InnerLeftContent>
+          <materialIcons:MaterialIcon Kind="Magnify"
+                                       Width="16"
+                                       Height="16"
+                                       Margin="7,0,8,0"
+                                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </TextBox.InnerLeftContent>
+      </TextBox>
+
+      <Grid Grid.Row="1"
+            ColumnDefinitions="2*,3*"
+            ColumnSpacing="12">
+        <Border Padding="5"
+                CornerRadius="6"
+                ClipToBounds="True"
+                Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
+                BorderThickness="1">
+          <Grid>
+            <ListBox x:Name="CommandList"
+                     Classes="studioNavigatorList"
+                     AutomationProperties.Name="Commands"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     SelectionChanged="CommandList_SelectionChanged"
+                     KeyDown="CommandList_KeyDown">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="behavior:MenuScriptCommandChoice">
+                  <StackPanel Spacing="2"
+                              VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Label}"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Name}"
+                               FontFamily="Consolas"
+                               FontSize="10"
+                               Foreground="{DynamicResource StudioTextMutedBrush}"
+                               TextWrapping="Wrap" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock x:Name="NoMatches"
+                       Margin="8"
+                       IsVisible="False"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       Text="No matching commands."
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Grid>
+        </Border>
+
+        <Grid x:Name="CommandDetails"
+              Grid.Column="1"
+              RowDefinitions="*,Auto"
+              RowSpacing="10"
+              IsVisible="False">
+          <ScrollViewer x:Name="ArgumentScroll"
+                        HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="10" Margin="0,0,8,0">
+              <TextBlock x:Name="CommandLabel"
+                         FontSize="16"
+                         FontWeight="SemiBold"
+                         TextWrapping="Wrap" />
+              <SelectableTextBlock x:Name="ArgumentUsage" FontFamily="Consolas"
+                                   FontSize="12" TextWrapping="Wrap" />
+              <TextBlock x:Name="PreviewNote"
+                         FontSize="11"
+                         Foreground="{DynamicResource StudioTextMutedBrush}"
+                         TextWrapping="Wrap" />
+              <StackPanel x:Name="ArgumentFields"
+                          IsVisible="False"
+                          Spacing="8" />
+              <StackPanel x:Name="StockExamplePanel" Spacing="3" IsVisible="False">
+                <TextBlock x:Name="StockExampleSource" Classes="commandArgumentHint" />
+                <SelectableTextBlock x:Name="StockExampleScript" FontFamily="Consolas"
+                                     FontSize="11" TextWrapping="Wrap" />
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+
+          <StackPanel Grid.Row="1"
+                      Spacing="4">
+            <StackPanel x:Name="NativeScriptPreview" IsVisible="False" Spacing="4">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="Native script"
+                           VerticalAlignment="Center"
+                           FontSize="11"
+                           FontWeight="SemiBold" />
+                <Button Grid.Column="1"
+                        Content="Copy"
+                        AutomationProperties.Name="Copy native script"
+                        Click="CopyScriptButton_Click" />
+              </Grid>
+              <TextBox x:Name="NativeScriptBox"
+                       IsReadOnly="True"
+                       MaxHeight="82"
+                       TextWrapping="Wrap"
+                       FontFamily="Consolas"
+                       FontSize="11"
+                       AutomationProperties.Name="Native script"
+                       ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                       ScrollViewer.VerticalScrollBarVisibility="Auto" />
+            </StackPanel>
+            <TextBlock x:Name="FormatError"
+                       TextWrapping="Wrap"
+                       FontSize="11"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </StackPanel>
+        </Grid>
+      </Grid>
+
+      <StackPanel Grid.Row="2"
+                  Orientation="Horizontal"
+                  HorizontalAlignment="Right"
+                  Spacing="8">
+        <Button MinWidth="88"
+                Content="Cancel"
+                IsCancel="True"
+                Click="CancelButton_Click" />
+        <Button x:Name="AddButton"
+                Classes="primary"
+                MinWidth="116"
+                Content="Add command"
+                IsEnabled="False"
+                ToolTip.Tip="Add command (Ctrl+Enter or ⌘+Enter)"
+                Click="AddButton_Click" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

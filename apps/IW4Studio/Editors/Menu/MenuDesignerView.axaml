@@ -9,16 +9,22 @@
              mc:Ignorable="d"
              d:DesignWidth="980"
              d:DesignHeight="650">
-  <Grid>
-    <Grid.RowDefinitions>
-      <RowDefinition Height="4*" MinHeight="360" />
-      <RowDefinition Height="10" />
-      <RowDefinition Height="2*" />
-    </Grid.RowDefinitions>
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto">
-      <menu:MenuPreviewView />
-    </ScrollViewer>
-    <menu:MenuOutlineView Grid.Row="2" />
+  <Grid RowDefinitions="Auto,*">
+    <Grid x:Name="CompactToolbar" IsVisible="False" ColumnDefinitions="Auto,*"
+          ColumnSpacing="10" Margin="0,0,0,6">
+      <Button x:Name="BrowseButton" Content="Browse items" Padding="10,4" MinHeight="30" Click="Browse_Click" />
+      <TextBlock Grid.Column="1" Text="{Binding DocumentName}" FontSize="12"
+                 TextWrapping="Wrap" VerticalAlignment="Center"
+                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+    </Grid>
+    <SplitView x:Name="Workspace" Grid.Row="1" DisplayMode="Inline" IsPaneOpen="True"
+               OpenPaneLength="244" PaneBackground="{DynamicResource StudioSurfaceSunkenBrush}">
+      <SplitView.Pane>
+        <menu:MenuOutlineView />
+      </SplitView.Pane>
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <menu:MenuPreviewView />
+      </ScrollViewer>
+    </SplitView>
   </Grid>
 </UserControl>

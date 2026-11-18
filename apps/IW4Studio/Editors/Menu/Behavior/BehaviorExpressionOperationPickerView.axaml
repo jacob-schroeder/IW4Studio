@@ -6,14 +6,30 @@
              x:Class="IW4.Studio.Desktop.Editors.Menu.Behavior.BehaviorExpressionOperationPickerView"
              x:DataType="behavior:BehaviorExpressionDraftViewModel"
              mc:Ignorable="d">
-  <Grid Margin="0,4,0,0"
-        RowDefinitions="Auto,5,Auto,5,Auto">
-    <Grid ColumnDefinitions="*,Auto"
-          ColumnSpacing="5">
+  <UserControl.Resources>
+    <DataTemplate x:Key="OperationSelection" x:DataType="behavior:BehaviorExpressionOperationOption">
+      <TextBlock Text="{Binding Label}" TextWrapping="Wrap" />
+    </DataTemplate>
+    <DataTemplate x:Key="OperationChoice" x:DataType="behavior:BehaviorExpressionOperationOption">
+      <TextBlock Text="{Binding Label}" MaxWidth="420" TextWrapping="Wrap" />
+    </DataTemplate>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="ComboBox">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="MaxDropDownHeight" Value="300" />
+    </Style>
+  </UserControl.Styles>
+
+  <StackPanel Margin="0,4,0,0" Spacing="5">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
       <ComboBox ItemsSource="{Binding OperationOptions}"
                 SelectedItem="{Binding SelectedOperation, Mode=TwoWay}"
+                ItemTemplate="{StaticResource OperationChoice}"
+                SelectionBoxItemTemplate="{StaticResource OperationSelection}"
                 PlaceholderText="Browse expression functions"
-                ToolTip.Tip="Observed functions appear first; advanced functions have unverified runtime result types."
+                ToolTip.Tip="{Binding SelectedOperation.Label}"
                 AutomationProperties.Name="Expression operation catalog" />
       <Button Grid.Column="1"
               Content="{Binding TemplateActionText}"
@@ -22,36 +38,46 @@
               AutomationProperties.Name="Use expression operation template" />
     </Grid>
 
-    <Grid Grid.Row="2"
-          IsVisible="{Binding HasStaticDvars}"
-          ColumnDefinitions="*,*,Auto"
-          ColumnSpacing="5">
+    <StackPanel IsVisible="{Binding HasStaticDvars}" Spacing="5">
       <ComboBox ItemsSource="{Binding StaticDvarOperationOptions}"
                 SelectedItem="{Binding SelectedStaticDvarOperation, Mode=TwoWay}"
+                ItemTemplate="{StaticResource OperationChoice}"
+                SelectionBoxItemTemplate="{StaticResource OperationSelection}"
                 PlaceholderText="Static dvar operation"
-                ToolTip.Tip="Choose how this static dvar is read."
+                ToolTip.Tip="{Binding SelectedStaticDvarOperation.Label}"
                 AutomationProperties.Name="Static dvar operation" />
-      <ComboBox Grid.Column="1"
-                ItemsSource="{Binding StaticDvars}"
-                SelectedItem="{Binding SelectedStaticDvar, Mode=TwoWay}"
-                PlaceholderText="Static dvar"
-                ToolTip.Tip="Choose an existing Menu static-dvar support row."
-                AutomationProperties.Name="Static dvar support row" />
-      <Button Grid.Column="2"
-              Content="{Binding TemplateActionText}"
-              Command="{Binding UseStaticDvarTemplateCommand}"
-              ToolTip.Tip="{Binding TemplateActionToolTip}"
-              AutomationProperties.Name="Use static dvar formula" />
-    </Grid>
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+        <ComboBox ItemsSource="{Binding StaticDvars}"
+                  SelectedItem="{Binding SelectedStaticDvar, Mode=TwoWay}"
+                  PlaceholderText="Static dvar"
+                  ToolTip.Tip="{Binding SelectedStaticDvar.Label}"
+                  AutomationProperties.Name="Static dvar support row">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="behavior:BehaviorStaticDvarOption">
+              <TextBlock Text="{Binding Label}" MaxWidth="420" TextWrapping="Wrap" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+          <ComboBox.SelectionBoxItemTemplate>
+            <DataTemplate x:DataType="behavior:BehaviorStaticDvarOption">
+              <TextBlock Text="{Binding Label}" TextWrapping="Wrap" />
+            </DataTemplate>
+          </ComboBox.SelectionBoxItemTemplate>
+        </ComboBox>
+        <Button Grid.Column="1"
+                Content="{Binding TemplateActionText}"
+                Command="{Binding UseStaticDvarTemplateCommand}"
+                ToolTip.Tip="{Binding TemplateActionToolTip}"
+                AutomationProperties.Name="Use static dvar formula" />
+      </Grid>
+    </StackPanel>
 
-    <Grid Grid.Row="4"
-          IsVisible="{Binding HasReusableExpressions}"
+    <Grid IsVisible="{Binding HasReusableExpressions}"
           ColumnDefinitions="*,Auto"
           ColumnSpacing="5">
       <ComboBox ItemsSource="{Binding ReusableExpressions}"
                 SelectedItem="{Binding SelectedReusableExpression, Mode=TwoWay}"
                 PlaceholderText="Reusable expression"
-                ToolTip.Tip="Choose an existing reusable expression definition. Referencing it does not create or redefine a support row."
+                ToolTip.Tip="{Binding SelectedReusableExpression.Label}"
                 AutomationProperties.Name="Reusable expression support row" />
       <Button Grid.Column="1"
               Content="{Binding TemplateActionText}"
@@ -59,5 +85,11 @@
               ToolTip.Tip="{Binding TemplateActionToolTip}"
               AutomationProperties.Name="Use reusable expression formula" />
     </Grid>
-  </Grid>
+
+    <Expander Header="Formula help" FontSize="10">
+      <TextBlock Text="Use quoted strings, numbers, parentheses, +, -, *, /, %, comparisons, &amp;&amp;, ||, !, and catalog functions. Static dvar choices use the menu’s existing rows. expressionRef(index) selects an existing reusable definition."
+                 TextWrapping="Wrap"
+                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+    </Expander>
+  </StackPanel>
 </UserControl>

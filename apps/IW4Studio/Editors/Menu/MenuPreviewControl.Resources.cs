@@ -21,8 +21,7 @@ public sealed partial class MenuPreviewControl
         _pendingMaterialLoads = new(StringComparer.Ordinal);
     private readonly HashSet<string> _materialNames =
         new(StringComparer.Ordinal);
-    private readonly Dictionary<MenuPreviewText, MenuPreviewTextLayout>
-        _textLayouts = new(ReferenceEqualityComparer.Instance);
+    private Dictionary<MenuPreviewText, MenuPreviewTextLayout> _textLayouts = [];
     private IMenuPreviewMaterialResolver? _activeMaterialResolver;
     private long _activeMaterialRevision = -1;
     private IMenuTextResourceResolver? _activeTextResourceResolver;
@@ -37,37 +36,35 @@ public sealed partial class MenuPreviewControl
         MenuPreviewScene? scene = Scene;
         IMenuTextResourceResolver? resolver = TextResourceResolver;
         MenuTextResourceRevision? revision = resolver?.Revision;
-        bool contextChanged =
-            !ReferenceEquals(_activeTextScene, scene) ||
-            !ReferenceEquals(_activeTextResourceResolver, resolver) ||
-            _activeTextRevision != revision;
-        if (!contextChanged)
-        {
-            if (reportStatuses)
-                ReportTextStatuses();
+        bool resourcesChanged = !ReferenceEquals(_activeTextResourceResolver, resolver) ||
+            _activeTextRevision != revision || _activeTextScene?.Settings != scene?.Settings;
+        if (!resourcesChanged && ReferenceEquals(_activeTextScene, scene))
             return false;
-        }
 
-        _textLayouts.Clear();
         _activeTextScene = scene;
         _activeTextResourceResolver = resolver;
         _activeTextRevision = revision;
+        if (resourcesChanged)
+            _textLayouts.Clear();
+
+        // A clock tick can move the fog while every label keeps its placement
+        // and text. Keep glyph plans for the exact primitives still on screen.
+        MenuPreviewText[] texts = scene?.Primitives.OfType<MenuPreviewText>().ToArray() ?? [];
+        if (!resourcesChanged && _textLayouts.Count == texts.Length && texts.All(_textLayouts.ContainsKey))
+            return false;
+
+        var next = new Dictionary<MenuPreviewText, MenuPreviewTextLayout>(texts.Length);
         if (scene is not null && resolver is not null)
         {
-            MenuPreviewTextLayoutContext context =
-                MenuPreviewTextLayoutContext.FromScreenPlacement(
-                    scene.Settings.ScreenPlacement);
-            foreach (MenuPreviewText text in scene.Primitives
-                         .OfType<MenuPreviewText>())
+            var context = MenuPreviewTextLayoutContext.FromScreenPlacement(scene.Settings.ScreenPlacement);
+            foreach (MenuPreviewText text in texts)
             {
-                _textLayouts.Add(
-                    text,
-                    MenuPreviewTextLayoutPlanner.Plan(
-                        text,
-                        resolver,
-                        context));
+                next[text] = _textLayouts.TryGetValue(text, out var retained)
+                    ? retained
+                    : MenuPreviewTextLayoutPlanner.Plan(text, resolver, context);
             }
         }
+        _textLayouts = next;
 
         if (reportStatuses)
             ReportTextStatuses();
@@ -77,6 +74,9 @@ public sealed partial class MenuPreviewControl
 
     private void ReportTextStatuses()
     {
+        if (TextResolutionCompleted is null)
+            return;
+
         foreach (MenuPreviewTextLayout layout in _textLayouts.Values)
         {
             TextResolutionCompleted?.Invoke(
@@ -86,7 +86,12 @@ public sealed partial class MenuPreviewControl
                         layout.Source.NodeId,
                         layout.Source.Text,
                         layout.UsesGameGlyphs,
-                        layout.Diagnostics)));
+                        layout.Diagnostics)
+                    {
+                        LayoutDescription = layout.GlyphRun is { } run
+                            ? $"“{layout.DisplayText}” · advance {run.MaxLineAdvance:0.#} / rect {layout.Source.Placement.VirtualRectangle.Width:0.#} virtual units · {run.FontName}"
+                            : $"“{layout.DisplayText}” · game font metrics unavailable"
+                    }));
         }
     }
 
@@ -367,7 +372,9 @@ public sealed partial class MenuPreviewControl
                 _materialSnapshots.ContainsKey(material.MaterialName))
             .Select(material => MaterialBitmapKey.Create(
                 material.MaterialName,
-                material.Tint))
+                material.Tint,
+                _materialSnapshots[material.MaterialName].SelectMipLevel(
+                    Math.Abs(material.Placement.OutputBounds.Width), Math.Abs(material.Placement.OutputBounds.Height))))
             .Concat(_textLayouts.Values.SelectMany(RequiredGlyphBitmapKeys))
             .Distinct()
             .ToArray();
@@ -381,14 +388,17 @@ public sealed partial class MenuPreviewControl
         }
 
         foreach (MaterialBitmapKey key in required)
-        {
-            if (_materialBitmaps.ContainsKey(key))
-                continue;
+            GetOrCreateMaterialBitmap(_materialSnapshots[key.MaterialName], key);
+    }
 
-            MenuPreviewMaterialSnapshot snapshot =
-                _materialSnapshots[key.MaterialName];
-            _materialBitmaps.Add(key, CreateMaterialBitmap(snapshot, key));
+    private Bitmap GetOrCreateMaterialBitmap(MenuPreviewMaterialSnapshot snapshot, MaterialBitmapKey key)
+    {
+        if (!_materialBitmaps.TryGetValue(key, out Bitmap? bitmap))
+        {
+            bitmap = CreateMaterialBitmap(snapshot, key);
+            _materialBitmaps.Add(key, bitmap);
         }
+        return bitmap;
     }
 
     private IEnumerable<MaterialBitmapKey> RequiredGlyphBitmapKeys(

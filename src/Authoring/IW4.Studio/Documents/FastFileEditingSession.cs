@@ -1,6 +1,7 @@
 using System.Numerics;
 using IW4.Game.Assets;
 using IW4.Game.Assets.ColMap;
+using IW4.Game.Assets.Image;
 using IW4.Game.Assets.RawFile;
 using IW4.Game.Assets.Sound;
 using IW4.Game.Assets.StringTable;
@@ -11,6 +12,7 @@ using IW4.Game.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.D3dbsp;
 using IW4.Linker.Packaging;
+using IW4.Loaders.Database;
 
 namespace IW4.Studio.Documents;
 
@@ -2036,24 +2038,52 @@ public sealed class FastFileEditingSession : IDisposable
         object detachedCandidate = state.Adapter.CloneDraft(candidate);
         IW4.Game.Assets.BaseAsset definition = state.Adapter.CreateDefinition(
             detachedCandidate);
-        AssetKey currentKey = AssetKey.FromDefinition(state.CreateCurrentDefinition());
-        AssetKey candidateKey = AssetKey.FromDefinition(definition);
+        AssetKey currentKey = GetEditedDefinitionKey(state.CreateCurrentDefinition());
+        AssetKey candidateKey = GetEditedDefinitionKey(definition);
         if (candidateKey != currentKey)
         {
             throw new InvalidDataException(
                 "An editor cannot change a hosted asset's stable identity.");
         }
 
+        LinkAssetProviderSource provider = detachedCandidate is ImageDraft image
+            ? CreateEditedImageProviderSource(state, image, definition)
+            : new LinkAssetProviderSource(definition).AsAuthoredDetached();
         LinkAssetPool authoredAssets = _authoredAssets
             .WithoutProviders([candidateKey])
-            .WithHighestPrecedenceProviders(
-                [new LinkAssetProviderSource(definition).AsAuthoredDetached()]);
+            .WithHighestPrecedenceProviders([provider]);
         Publish(
             authoredAssets,
             _revision.LinkRequest.Roots,
             publishedProviderKeys: [candidateKey]);
         state.SetCurrent(detachedCandidate, _revision.Revision);
         RebuildChangeSet();
+    }
+
+    private static AssetKey GetEditedDefinitionKey(BaseAsset definition) =>
+        definition is GfxImageAsset { Name: { } name }
+            ? AssetKey.FromWireName(
+                CanonicalAssetFamily.FromSerializedType(XAssetType.Image),
+                DbLoadExecutionContext.NormalizeLoadedAssetName(name))
+            : AssetKey.FromDefinition(definition);
+
+    private LinkAssetProviderSource CreateEditedImageProviderSource(
+        DraftState state,
+        ImageDraft draft,
+        BaseAsset definition)
+    {
+        string? serializedName = state.Entry.OriginalName;
+        if (draft.RetainsOriginalPixels && !Workspace.IsBlank &&
+            state.Identity.SerializedIndex < Workspace.InitialLinkRequest.Roots.Count &&
+            state.Entry.Definition is BaseAsset importedDefinition)
+        {
+            return LoadedZoneLinkExtensions.CreateCapturedProviderSource(
+                Workspace.LoadedZone, definition, importedDefinition, serializedName,
+                LinkAssetProviderSourceDisposition.AuthoredDetached);
+        }
+
+        return new LinkAssetProviderSource(definition, serializedName: serializedName)
+            .AsAuthoredDetached();
     }
 
     private void AddInitialDraft(

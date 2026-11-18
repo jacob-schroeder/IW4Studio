@@ -21,7 +21,9 @@ internal static class MenuItemBehaviorBuilderService
             request.Value,
             request.ItemTitle,
             request.ExpressionSupport,
-            request.SupportsListBoxDoubleClick);
+            request.SupportsListBoxDoubleClick,
+            request.MenuNames,
+            request.ItemNames);
         var window = new MenuItemBehaviorBuilderWindow(
             session,
             request.Apply);
@@ -38,7 +40,9 @@ internal static class MenuItemBehaviorBuilderService
         var session = new MenuItemBehaviorBuilderSessionViewModel(
             request.Value,
             request.MenuTitle,
-            request.ExpressionSupport);
+            request.ExpressionSupport,
+            request.MenuNames,
+            request.ItemNames);
         var window = new MenuItemBehaviorBuilderWindow(
             session,
             request.Apply);

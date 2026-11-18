@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using IW4.Game.Assets.Menu;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents.MenuEditing.Behavior;
-using IW4.Studio.Documents.MenuEditing.Behavior.Expressions;
 
 namespace IW4.Studio.Desktop.Editors.Menu.Behavior;
 
@@ -24,10 +23,10 @@ public sealed class BehaviorBindingsViewModel : ObservableObject
         _changed = changed ?? throw new ArgumentNullException(nameof(changed));
         FixedBindings = Array.AsReadOnly(
         [
-            new BehaviorFixedBindingViewModel("Visible", "Boolean", source.Visible, BehaviorExpressionResultKind.Boolean, _expressionSupport, NotifyChanged),
-            new BehaviorFixedBindingViewModel("Disabled", "Boolean", source.Disabled, BehaviorExpressionResultKind.Boolean, _expressionSupport, NotifyChanged),
-            new BehaviorFixedBindingViewModel("Text", "String", source.Text, BehaviorExpressionResultKind.String, _expressionSupport, NotifyChanged),
-            new BehaviorFixedBindingViewModel("Material", "String", source.Material, BehaviorExpressionResultKind.String, _expressionSupport, NotifyChanged)
+            new BehaviorFixedBindingViewModel("Visible", "Boolean", source.Visible, MenuBehaviorExpressionSiteKind.ItemVisible, _expressionSupport, NotifyChanged),
+            new BehaviorFixedBindingViewModel("Disabled", "Boolean", source.Disabled, MenuBehaviorExpressionSiteKind.ItemDisabled, _expressionSupport, NotifyChanged),
+            new BehaviorFixedBindingViewModel("Text", "String, number or boolean", source.Text, MenuBehaviorExpressionSiteKind.ItemText, _expressionSupport, NotifyChanged),
+            new BehaviorFixedBindingViewModel("Material", "String", source.Material, MenuBehaviorExpressionSiteKind.ItemMaterial, _expressionSupport, NotifyChanged)
         ]);
         FloatBindings = [];
         foreach (MenuBehaviorFloatExpressionBinding binding in source.FloatExpressions.Entries)
@@ -155,18 +154,19 @@ public sealed class BehaviorBindingsViewModel : ObservableObject
 public sealed class BehaviorFixedBindingViewModel : ObservableObject
 {
     private readonly Action _changed;
+    private readonly MenuBehaviorExpressionSite _site;
 
     internal BehaviorFixedBindingViewModel(
         string title,
         string expectedType,
         MenuBehaviorExpressionBinding source,
-        BehaviorExpressionResultKind expectedResultKind,
+        MenuBehaviorExpressionSiteKind site,
         BehaviorExpressionSupportDraftViewModel expressionSupport,
         Action changed)
     {
         Title = title;
         ExpectedType = expectedType;
-        ExpectedResultKind = expectedResultKind;
+        _site = new(site);
         _changed = changed ?? throw new ArgumentNullException(nameof(changed));
         Expression = new BehaviorExpressionDraftViewModel(
             source, expressionSupport, NotifyChanged);
@@ -179,7 +179,7 @@ public sealed class BehaviorFixedBindingViewModel : ObservableObject
 
     public string ExpectedType { get; }
 
-    public BehaviorExpressionResultKind ExpectedResultKind { get; }
+    public bool IsExpanded { get; set; }
 
     public BehaviorExpressionDraftViewModel Expression { get; }
 
@@ -190,7 +190,7 @@ public sealed class BehaviorFixedBindingViewModel : ObservableObject
     internal MenuBehaviorExpressionBinding ToBinding() => Expression.ToBinding();
 
     internal IReadOnlyList<string> Validate() => Expression.Validate(
-        Title, required: false, ExpectedResultKind);
+        Title, required: false, _site);
 
     private void NotifyChanged()
     {
@@ -223,6 +223,7 @@ public sealed class BehaviorFloatBindingDraftViewModel : ObservableObject
         _changed = changed ?? throw new ArgumentNullException(nameof(changed));
         Targets = AvailableTargets;
         _target = Targets[0].Target;
+        IsExpanded = true;
         _unknownTargetOption = new BehaviorFloatTargetOption(
             _target,
             FormatTarget(_target));
@@ -260,6 +261,8 @@ public sealed class BehaviorFloatBindingDraftViewModel : ObservableObject
     }
 
     public IReadOnlyList<BehaviorFloatTargetOption> Targets { get; }
+
+    public bool IsExpanded { get; set; }
 
     /// <summary>
     /// Unknown native target values are retained for deletion or an unchanged
@@ -363,7 +366,7 @@ public sealed class BehaviorFloatBindingDraftViewModel : ObservableObject
         var messages = new List<string>();
         messages.AddRange(Expression.Validate(
             $"Float binding {row} ({Target})", required: true,
-            BehaviorExpressionResultKind.Float));
+            MenuBehaviorExpressionSite.Float(Target)));
         return messages;
     }
 

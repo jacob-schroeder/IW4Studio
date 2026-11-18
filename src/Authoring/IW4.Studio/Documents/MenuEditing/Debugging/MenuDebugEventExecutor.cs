@@ -275,17 +275,15 @@ internal sealed class MenuDebugEventExecutor
 
         MenuDebugValue? value = type switch
         {
-            MenuEventHandlerType.SetLocalVarBool when
-                evaluated.Value.TryGetBoolean(out bool boolean) =>
-                MenuDebugValue.FromBoolean(boolean),
-            MenuEventHandlerType.SetLocalVarInt when
-                evaluated.Value.TryGetInt(out int integer) =>
-                MenuDebugValue.FromInt(integer),
+            MenuEventHandlerType.SetLocalVarBool =>
+                MenuDebugValue.FromBoolean(evaluated.Value.AsLocalInteger() != 0),
+            MenuEventHandlerType.SetLocalVarInt =>
+                MenuDebugValue.FromInt(evaluated.Value.AsLocalInteger()),
             MenuEventHandlerType.SetLocalVarFloat when
                 evaluated.Value.TryGetFloat(out float floatingPoint) =>
                 MenuDebugValue.FromFloat(floatingPoint),
             MenuEventHandlerType.SetLocalVarString =>
-                MenuDebugValue.FromString(evaluated.Value.AsString()),
+                MenuDebugValue.FromString(evaluated.Value.AsFormattedExpressionString()),
             _ => null
         };
         if (value is { } converted)

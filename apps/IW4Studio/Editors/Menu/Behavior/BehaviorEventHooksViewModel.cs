@@ -11,6 +11,7 @@ namespace IW4.Studio.Desktop.Editors.Menu.Behavior;
 public sealed class BehaviorEventHooksViewModel : ObservableObject
 {
     private readonly Action _changed;
+    private readonly BehaviorEventSlotViewModel? _listBoxDoubleClick;
 
     internal BehaviorEventHooksViewModel(
         MenuItemBehaviorBindings bindings,
@@ -20,7 +21,7 @@ public sealed class BehaviorEventHooksViewModel : ObservableObject
     {
         ArgumentNullException.ThrowIfNull(bindings);
         _changed = changed ?? throw new ArgumentNullException(nameof(changed));
-        Slots = Array.AsReadOnly(
+        List<BehaviorEventSlotViewModel> slots =
         [
             CreateSlot(MenuItemBehaviorHook.MouseEnterText, "Mouse enter text", "Runs when the pointer enters this item's text.", bindings.GetHook(MenuItemBehaviorHook.MouseEnterText), expressionSupport),
             CreateSlot(MenuItemBehaviorHook.MouseExitText, "Mouse exit text", "Runs when the pointer leaves this item's text.", bindings.GetHook(MenuItemBehaviorHook.MouseExitText), expressionSupport),
@@ -30,14 +31,18 @@ public sealed class BehaviorEventHooksViewModel : ObservableObject
             CreateSlot(MenuItemBehaviorHook.Accept, "Accept", "Runs when the item accepts its current value.", bindings.GetHook(MenuItemBehaviorHook.Accept), expressionSupport),
             CreateSlot(MenuItemBehaviorHook.OnFocus, "On focus", "Runs when this item receives focus.", bindings.GetHook(MenuItemBehaviorHook.OnFocus), expressionSupport),
             CreateSlot(MenuItemBehaviorHook.LeaveFocus, "Leave focus", "Runs when this item loses focus.", bindings.GetHook(MenuItemBehaviorHook.LeaveFocus), expressionSupport)
-        ]);
-        ListBoxDoubleClick = CreateSlot(
-            hook: null,
-            title: "List box double click",
-            description: "Runs when a list-box item is double-clicked.",
-            binding: bindings.ListBoxDoubleClick,
-            expressionSupport);
-        SupportsListBoxDoubleClick = supportsListBoxDoubleClick;
+        ];
+        if (supportsListBoxDoubleClick)
+        {
+            _listBoxDoubleClick = CreateSlot(
+                hook: null,
+                title: "List box double click",
+                description: "Runs when a list-box item is double-clicked.",
+                binding: bindings.ListBoxDoubleClick,
+                expressionSupport);
+            slots.Add(_listBoxDoubleClick);
+        }
+        Slots = slots.AsReadOnly();
     }
 
     internal BehaviorEventHooksViewModel(
@@ -74,30 +79,16 @@ public sealed class BehaviorEventHooksViewModel : ObservableObject
                 bindings.OnEscape,
                 expressionSupport)
         ]);
-        ListBoxDoubleClick = CreateSlot(
-            hook: null,
-            title: "List box double click",
-            description: "Runs when a list-box item is double-clicked.",
-            binding: MenuBehaviorEventBinding.Empty,
-            expressionSupport);
-        SupportsListBoxDoubleClick = false;
     }
 
     public IReadOnlyList<BehaviorEventSlotViewModel> Slots { get; }
-
-    public BehaviorEventSlotViewModel ListBoxDoubleClick { get; }
-
-    public bool SupportsListBoxDoubleClick { get; }
 
     public string Summary
     {
         get
         {
-            IEnumerable<BehaviorEventSlotViewModel> slots = SupportsListBoxDoubleClick
-                ? Slots.Append(ListBoxDoubleClick)
-                : Slots;
-            int activeSlots = slots.Count(slot => slot.HasHandlers);
-            int handlerCount = slots.Sum(slot => slot.HandlerCount);
+            int activeSlots = Slots.Count(slot => slot.HasHandlers);
+            int handlerCount = Slots.Sum(slot => slot.HandlerCount);
             return activeSlots == 0
                 ? "No event hooks"
                 : $"{activeSlots} hook{Plural(activeSlots)} · {handlerCount} handler{Plural(handlerCount)}";
@@ -115,9 +106,7 @@ public sealed class BehaviorEventHooksViewModel : ObservableObject
             Accept = Slots[5].ToBinding(),
             OnFocus = Slots[6].ToBinding(),
             LeaveFocus = Slots[7].ToBinding(),
-            ListBoxDoubleClick = SupportsListBoxDoubleClick
-                ? ListBoxDoubleClick.ToBinding()
-                : source.ListBoxDoubleClick
+            ListBoxDoubleClick = _listBoxDoubleClick?.ToBinding() ?? source.ListBoxDoubleClick
         };
 
     internal MenuDefinitionBehaviorBindings ApplyTo(
@@ -135,8 +124,6 @@ public sealed class BehaviorEventHooksViewModel : ObservableObject
         var messages = new List<string>();
         foreach (BehaviorEventSlotViewModel slot in Slots)
             messages.AddRange(slot.Validate());
-        if (SupportsListBoxDoubleClick)
-            messages.AddRange(ListBoxDoubleClick.Validate());
         return messages;
     }
 
@@ -184,6 +171,8 @@ public sealed class BehaviorEventSlotViewModel : ObservableObject
     public string Title { get; }
 
     public string Description { get; }
+
+    public bool IsExpanded { get; set; }
 
     public BehaviorEventHandlerSetDraftViewModel Handlers { get; }
 

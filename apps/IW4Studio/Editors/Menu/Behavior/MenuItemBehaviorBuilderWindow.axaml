@@ -27,21 +27,14 @@
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource StudioTextBrush}" />
           <TextBlock Text="{Binding ScopeText}"
+                     TextTrimming="CharacterEllipsis"
+                     ToolTip.Tip="{Binding ScopeText}"
                      FontSize="10"
                      Foreground="{DynamicResource StudioTextMutedBrush}" />
           <TextBlock Text="{Binding Description}"
                      FontSize="10"
                      TextWrapping="Wrap"
                      Foreground="{DynamicResource StudioTextMutedBrush}" />
-          <TextBlock Text="Formulas support quoted strings, numbers, parentheses, +, -, *, /, %, comparisons, &amp;&amp;, ||, !, and the observed/advanced function catalog."
-                     FontSize="9"
-                     TextWrapping="Wrap"
-                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
-          <TextBlock Text="Static dvars select existing rows or append a named static-dvar row in Bindings. expressionRef(index) always selects an existing reusable definition."
-                     IsVisible="{Binding HasBindings}"
-                     FontSize="9"
-                     TextWrapping="Wrap"
-                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
         </StackPanel>
         <Border Grid.Column="1"
                 Padding="8,3"
@@ -73,35 +66,27 @@
                        Foreground="{DynamicResource StudioTextSubtleBrush}" />
             <ListBox x:Name="NavigationList"
                      Grid.Row="2"
+                     Classes="menuNavigator"
                      ItemsSource="{Binding NavigationItems}"
                      SelectedItem="{Binding SelectedNavigationItem, Mode=TwoWay}"
-                     Background="Transparent"
-                     BorderThickness="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      AutomationProperties.Name="Behavior builder sections">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="behavior:MenuItemBehaviorBuilderNavigationItemViewModel">
-                  <Grid Margin="4,5"
-                        ColumnDefinitions="*,Auto"
-                        ColumnSpacing="7">
-                    <StackPanel Spacing="2">
-                      <TextBlock Text="{Binding Title}"
-                                 FontSize="11"
-                                 FontWeight="SemiBold"
-                                 Foreground="{DynamicResource StudioTextBrush}" />
-                      <TextBlock Text="{Binding Description}"
-                                 FontSize="8"
-                                 TextWrapping="Wrap"
-                                 Foreground="{DynamicResource StudioTextMutedBrush}" />
-                    </StackPanel>
-                    <TextBlock Grid.Column="1"
-                               MaxWidth="56"
-                               VerticalAlignment="Top"
-                               Text="{Binding Summary}"
-                               FontSize="8"
-                               TextAlignment="Right"
+                  <StackPanel Margin="3,4" Spacing="3">
+                    <TextBlock Text="{Binding Title}"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource StudioTextBrush}" />
+                    <TextBlock Text="{Binding Summary}"
+                               FontSize="10"
                                TextWrapping="Wrap"
-                               Foreground="{DynamicResource StudioAccentBrush}" />
-                  </Grid>
+                               Foreground="{DynamicResource StudioTextBrush}" />
+                    <TextBlock Text="{Binding Description}"
+                               FontSize="9"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </StackPanel>
                 </DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>
@@ -144,10 +129,14 @@
                   Background="{DynamicResource StudioErrorSurfaceBrush}"
                   BorderBrush="{DynamicResource StudioErrorBrush}"
                   BorderThickness="1">
-            <TextBlock Text="{Binding ValidationMessage}"
-                       FontSize="9"
-                       TextWrapping="Wrap"
-                       Foreground="{DynamicResource StudioErrorBrush}" />
+            <ScrollViewer MaxHeight="92"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+              <TextBlock Text="{Binding ValidationMessage}"
+                         FontSize="9"
+                         TextWrapping="Wrap"
+                         Foreground="{DynamicResource StudioErrorBrush}" />
+            </ScrollViewer>
           </Border>
           <Border Padding="8,6"
                   CornerRadius="4"

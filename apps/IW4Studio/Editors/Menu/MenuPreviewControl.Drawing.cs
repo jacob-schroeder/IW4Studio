@@ -4,6 +4,8 @@ using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using IW4.Game.Assets.Menu;
+using IW4.Render.Textures;
 using IW4.Render.UI.ScreenPlacement;
 using IW4.Render.UI.Text;
 using IW4.Render.Techniques;
@@ -25,6 +27,9 @@ public sealed partial class MenuPreviewControl
             new SolidColorBrush(Color.FromRgb(8, 10, 13)),
             new Pen(new SolidColorBrush(Color.FromRgb(75, 82, 92)), 1),
             stage);
+
+        if (!ShowPlacementGuides)
+            return;
 
         UiScreenPlacement placement = scene.Settings.ScreenPlacement;
         double gridSizeX = 32 * placement.VirtualToRealX * transform.Scale;
@@ -97,7 +102,12 @@ public sealed partial class MenuPreviewControl
                 break;
 
             case MenuPreviewMaterial material:
-                DrawMaterial(context, material, bounds);
+                using (material.HorizontalFraction < 1
+                    ? context.PushClip(VisibleMaterialBounds(material, bounds))
+                    : (DrawingContext.PushedState?)null)
+                {
+                    DrawMaterial(context, material, bounds, placement.OutputBounds);
+                }
                 break;
 
             case MenuPreviewText text:
@@ -119,25 +129,48 @@ public sealed partial class MenuPreviewControl
         }
     }
 
+    private static Rect VisibleMaterialBounds(MenuPreviewMaterial material, Rect bounds)
+    {
+        if (material.HorizontalFraction == 1f)
+            return bounds;
+        double width = bounds.Width * material.HorizontalFraction;
+        return new Rect(material.FlipHorizontal ? bounds.Right - width : bounds.Left,
+            bounds.Top, width, bounds.Height);
+    }
+
     private void DrawMaterial(
         DrawingContext context,
         MenuPreviewMaterial material,
-        Rect bounds)
+        Rect bounds,
+        MenuPreviewRect nativeBounds)
     {
         if (_materialSnapshots.TryGetValue(
                 material.MaterialName,
                 out MenuPreviewMaterialSnapshot? snapshot) &&
             snapshot.CpuPreviewCompositeState is { } compositeState &&
-            IsMaterialCulled(material, compositeState.CullMode))
+            IsMaterialCulled(compositeState.CullMode))
         {
             return;
         }
 
-        MaterialBitmapKey bitmapKey = MaterialBitmapKey.Create(
-            material.MaterialName,
-            material.Tint);
-        if (_materialBitmaps.TryGetValue(bitmapKey, out Bitmap? bitmap))
+        if (snapshot is not null)
         {
+            double width = Math.Abs(nativeBounds.Width);
+            double height = Math.Abs(nativeBounds.Height);
+            int mip = snapshot.SelectMipLevel(width, height);
+            var key = MaterialBitmapKey.Create(material.MaterialName, material.Tint, mip);
+            // Dragging a rectangle can cross a mip boundary between scene refreshes.
+            Bitmap bitmap = GetOrCreateMaterialBitmap(snapshot, key);
+            using var filter = context.PushRenderOptions(new RenderOptions
+            {
+                BitmapInterpolationMode = snapshot.SamplerState is { MipFilter: TextureFilter.Point, MinLodControl: 0 } sampler
+                    ? ResolveFilter(sampler, width, height, snapshot) switch
+                {
+                    TextureFilter.Point => BitmapInterpolationMode.None,
+                    TextureFilter.Linear => BitmapInterpolationMode.LowQuality,
+                    _ => BitmapInterpolationMode.Unspecified
+                } : BitmapInterpolationMode.Unspecified
+            });
             if (!material.FlipHorizontal && !material.FlipVertical)
             {
                 context.DrawImage(bitmap, bounds);
@@ -165,20 +198,9 @@ public sealed partial class MenuPreviewControl
         DrawLabel(context, label, bounds, 10, Color.FromRgb(224, 229, 236));
     }
 
-    private static bool IsMaterialCulled(
-        MenuPreviewMaterial material,
-        CullMode cullMode)
-    {
-        if (cullMode == CullMode.Disabled)
-            return false;
-
-        // The native UI quad is back-facing under the established projection.
-        // Exactly one signed dimension reverses its winding as well as its UVs.
-        bool frontFacing = material.FlipHorizontal ^ material.FlipVertical;
-        return cullMode == CullMode.Front
-            ? frontFacing
-            : !frontFacing;
-    }
+    // PS3 0x0022a000 swaps the UV endpoints and makes each signed extent positive
+    // before submitting the quad. Mirrored menu pictures keep the usual back-facing winding.
+    private static bool IsMaterialCulled(CullMode cullMode) => cullMode == CullMode.Back;
 
     private void DrawText(
         DrawingContext context,
@@ -188,9 +210,6 @@ public sealed partial class MenuPreviewControl
         MenuPreviewScene scene,
         bool useCachedLayout)
     {
-        if (bounds.Width <= 0 || bounds.Height <= 0)
-            return;
-
         MenuPreviewTextLayout? layout;
         if (useCachedLayout)
         {
@@ -219,6 +238,11 @@ public sealed partial class MenuPreviewControl
         {
             return;
         }
+
+        // Native glyph placement also supports point anchors (rect x y 0 0).
+        // Only the bounded fallback below needs a nonempty layout box.
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+            return;
 
         UiScreenAxisPlacement horizontal =
             scene.Settings.ScreenPlacement.Resolve(
@@ -383,6 +407,33 @@ public sealed partial class MenuPreviewControl
             new Pen(new SolidColorBrush(Color.FromRgb(74, 184, 255)), 2),
             selectionBounds);
         DrawResizeHandles(context, selectionBounds);
+        if (!ShowTextBounds || _geometryManipulation is { IsActivated: true })
+            return;
+
+        foreach (var (text, layout) in _textLayouts)
+        {
+            if (text.NodeId != selected || layout.GlyphRun is not { CanRender: true } run)
+                continue;
+            var rect = text.Placement.VirtualRectangle;
+            var placement = scene.Settings.ScreenPlacement;
+            var horizontal = placement.Resolve(rect.HorizontalAlignment);
+            var vertical = placement.Resolve(rect.VerticalAlignment);
+            float x = MathF.Floor(horizontal.ApplyPosition(layout.BaselineX) + 0.5f);
+            float y = MathF.Floor(vertical.ApplyPosition(layout.BaselineY) + 0.5f);
+            var baseline = transform.Map(new MenuPreviewRect(x, y,
+                horizontal.ApplyLength(run.MaxLineAdvance), 0));
+            var pen = new Pen(Brushes.Gold, 1, DashStyle.Dash);
+            context.DrawLine(pen, baseline.TopLeft, baseline.TopRight);
+            if (run.Quads.Count == 0) continue;
+            float left = run.Quads.Min(q => q.Bounds.X);
+            float top = run.Quads.Min(q => q.Bounds.Y);
+            float right = run.Quads.Max(q => q.Bounds.X + q.Bounds.Width);
+            float bottom = run.Quads.Max(q => q.Bounds.Y + q.Bounds.Height);
+            context.DrawRectangle(null, pen, transform.Map(new MenuPreviewRect(
+                x + horizontal.ApplyLength(left - layout.BaselineX),
+                y + vertical.ApplyLength(top - layout.BaselineY),
+                horizontal.ApplyLength(right - left), vertical.ApplyLength(bottom - top))));
+        }
     }
 
     private static void DrawBorder(
@@ -410,21 +461,39 @@ public sealed partial class MenuPreviewControl
         IBrush brush = Brush(border.Color);
         switch (border.Border)
         {
-            case IW4.Game.Assets.Menu.WindowBorder.WINDOW_BORDER_HORZ:
-            case IW4.Game.Assets.Menu.WindowBorder.WINDOW_BORDER_KCGRADIENT:
+            case WindowBorder.WINDOW_BORDER_HORZ:
+            case WindowBorder.WINDOW_BORDER_KCGRADIENT:
                 DrawHorizontalBorder(
                     context,
                     brush,
                     bounds,
                     verticalThickness);
                 break;
-            case IW4.Game.Assets.Menu.WindowBorder.WINDOW_BORDER_VERT:
+            case WindowBorder.WINDOW_BORDER_VERT:
                 DrawVerticalBorder(
                     context,
                     brush,
                     bounds,
                     horizontalThickness,
                     insetY: 0);
+                break;
+            case WindowBorder.WINDOW_BORDER_RAISED:
+            case WindowBorder.WINDOW_BORDER_SUNKEN:
+                var color = border.Color;
+                IBrush dimmed = Brush(new MenuColorValue(color.A, color.R * border.LowLightScale,
+                    color.G * border.LowLightScale, color.B * border.LowLightScale));
+                bool raised = border.Border == WindowBorder.WINDOW_BORDER_RAISED;
+                IBrush topLeft = raised ? brush : dimmed;
+                IBrush bottomRight = raised ? dimmed : brush;
+                var inset = new Vector(horizontalThickness, verticalThickness);
+                Point tl = bounds.TopLeft + inset;
+                Point br = bounds.BottomRight - inset;
+                var tr = new Point(br.X, tl.Y);
+                var bl = new Point(tl.X, br.Y);
+                DrawBorderFace(context, topLeft, bounds.TopLeft, bounds.TopRight, tr, tl);
+                DrawBorderFace(context, topLeft, bounds.TopLeft, tl, bl, bounds.BottomLeft);
+                DrawBorderFace(context, bottomRight, bounds.BottomLeft, bl, br, bounds.BottomRight);
+                DrawBorderFace(context, bottomRight, bounds.TopRight, bounds.BottomRight, br, tr);
                 break;
             default:
                 DrawHorizontalBorder(
@@ -440,6 +509,20 @@ public sealed partial class MenuPreviewControl
                     verticalThickness);
                 break;
         }
+    }
+
+    private static void DrawBorderFace(DrawingContext context, IBrush brush, Point a, Point b, Point c, Point d)
+    {
+        var geometry = new StreamGeometry();
+        using (var path = geometry.Open())
+        {
+            path.BeginFigure(a, isFilled: true);
+            path.LineTo(b);
+            path.LineTo(c);
+            path.LineTo(d);
+            path.EndFigure(isClosed: true);
+        }
+        context.DrawGeometry(brush, null, geometry);
     }
 
     private static void DrawHorizontalBorder(
@@ -604,7 +687,9 @@ public sealed partial class MenuPreviewControl
         MenuPreviewMaterialSnapshot snapshot,
         MaterialBitmapKey key)
     {
-        byte[] rgba = snapshot.GetRgbaBytesCopy();
+        byte[] rgba = snapshot.MipPixels(key.MipLevel).ToArray();
+        int width = Math.Max(1, snapshot.Width >> key.MipLevel);
+        int height = Math.Max(1, snapshot.Height >> key.MipLevel);
         for (int offset = 0; offset < rgba.Length; offset += 4)
         {
             rgba[offset] = MultiplyChannel(rgba[offset], key.R);
@@ -622,20 +707,20 @@ public sealed partial class MenuPreviewControl
         }
 
         var bitmap = new WriteableBitmap(
-            new PixelSize(snapshot.Width, snapshot.Height),
+            new PixelSize(width, height),
             new Vector(96, 96),
             PixelFormats.Rgba8888,
             AlphaFormat.Unpremul);
         try
         {
             using ILockedFramebuffer framebuffer = bitmap.Lock();
-            int sourceStride = checked(snapshot.Width * 4);
+            int sourceStride = checked(width * 4);
             if (framebuffer.RowBytes < sourceStride)
             {
                 throw new InvalidDataException(
                     "The preview bitmap row stride is smaller than its RGBA payload.");
             }
-            for (int row = 0; row < snapshot.Height; row++)
+            for (int row = 0; row < height; row++)
             {
                 Marshal.Copy(
                     rgba,
@@ -662,17 +747,19 @@ public sealed partial class MenuPreviewControl
         byte A,
         byte R,
         byte G,
-        byte B)
+        byte B,
+        int MipLevel)
     {
         public static MaterialBitmapKey Create(
             string materialName,
-            MenuColorValue tint) =>
+            MenuColorValue tint,
+            int mipLevel = 0) =>
             new(
                 materialName,
                 Channel(tint.A),
                 Channel(tint.R),
                 Channel(tint.G),
-                Channel(tint.B));
+                Channel(tint.B), mipLevel);
     }
 
     private readonly record struct PreviewTransform(double Scale, Point Origin)

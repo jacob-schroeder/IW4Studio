@@ -19,6 +19,8 @@ public sealed class MenuItemBehaviorEditRequestedEventArgs : EventArgs
         MenuItemBehaviorBindings value,
         BehaviorExpressionSupport expressionSupport,
         bool supportsListBoxDoubleClick,
+        IReadOnlyList<string> menuNames,
+        IReadOnlyList<string> itemNames,
         Action<MenuItemBehaviorBindings> apply)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(itemTitle);
@@ -27,6 +29,8 @@ public sealed class MenuItemBehaviorEditRequestedEventArgs : EventArgs
         Value = value ?? throw new ArgumentNullException(nameof(value));
         ExpressionSupport = expressionSupport ??
             throw new ArgumentNullException(nameof(expressionSupport));
+        MenuNames = menuNames ?? throw new ArgumentNullException(nameof(menuNames));
+        ItemNames = itemNames ?? throw new ArgumentNullException(nameof(itemNames));
         SupportsListBoxDoubleClick = supportsListBoxDoubleClick;
         _apply = apply ?? throw new ArgumentNullException(nameof(apply));
     }
@@ -38,6 +42,10 @@ public sealed class MenuItemBehaviorEditRequestedEventArgs : EventArgs
     public MenuItemBehaviorBindings Value { get; }
 
     public BehaviorExpressionSupport ExpressionSupport { get; }
+
+    internal IReadOnlyList<string> MenuNames { get; }
+
+    internal IReadOnlyList<string> ItemNames { get; }
 
     public bool SupportsListBoxDoubleClick { get; }
 

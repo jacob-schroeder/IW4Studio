@@ -42,47 +42,65 @@
     <ScrollViewer Grid.Row="4"
                   HorizontalScrollBarVisibility="Disabled"
                   VerticalScrollBarVisibility="Auto">
-      <ItemsControl ItemsSource="{Binding Handlers}">
+      <ItemsControl x:Name="HandlerList" ItemsSource="{Binding Handlers}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="behavior:BehaviorKeyHandlerDraftViewModel">
-            <Border Margin="0,0,0,8"
-                    Padding="10"
-                    CornerRadius="6"
-                    Background="{DynamicResource StudioSurfaceSunkenBrush}"
-                    BorderBrush="{DynamicResource StudioBorderBrush}"
-                    BorderThickness="1">
-              <Grid RowDefinitions="Auto,4,Auto,8,*"
-                    ColumnDefinitions="*,Auto"
-                    ColumnSpacing="7">
-                <TextBlock Text="KEY HANDLER"
-                           FontSize="9"
-                           FontWeight="Bold"
-                           LetterSpacing="0.7"
-                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3">
-                  <Button Width="25" Height="24" Padding="2" Command="{Binding MoveUpCommand}" ToolTip.Tip="Move key handler up"><TextBlock Text="↑" /></Button>
-                  <Button Width="25" Height="24" Padding="2" Command="{Binding MoveDownCommand}" ToolTip.Tip="Move key handler down"><TextBlock Text="↓" /></Button>
-                  <Button Width="25" Height="24" Padding="2" Command="{Binding RemoveCommand}" ToolTip.Tip="Delete key handler"><TextBlock Text="×" FontSize="14" /></Button>
-                </StackPanel>
-                <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Spacing="2">
-                  <TextBox Text="{Binding KeyText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                           PlaceholderText="Signed engine key code"
-                           AutomationProperties.Name="Key handler key code" />
-                  <TextBlock Text="{Binding KeyErrorText}"
-                             IsVisible="{Binding HasKeyError}"
-                             FontSize="8"
-                             Foreground="{DynamicResource StudioErrorBrush}" />
-                </StackPanel>
-                <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Spacing="4">
-                  <TextBlock Text="ACTIONS"
-                             FontSize="8"
-                             FontWeight="Bold"
-                             LetterSpacing="0.6"
-                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <Grid Margin="0,0,0,6" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <Expander HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch"
+                        IsExpanded="{Binding IsExpanded, Mode=TwoWay}">
+                <Expander.Header>
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding Heading}"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource StudioTextBrush}" />
+                    <TextBlock Text="{Binding Action.Summary}"
+                               ToolTip.Tip="{Binding Action.Summary}"
+                               TextTrimming="CharacterEllipsis"
+                               FontSize="10"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                    <TextBlock Text="{Binding KeyErrorText}"
+                               IsVisible="{Binding HasKeyError}"
+                               TextWrapping="Wrap"
+                               FontSize="10"
+                               Foreground="{DynamicResource StudioErrorBrush}" />
+                  </StackPanel>
+                </Expander.Header>
+                <StackPanel Spacing="8">
+                  <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" ColumnSpacing="8" RowSpacing="4">
+                    <TextBlock Text="Input type" FontSize="11" />
+                    <TextBlock Grid.Column="1" Text="Key" IsVisible="{Binding !IsCustomKey}" FontSize="11" />
+                    <TextBlock Grid.Column="1" Text="Engine code" IsVisible="{Binding IsCustomKey}" FontSize="11" />
+                    <ComboBox x:Name="InputType" Grid.Row="1" ItemsSource="{Binding KeyGroups}"
+                              SelectedItem="{Binding KeyGroup, Mode=TwoWay}"
+                              AutomationProperties.Name="Key handler input category" />
+                    <ComboBox Grid.Row="1" Grid.Column="1"
+                              ItemsSource="{Binding KeyOptions}"
+                              SelectedItem="{Binding SelectedKey, Mode=TwoWay}"
+                              IsVisible="{Binding !IsCustomKey}"
+                              IsTextSearchEnabled="True"
+                              MaxDropDownHeight="300"
+                              HorizontalAlignment="Stretch"
+                              PlaceholderText="Choose a key"
+                              AutomationProperties.Name="Key handler input" />
+                    <TextBox Grid.Row="1" Grid.Column="1"
+                             IsVisible="{Binding IsCustomKey}"
+                             Text="{Binding KeyText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             PlaceholderText="Signed engine key code"
+                             AutomationProperties.Name="Key handler custom code" />
+                  </Grid>
+                  <TextBlock Text="{Binding KeyGroupHint}" IsVisible="{Binding KeyGroupHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                             TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource StudioTextMutedBrush}" />
                   <behavior:BehaviorEventHandlerSetView DataContext="{Binding Action}" />
                 </StackPanel>
-              </Grid>
-            </Border>
+              </Expander>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Spacing="3">
+                <Button Width="25" Height="24" Padding="2" Command="{Binding MoveUpCommand}" ToolTip.Tip="Move key handler up"><TextBlock Text="↑" /></Button>
+                <Button Width="25" Height="24" Padding="2" Command="{Binding MoveDownCommand}" ToolTip.Tip="Move key handler down"><TextBlock Text="↓" /></Button>
+                <Button Width="25" Height="24" Padding="2" Command="{Binding RemoveCommand}" ToolTip.Tip="Delete key handler"><TextBlock Text="×" FontSize="14" /></Button>
+              </StackPanel>
+            </Grid>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
@@ -93,7 +111,7 @@
             HorizontalAlignment="Left"
             Classes="primary"
             Content="Add key handler"
-            Command="{Binding AddKeyHandlerCommand}"
+            Click="AddKeyHandler_Click"
             AutomationProperties.Name="Add key handler" />
   </Grid>
 </UserControl>

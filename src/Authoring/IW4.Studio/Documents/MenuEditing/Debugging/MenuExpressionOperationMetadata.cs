@@ -10,11 +10,29 @@ namespace IW4.Studio.Documents.MenuEditing.Debugging;
 internal static class MenuExpressionOperationMetadata
 {
     public static MenuDebugValueKind? EnvironmentResultKind(
-        OperationEnum operation) => operation switch
+        OperationEnum operation, string? qualifier) => operation switch
         {
             OperationEnum.OP_ANYNEWMAPPACKS or
+            OperationEnum.OP_GETPLAYERDATAANYBOOLTRUE or
+            OperationEnum.OP_SPECTATINGCLIENT or
+            OperationEnum.OP_ISEMPJAMMED or
+            OperationEnum.OP_ADSJAVELIN or
+            OperationEnum.OP_WEAPLOCKBLINK or
+            OperationEnum.OP_WEAPATTACKTOP or
+            OperationEnum.OP_WEAPATTACKDIRECT or
+            OperationEnum.OP_WEAPLOCKING or
+            OperationEnum.OP_WEAPLOCKED or
+            OperationEnum.OP_WEAPLOCKTOOCLOSE or
             OperationEnum.OP_ISSPLITSCREENONLINEPOSSIBLE =>
                 MenuDebugValueKind.Boolean,
+            OperationEnum.OP_WEAPLOCKSCREENPOSX or
+            OperationEnum.OP_WEAPLOCKSCREENPOSY => MenuDebugValueKind.Float,
+            // The PS3 player-field dispatch at 0x232664 distinguishes strings
+            // such as teamname from integer clip counts for either hand.
+            OperationEnum.OP_PLAYERFIELD when
+                string.Equals(qualifier, "clipAmmo", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(qualifier, "clipAmmo_left", StringComparison.OrdinalIgnoreCase) =>
+                MenuDebugValueKind.Integer,
             _ => null
         };
 }

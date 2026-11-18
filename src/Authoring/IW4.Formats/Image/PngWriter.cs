@@ -15,6 +15,7 @@ public static class PngWriter
         BinaryPrimitives.WriteInt32BigEndian(ihdr[4..8], height);
         ihdr[8] = 8;
         ihdr[9] = 6;
+        ihdr[10..].Clear();
         WriteChunk(output, "IHDR"u8, ihdr);
 
         using var filtered = new MemoryStream();

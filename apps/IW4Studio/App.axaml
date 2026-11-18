@@ -10,6 +10,13 @@
     <materialIcons:MaterialIconStyles />
     <StyleInclude Source="Editors/Gsc/GscCompletionStyles.axaml" />
 
+    <Style Selector="ListBox.menuNavigator > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+
     <Style Selector="Window">
       <Setter Property="Background" Value="{DynamicResource StudioBackgroundBrush}" />
       <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />

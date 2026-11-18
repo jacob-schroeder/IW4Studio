@@ -121,6 +121,10 @@ public sealed class BehaviorExpressionDraftViewModel : ObservableObject
 
     public bool HasExpression => _binding.Value is not null;
 
+    public string FormulaSummary => IsOpaqueImported
+        ? "Unsupported imported expression"
+        : string.IsNullOrWhiteSpace(Formula) ? "Not set" : Formula;
+
     /// <summary>
     /// Imported opaque nodes have no source representation that can safely be
     /// edited. The user can explicitly replace or remove them.
@@ -303,7 +307,7 @@ public sealed class BehaviorExpressionDraftViewModel : ObservableObject
     internal IReadOnlyList<string> Validate(
         string label,
         bool required,
-        BehaviorExpressionResultKind? expected = null)
+        MenuBehaviorExpressionSite site)
     {
         var messages = new List<string>();
         if (HasValidationError)
@@ -315,7 +319,7 @@ public sealed class BehaviorExpressionDraftViewModel : ObservableObject
             return messages;
         }
 
-        if (_binding.Value is null)
+        if (_binding.Value is not { } value)
         {
             if (required)
                 messages.Add($"{label}: enter an expression.");
@@ -325,12 +329,8 @@ public sealed class BehaviorExpressionDraftViewModel : ObservableObject
         if (IsOpaqueImported)
             return messages;
 
-        if (expected is not null && !MatchesExpectedKind(ResultKind(), expected.Value))
-        {
-            messages.Add(
-                $"{label}: the expression result is {ResultKindText}, " +
-                $"not {expected.Value}.");
-        }
+        if (MenuBehaviorExpressionCodec.GetBindingResultTypeMismatch(value, site) is { } mismatch)
+            messages.Add($"{label}: {mismatch}");
 
         return messages;
     }
@@ -420,20 +420,6 @@ public sealed class BehaviorExpressionDraftViewModel : ObservableObject
         _ => BehaviorExpressionResultKind.Unknown
     };
 
-    private static bool MatchesExpectedKind(
-        BehaviorExpressionResultKind actual,
-        BehaviorExpressionResultKind expected) =>
-        actual == BehaviorExpressionResultKind.Unknown ||
-        actual == expected ||
-        expected == BehaviorExpressionResultKind.Float &&
-        actual is BehaviorExpressionResultKind.Integer or
-            BehaviorExpressionResultKind.Number ||
-        expected == BehaviorExpressionResultKind.Number &&
-        actual is BehaviorExpressionResultKind.Integer or
-            BehaviorExpressionResultKind.Float ||
-        expected == BehaviorExpressionResultKind.Boolean &&
-        actual == BehaviorExpressionResultKind.Integer;
-
     private static string Format(
         BehaviorExpression? expression,
         out IReadOnlyList<BehaviorExpressionDiagnostic> diagnostics)
@@ -453,6 +439,7 @@ public sealed class BehaviorExpressionDraftViewModel : ObservableObject
     private void NotifyExpressionStateChanged()
     {
         OnPropertyChanged(nameof(HasExpression));
+        OnPropertyChanged(nameof(FormulaSummary));
         OnPropertyChanged(nameof(IsOpaqueImported));
         OnPropertyChanged(nameof(IsFormulaEditable));
         OnPropertyChanged(nameof(HasValidationError));
@@ -471,6 +458,9 @@ public sealed class BehaviorExpressionDraftViewModel : ObservableObject
     private static string FormulaTemplate(
         BehaviorExpressionOperationMetadata operation)
     {
+        if (operation.Operation == OperationEnum.OP_GETPLAYERDATAANYBOOLTRUE)
+            return $"""{operation.FormulaName}("weaponNew")""";
+
         int argumentCount = operation.HasVerifiedArity
             ? operation.AllowedArgumentCounts[0]
             : 0;
@@ -508,7 +498,9 @@ public sealed record BehaviorExpressionOperationOption(
             : "advanced / unverified");
 
     private string ArityText => Operation.HasVerifiedArity
-        ? string.Join("/", Operation.AllowedArgumentCounts)
+        ? Operation.Operation == OperationEnum.OP_GETPLAYERDATAANYBOOLTRUE
+            ? "field[, index or key…]"
+            : string.Join("/", Operation.AllowedArgumentCounts)
         : "0–10";
 
     private string ResultText =>

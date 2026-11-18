@@ -2,11 +2,54 @@ using IW4.Game.Assets.Menu;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
 using IW4.Studio.Documents;
+using IW4.Studio.Documents.AssetReferences;
 
 namespace IW4.Studio.Documents.MenuEditing;
 
 public sealed partial class MenuEditingCoordinator
 {
+    public IReadOnlyList<string> CaptureMenuNames(string? currentMenuName)
+    {
+        ThrowIfDisposed();
+        var catalog = new WorkspaceAssetReferenceCatalog(_session);
+        return Array.AsReadOnly(catalog.Capture(XAssetType.Menu)
+            .Where(candidate => candidate.IsResolved)
+            .Select(candidate => candidate.Name)
+            .Prepend<string?>(currentMenuName)
+            .Concat(RegisteredMenuNames())
+            .OfType<string>()
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .DistinctBy(Normalize, StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(name => name, StringComparer.Ordinal)
+            .ToArray());
+    }
+
+    private IEnumerable<string?> RegisteredMenuNames()
+    {
+        foreach (WorkspaceAssetCatalogEntry entry in _session.Document.Rows
+                     .Concat(_session.Workspace.AssetCatalog.DependencyEntries))
+        {
+            if (entry.AssetType != XAssetType.MenuFile)
+                continue;
+
+            if (entry.TargetRowIdentity is { } identity &&
+                _menuFiles.TryGetValue(identity, out MenuFileRow? row))
+            {
+                for (int index = 0; index < row.Current.Menus.Count; index++)
+                {
+                    yield return row.Current.Menus[index].CanonicalMenu?.Window.Name ??
+                        row.Identity.Registrations[index].Name;
+                }
+            }
+            else if (entry.Definition is MenuFileAsset menuFile)
+            {
+                foreach (MenuDefReference registration in menuFile.Menus)
+                    yield return registration.CanonicalMenu?.Window.Name;
+            }
+        }
+    }
+
     public MenuAuthorityResolutionSnapshot ResolveMenu(string menuName)
     {
         ThrowIfDisposed();

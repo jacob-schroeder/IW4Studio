@@ -50,7 +50,25 @@ public static class GfxImagePreviewDecoder
         GfxImageAsset image,
         IGfxImagePayloadResolver payloadResolver,
         out GfxImagePreviewSnapshot? preview,
-        out string reason)
+        out string reason) =>
+        TryDecodeBestAvailable(image, payloadResolver, out preview, out reason, sampleNativeChannels: false);
+
+    /// <summary>
+    /// Decodes a preview using RSX component selection for native BC textures.
+    /// </summary>
+    public static bool TryDecodeSampledBestAvailable(
+        GfxImageAsset image,
+        IGfxImagePayloadResolver payloadResolver,
+        out GfxImagePreviewSnapshot? preview,
+        out string reason) =>
+        TryDecodeBestAvailable(image, payloadResolver, out preview, out reason, sampleNativeChannels: true);
+
+    private static bool TryDecodeBestAvailable(
+        GfxImageAsset image,
+        IGfxImagePayloadResolver payloadResolver,
+        out GfxImagePreviewSnapshot? preview,
+        out string reason,
+        bool sampleNativeChannels)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(payloadResolver);
@@ -67,7 +85,8 @@ public static class GfxImagePreviewDecoder
                 payload.Width,
                 payload.Height,
                 out DecodedGfxImage streamed,
-                out streamedReason))
+                out streamedReason,
+                sampleNativeChannels))
         {
             preview = new GfxImagePreviewSnapshot(streamed);
             reason = string.Empty;
@@ -76,8 +95,12 @@ public static class GfxImagePreviewDecoder
 
         if (GfxImageDecoder.TryDecodePng(
                 image,
+                image.PayloadBytes,
+                image.Width,
+                image.Height,
                 out DecodedGfxImage embedded,
-                out string embeddedReason))
+                out string embeddedReason,
+                sampleNativeChannels))
         {
             preview = new GfxImagePreviewSnapshot(embedded);
             reason = string.Empty;
@@ -88,6 +111,45 @@ public static class GfxImagePreviewDecoder
             ? embeddedReason
             : $"{streamedReason}; embedded fallback: {embeddedReason}";
         return false;
+    }
+
+    // The inline texture stores consecutive mip levels followed by 128-byte
+    // alignment padding. Streamed parts and pitched layouts have different contracts.
+    public static IReadOnlyList<ReadOnlyMemory<byte>>? DecodeEmbeddedMipTail(
+        GfxImageAsset image, GfxImagePreviewSnapshot top)
+    {
+        if (image.StreamImageIndex is not null || image.IsCubemap || image.Depth > 1 ||
+            image.Width != top.Width || image.Height != top.Height || image.LevelCount == 0 ||
+            image.LevelCount > 1 + System.Numerics.BitOperations.Log2((uint)Math.Max(top.Width, top.Height)))
+            return null;
+        if (image.LevelCount == 1)
+            return [];
+        if (image.FormatEncoding.IsLinear || image.FormatEncoding.UsesUnnormalizedCoordinates)
+            return null;
+
+        uint formatKey = GfxImagePixelLayout.BuildFormatKey(image.FormatEncoding, image.TextureRemap);
+        int width = top.Width;
+        int height = top.Height;
+        int offset = GfxImagePixelLayout.ComputeMipByteCount(formatKey, width, height, 1);
+        if (offset == 0 || offset > image.PayloadBytes.Count)
+            return null;
+
+        var tail = new ReadOnlyMemory<byte>[image.LevelCount - 1];
+        byte[] payload = image.PayloadBytes as byte[] ?? image.PayloadBytes.ToArray();
+        for (int index = 0; index < tail.Length; index++)
+        {
+            width = Math.Max(1, width / 2);
+            height = Math.Max(1, height / 2);
+            int size = GfxImagePixelLayout.ComputeMipByteCount(formatKey, width, height, 1);
+            if (size > payload.Length - offset ||
+                !GfxImageDecoder.TryDecodeRgba(image, new ArraySegment<byte>(payload, offset, size),
+                    width, height, out var decoded, out _, sampleNativeChannels: true))
+                return null;
+
+            tail[index] = decoded.RgbaBytes;
+            offset += size;
+        }
+        return Array.AsReadOnly(tail);
     }
 
     public static bool TryDecodeStreamed(

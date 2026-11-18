@@ -32,6 +32,11 @@ internal static class MenuPreviewInteractionResultFormatter
                 $"{value.Name}: {FormatValue(value.PreviousValue)} → " +
                 $"{FormatValue(value.Value)} ({value.DeclaredKind})")
             .Concat(result.ItemColorChanges.Select(FormatItemColorChange))
+            .Concat(result.Trace.OfType<MenuDebugQueuedProfileLayout>()
+                .Select(layout => $"{layout.Field} → {layout.Layout}"))
+            .Concat(result.Trace.OfType<MenuDebugDvarTraceEntry>()
+                .Where(value => value.PreviousValue != value.Value)
+                .Select(FormatDvarChange))
             .ToArray();
         string[] scripts = result.QueuedScripts
             .Select(value => value.Script)
@@ -63,6 +68,10 @@ internal static class MenuPreviewInteractionResultFormatter
             MenuDebugItemColorTraceEntry color =>
                 $"#{value.Sequence:N0} {FormatItemColorChange(color)} " +
                 $"· {value.HandlerPath}",
+            MenuDebugDvarTraceEntry dvar =>
+                $"#{value.Sequence:N0} {FormatDvarChange(dvar)} · {value.HandlerPath}",
+            MenuDebugQueuedProfileLayout layout =>
+                $"#{value.Sequence:N0} Queued controller layout {layout.Layout} ({value.HandlerPath})",
             MenuDebugQueuedScriptTraceEntry =>
                 $"#{value.Sequence:N0} Command awaiting game runtime · " +
                 value.HandlerPath,
@@ -82,6 +91,10 @@ internal static class MenuPreviewInteractionResultFormatter
 
     private static string FormatNode(MenuNodeId? value) =>
         value?.ToString() ?? "<none>";
+
+    private static string FormatDvarChange(MenuDebugDvarTraceEntry value) =>
+        $"Game variable {value.Name}: {FormatValue(value.PreviousValue)} → " +
+        FormatValue(value.Value);
 
     private static string FormatItemColorChange(
         MenuDebugItemColorTraceEntry value) =>

@@ -5,7 +5,7 @@ using IW4.Studio.Documents.MenuEditing.Debugging;
 namespace IW4.Studio.Desktop.Documents.MenuEditing.Preview;
 
 /// <summary>
-/// Projects authored static Menu state into renderer-neutral primitives.
+/// Projects authored Menu state and constant presentation bindings into renderer-neutral primitives.
 /// Runtime expressions, owner-draw callbacks, models and cinematics are
 /// represented by fidelity diagnostics/placeholders rather than simulated.
 /// </summary>
@@ -38,6 +38,7 @@ public static class MenuPreviewProjector
     {
         ArgumentNullException.ThrowIfNull(menu);
         settings ??= MenuPreviewSettings.Default;
+        float loadFraction = evaluatedState is null ? 1f : settings.LoadFraction;
         ValidateSettings(settings);
 
         var primitives = new List<MenuPreviewPrimitive>();
@@ -45,7 +46,7 @@ public static class MenuPreviewProjector
         var issues = new List<MenuPreviewFidelityIssue>();
 
         MenuRectangleValue rootRectangle = evaluatedState is null
-            ? menu.Window.Value.Rect
+            ? menu.DebugProgram.EvaluateAuthoredMenuRectangle(menu.Window.Value.Rect)
             : Rectangle(evaluatedState.Window.Rectangle);
         bool rootVisible = evaluatedState?.Window.IsVisible.Value ?? true;
         MenuPreviewPlacement rootPlacement = MenuRectTransform.Place(
@@ -81,6 +82,7 @@ public static class MenuPreviewProjector
                 "window",
                 rootRectangle,
                 settings,
+                loadFraction,
                 primitives,
                 hitRegions,
                 issues);
@@ -110,9 +112,19 @@ public static class MenuPreviewProjector
             if (!rootVisible || evaluatedItem?.IsVisible.Value == false)
                 continue;
 
-            MenuRectangleValue itemRectangle = evaluatedItem is null
-                ? item.Value.Window.RectClient
-                : Rectangle(evaluatedItem.Rectangle);
+            MenuRectangleValue itemRectangle;
+            MenuItemSnapshot projectedItem;
+            if (evaluatedItem is null)
+            {
+                (itemRectangle, string? text) = menu.DebugProgram.EvaluateAuthoredItemPresentation(
+                    index, item.Value.Window.RectClient, item.Value.Text);
+                projectedItem = text == item.Value.Text ? item : item with { Value = item.Value with { Text = text } };
+            }
+            else
+            {
+                itemRectangle = Rectangle(evaluatedItem.Rectangle);
+                projectedItem = EvaluatedItem(item, evaluatedItem, itemRectangle);
+            }
             float rootInset = menu.Window.Value.Border ==
                 WindowBorder.WINDOW_BORDER_NONE
                     ? 0
@@ -127,9 +139,6 @@ public static class MenuPreviewProjector
                 itemInset,
                 itemRectangle,
                 settings);
-            MenuItemSnapshot projectedItem = evaluatedItem is null
-                ? item
-                : EvaluatedItem(item, evaluatedItem, itemRectangle);
             int z = checked(index * 10 + 10);
             ProjectWindow(
                 item.Id,
@@ -139,6 +148,7 @@ public static class MenuPreviewProjector
                 $"{path}.window",
                 itemRectangle,
                 settings,
+                loadFraction,
                 primitives,
                 hitRegions,
                 issues);
@@ -156,7 +166,7 @@ public static class MenuPreviewProjector
             null,
             "preview",
             evaluatedState is null
-                ? "Editor Preview renders authored static state and is not a runtime UI emulator."
+                ? "Authored preview shows editable items, constant text and geometry, and clock-driven placement at 0 ms."
                 : "Simulation Preview applies deterministic expression " +
                   "evaluation and the debugger-safe script subset; other " +
                   "engine callbacks and scripts remain unavailable.",
@@ -180,6 +190,7 @@ public static class MenuPreviewProjector
         string path,
         MenuRectangleValue authoredRect,
         MenuPreviewSettings settings,
+        float loadFraction,
         List<MenuPreviewPrimitive> primitives,
         List<MenuPreviewHitRegion> hitRegions,
         List<MenuPreviewFidelityIssue> issues)
@@ -209,6 +220,13 @@ public static class MenuPreviewProjector
                         fillPlacement,
                         z,
                         window.BackColor));
+                }
+                break;
+            case WindowStyle.WINDOW_STYLE_LOADBAR:
+                if (loadFraction > 0 && !string.IsNullOrWhiteSpace(window.BackgroundMaterialName))
+                {
+                    primitives.Add(Material(nodeId, fillPlacement, z, window.BackgroundMaterialName,
+                        ResolveShaderTint(window)) with { HorizontalFraction = loadFraction });
                 }
                 break;
             case WindowStyle.WINDOW_STYLE_SHADER:
@@ -288,7 +306,7 @@ public static class MenuPreviewProjector
                 settings.ScreenPlacement.Resolve(
                     placement.VirtualRectangle.VerticalAlignment)
                     .ApplyLength(window.BorderSize),
-                window.Border));
+                window.Border) { LowLightScale = settings.BorderLowLightScale });
             if (window.Border == WindowBorder.WINDOW_BORDER_KCGRADIENT)
             {
                 issues.Add(new MenuPreviewFidelityIssue(
@@ -367,7 +385,10 @@ public static class MenuPreviewProjector
                 (int)value.TextStyle,
                 textOffsetX,
                 textOffsetY,
-                borderInset));
+                borderInset)
+            {
+                AutoWrapped = (value.Window.StaticFlags & WindowStaticFlags.WINDOW_STATIC_AUTOWRAPPED) != 0
+            });
             if (value.TextStyle is not (
                 ItemTextStyle.Normal or
                 ItemTextStyle.LegacyStyle2 or
@@ -428,16 +449,11 @@ public static class MenuPreviewProjector
         if (!expressionsEvaluated &&
             (hasStateExpressions || hasFloatExpressions))
         {
-            string expressionKind = hasFloatExpressions
-                ? hasStateExpressions
-                    ? "Item-state and float geometry or color expressions"
-                    : "Float geometry or color expressions"
-                : "Item-state expressions";
             issues.Add(new MenuPreviewFidelityIssue(
                 item.Id,
                 $"{path}.expressions",
-                $"{expressionKind} are not evaluated; static authored values are shown.",
-                MenuPreviewFidelitySeverity.Warning));
+                "Authored preview applies dependency-free text and geometry bindings. Choose Inspect state to see runtime expression results.",
+                MenuPreviewFidelitySeverity.Information));
         }
     }
 
@@ -476,8 +492,8 @@ public static class MenuPreviewProjector
             issues.Add(new MenuPreviewFidelityIssue(
                 menu.Id,
                 "menu.expressions",
-                "Expression-controlled Menu geometry or visibility uses static authored values.",
-                MenuPreviewFidelitySeverity.Warning));
+                "Authored preview applies dependency-free menu geometry and keeps the menu visible for editing.",
+                MenuPreviewFidelitySeverity.Information));
         }
     }
 

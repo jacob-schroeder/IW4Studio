@@ -40,6 +40,8 @@ public sealed record MenuPreviewTextStatus(
     bool UsesGameGlyphs,
     IReadOnlyList<string> Diagnostics)
 {
+    public string LayoutDescription { get; init; } = string.Empty;
+
     public int FidelityIssueCount => Diagnostics.Count;
 
     public string Detail
@@ -73,9 +75,31 @@ public sealed class MenuPreviewTextResolutionCompletedEventArgs(
 /// </summary>
 public sealed partial class MenuPreviewControl : Control
 {
+    public static readonly StyledProperty<bool> ShowPlacementGuidesProperty =
+        AvaloniaProperty.Register<MenuPreviewControl, bool>(
+            nameof(ShowPlacementGuides), defaultValue: true);
+
     public static readonly StyledProperty<MenuPreviewScene?> SceneProperty =
         AvaloniaProperty.Register<MenuPreviewControl, MenuPreviewScene?>(
             nameof(Scene));
+
+    public static readonly StyledProperty<bool> ShowTextBoundsProperty =
+        AvaloniaProperty.Register<MenuPreviewControl, bool>(nameof(ShowTextBounds));
+
+    public bool ShowTextBounds
+    {
+        get => GetValue(ShowTextBoundsProperty);
+        set => SetValue(ShowTextBoundsProperty, value);
+    }
+
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        if (Scene is { } scene && double.IsFinite(availableSize.Width) &&
+            !double.IsFinite(availableSize.Height))
+            return new Size(availableSize.Width, availableSize.Width *
+                scene.Settings.CanvasHeight / scene.Settings.CanvasWidth);
+        return base.MeasureOverride(availableSize);
+    }
 
     public static readonly StyledProperty<MenuNodeId?> SelectedNodeIdProperty =
         AvaloniaProperty.Register<MenuPreviewControl, MenuNodeId?>(
@@ -103,6 +127,8 @@ public sealed partial class MenuPreviewControl : Control
     static MenuPreviewControl()
     {
         AffectsRender<MenuPreviewControl>(
+            ShowTextBoundsProperty,
+            ShowPlacementGuidesProperty,
             SceneProperty,
             SelectedNodeIdProperty,
             IsDirectManipulationEnabledProperty,
@@ -121,6 +147,12 @@ public sealed partial class MenuPreviewControl : Control
     {
         get => GetValue(SceneProperty);
         set => SetValue(SceneProperty, value);
+    }
+
+    public bool ShowPlacementGuides
+    {
+        get => GetValue(ShowPlacementGuidesProperty);
+        set => SetValue(ShowPlacementGuidesProperty, value);
     }
 
     public MenuNodeId? SelectedNodeId

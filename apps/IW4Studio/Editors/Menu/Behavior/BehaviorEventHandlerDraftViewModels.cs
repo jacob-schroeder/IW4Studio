@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Documents.MenuEditing.Behavior;
-using IW4.Studio.Documents.MenuEditing.Behavior.Expressions;
 
 namespace IW4.Studio.Desktop.Editors.Menu.Behavior;
 
@@ -31,7 +30,7 @@ public sealed class BehaviorEventHandlerSetDraftViewModel : ObservableObject
         if (source is not null)
             Hydrate(source.Handlers);
 
-        AddScriptCommand = new ViewModelCommand(AddScript);
+        AddScriptCommand = new ViewModelCommand(() => AddScript(null));
         AddConditionalCommand = new ViewModelCommand(AddConditional);
         AddSetLocalCommand = new ViewModelCommand(AddSetLocal);
         RefreshOrdering();
@@ -45,7 +44,7 @@ public sealed class BehaviorEventHandlerSetDraftViewModel : ObservableObject
 
     public string Summary => Handlers.Count == 0
         ? "No handlers"
-        : $"{Handlers.Count} handler{Plural(Handlers.Count)}";
+        : $"{Handlers.Count} handler{Plural(Handlers.Count)} · {Describe(Handlers[0])}";
 
     public ViewModelCommand AddScriptCommand { get; }
 
@@ -129,9 +128,17 @@ public sealed class BehaviorEventHandlerSetDraftViewModel : ObservableObject
         _ => new BehaviorUnsupportedEventHandlerDraftViewModel(entry)
     };
 
-    private void AddScript()
+    internal void AddScript(string? script, BehaviorScriptEventHandlerDraftViewModel? after = null)
     {
-        AddDraft(new BehaviorScriptEventHandlerDraftViewModel(NotifyChanged));
+        int index = after is null ? Handlers.Count : Handlers.IndexOf(after) + 1;
+        if (after is not null && index == 0)
+            return;
+        if (after is not null && string.IsNullOrEmpty(after.Script))
+        {
+            after.Script = script;
+            return;
+        }
+        AddDraft(new BehaviorScriptEventHandlerDraftViewModel(NotifyChanged, script), index);
         NotifyChanged();
     }
 
@@ -151,10 +158,10 @@ public sealed class BehaviorEventHandlerSetDraftViewModel : ObservableObject
         NotifyChanged();
     }
 
-    private void AddDraft(BehaviorEventHandlerDraftViewModel draft)
+    private void AddDraft(BehaviorEventHandlerDraftViewModel draft, int? index = null)
     {
         draft.AttachOwner(this);
-        Handlers.Add(draft);
+        Handlers.Insert(index ?? Handlers.Count, draft);
     }
 
     internal void Remove(BehaviorEventHandlerDraftViewModel draft)
@@ -194,6 +201,29 @@ public sealed class BehaviorEventHandlerSetDraftViewModel : ObservableObject
     }
 
     private static string Plural(int count) => count == 1 ? string.Empty : "s";
+
+    private static string Describe(BehaviorEventHandlerDraftViewModel handler) =>
+        handler switch
+        {
+            BehaviorScriptEventHandlerDraftViewModel script =>
+                $"Script · {FirstLine(script.Script, "empty script")}",
+            BehaviorConditionalEventHandlerDraftViewModel conditional =>
+                $"If · {FirstLine(conditional.Condition.FormulaSummary, "Not set")}",
+            BehaviorSetLocalEventHandlerDraftViewModel local =>
+                $"Set {local.ValueType} {FirstLine(local.Name, "local variable")} = " +
+                FirstLine(local.Expression.FormulaSummary, "Not set"),
+            _ => handler.Title
+        };
+
+    private static string FirstLine(string? value, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return fallback;
+
+        string trimmed = value.Trim();
+        int lineEnd = trimmed.AsSpan().IndexOfAny('\r', '\n');
+        return lineEnd < 0 ? trimmed : trimmed[..lineEnd].TrimEnd() + "…";
+    }
 }
 
 public abstract class BehaviorEventHandlerDraftViewModel : ObservableObject
@@ -255,11 +285,11 @@ public sealed class BehaviorScriptEventHandlerDraftViewModel
     private string? _script;
     private bool _wasEdited;
 
-    internal BehaviorScriptEventHandlerDraftViewModel(Action changed)
+    internal BehaviorScriptEventHandlerDraftViewModel(Action changed, string? script)
         : base("Script")
     {
         _changed = changed ?? throw new ArgumentNullException(nameof(changed));
-        _script = string.Empty;
+        _script = script ?? string.Empty;
     }
 
     internal BehaviorScriptEventHandlerDraftViewModel(
@@ -285,6 +315,7 @@ public sealed class BehaviorScriptEventHandlerDraftViewModel
 
             _wasEdited = true;
             OnPropertyChanged(nameof(Summary));
+            OnPropertyChanged(nameof(PickerButtonLabel));
             _changed();
         }
     }
@@ -292,6 +323,8 @@ public sealed class BehaviorScriptEventHandlerDraftViewModel
     public string Summary => string.IsNullOrEmpty(Script)
         ? "Empty script"
         : Script.Replace("\r", " ").Replace("\n", " ");
+
+    public string PickerButtonLabel => string.IsNullOrEmpty(Script) ? "Choose command…" : "Add action below…";
 
     internal override IEnumerable<MenuBehaviorEventHandlerEntry> ToEntries()
     {
@@ -430,7 +463,7 @@ public sealed class BehaviorConditionalEventHandlerDraftViewModel
         var messages = new List<string>();
         messages.AddRange(Condition.Validate(
             $"{path} condition", required: true,
-            BehaviorExpressionResultKind.Boolean));
+            new(MenuBehaviorExpressionSiteKind.Conditional)));
         messages.AddRange(Then.Validate($"{path}, then"));
         if (HasOtherwise)
             messages.AddRange(Otherwise.Validate($"{path}, otherwise"));
@@ -534,7 +567,6 @@ public sealed class BehaviorSetLocalEventHandlerDraftViewModel
             if (!SetProperty(ref _valueType, value))
                 return;
 
-            OnPropertyChanged(nameof(ExpectedResultKindText));
             _changed();
         }
     }
@@ -552,8 +584,6 @@ public sealed class BehaviorSetLocalEventHandlerDraftViewModel
     }
 
     public BehaviorExpressionDraftViewModel Expression { get; }
-
-    public string ExpectedResultKindText => ExpectedResultKind().ToString();
 
     internal override IEnumerable<MenuBehaviorEventHandlerEntry> ToEntries()
     {
@@ -582,18 +612,9 @@ public sealed class BehaviorSetLocalEventHandlerDraftViewModel
         if (string.IsNullOrWhiteSpace(Name))
             messages.Add($"{path}: enter a local variable name.");
         messages.AddRange(Expression.Validate(
-            $"{path} value", required: true, ExpectedResultKind()));
+            $"{path} value", required: true, MenuBehaviorExpressionSite.Local(ValueType)));
         return messages;
     }
-
-    private BehaviorExpressionResultKind ExpectedResultKind() => ValueType switch
-    {
-        MenuBehaviorLocalValueType.Boolean => BehaviorExpressionResultKind.Boolean,
-        MenuBehaviorLocalValueType.Integer => BehaviorExpressionResultKind.Integer,
-        MenuBehaviorLocalValueType.Float => BehaviorExpressionResultKind.Float,
-        MenuBehaviorLocalValueType.String => BehaviorExpressionResultKind.String,
-        _ => BehaviorExpressionResultKind.Unknown
-    };
 }
 
 public sealed class BehaviorOpaqueEventHandlerDraftViewModel

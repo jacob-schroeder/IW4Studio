@@ -5,7 +5,10 @@ namespace IW4.Studio.Desktop.ViewModels.Menu;
 
 public sealed record MenuPreviewInteractionOption(
     string Label,
-    MenuDebugInput Input);
+    MenuDebugInput Input)
+{
+    public override string ToString() => Label;
+}
 
 internal sealed record MenuPreviewInteractionSelection(
     string Summary,
@@ -187,7 +190,7 @@ internal static class MenuPreviewInteractionOptions
         if (eventSet.Handlers.Count > 0)
         {
             yield return new MenuPreviewInteractionOption(
-                $"{label} ({eventSet.Handlers.Count:N0} handler(s))",
+                $"{label} ({FormatHandlers(eventSet)})",
                 input);
         }
     }
@@ -196,8 +199,8 @@ internal static class MenuPreviewInteractionOptions
         MenuDebugKeyHandler key,
         int index,
         MenuDebugInput input) => new(
-        $"Key {key.Key} · authored #{index} " +
-        $"({key.Actions.Handlers.Count:N0} handler(s))",
+        $"{MenuKeyChoice.Describe(key.Key)} · handler {index + 1} " +
+        $"({FormatHandlers(key.Actions)})",
         input);
 
     private static string FocusLabel(
@@ -205,5 +208,8 @@ internal static class MenuPreviewInteractionOptions
         MenuDebugEventSet eventSet) =>
         eventSet.Handlers.Count == 0
             ? $"{label} (transition only)"
-            : $"{label} + {eventSet.Handlers.Count:N0} handler(s)";
+            : $"{label} + {FormatHandlers(eventSet)}";
+
+    private static string FormatHandlers(MenuDebugEventSet eventSet) =>
+        eventSet.Handlers.Count == 1 ? "1 handler" : $"{eventSet.Handlers.Count:N0} handlers";
 }

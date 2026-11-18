@@ -7,33 +7,45 @@ namespace IW4.Studio.Desktop.Editors.Menu;
 
 public sealed partial class MenuPreviewControl
 {
-    private CpuCompositeSurface? _cpuCompositeSurface;
+    private WriteableBitmap? _cpuCompositeBitmap;
 
-    private CpuCompositeSurface EnsureCpuCompositeSurface(Rect stage)
+    private void UploadCpuComposite(CpuCompositeRaster raster)
     {
-        int width = Math.Max(1, (int)Math.Ceiling(stage.Width));
-        int height = Math.Max(1, (int)Math.Ceiling(stage.Height));
-        if (_cpuCompositeSurface is { Width: var currentWidth,
-                                     Height: var currentHeight } &&
-            currentWidth == width && currentHeight == height)
+        var size = new PixelSize(raster.Width, raster.Height);
+        if (_cpuCompositeBitmap is null || _cpuCompositeBitmap.PixelSize != size)
         {
-            return _cpuCompositeSurface;
+            _cpuCompositeBitmap?.Dispose();
+            _cpuCompositeBitmap = new WriteableBitmap(
+                size, new Vector(96, 96), PixelFormats.Rgba8888, AlphaFormat.Unpremul);
         }
 
-        ReleaseCpuCompositeSurface();
-        _cpuCompositeSurface = new CpuCompositeSurface(width, height);
-        return _cpuCompositeSurface;
+        using ILockedFramebuffer framebuffer = _cpuCompositeBitmap.Lock();
+        int sourceStride = checked(raster.Width * 4);
+        if (framebuffer.RowBytes == sourceStride)
+        {
+            Marshal.Copy(raster.Rgba, 0, framebuffer.Address, raster.Rgba.Length);
+            return;
+        }
+        if (framebuffer.RowBytes < sourceStride)
+            throw new InvalidDataException("The Menu CPU compositor framebuffer row is too small.");
+
+        for (int row = 0; row < raster.Height; row++)
+        {
+            Marshal.Copy(raster.Rgba, checked(row * sourceStride),
+                IntPtr.Add(framebuffer.Address, checked(row * framebuffer.RowBytes)), sourceStride);
+        }
     }
 
-    private void ReleaseCpuCompositeSurface()
+    private void ReleaseCpuCompositeBitmap()
     {
-        _cpuCompositeSurface?.Dispose();
-        _cpuCompositeSurface = null;
+        _cpuCompositeBitmap?.Dispose();
+        _cpuCompositeBitmap = null;
+        _displayedCpuComposite = null;
     }
 
-    private sealed class CpuCompositeSurface : IDisposable
+    private sealed class CpuCompositeRaster
     {
-        public CpuCompositeSurface(int width, int height)
+        public CpuCompositeRaster(int width, int height)
         {
             Width = width;
             Height = height;
@@ -43,12 +55,9 @@ public sealed partial class MenuPreviewControl
             PremultipliedBlue = new float[count];
             Coverage = new float[count];
             DestinationAlpha = new float[count];
+            Columns = new CpuTextureAxisSample[width];
+            Rows = new CpuTextureAxisSample[height];
             Rgba = new byte[checked(count * 4)];
-            Bitmap = new WriteableBitmap(
-                new PixelSize(width, height),
-                new Vector(96, 96),
-                PixelFormats.Rgba8888,
-                AlphaFormat.Unpremul);
         }
 
         public int Width { get; }
@@ -65,9 +74,11 @@ public sealed partial class MenuPreviewControl
 
         public float[] DestinationAlpha { get; }
 
-        public byte[] Rgba { get; }
+        public CpuTextureAxisSample[] Columns { get; }
 
-        public WriteableBitmap Bitmap { get; }
+        public CpuTextureAxisSample[] Rows { get; }
+
+        public byte[] Rgba { get; }
 
         public void Clear()
         {
@@ -78,49 +89,39 @@ public sealed partial class MenuPreviewControl
             Array.Fill(DestinationAlpha, 1f);
         }
 
-        public void Upload()
+        public bool ConvertToRgba(CancellationToken cancellation)
         {
-            for (int index = 0; index < Coverage.Length; index++)
-            {
-                float coverage = Coverage[index];
-                int offset = index * 4;
-                if (coverage <= 0)
-                {
-                    Rgba[offset] = 0;
-                    Rgba[offset + 1] = 0;
-                    Rgba[offset + 2] = 0;
-                    Rgba[offset + 3] = 0;
-                    continue;
-                }
-
-                Rgba[offset] = ToByte(PremultipliedRed[index] / coverage);
-                Rgba[offset + 1] = ToByte(PremultipliedGreen[index] / coverage);
-                Rgba[offset + 2] = ToByte(PremultipliedBlue[index] / coverage);
-                Rgba[offset + 3] = ToByte(coverage);
-            }
-
-            using ILockedFramebuffer framebuffer = Bitmap.Lock();
-            int sourceStride = checked(Width * 4);
-            if (framebuffer.RowBytes < sourceStride)
-            {
-                throw new InvalidDataException(
-                    "The Menu CPU compositor framebuffer row is too small.");
-            }
             for (int row = 0; row < Height; row++)
             {
-                Marshal.Copy(
-                    Rgba,
-                    checked(row * sourceStride),
-                    IntPtr.Add(
-                        framebuffer.Address,
-                        checked(row * framebuffer.RowBytes)),
-                    sourceStride);
-            }
-        }
+                if (cancellation.IsCancellationRequested)
+                    return false;
+                int first = row * Width;
+                int last = first + Width;
+                for (int index = first; index < last; index++)
+                {
+                    float coverage = Coverage[index];
+                    int offset = index * 4;
+                    if (coverage <= 0)
+                    {
+                        Rgba[offset] = 0;
+                        Rgba[offset + 1] = 0;
+                        Rgba[offset + 2] = 0;
+                        Rgba[offset + 3] = 0;
+                        continue;
+                    }
 
-        public void Dispose() => Bitmap.Dispose();
+                    Rgba[offset] = ToByte(PremultipliedRed[index] / coverage);
+                    Rgba[offset + 1] = ToByte(PremultipliedGreen[index] / coverage);
+                    Rgba[offset + 2] = ToByte(PremultipliedBlue[index] / coverage);
+                    Rgba[offset + 3] = ToByte(coverage);
+                }
+            }
+            return true;
+        }
 
         private static byte ToByte(float value) =>
             (byte)Math.Round(Math.Clamp(value, 0f, 1f) * 255f);
     }
+
+    private readonly record struct CpuTextureAxisSample(int FirstOffset, int SecondOffset, float Ratio);
 }

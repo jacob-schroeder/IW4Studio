@@ -1,5 +1,6 @@
 using IW4.Render.UI.ScreenPlacement;
 using IW4.Studio.Documents.MenuEditing;
+using IW4.Studio.Documents.MenuEditing.Debugging;
 
 namespace IW4.Studio.Desktop.Documents.MenuEditing.Preview;
 
@@ -39,6 +40,19 @@ public sealed record MenuPreviewSettings(UiScreenPlacement ScreenPlacement)
 {
     public static MenuPreviewSettings Default { get; } = new(
         UiScreenPlacement.Iw4Ps3Hd);
+
+    // Window_Paint reads ui_borderLowLightScale, registered at 0x23C77C.
+    internal float BorderLowLightScale { get; init; } = 0.6f;
+    internal float LoadFraction { get; init; }
+
+    internal static MenuPreviewSettings ForSimulation(MenuDebugScenario scenario, int loadPercent)
+    {
+        float lowLight = Default.BorderLowLightScale;
+        if (scenario.Dvars.TryGetValue("ui_borderLowLightScale", out var dvar) &&
+            dvar.TryGetFloat(out float value) && float.IsFinite(value))
+            lowLight = Math.Clamp(value, 0f, 1f);
+        return Default with { LoadFraction = loadPercent / 100f, BorderLowLightScale = lowLight };
+    }
 
     public float CanvasWidth => ScreenPlacement.OutputWidth;
 
@@ -80,7 +94,10 @@ public sealed record MenuPreviewBorder(
     float ThicknessX,
     float ThicknessY,
     IW4.Game.Assets.Menu.WindowBorder Border) :
-    MenuPreviewPrimitive(NodeId, Placement, ZIndex);
+    MenuPreviewPrimitive(NodeId, Placement, ZIndex)
+{
+    public float LowLightScale { get; init; } = MenuPreviewSettings.Default.BorderLowLightScale;
+}
 
 public sealed record MenuPreviewMaterial(
     MenuNodeId NodeId,
@@ -89,7 +106,11 @@ public sealed record MenuPreviewMaterial(
     string MaterialName,
     MenuColorValue Tint,
     bool FlipHorizontal,
-    bool FlipVertical) : MenuPreviewPrimitive(NodeId, Placement, ZIndex);
+    bool FlipVertical) : MenuPreviewPrimitive(NodeId, Placement, ZIndex)
+{
+    // UI_DrawLoadBar scales both the width and the right texture coordinate.
+    public float HorizontalFraction { get; init; } = 1f;
+}
 
 public sealed record MenuPreviewText(
     MenuNodeId NodeId,
@@ -103,7 +124,10 @@ public sealed record MenuPreviewText(
     int Style,
     float OffsetX,
     float OffsetY,
-    float BorderInset) : MenuPreviewPrimitive(NodeId, Placement, ZIndex);
+    float BorderInset) : MenuPreviewPrimitive(NodeId, Placement, ZIndex)
+{
+    public bool AutoWrapped { get; init; }
+}
 
 public sealed record MenuPreviewPlaceholder(
     MenuNodeId NodeId,
@@ -156,12 +180,19 @@ public sealed class MenuPreviewScene
     public IReadOnlyList<MenuPreviewFidelityIssue> FidelityIssues => _fidelityIssues;
 
     /// <summary>Returns the topmost selectable node at a preview coordinate.</summary>
-    public MenuNodeId? HitTest(float x, float y)
+    public MenuNodeId? HitTest(
+        float x,
+        float y,
+        Func<MenuNodeId, bool>? acceptsNode = null)
     {
         for (int index = _hitRegions.Count - 1; index >= 0; index--)
         {
-            if (_hitRegions[index].Bounds.Contains(x, y))
-                return _hitRegions[index].NodeId;
+            MenuPreviewHitRegion region = _hitRegions[index];
+            if (region.Bounds.Contains(x, y) &&
+                (acceptsNode is null || acceptsNode(region.NodeId)))
+            {
+                return region.NodeId;
+            }
         }
 
         return null;

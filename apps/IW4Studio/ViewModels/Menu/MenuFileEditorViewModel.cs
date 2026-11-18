@@ -116,6 +116,7 @@ public sealed class MenuFileEditorViewModel
         ?? string.Empty;
 
     public int MenuCount => Registrations.Count;
+    public bool HasNoRegistrations => MenuCount == 0;
 
     public IReadOnlyList<MenuFileRegistrationViewModel> Registrations
     {
@@ -331,7 +332,7 @@ public sealed class MenuFileEditorViewModel
                 _coordinator.CanRevertMenuFile(rowIdentity);
             RefreshValidation();
             StatusMessage =
-                "Editing the ordered MenuFile registration list through document Menu authority.";
+                "Choose a menu in Registrations or select an item in the outline to edit it.";
             return;
         }
 
@@ -343,7 +344,7 @@ public sealed class MenuFileEditorViewModel
                     .CaptureResolvedProvider(_session)
                     .MenuFile;
                 StatusMessage =
-                    "Detached read-only copy of the catalog-resolved MenuFile provider.";
+                    "Read-only MenuFile from the asset pool.";
             }
             catch (InvalidDataException exception)
             {
@@ -475,11 +476,17 @@ public sealed class MenuFileEditorViewModel
         {
             _isReplacingRegistrations = false;
         }
-        SelectedRegistration = selectedId is { } id
-            ? Registrations.FirstOrDefault(value => value.Id == id)
-                ?? Registrations.FirstOrDefault()
-            : Registrations.FirstOrDefault();
+        MenuFileRegistrationViewModel? selection = selectedId is { } id
+            ? registrations.FirstOrDefault(value => value.Id == id)
+            : null;
+        if (selection is null && registrations.Count > 0)
+        {
+            int index = selectedId is not null ? SelectedRegistration?.Index ?? 0 : 0;
+            selection = registrations[Math.Min(index, registrations.Count - 1)];
+        }
+        SelectedRegistration = selection;
         OnPropertyChanged(nameof(MenuCount));
+        OnPropertyChanged(nameof(HasNoRegistrations));
         OnPropertyChanged(nameof(CanAddRegistration));
         OnPropertyChanged(nameof(CanRetargetRegistration));
         OnPropertyChanged(nameof(CanDuplicateRegistration));
@@ -539,7 +546,9 @@ public sealed class MenuFileEditorViewModel
                 : () => _selectedResolution?.CanEdit == true,
             _isAssetReferenceResolved,
             RequestItemBehaviorEdit,
-            RequestMenuBehaviorEdit);
+            RequestMenuBehaviorEdit,
+            _coordinator,
+            _snapshot?.Registrations);
         if (expandedNodeKeys is not null)
             designer.RestoreExpandedNodeKeys(expandedNodeKeys);
         designer.RestoreSelection(

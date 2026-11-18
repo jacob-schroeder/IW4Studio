@@ -21,7 +21,7 @@
           Background="{DynamicResource StudioSurfaceSunkenBrush}"
           BorderBrush="{DynamicResource StudioBorderBrush}"
           BorderThickness="1">
-    <Grid RowDefinitions="Auto,8,*,8,Auto,6,Auto">
+    <Grid RowDefinitions="Auto,8,*,8,Auto">
       <Grid ColumnDefinitions="*,Auto">
         <TextBlock Text="MENU OUTLINE"
                    VerticalAlignment="Center"
@@ -39,27 +39,23 @@
                 Classes="menuOutline"
                 ItemsSource="{Binding OutlineRoots}"
                 SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+                AutomationProperties.Name="Menu item outline"
                 AutoScrollToSelectedItem="True"
                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                 ScrollViewer.VerticalScrollBarVisibility="Auto">
         <TreeView.ItemTemplate>
           <TreeDataTemplate x:DataType="menuVm:MenuOutlineNodeViewModel"
                             ItemsSource="{Binding Children}">
-            <Grid ColumnDefinitions="Auto,*"
-                  ColumnSpacing="6"
-                  MinHeight="24"
-                  PointerReleased="OutlineRow_PointerReleased">
-              <materialIcons:MaterialIcon Kind="ViewDashboardOutline"
-                                           Width="14"
-                                           Height="14"
-                                           VerticalAlignment="Center"
-                                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
-              <TextBlock Grid.Column="1"
-                         Text="{Binding Title}"
-                         VerticalAlignment="Center"
+            <Border MinHeight="24" Padding="0,3,4,3"
+                    Background="Transparent"
+                    ToolTip.Tip="{Binding Title}"
+                    PointerReleased="OutlineRow_PointerReleased">
+              <TextBlock Text="{Binding Title}"
+                         FontSize="12" VerticalAlignment="Center"
+                         TextWrapping="Wrap" MaxLines="2"
                          TextTrimming="CharacterEllipsis"
                          Foreground="{DynamicResource StudioTextBrush}" />
-            </Grid>
+            </Border>
           </TreeDataTemplate>
         </TreeView.ItemTemplate>
       </TreeView>
@@ -82,41 +78,36 @@
                    Foreground="{DynamicResource StudioTextBrush}" />
       </StackPanel>
 
-      <Grid Grid.Row="4"
-            ColumnDefinitions="*,*,*,*,*"
-            ColumnSpacing="4">
-        <Button Classes="ghost" MinHeight="29" Padding="5"
+      <Grid Grid.Row="4" RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,*"
+            RowSpacing="4" ColumnSpacing="4">
+        <Grid.Styles>
+          <Style Selector="Button">
+            <Setter Property="MinHeight" Value="29" />
+            <Setter Property="Padding" Value="5,3" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+          </Style>
+        </Grid.Styles>
+        <Button Content="Add item"
                 Command="{Binding AddItemCommand}"
-                ToolTip.Tip="Add a Text item">
-          <materialIcons:MaterialIcon Kind="Plus" Width="14" Height="14" />
-        </Button>
-        <Button Grid.Column="1" Classes="ghost" MinHeight="29" Padding="5"
+                ToolTip.Tip="Add a Text item" />
+        <Button Grid.Column="1" Content="Duplicate"
                 Command="{Binding DuplicateItemCommand}"
-                ToolTip.Tip="Duplicate selected item">
-          <materialIcons:MaterialIcon Kind="ContentDuplicate" Width="14" Height="14" />
-        </Button>
-        <Button Grid.Column="2" Classes="ghost" MinHeight="29" Padding="5"
+                ToolTip.Tip="Duplicate selected item" />
+        <Button Grid.Row="1" Content="Move up"
                 Command="{Binding MoveItemUpCommand}"
-                ToolTip.Tip="Move selected item up">
-          <materialIcons:MaterialIcon Kind="ArrowUp" Width="14" Height="14" />
-        </Button>
-        <Button Grid.Column="3" Classes="ghost" MinHeight="29" Padding="5"
+                ToolTip.Tip="Move selected item up" />
+        <Button Grid.Row="1" Grid.Column="1" Content="Move down"
                 Command="{Binding MoveItemDownCommand}"
-                ToolTip.Tip="Move selected item down">
-          <materialIcons:MaterialIcon Kind="ArrowDown" Width="14" Height="14" />
-        </Button>
-        <Button Grid.Column="4" Classes="ghost" MinHeight="29" Padding="5"
+                ToolTip.Tip="Move selected item down" />
+        <Button Grid.Row="2" Content="Change type…"
+                IsEnabled="{Binding CanChangeSelectedItemType}"
+                Click="ChangeItemTypeButton_Click"
+                ToolTip.Tip="Choose another type for the selected item" />
+        <Button Grid.Row="2" Grid.Column="1" Content="Remove"
                 Command="{Binding RemoveItemCommand}"
-                ToolTip.Tip="Remove selected item">
-          <materialIcons:MaterialIcon Kind="DeleteOutline" Width="14" Height="14" />
-        </Button>
+                ToolTip.Tip="Remove selected item" />
       </Grid>
-
-      <Button Grid.Row="6"
-              Content="Change selected item type…"
-              IsEnabled="{Binding CanChangeSelectedItemType}"
-              Click="ChangeItemTypeButton_Click"
-              ToolTip.Tip="Choose another ItemDef type for the selected item." />
     </Grid>
   </Border>
 </UserControl>

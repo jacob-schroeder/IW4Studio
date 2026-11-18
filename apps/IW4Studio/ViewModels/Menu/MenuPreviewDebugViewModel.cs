@@ -13,9 +13,8 @@ namespace IW4.Studio.Desktop.ViewModels.Menu;
 /// </summary>
 public sealed class MenuPreviewDebugViewModel : ObservableObject
 {
-    private static readonly IReadOnlyList<MenuPreviewMode> PreviewModeValues =
-        Array.AsReadOnly(Enum.GetValues<MenuPreviewMode>());
     private readonly IMenuTextResourceResolver? _textResourceResolver;
+    private readonly Func<IReadOnlyDictionary<string, string>?>? _readConfigDefaults;
     private MenuDebugScenario? _interactionScenario;
     private MenuEditorSnapshot? _snapshot;
     private MenuPreviewScene? _scene;
@@ -27,15 +26,23 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
     private MenuOutlineNodeKind? _selectedKind;
     private MenuNodeId? _selectedNodeId;
     private MenuPreviewMode _mode;
+    private bool _runClock = true;
+    private int _loadPercent;
+    private string? _configError;
 
     public MenuPreviewDebugViewModel(
-        IMenuTextResourceResolver? textResourceResolver)
+        IMenuTextResourceResolver? textResourceResolver,
+        MenuDebugStringTableResolver? stringTableResolver = null,
+        Func<IReadOnlyDictionary<string, string>?>? readConfigDefaults = null)
     {
+        StringTableResolver = stringTableResolver;
         _textResourceResolver = textResourceResolver;
+        _readConfigDefaults = readConfigDefaults;
         Simulation = new MenuPreviewSimulationViewModel(
             BaseSimulationChanged,
             SimulationTimeChanged);
         Interaction = new MenuPreviewInteractionViewModel(DispatchInteraction);
+        Comparison = new MenuPreviewStateComparisonViewModel(textResourceResolver);
         ResetSimulatedStateCommand = new ViewModelCommand(
             RestartSimulation,
             () => IsSimulating && _snapshot?.IsComplete == true);
@@ -49,9 +56,9 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
 
     public MenuPreviewSimulationViewModel Simulation { get; }
 
-    public ViewModelCommand ResetSimulatedStateCommand { get; }
+    public MenuPreviewStateComparisonViewModel Comparison { get; }
 
-    public IReadOnlyList<MenuPreviewMode> Modes => PreviewModeValues;
+    public ViewModelCommand ResetSimulatedStateCommand { get; }
 
     public MenuPreviewMode Mode
     {
@@ -63,23 +70,38 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
             OnPropertyChanged(nameof(IsSimulating));
             OnPropertyChanged(nameof(IsAuthored));
             OnPropertyChanged(nameof(HasSelectedAuthoredVisibilityExpression));
-            OnPropertyChanged(nameof(ModeBadge));
             ResetSimulatedStateCommand.RaiseCanExecuteChanged();
             ClearInteractionState();
             Refresh();
         }
     }
 
+    public bool RunClock
+    {
+        get => _runClock;
+        set => SetProperty(ref _runClock, value);
+    }
+
     public bool IsSimulating => Mode == MenuPreviewMode.Simulate;
 
     public bool IsAuthored => !IsSimulating;
 
+    public bool HasLoadBar =>
+        _snapshot?.Window.Value.Style == WindowStyle.WINDOW_STYLE_LOADBAR ||
+        _snapshot?.Items.Any(item => item.Value.Window.Style == WindowStyle.WINDOW_STYLE_LOADBAR) == true;
+
+    public int LoadPercent
+    {
+        get => _loadPercent;
+        set
+        {
+            if (SetProperty(ref _loadPercent, Math.Clamp(value, 0, 100)))
+                Refresh();
+        }
+    }
+
     public bool HasSelectedAuthoredVisibilityExpression =>
         IsAuthored && SelectedHasVisibilityExpression();
-
-    public string ModeBadge => IsSimulating
-        ? "SIMULATED / EVALUATED"
-        : "AUTHORED / STATIC";
 
     public int DiagnosticCount => _diagnostics.Count;
 
@@ -225,6 +247,8 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
     public void ReplaceDocument(MenuEditorSnapshot? snapshot)
     {
         _snapshot = snapshot;
+        OnPropertyChanged(nameof(HasLoadBar));
+        Comparison.ReplaceDocument(snapshot);
         ClearInteractionState();
         Simulation.ReplaceDocument(snapshot);
         Interaction.ReplaceOptions(
@@ -281,7 +305,8 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
 
         MenuDebugScenario scenario = EnsureSimulatedScenario(snapshot);
         _evaluatedState = snapshot.DebugProgram.Evaluate(scenario);
-        _scene = MenuPreviewProjector.Project(snapshot, _evaluatedState);
+        _scene = MenuPreviewProjector.Project(snapshot, _evaluatedState,
+            MenuPreviewSettings.ForSimulation(scenario, LoadPercent));
         MenuPreviewEvaluationDiagnostics relevance =
             MenuPreviewEvaluationRelevance.Classify(_evaluatedState, _scene);
         _diagnostics = Array.AsReadOnly(
@@ -311,6 +336,7 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
 
     private void NotifyEvaluationChanged()
     {
+        Comparison.Update(_evaluatedState, _scene, Simulation.Milliseconds);
         OnPropertyChanged(nameof(Scene));
         OnPropertyChanged(nameof(DiagnosticCount));
         OnPropertyChanged(nameof(DormantDiagnosticCount));
@@ -327,8 +353,27 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
         PreviewChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private MenuDebugScenario BuildBaseScenario() => Simulation.BuildScenario(
-        _textResourceResolver is null ? null : ResolveLocalization);
+    internal MenuDebugLocalizationResolver? LocalizationResolver =>
+        _textResourceResolver is null ? null : ResolveLocalization;
+
+    internal MenuDebugStringTableResolver? StringTableResolver { get; }
+
+    private MenuDebugScenario BuildBaseScenario()
+    {
+        IReadOnlyDictionary<string, string>? config = null;
+        try
+        {
+            config = _readConfigDefaults?.Invoke();
+        }
+        catch (Exception exception) when (exception is
+            IOException or InvalidDataException or ArgumentException or InvalidOperationException)
+        {
+            _configError = $"Could not read {MenuPreviewConfig.MultiplayerDefaultName}. {exception.Message}";
+        }
+
+        Simulation.SetConfigDefaultLabels(config);
+        return Simulation.BuildScenario(LocalizationResolver, StringTableResolver, dvarDefaults: config);
+    }
 
     private MenuDebugScenario EnsureSimulatedScenario(
         MenuEditorSnapshot snapshot)
@@ -338,7 +383,8 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
 
         MenuDebugDispatchResult activation = snapshot.DebugProgram.Activate(
             BuildBaseScenario());
-        _interactionScenario = activation.NextScenario;
+        _interactionScenario = activation.NextScenario.ApplyQueuedProfileLayouts(
+            activation.Trace.OfType<MenuDebugQueuedProfileLayout>());
         _activationRequirements = MissingRuntimeDependencies(activation);
         _eventRequirements = [];
         Interaction.ShowActivation(activation);
@@ -352,15 +398,21 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
         return resolution.IsResolved ? resolution.DisplayText : null;
     }
 
-    private IEnumerable<MenuEvaluationTraceEntry> ScenarioValidationDiagnostics() =>
-        Simulation.Inputs
-            .Where(input => input.HasValidationError)
-            .Select(input => new MenuEvaluationTraceEntry(
+    private IEnumerable<MenuEvaluationTraceEntry> ScenarioValidationDiagnostics()
+    {
+        if (_configError is { } configError)
+            yield return new MenuEvaluationTraceEntry(MenuEvaluationStatus.Error, configError, null, null);
+
+        foreach (MenuPreviewScenarioInputViewModel input in Simulation.Inputs.Where(input => input.HasValidationError))
+        {
+            yield return new MenuEvaluationTraceEntry(
                 MenuEvaluationStatus.Error,
                 $"Simulation value '{input.KindLabel} {input.Name}': " +
                 input.ValidationMessage,
                 input.Dependency.Operation,
-                input.Dependency));
+                input.Dependency);
+        }
+    }
 
     private void BaseSimulationChanged()
     {
@@ -384,7 +436,9 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
                 scenario.OpenMenus,
                 scenario.FocusedItemId,
                 scenario.LocalizationResolver,
-                scenario.ItemRuntimeStates);
+                scenario.ItemRuntimeStates,
+                scenario.Player,
+                scenario.StringTableResolver);
         }
 
         Refresh();
@@ -399,7 +453,8 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
         MenuDebugDispatchResult result = snapshot.DebugProgram.Dispatch(
             input,
             scenario);
-        _interactionScenario = result.NextScenario;
+        _interactionScenario = result.NextScenario.ApplyQueuedProfileLayouts(
+            result.Trace.OfType<MenuDebugQueuedProfileLayout>());
         _eventRequirements = MissingRuntimeDependencies(result);
         Interaction.ShowResult(result);
         Refresh();
@@ -423,6 +478,7 @@ public sealed class MenuPreviewDebugViewModel : ObservableObject
     private void ClearInteractionState()
     {
         _interactionScenario = null;
+        _configError = null;
         _activationRequirements = [];
         _eventRequirements = [];
         Interaction.ClearInteractionState();

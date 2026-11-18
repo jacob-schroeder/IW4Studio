@@ -289,13 +289,11 @@ public sealed class MenuBehaviorExpressionCodec : IMenuBehaviorExpressionCodec
                     : MenuBehaviorValidationSeverity.Error))
             .ToList();
 
-        BehaviorExpressionResultKind actual = ResultKind(value);
-        BehaviorExpressionResultKind expected = ExpectedKind(site);
-        if (!IsCompatible(actual, expected))
+        if (GetBindingResultTypeMismatch(value, site) is { } mismatch)
         {
             issues.Add(new MenuBehaviorValidationIssue(
                 path,
-                $"The expression returns {Display(actual)}, but this binding expects {Display(expected)}.",
+                mismatch,
                 mode == MenuBehaviorValidationMode.Authored &&
                 !retainsReusableSource
                     ? MenuBehaviorValidationSeverity.Error
@@ -342,31 +340,42 @@ public sealed class MenuBehaviorExpressionCodec : IMenuBehaviorExpressionCodec
         return false;
     }
 
+    public static string? GetBindingResultTypeMismatch(
+        BehaviorExpression value,
+        MenuBehaviorExpressionSite site)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+
+        // PS3 item text and local assignments coerce each scalar result to
+        // the destination type. Boolean expressions use integer operands.
+        if (site.Kind is MenuBehaviorExpressionSiteKind.ItemText or
+            MenuBehaviorExpressionSiteKind.SetLocalVariable)
+        {
+            return null;
+        }
+
+        BehaviorExpressionResultKind actual = ResultKind(value);
+        BehaviorExpressionResultKind expected = ExpectedKind(site.Kind);
+        if (IsCompatible(actual, expected))
+            return null;
+
+        string expectation = expected == BehaviorExpressionResultKind.Number
+            ? "number or boolean"
+            : Display(expected);
+        return $"The expression returns {Display(actual)}, but this binding expects {expectation}.";
+    }
+
     private static BehaviorExpressionResultKind ExpectedKind(
-        MenuBehaviorExpressionSite site) => site.Kind switch
+        MenuBehaviorExpressionSiteKind site) => site switch
         {
             MenuBehaviorExpressionSiteKind.Conditional or
             MenuBehaviorExpressionSiteKind.ItemVisible or
             MenuBehaviorExpressionSiteKind.ItemDisabled =>
                 BehaviorExpressionResultKind.Boolean,
-            MenuBehaviorExpressionSiteKind.ItemText or
             MenuBehaviorExpressionSiteKind.ItemMaterial =>
                 BehaviorExpressionResultKind.String,
             MenuBehaviorExpressionSiteKind.ItemFloat =>
                 BehaviorExpressionResultKind.Number,
-            MenuBehaviorExpressionSiteKind.SetLocalVariable =>
-                site.LocalValueType switch
-                {
-                    MenuBehaviorLocalValueType.Boolean =>
-                        BehaviorExpressionResultKind.Boolean,
-                    MenuBehaviorLocalValueType.Integer =>
-                        BehaviorExpressionResultKind.Integer,
-                    MenuBehaviorLocalValueType.Float =>
-                        BehaviorExpressionResultKind.Number,
-                    MenuBehaviorLocalValueType.String =>
-                        BehaviorExpressionResultKind.String,
-                    _ => BehaviorExpressionResultKind.Unknown
-                },
             _ => BehaviorExpressionResultKind.Unknown
         };
 
@@ -397,7 +406,7 @@ public sealed class MenuBehaviorExpressionCodec : IMenuBehaviorExpressionCodec
         expected == BehaviorExpressionResultKind.Number && actual is
             BehaviorExpressionResultKind.Integer or
             BehaviorExpressionResultKind.Float or
-            BehaviorExpressionResultKind.Number ||
+            BehaviorExpressionResultKind.Boolean ||
         expected == BehaviorExpressionResultKind.Boolean && actual is
             BehaviorExpressionResultKind.Boolean or
             BehaviorExpressionResultKind.Integer;

@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media;
 using IW4.Render.Materials;
 using IW4.Render.Techniques;
@@ -24,43 +24,72 @@ public sealed partial class MenuPreviewControl
         Rect displayStage = StageBounds(scene.Settings, transform);
         if (nativeStage.Width <= 0 || nativeStage.Height <= 0 ||
             displayStage.Width <= 0 || displayStage.Height <= 0)
+        {
+            ReleaseCpuCompositeSurface();
             return false;
+        }
 
-        // Blend and alpha-mask operations are defined in the game's native
-        // 1280x720 target. Rasterize once there, then scale the finished
-        // image to the editor stage so filtering cannot change the state
-        // sequence's behavior.
-        CpuCompositeSurface surface = EnsureCpuCompositeSurface(nativeStage);
-        surface.Clear();
+        // Preserve native-space placement and sampler selection, while
+        // avoiding a full game-resolution scratch image in smaller views.
+        double displayScale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
+        int width = RasterSize(nativeStage.Width, displayStage.Width * displayScale);
+        int height = RasterSize(nativeStage.Height, displayStage.Height * displayScale);
+        var draws = new List<CpuCompositeDraw>(end - start);
         for (int index = start; index < end; index++)
         {
             var material = (MenuPreviewMaterial)primitives[index];
-            MenuPreviewMaterialSnapshot snapshot =
-                _materialSnapshots[material.MaterialName];
-            ReadOnlyMemory<byte> pixels =
-                _materialPixels[material.MaterialName];
-            Rect bounds = ToNativeRect(EffectivePlacement(
-                material,
-                scene.Settings).OutputBounds);
-            if (!CompositeMaterial(
-                    surface,
-                    nativeStage,
-                    bounds,
-                    material,
-                    snapshot,
-                    pixels))
+            Rect bounds = CompositeBounds(material, scene.Settings);
+            if (!HasZeroArea(bounds))
+                draws.Add(new CpuCompositeDraw(bounds, material,
+                    _materialSnapshots[material.MaterialName], _materialPixels[material.MaterialName]));
+        }
+
+        CpuCompositeRequest request = RequestCpuComposite(
+            new CpuCompositeRequest(nativeStage, width, height, draws.ToArray()));
+        if (_displayedCpuComposite is null && request.HasSameImage(_completedCpuComposite))
+            return false;
+
+        for (int index = 0; index < start; index++)
+            DrawPrimitive(context, scene, primitives[index], transform);
+        if (_cpuCompositeBitmap is { } bitmap && request.HasSameTarget(_displayedCpuComposite))
+            context.DrawImage(bitmap, displayStage);
+        return true;
+    }
+
+    private static bool RasterizeCpuComposite(
+        CpuCompositeRaster raster,
+        CpuCompositeRequest request,
+        CancellationToken cancellation)
+    {
+        if (cancellation.IsCancellationRequested)
+            return false;
+
+        raster.Clear();
+        foreach (CpuCompositeDraw draw in request.Draws)
+        {
+            if (!CompositeMaterial(raster, request.NativeStage, draw.Bounds, draw.Material,
+                    draw.Snapshot, draw.Pixels, cancellation))
             {
                 return false;
             }
         }
 
-        surface.Upload();
-        context.DrawImage(surface.Bitmap, displayStage);
-        return true;
+        return raster.ConvertToRgba(cancellation);
     }
 
     private static Rect NativeStageBounds(MenuPreviewSettings settings) =>
         new(0, 0, settings.CanvasWidth, settings.CanvasHeight);
+
+    private static int RasterSize(double nativeSize, double displaySize) =>
+        Math.Max(1, (int)Math.Ceiling(Math.Min(nativeSize, displaySize)));
+
+    private Rect CompositeBounds(MenuPreviewMaterial material, MenuPreviewSettings settings) =>
+        ToNativeRect(EffectivePlacement(material, settings).OutputBounds);
+
+    private static bool HasZeroArea(Rect bounds) =>
+        (bounds.Width == 0 || bounds.Height == 0) &&
+        double.IsFinite(bounds.Left) && double.IsFinite(bounds.Top) &&
+        double.IsFinite(bounds.Width) && double.IsFinite(bounds.Height);
 
     private static Rect ToNativeRect(MenuPreviewRect value)
     {
@@ -74,14 +103,16 @@ public sealed partial class MenuPreviewControl
     }
 
     private static bool CompositeMaterial(
-        CpuCompositeSurface surface,
+        CpuCompositeRaster surface,
         Rect stage,
         Rect bounds,
         MenuPreviewMaterial material,
         MenuPreviewMaterialSnapshot snapshot,
-        ReadOnlyMemory<byte> pixels)
+        ReadOnlyMemory<byte> pixels,
+        CancellationToken cancellation)
     {
-        if (snapshot.CpuPreviewCompositeState is not { } state ||
+        if (cancellation.IsCancellationRequested ||
+            snapshot.CpuPreviewCompositeState is not { } state ||
             snapshot.SamplerState is not { } sampler ||
             bounds.Width <= 0 || bounds.Height <= 0 ||
             !double.IsFinite(bounds.Left) || !double.IsFinite(bounds.Top) ||
@@ -89,23 +120,25 @@ public sealed partial class MenuPreviewControl
         {
             return false;
         }
-        if (IsMaterialCulled(material, state.CullMode))
+        if (IsMaterialCulled(state.CullMode))
             return true;
-        if ((state.ColorWriteMask &
-                UiMaterialCpuPreviewColorWriteMask.RedGreenBlue) != 0 &&
+        bool writesRgb = (state.ColorWriteMask & UiMaterialCpuPreviewColorWriteMask.RedGreenBlue) != 0;
+        bool writesAlpha = (state.ColorWriteMask & UiMaterialCpuPreviewColorWriteMask.Alpha) != 0;
+        if (writesRgb &&
             !UiMaterialCpuPreviewPlan.CanCompositeRgbOverOpaqueStage(
                 state.Blend))
         {
             return false;
         }
 
+        Rect visible = VisibleMaterialBounds(material, bounds);
         int firstX = Math.Clamp(
-            (int)Math.Floor((bounds.Left - stage.Left) *
+            (int)Math.Floor((visible.Left - stage.Left) *
                 surface.Width / stage.Width),
             0,
             surface.Width);
         int lastX = Math.Clamp(
-            (int)Math.Ceiling((bounds.Right - stage.Left) *
+            (int)Math.Ceiling((visible.Right - stage.Left) *
                 surface.Width / stage.Width),
             0,
             surface.Width);
@@ -122,70 +155,73 @@ public sealed partial class MenuPreviewControl
         if (firstX >= lastX || firstY >= lastY)
             return true;
 
-        bool useLinearFiltering = ResolveFilter(
-            sampler,
-            bounds,
-            snapshot);
+        if (ClearsAlpha(state))
+        {
+            for (int y = firstY; y < lastY; y++)
+            {
+                if (cancellation.IsCancellationRequested)
+                    return false;
+                Array.Clear(surface.DestinationAlpha, y * surface.Width + firstX, lastX - firstX);
+            }
+            return true;
+        }
+
+        bool useLinearFiltering = ResolveFilter(sampler, bounds.Width, bounds.Height, snapshot) == TextureFilter.Linear;
+        int mip = snapshot.SelectMipLevel(bounds.Width, bounds.Height);
+        int textureWidth = Math.Max(1, snapshot.Width >> mip);
+        int textureHeight = Math.Max(1, snapshot.Height >> mip);
+        if (mip > 0)
+            pixels = snapshot.MipPixels(mip);
+        int textureStride = checked(textureWidth * 4);
+        PrepareTextureAxis(surface.Columns, firstX, lastX,
+            stage.Left, stage.Width, bounds.Left, bounds.Width, material.FlipHorizontal,
+            textureWidth, 4, sampler.AddressU, useLinearFiltering);
+        PrepareTextureAxis(surface.Rows, firstY, lastY,
+            stage.Top, stage.Height, bounds.Top, bounds.Height, material.FlipVertical,
+            textureHeight, textureStride, sampler.AddressV, useLinearFiltering);
+
         float tintR = Channel(material.Tint.R) / 255f;
         float tintG = Channel(material.Tint.G) / 255f;
         float tintB = Channel(material.Tint.B) / 255f;
         float tintA = Channel(material.Tint.A) / 255f;
+        ReadOnlySpan<byte> texels = pixels.Span;
+        UiMaterialCpuPreviewBlendState blend = state.Blend;
         for (int y = firstY; y < lastY; y++)
         {
-            double screenY = stage.Top + ((y + 0.5) * stage.Height /
-                surface.Height);
-            float v = (float)((screenY - bounds.Top) / bounds.Height);
-            if (material.FlipVertical)
-                v = 1f - v;
+            if (cancellation.IsCancellationRequested)
+                return false;
+
+            CpuTextureAxisSample row = surface.Rows[y];
+            ReadOnlySpan<byte> top = texels.Slice(row.FirstOffset, textureStride);
+            ReadOnlySpan<byte> bottom = texels.Slice(row.SecondOffset, textureStride);
+            int rowOffset = y * surface.Width;
             for (int x = firstX; x < lastX; x++)
             {
-                double screenX = stage.Left + ((x + 0.5) * stage.Width /
-                    surface.Width);
-                float u = (float)((screenX - bounds.Left) / bounds.Width);
-                if (material.FlipHorizontal)
-                    u = 1f - u;
-
-                SampleTexture(
-                    pixels.Span,
-                    snapshot.Width,
-                    snapshot.Height,
-                    sampler,
-                    u,
-                    v,
-                    useLinearFiltering,
-                    out float sourceR,
-                    out float sourceG,
-                    out float sourceB,
-                    out float sourceA);
-                sourceR *= tintR;
-                sourceG *= tintG;
-                sourceB *= tintB;
-                sourceA *= tintA;
+                CpuTextureAxisSample column = surface.Columns[x];
+                float sourceA = SampleChannel(top, bottom, column, row.Ratio, 3, useLinearFiltering) * tintA;
                 if (!PassesAlphaTest(sourceA, state.AlphaTest))
                     continue;
 
-                int offset = checked((y * surface.Width) + x);
+                int offset = rowOffset + x;
                 float destinationAlpha = surface.DestinationAlpha[offset];
-                if ((state.ColorWriteMask &
-                        UiMaterialCpuPreviewColorWriteMask.RedGreenBlue) != 0)
+                if (writesRgb)
                 {
                     CompositeRgb(
                         surface,
                         offset,
-                        sourceR,
-                        sourceG,
-                        sourceB,
+                        SampleChannel(top, bottom, column, row.Ratio, 0, useLinearFiltering) * tintR,
+                        SampleChannel(top, bottom, column, row.Ratio, 1, useLinearFiltering) * tintG,
+                        SampleChannel(top, bottom, column, row.Ratio, 2, useLinearFiltering) * tintB,
                         sourceA,
                         destinationAlpha,
-                        state.Blend);
+                        blend);
                 }
-                if ((state.ColorWriteMask &
-                        UiMaterialCpuPreviewColorWriteMask.Alpha) != 0)
+                if (writesAlpha)
                 {
                     surface.DestinationAlpha[offset] = BlendAlpha(
                         sourceA,
                         destinationAlpha,
-                        state.Blend);
+                        blend);
                 }
             }
         }
@@ -193,15 +229,14 @@ public sealed partial class MenuPreviewControl
         return true;
     }
 
-    private static bool ResolveFilter(
+    private static TextureFilter ResolveFilter(
         RsxSamplerState sampler,
-        Rect bounds,
+        double drawWidth,
+        double drawHeight,
         MenuPreviewMaterialSnapshot snapshot)
     {
-        bool magnifies = bounds.Width >= snapshot.Width &&
-            bounds.Height >= snapshot.Height;
-        return (magnifies ? sampler.MagFilter : sampler.MinFilter) ==
-            TextureFilter.Linear;
+        return drawWidth >= snapshot.Width && drawHeight >= snapshot.Height
+            ? sampler.MagFilter : sampler.MinFilter;
     }
 
     private static bool PassesAlphaTest(
@@ -218,7 +253,7 @@ public sealed partial class MenuPreviewControl
         };
 
     private static void CompositeRgb(
-        CpuCompositeSurface surface,
+        CpuCompositeRaster surface,
         int offset,
         float sourceR,
         float sourceG,
@@ -227,9 +262,6 @@ public sealed partial class MenuPreviewControl
         float destinationAlpha,
         UiMaterialCpuPreviewBlendState blend)
     {
-        Debug.Assert(
-            UiMaterialCpuPreviewPlan.CanCompositeRgbOverOpaqueStage(blend),
-            "CPU RGB compositing requires an overlay-safe scalar ADD blend.");
         if (!blend.IsEnabled)
         {
             surface.PremultipliedRed[offset] = sourceR;
@@ -330,145 +362,58 @@ public sealed partial class MenuPreviewControl
     private static float ClampUnit(float value) =>
         float.IsFinite(value) ? Math.Clamp(value, 0f, 1f) : 0f;
 
-    private static void SampleTexture(
-        ReadOnlySpan<byte> pixels,
-        int width,
-        int height,
-        RsxSamplerState sampler,
-        float u,
-        float v,
-        bool linear,
-        out float red,
-        out float green,
-        out float blue,
-        out float alpha)
+    private static void PrepareTextureAxis(
+        CpuTextureAxisSample[] samples,
+        int first,
+        int last,
+        double stageStart,
+        double stageExtent,
+        double boundsStart,
+        double boundsExtent,
+        bool flipped,
+        int texelCount,
+        int texelStride,
+        TextureAddressMode addressMode,
+        bool linear)
     {
-        float textureX = u * width - 0.5f;
-        float textureY = v * height - 0.5f;
-        if (!linear)
+        for (int index = first; index < last; index++)
         {
-            ReadTexel(
-                pixels,
-                width,
-                height,
-                (int)MathF.Floor(textureX + 0.5f),
-                (int)MathF.Floor(textureY + 0.5f),
-                sampler,
-                out red,
-                out green,
-                out blue,
-                out alpha);
-            return;
-        }
+            double screen = stageStart + ((index + 0.5) * stageExtent / samples.Length);
+            float uv = (float)((screen - boundsStart) / boundsExtent);
+            if (flipped)
+                uv = 1f - uv;
 
-        int x0 = (int)MathF.Floor(textureX);
-        int y0 = (int)MathF.Floor(textureY);
-        float ratioX = textureX - x0;
-        float ratioY = textureY - y0;
-        ReadTexel(
-            pixels,
-            width,
-            height,
-            x0,
-            y0,
-            sampler,
-            out float topLeftR,
-            out float topLeftG,
-            out float topLeftB,
-            out float topLeftA);
-        ReadTexel(
-            pixels,
-            width,
-            height,
-            x0 + 1,
-            y0,
-            sampler,
-            out float topRightR,
-            out float topRightG,
-            out float topRightB,
-            out float topRightA);
-        ReadTexel(
-            pixels,
-            width,
-            height,
-            x0,
-            y0 + 1,
-            sampler,
-            out float bottomLeftR,
-            out float bottomLeftG,
-            out float bottomLeftB,
-            out float bottomLeftA);
-        ReadTexel(
-            pixels,
-            width,
-            height,
-            x0 + 1,
-            y0 + 1,
-            sampler,
-            out float bottomRightR,
-            out float bottomRightG,
-            out float bottomRightB,
-            out float bottomRightA);
-        red = Interpolate(
-            topLeftR,
-            topRightR,
-            bottomLeftR,
-            bottomRightR,
-            ratioX,
-            ratioY);
-        green = Interpolate(
-            topLeftG,
-            topRightG,
-            bottomLeftG,
-            bottomRightG,
-            ratioX,
-            ratioY);
-        blue = Interpolate(
-            topLeftB,
-            topRightB,
-            bottomLeftB,
-            bottomRightB,
-            ratioX,
-            ratioY);
-        alpha = Interpolate(
-            topLeftA,
-            topRightA,
-            bottomLeftA,
-            bottomRightA,
-            ratioX,
-            ratioY);
+            float texel = uv * texelCount - 0.5f;
+            int firstTexel = (int)MathF.Floor(linear ? texel : texel + 0.5f);
+            int firstOffset = ResolveTexelCoordinate(firstTexel, texelCount, addressMode) * texelStride;
+            int secondOffset = linear
+                ? ResolveTexelCoordinate(firstTexel + 1, texelCount, addressMode) * texelStride
+                : firstOffset;
+            samples[index] = new CpuTextureAxisSample(
+                firstOffset, secondOffset, linear ? texel - firstTexel : 0f);
+        }
     }
 
-    private static float Interpolate(
-        float topLeft,
-        float topRight,
-        float bottomLeft,
-        float bottomRight,
-        float ratioX,
-        float ratioY) =>
-        (topLeft + ((topRight - topLeft) * ratioX)) +
-        ((bottomLeft + ((bottomRight - bottomLeft) * ratioX) -
-          (topLeft + ((topRight - topLeft) * ratioX))) * ratioY);
-
-    private static void ReadTexel(
-        ReadOnlySpan<byte> pixels,
-        int width,
-        int height,
-        int x,
-        int y,
-        RsxSamplerState sampler,
-        out float red,
-        out float green,
-        out float blue,
-        out float alpha)
+    private static float SampleChannel(
+        ReadOnlySpan<byte> top,
+        ReadOnlySpan<byte> bottom,
+        CpuTextureAxisSample column,
+        float ratioY,
+        int channel,
+        bool linear)
     {
-        int column = ResolveTexelCoordinate(x, width, sampler.AddressU);
-        int row = ResolveTexelCoordinate(y, height, sampler.AddressV);
-        int offset = checked(((row * width) + column) * 4);
-        red = pixels[offset] / 255f;
-        green = pixels[offset + 1] / 255f;
-        blue = pixels[offset + 2] / 255f;
-        alpha = pixels[offset + 3] / 255f;
+        int first = column.FirstOffset + channel;
+        float topLeft = top[first] / 255f;
+        if (!linear)
+            return topLeft;
+
+        int second = column.SecondOffset + channel;
+        float topRight = top[second] / 255f;
+        float bottomLeft = bottom[first] / 255f;
+        float bottomRight = bottom[second] / 255f;
+        float topValue = topLeft + ((topRight - topLeft) * column.Ratio);
+        float bottomValue = bottomLeft + ((bottomRight - bottomLeft) * column.Ratio);
+        return topValue + ((bottomValue - topValue) * ratioY);
     }
 
     private static int ResolveTexelCoordinate(

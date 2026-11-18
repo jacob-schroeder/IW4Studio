@@ -25,5 +25,11 @@ public enum WindowBorder : int
     /// <summary>
     /// Draw horizontal gradient-bar borders.
     /// </summary>
-    WINDOW_BORDER_KCGRADIENT = 4
+    WINDOW_BORDER_KCGRADIENT = 4,
+
+    /// <summary>Shade the bottom and right bevel edges.</summary>
+    WINDOW_BORDER_RAISED = 5,
+
+    /// <summary>Shade the top and left bevel edges.</summary>
+    WINDOW_BORDER_SUNKEN = 6
 }

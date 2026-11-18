@@ -1,3 +1,5 @@
+using IW4.Game.Assets.Material;
+
 namespace IW4.Render.UI;
 
 public sealed class UiMaterialDrawPlan
@@ -6,10 +8,12 @@ public sealed class UiMaterialDrawPlan
 
     internal UiMaterialDrawPlan(
         UiMaterialDrawPacket? packet,
-        IReadOnlyList<UiMaterialExecutionDiagnostic> diagnostics)
+        IReadOnlyList<UiMaterialExecutionDiagnostic> diagnostics,
+        MaterialTextureDef? baseColorRow = null)
     {
         ArgumentNullException.ThrowIfNull(diagnostics);
         Packet = packet;
+        BaseColorRow = baseColorRow;
         _diagnostics = diagnostics.ToArray();
         if (_diagnostics.Any(diagnostic => diagnostic is null))
         {
@@ -31,6 +35,9 @@ public sealed class UiMaterialDrawPlan
     }
 
     public UiMaterialDrawPacket? Packet { get; }
+
+    // Sampler selection is known before the planner checks blend and stencil state.
+    internal MaterialTextureDef? BaseColorRow { get; }
 
     public IReadOnlyList<UiMaterialExecutionDiagnostic> Diagnostics { get; }
 

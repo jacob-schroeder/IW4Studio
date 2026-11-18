@@ -1,0 +1,253 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="using:System"
+        xmlns:menu="using:IW4.Studio.Desktop.Editors.Menu"
+        xmlns:menuVm="using:IW4.Studio.Desktop.ViewModels.Menu"
+        x:Class="IW4.Studio.Desktop.Editors.Menu.MenuPlayWindow"
+        x:DataType="menuVm:MenuPlaySessionViewModel"
+        Title="Menu Play · IW4 Studio"
+        Width="1120"
+        Height="650"
+        MinWidth="740"
+        MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource StudioBackgroundBrush}">
+  <Window.Styles>
+    <Style Selector="ToggleButton#SettingsToggle:checked /template/ ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource StudioOnAccentBrush}" />
+    </Style>
+  </Window.Styles>
+  <Grid RowDefinitions="Auto,*,Auto">
+    <Border Padding="18,13"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+        <TextBlock Text="{Binding NavigationPath}"
+                   TextWrapping="Wrap"
+                   FontSize="15"
+                   FontWeight="SemiBold" />
+        <ToggleButton x:Name="SettingsToggle" Grid.Column="1" Content="Session settings"
+                      IsChecked="False" Click="SettingsToggle_Click" />
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1"
+          Margin="16"
+          ColumnDefinitions="*,Auto">
+      <Border Background="#101318"
+              CornerRadius="8"
+              ClipToBounds="True">
+        <Grid>
+          <menu:MenuPreviewControl x:Name="Stage"
+                                 AutomationProperties.Name="Interactive menu preview"
+                                 Scene="{Binding Scene}"
+                                 MaterialResolver="{Binding MaterialResolver}"
+                                 TextResourceResolver="{Binding TextResourceResolver}"
+                                 ShowPlacementGuides="False"
+                                 KeyDown="Stage_KeyDown"
+                                 PointerMoved="Stage_PointerMoved"
+                                 PointerExited="Stage_PointerExited" />
+          <StackPanel IsVisible="{Binding IsMenuClosed}" Spacing="12"
+                      VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock Text="This menu has closed." HorizontalAlignment="Center" />
+            <Button Content="Restart menu" HorizontalAlignment="Center" Click="Restart_Click" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Grid.Column="1" Width="296" Margin="14,0,0,0"
+              IsVisible="{Binding #SettingsToggle.IsChecked}"
+              Padding="14"
+              CornerRadius="8"
+              Background="{DynamicResource StudioSurfaceBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="1">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Spacing="12">
+            <TextBlock Text="Settings apply to this Play session." TextWrapping="Wrap"
+                       FontSize="12" Foreground="{DynamicResource StudioTextMutedBrush}" />
+
+            <Expander IsVisible="{Binding HasRegistrations}"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Stretch"
+                      Header="Open registration">
+              <StackPanel Spacing="8">
+                <ComboBox ItemsSource="{Binding Registrations}"
+                          SelectedItem="{Binding SelectedRegistration, Mode=TwoWay}"
+                          AutomationProperties.Name="Menu registration"
+                          ToolTip.Tip="{Binding SelectedRegistration}"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch"
+                          MinHeight="34">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="sys:String">
+                      <TextBlock Text="{Binding}"
+                                 MaxWidth="204"
+                                 TextWrapping="Wrap" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Content="Open selected menu"
+                        HorizontalAlignment="Right"
+                        Click="OpenRegistration_Click" />
+              </StackPanel>
+            </Expander>
+
+            <Expander IsVisible="{Binding Simulation.HasInputs}"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Stretch"
+                      Header="{Binding Simulation.Inputs.Count, StringFormat='Session values ({0})'}">
+              <StackPanel Spacing="8">
+                <TextBox PlaceholderText="Find a value…" AutomationProperties.Name="Find a session value"
+                         Text="{Binding Simulation.InputFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Text="No matching values" IsVisible="{Binding Simulation.NoMatchingInputs}"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+                <ItemsControl ItemsSource="{Binding Simulation.FilteredInputs}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="menuVm:MenuPreviewScenarioInputViewModel">
+                      <StackPanel Margin="0,0,0,12" Spacing="5">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                          <TextBlock Text="{Binding DisplayName}"
+                                     ToolTip.Tip="{Binding Name}"
+                                     TextWrapping="Wrap"
+                                     FontSize="12" />
+                          <TextBlock Grid.Column="1"
+                                     Text="Required"
+                                     IsVisible="{Binding IsRequired}"
+                                     FontSize="11"
+                                     Foreground="{DynamicResource StudioWarningBrush}" />
+                        </Grid>
+                        <TextBlock IsVisible="{Binding HasBaseline}"
+                                   Text="{Binding BaselineText}"
+                                   ToolTip.Tip="{Binding BaselineText}"
+                                   TextWrapping="Wrap"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                          <ComboBox IsVisible="{Binding IsBoolean}"
+                                    HorizontalAlignment="Stretch"
+                                    MinHeight="34"
+                                    ItemsSource="{Binding BooleanOptions}"
+                                    SelectedItem="{Binding SelectedBoolean, Mode=TwoWay}"
+                                    AutomationProperties.Name="{Binding Name}" />
+                          <NumericUpDown IsVisible="{Binding IsInteger}"
+                                         MinHeight="34"
+                                         Minimum="-2147483648"
+                                         Maximum="2147483647"
+                                         Increment="1"
+                                         FormatString="0"
+                                         Value="{Binding NumericValue, Mode=TwoWay}"
+                                         AutomationProperties.Name="{Binding Name}"
+                                         LostFocus="ScenarioInput_LostFocus"
+                                         KeyDown="ScenarioInput_KeyDown" />
+                          <NumericUpDown IsVisible="{Binding IsFloat}"
+                                         MinHeight="34"
+                                         Minimum="-79228162514264337593543950335"
+                                         Maximum="79228162514264337593543950335"
+                                         Increment="0.1"
+                                         FormatString="0.######"
+                                         Value="{Binding NumericValue, Mode=TwoWay}"
+                                         AutomationProperties.Name="{Binding Name}"
+                                         LostFocus="ScenarioInput_LostFocus"
+                                         KeyDown="ScenarioInput_KeyDown" />
+                          <TextBox IsVisible="{Binding IsText}"
+                                   MinHeight="34"
+                                   Text="{Binding TextValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                   PlaceholderText="{Binding ValueState}"
+                                   AutomationProperties.Name="{Binding Name}"
+                                   LostFocus="ScenarioInput_LostFocus"
+                                   KeyDown="ScenarioInput_KeyDown" />
+                          <Button Grid.Column="1"
+                                  IsVisible="{Binding !IsBoolean}"
+                                  VerticalAlignment="Stretch"
+                                  Content="Unset"
+                                  Command="{Binding ClearCommand}" />
+                        </Grid>
+                        <Button IsVisible="{Binding IsText}"
+                                HorizontalAlignment="Left"
+                                Content="Set empty"
+                                Command="{Binding SetEmptyCommand}" />
+                        <TextBlock IsVisible="{Binding HasValidationError}"
+                                   Text="{Binding ValidationMessage}"
+                                   FontSize="11"
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource StudioErrorBrush}" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Expander>
+
+            <Expander Header="Configuration file" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+              <StackPanel Spacing="4">
+                <TextBlock Text="{Binding ConfigName}"
+                           ToolTip.Tip="{Binding ConfigName}"
+                           FontFamily="Consolas"
+                           FontSize="12"
+                           TextWrapping="Wrap" />
+                <TextBlock Text="{Binding ConfigSource}"
+                           FontSize="11" TextWrapping="Wrap"
+                           Foreground="{DynamicResource StudioTextMutedBrush}" />
+                <TextBlock Text="{Binding ConfigSummary}"
+                           FontSize="11"
+                           Foreground="{DynamicResource StudioTextMutedBrush}"
+                           TextWrapping="Wrap" />
+                <WrapPanel x:Name="SessionActions" Margin="0,4,0,0">
+                  <Button Content="Load .cfg…" Margin="0,0,6,6" Click="LoadConfig_Click" />
+                  <Button Content="Reload .cfg" Margin="0,0,0,6" Click="ReloadDefaults_Click" />
+                </WrapPanel>
+              </StackPanel>
+            </Expander>
+
+            <StackPanel Spacing="4">
+              <TextBlock Text="Last action" FontWeight="SemiBold" FontSize="12" />
+              <TextBlock Text="{Binding LastAction}" FontSize="11" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <Button Content="Restart menu" ToolTip.Tip="Return to the menu where this session started"
+                    Click="Restart_Click" />
+
+            <Expander IsVisible="{Binding HasDiagnostics}"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Stretch"
+                      Header="Preview issues">
+              <StackPanel Spacing="8">
+                <TextBlock Text="{Binding EventIssue}"
+                           IsVisible="{Binding HasEventIssue}"
+                           FontSize="11"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource StudioWarningBrush}" />
+                <TextBlock Text="{Binding EvaluationIssue}"
+                           IsVisible="{Binding HasEvaluationIssue}"
+                           FontSize="11"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource StudioWarningBrush}" />
+              </StackPanel>
+            </Expander>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+
+    <Border Grid.Row="2"
+            Padding="18,10"
+            Background="{DynamicResource StudioSurfaceBrush}"
+            BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
+        <TextBlock Text="↑ ↓ Navigate  ·  Enter Select  ·  Esc Back  ·  X Square  ·  Y Triangle"
+                   FontSize="11"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+        <TextBlock Grid.Column="1"
+                   Text="{Binding FocusedItem}"
+                   FontFamily="Consolas"
+                   MaxWidth="235" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding FocusedItem}"
+                   FontSize="11"
+                   Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

@@ -38,7 +38,11 @@ public static class MaterialImportedImageCompiler
             template.Material.Textures[textureTableOrdinal].Image ??
             throw new InvalidDataException(
                 "The selected Material texture row has no image to replace.");
-        ImageFileShape selectedShape = GetImageShape(selectedImage);
+        ImageFileShape selectedShape = ImageDraft.GetShape(selectedImage) ??
+            throw new InvalidDataException(
+                $"The selected Material image has unsupported shape fields " +
+                $"mapType={selectedImage.MapType}, dimension={selectedImage.DimensionCount}, " +
+                $"cubemap={selectedImage.IsCubemap}, depth={selectedImage.Depth}.");
         if (source.Shape != selectedShape)
         {
             throw new InvalidDataException(
@@ -66,37 +70,6 @@ public static class MaterialImportedImageCompiler
             topLevel.Depth,
             source.Shape,
             levels.Length);
-    }
-
-    private static ImageFileShape GetImageShape(GfxImageAsset image)
-    {
-        if (image.MapType == MapType.TwoDimensional &&
-            image.DimensionCount == GfxImageDimension.TwoDimensional &&
-            !image.IsCubemap &&
-            image.Depth == 1)
-        {
-            return ImageFileShape.TwoDimensional;
-        }
-        if (image.MapType == MapType.Cube &&
-            image.DimensionCount == GfxImageDimension.TwoDimensional &&
-            image.IsCubemap &&
-            image.Depth == 1 &&
-            image.Width == image.Height)
-        {
-            return ImageFileShape.Cube;
-        }
-        if (image.MapType == MapType.ThreeDimensional &&
-            image.DimensionCount == GfxImageDimension.ThreeDimensional &&
-            !image.IsCubemap &&
-            image.Depth > 0)
-        {
-            return ImageFileShape.Volume;
-        }
-
-        throw new InvalidDataException(
-            $"The selected Material image has unsupported shape fields " +
-            $"mapType={image.MapType}, dimension={image.DimensionCount}, " +
-            $"cubemap={image.IsCubemap}, depth={image.Depth}.");
     }
 
     private static string DescribeShape(ImageFileShape shape) => shape switch

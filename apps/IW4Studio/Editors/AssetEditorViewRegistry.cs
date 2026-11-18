@@ -5,6 +5,7 @@ using IW4.Studio.Documents;
 using IW4.Studio.Desktop.Gsc;
 using IW4.Studio.Desktop.Editors.Fx;
 using IW4.Studio.Desktop.Editors.Gsc;
+using IW4.Studio.Desktop.Editors.Image;
 using IW4.Studio.Desktop.Editors.LightDef;
 using IW4.Studio.Desktop.Editors.Localize;
 using IW4.Studio.Desktop.Editors.Material;
@@ -89,6 +90,7 @@ public sealed class AssetEditorViewRegistry
         registry.Register(new FxViewFactory(workspace));
         registry.Register(new LightDefViewFactory(workspace));
         registry.Register(new MaterialViewFactory());
+        registry.Register(new ImageViewFactory());
         registry.Register(new MaterialTechsetViewFactory());
         registry.Register(new XAnimViewFactory(workspace));
         registry.Register(new XModelViewFactory(assetReferencePicker));

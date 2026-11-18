@@ -6,8 +6,10 @@ using IW4.Runtime.Assets;
 using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Desktop.Editors.Menu;
 using IW4.Studio.Desktop.ViewModels;
+using IW4.Studio.Documents;
 using IW4.Studio.Documents.MenuEditing;
 using IW4.Studio.Documents.MenuEditing.Behavior;
+using IW4.Studio.Documents.MenuEditing.Behavior.Expressions;
 using IW4.Studio.Desktop.Documents.MenuEditing.Preview;
 using IW4.Studio.Desktop.Rendering;
 
@@ -20,6 +22,7 @@ namespace IW4.Studio.Desktop.ViewModels.Menu;
 /// </summary>
 public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
 {
+    private readonly MenuEditingCoordinator? _coordinator;
     private const float DuplicateItemOffset = 8f;
 
     private readonly Func<MenuEdit, MenuEditorSnapshot>? _applyEdit;
@@ -62,8 +65,12 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         Action<MenuItemBehaviorEditRequestedEventArgs>?
             requestItemBehaviorEdit = null,
         Action<MenuDefinitionBehaviorEditRequestedEventArgs>?
-            requestMenuBehaviorEdit = null)
+            requestMenuBehaviorEdit = null,
+        MenuEditingCoordinator? playSource = null,
+        IReadOnlyList<MenuFileRegistrationSnapshot>? playRegistrations = null)
     {
+        _coordinator = playSource;
+        PlayRegistrations = playRegistrations ?? [];
         _applyEdit = applyEdit;
         _isEditAllowed = isEditAllowed;
         _requestAssetReferenceSelection = requestAssetReferenceSelection;
@@ -71,7 +78,10 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         _requestMenuBehaviorEdit = requestMenuBehaviorEdit;
         _materialResolver = materialResolver;
         _textResourceResolver = textResourceResolver;
-        _previewDebug = new MenuPreviewDebugViewModel(textResourceResolver);
+        _previewDebug = new MenuPreviewDebugViewModel(
+            textResourceResolver,
+            playSource is null ? null : playSource.ResolvePreviewStringTable,
+            playSource is null ? null : playSource.ReadPreviewConfigDefaults);
         _previewDebug.PreviewChanged += PreviewDebug_PreviewChanged;
         if (_textResourceResolver is not null)
             _textResourceResolver.Changed += TextResourceResolver_Changed;
@@ -123,6 +133,18 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
 
     public MenuPreviewDebugViewModel PreviewDebug => _previewDebug;
 
+    internal IReadOnlyList<MenuFileRegistrationSnapshot> PlayRegistrations { get; }
+
+    internal MenuEditorSnapshot? ResolvePlayMenu(string name) =>
+        !string.IsNullOrWhiteSpace(name) && _coordinator?.ResolveMenu(name) is
+        {
+            Kind: MenuAuthorityResolutionKind.Editable or MenuAuthorityResolutionKind.ReadOnlyProvider,
+            Menu: { IsComplete: true } menu
+        } ? menu : null;
+
+    internal IReadOnlyDictionary<string, string>? PlayConfigDefaults =>
+        _coordinator?.ReadPreviewConfigDefaults();
+
     internal bool IsDisposed => _disposed;
 
     internal event EventHandler? Disposed;
@@ -156,6 +178,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             SetDirectManipulationError(null);
             SetInspectorSelection(BuildInspectorSelection(value));
             OnPropertyChanged(nameof(SelectionBreadcrumb));
+            NotifySelectionTools();
             OnPropertyChanged(nameof(SelectedPreviewNodeId));
             OnPropertyChanged(nameof(CanChangeSelectedItemType));
             OnPropertyChanged(nameof(CanDirectManipulateSelectedItem));
@@ -217,11 +240,70 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _hasStagedInput, value);
     }
 
-    public string SelectionBreadcrumb => SelectedNode is null
+    public string SelectionBreadcrumb => SelectedNode is null or { Kind: MenuOutlineNodeKind.Menu }
         ? DocumentName
         : $"{DocumentName}  /  {SelectedNode.Title}";
 
-    public string PreviewHeading => "Editor Preview";
+    public string PreviewHeading => "Item canvas";
+
+    public bool CanEditBehavior => IsEditable && !HasStagedInput &&
+        (SelectedNode?.Kind switch
+        {
+            MenuOutlineNodeKind.Item => SelectedItem()?.IsResolved == true && _requestItemBehaviorEdit is not null,
+            MenuOutlineNodeKind.Menu or MenuOutlineNodeKind.Window => _requestMenuBehaviorEdit is not null,
+            _ => false
+        });
+
+    public bool HasSelectedText => SelectedItem() is { } item &&
+        (!string.IsNullOrEmpty(item.Value.Text) || item.Value.Behavior.HasTextExpression ||
+         _textPreviewStatuses.ContainsKey(item.Id));
+
+    public string SelectedTextDetails
+    {
+        get
+        {
+            if (SelectedItem() is not { } item)
+                return string.Empty;
+            string source = item.Behavior.Expressions.Text.Value is { } expression
+                ? "exp text  " + BehaviorExpressionFormatter.Format(expression).Value
+                : item.Value.Text ?? string.Empty;
+            return _textPreviewStatuses.TryGetValue(item.Id, out var status)
+                ? $"{source}  ·  {status.LayoutDescription}" : source;
+        }
+    }
+
+    internal void EditSelectedBehavior()
+    {
+        if (!CanEditBehavior) return;
+        if (SelectedNode?.Kind == MenuOutlineNodeKind.Item && SelectedNode.NodeId is { } item)
+            RequestItemBehaviorEdit(item);
+        else
+            RequestMenuBehaviorEdit();
+    }
+
+    public string MenuValidationStatus
+    {
+        get
+        {
+            if (Snapshot is not { } menu)
+                return string.Empty;
+            if (menu.ValidationIssues.Count == 0)
+                return "Menu definition valid";
+            int errors = menu.ValidationIssues.Count(issue => issue.Severity == AssetValidationSeverity.Error);
+            int warnings = menu.ValidationIssues.Count - errors;
+            var counts = new List<string>(2);
+            if (errors > 0)
+                counts.Add($"{errors} error{(errors == 1 ? "" : "s")}");
+            if (warnings > 0)
+                counts.Add($"{warnings} warning{(warnings == 1 ? "" : "s")}");
+            return $"Menu validation · {string.Join(", ", counts)}";
+        }
+    }
+
+    public string MenuValidationDetails => Snapshot is { ValidationIssues.Count: > 0 } menu
+        ? string.Join(Environment.NewLine, menu.ValidationIssues.Select(issue =>
+            $"{issue.FieldPath}: {issue.Message}"))
+        : "The applied menu definition passed Studio’s authoring checks.";
 
     public string PreviewStatus
     {
@@ -245,8 +327,8 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             var parts = new List<string>
             {
                 PreviewDebug.IsSimulating
-                    ? $"Simulation at {PreviewDebug.Simulation.Milliseconds:N0} ms"
-                    : "Static authored preview"
+                    ? $"Menu state at {PreviewDebug.Simulation.Milliseconds:N0} ms"
+                    : "Authored layout"
             };
             if (PreviewDebug.IsSimulating && PreviewDebug.DiagnosticCount > 0)
                 parts.Add(PreviewDebug.EvaluationSummary);
@@ -267,8 +349,8 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             if (fidelityIssueCount > 0)
             {
                 parts.Add(
-                    $"{fidelityIssueCount:N0} fidelity " +
-                    $"issue{(fidelityIssueCount == 1 ? string.Empty : "s")}");
+                    $"{fidelityIssueCount:N0} rendering " +
+                    $"warning{(fidelityIssueCount == 1 ? string.Empty : "s")}");
             }
             return string.Join(" · ", parts);
         }
@@ -328,6 +410,8 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             item.Behavior,
             snapshot.ExpressionSupport,
             item.Value.Type == ItemDefType.ListBox,
+            CaptureBehaviorMenuNames(snapshot.Name),
+            CaptureBehaviorItemNames(snapshot),
             value => ApplyStructuralEdit(
                 new ReplaceItemBehaviorEdit(item.Id, value))));
     }
@@ -346,9 +430,27 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
                 MenuPresentationText.MenuTitle(snapshot.Name),
                 snapshot.DefinitionBehavior,
                 snapshot.ExpressionSupport,
+                CaptureBehaviorMenuNames(snapshot.Name),
+                CaptureBehaviorItemNames(snapshot),
                 value => ApplyStructuralEdit(
                     new ReplaceMenuBehaviorEdit(value))));
     }
+
+    private IReadOnlyList<string> CaptureBehaviorMenuNames(string? currentName) =>
+        _coordinator?.CaptureMenuNames(currentName) ??
+        (string.IsNullOrWhiteSpace(currentName) ? [] : [currentName]);
+
+    private static IReadOnlyList<string> CaptureBehaviorItemNames(
+        MenuEditorSnapshot snapshot) =>
+        Array.AsReadOnly(snapshot.Items
+            .Where(item => item.IsResolved)
+            .Select(item => item.Value.Window.Name)
+            .OfType<string>()
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(name => name, StringComparer.Ordinal)
+            .ToArray());
 
     internal bool IsAssetReferenceMissing(
         XAssetType assetType,
@@ -364,7 +466,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     public void ReplaceDocument(MenuEditorSnapshot? snapshot)
     {
         SetDirectManipulationError(null);
-        IReadOnlySet<string> expandedNodeKeys = CaptureExpandedNodeKeys();
+        IReadOnlySet<string>? expandedNodeKeys = _snapshot?.Id == snapshot?.Id ? CaptureExpandedNodeKeys() : null;
         MenuOutlineNodeKind? selectedKind = _selectedNode?.Kind;
         int? selectedItemIndex = _selectedNode?.ItemIndex;
         _snapshot = snapshot;
@@ -420,6 +522,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
                 out MenuPreviewTextStatus? current) &&
             current.AuthoredText == status.AuthoredText &&
             current.UsesGameGlyphs == status.UsesGameGlyphs &&
+            current.LayoutDescription == status.LayoutDescription &&
             current.Diagnostics.SequenceEqual(
                 status.Diagnostics,
                 StringComparer.Ordinal))
@@ -428,6 +531,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         }
 
         _textPreviewStatuses[status.NodeId] = status;
+        if (status.NodeId == SelectedPreviewNodeId) NotifySelectionTools();
         OnPropertyChanged(nameof(PreviewStatus));
         OnPropertyChanged(nameof(PreviewDetails));
     }
@@ -619,28 +723,15 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             return false;
         }
 
-        MenuWindowValue rootWindow = _snapshot!.Window.Value;
-        float rootInset = rootWindow.Border == WindowBorder.WINDOW_BORDER_NONE
-            ? 0
-            : rootWindow.BorderSize;
-        float itemInset = item.Value.Window.Border ==
-            WindowBorder.WINDOW_BORDER_NONE
-                ? 0
-                : item.Value.Window.BorderSize;
-        MenuRectangleValue screenRectangle = MenuRectTransform.ComposeItem(
-            rootWindow.Rect,
-            rootInset,
-            itemInset,
-            item.Value.Window.RectClient);
-        MenuPreviewRect currentBounds = MenuRectTransform.Resolve(
-            screenRectangle,
-            scene.Settings);
-        if (currentBounds != originalBounds ||
+        MenuPreviewHitRegion? region = scene.HitRegions.FirstOrDefault(
+            candidate => candidate.NodeId == itemId);
+        if (region is null || region.Bounds != originalBounds ||
             candidateBounds == originalBounds)
         {
             return false;
         }
 
+        MenuRectangleValue screenRectangle = region.Placement.VirtualRectangle;
         MenuPreviewRect candidateVirtual = MenuRectTransform.Unresolve(
             candidateBounds,
             screenRectangle.HorizontalAlignment,
@@ -785,6 +876,8 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
     private void NotifyDocumentChanged()
     {
         OnPropertyChanged(nameof(Snapshot));
+        OnPropertyChanged(nameof(MenuValidationStatus));
+        OnPropertyChanged(nameof(MenuValidationDetails));
         OnPropertyChanged(nameof(HasDocument));
         OnPropertyChanged(nameof(HasNoDocument));
         OnPropertyChanged(nameof(IsComplete));
@@ -800,6 +893,13 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(PreviewStatus));
         OnPropertyChanged(nameof(PreviewDetails));
         NotifyItemCommandsChanged();
+        NotifySelectionTools();
+    }
+
+    private void NotifySelectionTools()
+    {
+        OnPropertyChanged(nameof(HasSelectedText));
+        OnPropertyChanged(nameof(SelectedTextDetails));
     }
 
     private void PreviewDebug_PreviewChanged(object? sender, EventArgs args)
@@ -840,7 +940,10 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         if (!_previewMaterialResources.SequenceEqual(materials))
             _materialPreviewStatuses.Clear();
         if (!_previewTextResources.SequenceEqual(texts))
+        {
             _textPreviewStatuses.Clear();
+            NotifySelectionTools();
+        }
 
         _previewMaterialResources = materials;
         _previewTextResources = texts;
@@ -898,6 +1001,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
             // scene's authored text identity.
             _materialPreviewStatuses.Clear();
             _textPreviewStatuses.Clear();
+            NotifySelectionTools();
             PreviewDebug.RefreshTextResources();
         }
     }
@@ -971,7 +1075,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
         return MenuInspectorProjection.Create(this, _snapshot, node);
     }
 
-    private static IReadOnlyList<MenuOutlineNodeViewModel> BuildOutline(
+    private IReadOnlyList<MenuOutlineNodeViewModel> BuildOutline(
         MenuEditorSnapshot? snapshot,
         IReadOnlySet<string>? expandedNodeKeys = null)
     {
@@ -984,7 +1088,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
                 return new MenuOutlineNodeViewModel(
                     $"item:{item.Id}",
                     item.IsResolved
-                        ? MenuPresentationText.ItemTitle(item.Value, index)
+                        ? MenuPresentationText.OutlineTitle(item, index, _textResourceResolver)
                         : $"Unresolved Item {index + 1:N0}",
                     MenuOutlineNodeKind.Item,
                     item.Id,
@@ -1011,9 +1115,9 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
                     $"Items ({items.Length:N0})",
                     MenuOutlineNodeKind.Items,
                     children: items,
-                    isExpanded: expandedNodeKeys?.Contains(itemsKey) == true)
+                    isExpanded: expandedNodeKeys?.Contains(itemsKey) ?? true)
             ],
-            isExpanded: expandedNodeKeys?.Contains(rootKey) == true);
+            isExpanded: expandedNodeKeys?.Contains(rootKey) ?? true);
         return Array.AsReadOnly([root]);
     }
 
@@ -1069,6 +1173,7 @@ public sealed class MenuDesignerViewModel : ObservableObject, IDisposable
 
     private void NotifyItemCommandsChanged()
     {
+        OnPropertyChanged(nameof(CanEditBehavior));
         AddItemCommand.RaiseCanExecuteChanged();
         DuplicateItemCommand.RaiseCanExecuteChanged();
         RemoveItemCommand.RaiseCanExecuteChanged();

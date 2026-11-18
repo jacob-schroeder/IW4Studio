@@ -25,6 +25,7 @@ public sealed class MenuDebugItemProgram
     public string? Name { get; }
     public string? Group { get; }
     public MenuDebugItemHooks Hooks { get; }
+    public bool CanAcceptFocus => Definition.IsResolved && Definition.CanAcceptFocus;
     internal DebugItemDefinition Definition { get; }
 }
 
@@ -72,6 +73,61 @@ public sealed class MenuDebugProgram
         return MenuExpressionEvaluator.Default.EvaluateExpression(this, expression, scenario);
     }
 
+    /// <summary>Applies constant or clock-only geometry bindings at zero milliseconds.</summary>
+    public MenuRectangleValue EvaluateAuthoredMenuRectangle(MenuRectangleValue rectangle) =>
+        rectangle with
+        {
+            X = AuthoredCoordinate(Definition.RectX, rectangle.X),
+            Y = AuthoredCoordinate(Definition.RectY, rectangle.Y),
+            Width = AuthoredCoordinate(Definition.RectWidth, rectangle.Width),
+            Height = AuthoredCoordinate(Definition.RectHeight, rectangle.Height)
+        };
+
+    /// <summary>Applies constant or clock-only geometry at zero milliseconds and dependency-free text.</summary>
+    public (MenuRectangleValue Rectangle, string? Text) EvaluateAuthoredItemPresentation(
+        int itemIndex, MenuRectangleValue rectangle, string? text)
+    {
+        DebugItemDefinition definition = _items[itemIndex].Definition;
+        MenuRectangleValue presented = rectangle;
+        foreach (DebugFloatExpression binding in definition.FloatExpressions)
+        {
+            // Preserve the authored coordinate when the last binding needs external state.
+            presented = binding.Target switch
+            {
+                ItemFloatExpressionTarget.RectX => presented with { X = AuthoredCoordinate(binding.Expression, rectangle.X) },
+                ItemFloatExpressionTarget.RectY => presented with { Y = AuthoredCoordinate(binding.Expression, rectangle.Y) },
+                ItemFloatExpressionTarget.RectW => presented with { Width = AuthoredCoordinate(binding.Expression, rectangle.Width) },
+                ItemFloatExpressionTarget.RectH => presented with { Height = AuthoredCoordinate(binding.Expression, rectangle.Height) },
+                _ => presented
+            };
+        }
+
+        return (presented, EvaluateAuthoredPresentation(definition.Text, allowClock: false)?.AsFormattedExpressionString() ?? text);
+    }
+
+    private float AuthoredCoordinate(MenuDebugExpression? expression, float fallback) =>
+        EvaluateAuthoredPresentation(expression, allowClock: true) is { } value &&
+        value.TryGetFloat(out float coordinate) && float.IsFinite(coordinate)
+            ? coordinate
+            : fallback;
+
+    private MenuDebugValue? EvaluateAuthoredPresentation(
+        MenuDebugExpression? expression,
+        bool allowClock)
+    {
+        bool NeedsExternalState(MenuDebugDependency dependency) =>
+            !allowClock || dependency.Kind != MenuDebugDependencyKind.Environment ||
+            dependency.Operation != OperationEnum.OP_MILLISECONDS;
+
+        if (expression is null || expression.Dependencies.Any(NeedsExternalState))
+            return null;
+
+        MenuEvaluation<MenuDebugValue> evaluated = EvaluateExpression(expression, MenuDebugScenario.Empty);
+        return evaluated.IsKnown && !evaluated.Dependencies.Any(NeedsExternalState)
+            ? evaluated.Value
+            : null;
+    }
+
     public MenuDebugDispatchResult Dispatch(
         MenuDebugInput input,
         MenuDebugScenario scenario) =>
@@ -89,6 +145,7 @@ public sealed class MenuDebugProgram
 internal sealed record DebugMenuDefinition(
     MenuNodeId WindowId,
     DebugRectangleDefinition Rectangle,
+    float BorderInset,
     bool AuthoredVisible,
     MenuDebugExpression? Visible,
     MenuDebugExpression? RectX,
@@ -103,6 +160,7 @@ internal sealed record DebugItemDefinition(
     string? EnableDvar,
     ItemDvarFlags DvarFlags,
     DebugRectangleDefinition Rectangle,
+    float BorderInset,
     bool AuthoredVisible,
     DebugColorDefinition ForeColor,
     DebugColorDefinition GlowColor,
@@ -163,6 +221,7 @@ internal static class MenuDebugProgramFactory
         DebugMenuDefinition menu = new(
             identity.WindowId,
             Rectangle(definition.Window.Rect),
+            BorderInset(definition.Window),
             IsAuthoredVisible(definition.Window),
             compiler.Compile(definition.VisibleStatement),
             compiler.Compile(definition.RectXStatement),
@@ -191,7 +250,8 @@ internal static class MenuDebugProgramFactory
             .SelectMany(expression => expression.Dependencies)
             .Concat(items
                 .Where(item =>
-                    (item.Definition.DvarFlags & ItemDvarFlags.Focus) != 0 &&
+                    (item.Definition.DvarFlags & (ItemDvarFlags.Show | ItemDvarFlags.Hide |
+                        ItemDvarFlags.Enable | ItemDvarFlags.Disable | ItemDvarFlags.Focus)) != 0 &&
                     !string.IsNullOrWhiteSpace(item.Definition.DvarTest) &&
                     !string.IsNullOrEmpty(item.Definition.EnableDvar))
                 .Select(item => new MenuDebugDependency(
@@ -238,9 +298,10 @@ internal static class MenuDebugProgramFactory
             item.DvarTestString,
             item.EnableDvarString,
             item.DvarFlags,
-            // Item_SetScreenCoords starts with the client rectangle and
-            // composes the Menu origin exactly once at projection time.
+            // Evaluation retains RectClient geometry. Geometry opcodes and
+            // rendering use the resulting virtual Window rectangle.
             Rectangle(item.Window.RectClient),
+            BorderInset(item.Window),
             IsAuthoredVisible(item.Window),
             Color(item.Window.ForeColor),
             Color(item.GlowColor),
@@ -303,6 +364,7 @@ internal static class MenuDebugProgramFactory
                     0,
                     HorizontalAlign.HORIZONTAL_ALIGN_SUBLEFT,
                     VerticalAlign.VERTICAL_ALIGN_SUBTOP),
+                0,
                 false,
                 new DebugColorDefinition(1, 1, 1, 1),
                 new DebugColorDefinition(0, 0, 0, 0),
@@ -486,6 +548,9 @@ internal static class MenuDebugProgramFactory
     private static bool IsAuthoredVisible(WindowDef window) =>
         window.DynamicFlags.Count == 0 ||
         (window.DynamicFlags[0] & WindowDynamicFlags.WINDOW_DYNAMIC_VISIBLE) != 0;
+
+    private static float BorderInset(WindowDef value) =>
+        value.Border == WindowBorder.WINDOW_BORDER_NONE ? 0 : value.BorderSize;
 
     private static DebugRectangleDefinition Rectangle(RectangleDef value) =>
         new(value.X, value.Y, value.W, value.H, value.HorzAlign, value.VertAlign);

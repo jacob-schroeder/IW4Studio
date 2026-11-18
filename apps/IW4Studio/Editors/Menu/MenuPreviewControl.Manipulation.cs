@@ -106,19 +106,22 @@ public sealed partial class MenuPreviewControl
         e.Handled = true;
     }
 
-    internal MenuNodeId? HitTestNode(Point localPosition)
+    internal MenuNodeId? HitTestNode(
+        Point localPosition,
+        Func<MenuNodeId, bool>? acceptsNode = null)
     {
         if (Scene is not { } scene)
             return null;
 
         PreviewTransform transform = CreateTransform(scene.Settings);
-        return HitTestNode(scene, transform, localPosition);
+        return HitTestNode(scene, transform, localPosition, acceptsNode);
     }
 
     private static MenuNodeId? HitTestNode(
         MenuPreviewScene scene,
         PreviewTransform transform,
-        Point localPosition)
+        Point localPosition,
+        Func<MenuNodeId, bool>? acceptsNode = null)
     {
         if (!StageBounds(scene.Settings, transform).Contains(localPosition) ||
             !transform.TryUnmap(localPosition, out Point virtualPosition))
@@ -128,7 +131,8 @@ public sealed partial class MenuPreviewControl
 
         return scene.HitTest(
             (float)virtualPosition.X,
-            (float)virtualPosition.Y);
+            (float)virtualPosition.Y,
+            acceptsNode);
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)

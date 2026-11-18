@@ -1,4 +1,5 @@
 using IW4.Studio.Desktop.Editors;
+using IW4.Studio.Desktop.Editors.Image;
 using IW4.Studio.Documents;
 using IW4.Game.Assets;
 using IW4.Formats.D3dbsp;
@@ -186,6 +187,8 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             editorHost.RefreshState();
             if (editorHost.HostedViewModel is MaterialEditorViewModel material)
                 material.RefreshSessionState();
+            if (editorHost.HostedViewModel is ImageEditorViewModel image)
+                image.RefreshSessionState();
         }
     }
 

@@ -131,7 +131,12 @@ public sealed class BehaviorExpressionCatalog
         GuidedFunction(rows, OperationEnum.OP_GETPERK, 46, [1]);
         GuidedFunction(rows, OperationEnum.OP_GETPLAYERCARDINFO, 192, [3]);
         GuidedFunction(rows, OperationEnum.OP_GETPLAYERDATA, 170, [1, 2, 3, 4, 5, 6]);
-        GuidedFunction(rows, OperationEnum.OP_GETPLAYERDATAANYBOOLTRUE, 8, [1], BehaviorExpressionResultKind.Boolean);
+        GuidedFunction(
+            rows,
+            OperationEnum.OP_GETPLAYERDATAANYBOOLTRUE,
+            8,
+            Enumerable.Range(1, BehaviorExpressionNativeGrammar.MaximumFunctionArguments),
+            BehaviorExpressionResultKind.Boolean);
         GuidedFunction(rows, OperationEnum.OP_GETSEARCHPARAMS, 1, []);
         GuidedFunction(rows, OperationEnum.OP_INKILLCAM, 6, [], BehaviorExpressionResultKind.Boolean);
         GuidedFunction(rows, OperationEnum.OP_INKILLCAMNPC, 1, [], BehaviorExpressionResultKind.Boolean);
