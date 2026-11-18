@@ -123,6 +123,7 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new RawFileAdapter());
         registry.Register(new StringTableAdapter());
         registry.Register(new LocalizeAdapter());
+        registry.Register(new PhysPresetAdapter());
         registry.Register(new MenuAdapter());
         registry.Register(new MenuFileAdapter());
         registry.Register(new MaterialAdapter());

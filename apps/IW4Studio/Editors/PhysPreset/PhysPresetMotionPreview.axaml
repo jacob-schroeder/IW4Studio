@@ -1,0 +1,94 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:IW4.Studio.Desktop.Editors.PhysPreset"
+             x:Class="IW4.Studio.Desktop.Editors.PhysPreset.PhysPresetMotionPreview">
+  <Border CornerRadius="8"
+          BorderThickness="1"
+          BorderBrush="{DynamicResource StudioBorderBrush}"
+          Background="{DynamicResource StudioSurfaceBrush}"
+          ClipToBounds="True">
+    <Grid RowDefinitions="Auto,*,Auto">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="12,5">
+        <TextBlock Text="Motion preview"
+                   FontWeight="SemiBold"
+                   VerticalAlignment="Center" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+          <RadioButton x:Name="DropScenario" Content="Drop" IsChecked="True" />
+          <RadioButton x:Name="SlideScenario" Content="Slide" />
+        </StackPanel>
+      </Grid>
+
+      <Grid Grid.Row="1" MinHeight="220" ClipToBounds="True">
+        <local:PhysPresetMotionPreviewStage x:Name="Stage"
+                                          IsHitTestVisible="False"
+                                          AutomationProperties.Name="Approximate motion across a grid floor" />
+        <Border HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="10"
+                Padding="7,4"
+                CornerRadius="4"
+                Background="#DE1D2C39">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Ellipse Width="5" Height="5" Fill="#92BEDF" />
+            <TextBlock Text="Perspective" Foreground="#DCE7F2" FontSize="11" />
+          </StackPanel>
+        </Border>
+        <CheckBox x:Name="ShowTrajectory"
+                  Content="Trajectory"
+                  IsChecked="True"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Top"
+                  Margin="10"
+                  Padding="7,3"
+                  CornerRadius="4"
+                  MinHeight="28"
+                  Background="#DE1D2C39"
+                  Foreground="#DCE7F2"
+                  FontSize="11" />
+        <Border HorizontalAlignment="Left"
+                VerticalAlignment="Bottom"
+                Margin="10"
+                Padding="7,4"
+                CornerRadius="4"
+                Background="#DE1D2C39">
+          <TextBlock Text="Approximate motion" Foreground="#DCE7F2" FontSize="11" />
+        </Border>
+      </Grid>
+
+      <Grid Grid.Row="2"
+            ColumnDefinitions="Auto,Auto,*,Auto"
+            ColumnSpacing="8"
+            Margin="10,7">
+        <Button x:Name="PlaybackButton"
+                Classes="primary"
+                Content="Run drop"
+                MinWidth="96"
+                MinHeight="30"
+                Padding="9,3"
+                FontSize="12" />
+        <Button x:Name="RewindButton"
+                Grid.Column="1"
+                MinHeight="30"
+                Padding="8,3"
+                ToolTip.Tip="Return to first frame"
+                AutomationProperties.Name="Return to first frame">
+          <PathIcon Width="13" Height="13" Data="M 4,3 L 6,3 L 6,13 L 4,13 Z M 12,3 L 12,13 L 6,8 Z" />
+        </Button>
+        <Slider x:Name="Playhead"
+                Grid.Column="2"
+                Minimum="0"
+                SmallChange="0.01"
+                LargeChange="0.1"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Preview time in seconds" />
+        <TextBlock x:Name="TimeReadout"
+                   Grid.Column="3"
+                   MinWidth="47"
+                   TextAlignment="Right"
+                   VerticalAlignment="Center"
+                   FontSize="12"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+      </Grid>
+    </Grid>
+  </Border>
+</UserControl>

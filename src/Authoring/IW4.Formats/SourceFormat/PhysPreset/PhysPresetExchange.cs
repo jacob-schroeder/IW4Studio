@@ -94,13 +94,13 @@ public sealed class PhysPresetExchange
         float.IsFinite(asset.BulletForceScale) && float.IsFinite(asset.ExplosiveForceScale) &&
         float.IsFinite(asset.PiecesSpreadFraction) && float.IsFinite(asset.PiecesUpwardVelocity) &&
         !float.IsNaN(asset.Friction) &&
-        (asset.Friction >= float.MaxValue || float.IsFinite(asset.Friction)) &&
+        (PhysPresetAsset.IsInfiniteFriction(asset.Friction) || float.IsFinite(asset.Friction)) &&
         asset.SndAliasPrefix?.Contains('\\') != true;
 
     private static InfoStringSourceWriter WriteLegacy(PhysPresetAsset asset)
     {
         var source = new InfoStringSourceWriter("PHYSIC");
-        bool frictionIsInfinite = asset.Friction >= float.MaxValue;
+        bool frictionIsInfinite = PhysPresetAsset.IsInfiniteFriction(asset.Friction);
         source.AddFloat("mass", asset.Mass);
         source.AddFloat("bounce", asset.Bounce);
         source.AddFloat("friction", frictionIsInfinite ? 0.0f : asset.Friction);

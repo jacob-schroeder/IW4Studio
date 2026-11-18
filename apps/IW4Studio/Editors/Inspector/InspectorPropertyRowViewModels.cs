@@ -334,6 +334,7 @@ public sealed class InspectorUnsignedIntegerPropertyRowViewModel
 public sealed class InspectorFloatPropertyRowViewModel
     : InspectorStagedPropertyRowViewModel<float>
 {
+    private readonly string _valueFormat;
     private double _sliderMaximum;
     private double _sliderMinimum;
     private double _sliderValue;
@@ -347,15 +348,17 @@ public sealed class InspectorFloatPropertyRowViewModel
         bool isReadOnly = false,
         float? sliderMinimum = null,
         float? sliderMaximum = null,
-        float sliderTickFrequency = 0.01f)
+        float sliderTickFrequency = 0.01f,
+        string valueFormat = "G9")
         : base(
             label,
             fieldPath,
-            FormatInvariant(value),
+            value.ToString(valueFormat, CultureInfo.InvariantCulture),
             apply,
             description,
             isReadOnly)
     {
+        _valueFormat = valueFormat;
         if (sliderMinimum.HasValue != sliderMaximum.HasValue)
             throw new ArgumentException("Slider bounds must be supplied together.");
         if (sliderMinimum is { } minimum &&
@@ -407,7 +410,8 @@ public sealed class InspectorFloatPropertyRowViewModel
         }
     }
 
-    protected override string Format(float value) => FormatInvariant(value);
+    protected override string Format(float value) =>
+        value.ToString(_valueFormat, CultureInfo.InvariantCulture);
 
     protected override bool TryParse(
         string input,
@@ -422,9 +426,6 @@ public sealed class InspectorFloatPropertyRowViewModel
         error = parsed ? null : "Enter a finite number.";
         return parsed;
     }
-
-    private static string FormatInvariant(float value) =>
-        value.ToString("G9", CultureInfo.InvariantCulture);
 
     private void SynchronizeSliderFromInput()
     {

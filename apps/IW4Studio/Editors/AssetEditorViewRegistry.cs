@@ -10,6 +10,7 @@ using IW4.Studio.Desktop.Editors.LightDef;
 using IW4.Studio.Desktop.Editors.Localize;
 using IW4.Studio.Desktop.Editors.Material;
 using IW4.Studio.Desktop.Editors.MaterialTechset;
+using IW4.Studio.Desktop.Editors.PhysPreset;
 using IW4.Studio.Desktop.Editors.RawFile;
 using IW4.Studio.Desktop.Editors.Sound;
 using IW4.Studio.Desktop.Editors.StringTable;
@@ -89,6 +90,7 @@ public sealed class AssetEditorViewRegistry
         registry.Register(new LocalizeViewFactory());
         registry.Register(new FxViewFactory(workspace));
         registry.Register(new LightDefViewFactory(workspace));
+        registry.Register(new PhysPresetViewFactory());
         registry.Register(new MaterialViewFactory());
         registry.Register(new ImageViewFactory());
         registry.Register(new MaterialTechsetViewFactory());

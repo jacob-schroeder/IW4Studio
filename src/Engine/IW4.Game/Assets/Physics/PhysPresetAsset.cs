@@ -18,6 +18,7 @@ public sealed class PhysPresetAsset : BaseAsset
     public float Mass { get; init; }
     public float Bounce { get; init; }
     public float Friction { get; init; }
+    public static bool IsInfiniteFriction(float friction) => friction >= float.MaxValue;
     public float BulletForceScale { get; init; }
     public float ExplosiveForceScale { get; init; }
 
