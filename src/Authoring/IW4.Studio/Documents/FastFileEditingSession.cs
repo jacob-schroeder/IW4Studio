@@ -2,6 +2,7 @@ using System.Numerics;
 using IW4.Game.Assets;
 using IW4.Game.Assets.ColMap;
 using IW4.Game.Assets.Image;
+using IW4.Game.Assets.Material;
 using IW4.Game.Assets.Physics;
 using IW4.Game.Assets.RawFile;
 using IW4.Game.Assets.Sound;
@@ -865,6 +866,74 @@ public sealed class FastFileEditingSession : IDisposable
                 "A current target definition requires semantic content.");
     }
 
+    internal bool TryResolveTracerMaterial(string? name, out MaterialAsset? material)
+    {
+        material = null;
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+        AssetKey key;
+        try
+        {
+            key = AssetKey.FromWireName(
+                CanonicalAssetFamily.FromSerializedType(XAssetType.Material), name);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            ZoneLinkRequest request = _revision.LinkRequest;
+            WorkspaceAssetCatalogEntry? target = Document.Rows.FirstOrDefault(entry =>
+                entry.AssetType == XAssetType.Material &&
+                entry.Origin == WorkspaceAssetOrigin.TargetOwnedDefinition &&
+                entry.NormalizedName == key.NormalizedName && entry.Definition is MaterialAsset);
+            if (target is not null)
+            {
+                material = (MaterialAsset)CurrentDefinitionForEntry(target);
+                return true;
+            }
+
+            LinkAssetProvider[] providers = request.Assets.Providers
+                .Where(provider => provider.Key == key && provider.SerializedType == XAssetType.Material)
+                .ToArray();
+            string? externalRootName = request.Roots.FirstOrDefault(root =>
+                root.Asset == key && root.Intent == LinkRootIntent.External)?.OriginalSerializedName;
+            LinkAssetProvider? fullProvider = providers.FirstOrDefault(provider => !provider.IsReferencePlaceholder);
+            WorkspaceAssetCatalogEntry? dependency = Workspace.AssetCatalog.DependencyEntries
+                .FirstOrDefault(entry => entry.AssetType == XAssetType.Material &&
+                    entry.NormalizedName == key.NormalizedName &&
+                    (entry.ProviderZone?.IsTarget != true || providers.Length > 0));
+            if (externalRootName is null && fullProvider is not null)
+            {
+                if (dependency is { ProviderZone.IsTarget: true, Definition: MaterialAsset loaded } &&
+                    loaded.SerializedAssetName == fullProvider.OriginalSerializedName)
+                {
+                    material = loaded;
+                    return true;
+                }
+
+                material = new MaterialAsset { Info = new MaterialInfo { Name = fullProvider.OriginalSerializedName } };
+                return true;
+            }
+
+            string? wireName = externalRootName ?? providers.FirstOrDefault()?.OriginalSerializedName ??
+                dependency?.OriginalName;
+            if (wireName is null)
+                return false;
+
+            // The Save As pool only includes target providers. Keep catalog-only
+            // materials symbolic so the linker can emit their external identity.
+            material = new MaterialAsset
+            {
+                Info = new MaterialInfo { Name = wireName.StartsWith(',') ? wireName : $",{wireName}" }
+            };
+            return true;
+        }
+    }
+
     private static HashSet<XAssetType> ValidateCapturedAssetTypes(
         IEnumerable<XAssetType> assetTypes)
     {
@@ -1661,11 +1730,11 @@ public sealed class FastFileEditingSession : IDisposable
             ThrowIfDisposedCore();
             DraftState state = _providerDrafts[identity];
             if (state.TargetProvider is not { } provider ||
-                state.Entry.Definition is not PhysPresetAsset imported ||
+                state.Entry.Definition is not { } imported ||
                 !IsCurrentProviderDraft(state))
             {
                 throw new InvalidOperationException(
-                    "The selected PhysPreset is no longer the target's unique nested provider.");
+                    $"The selected {state.Entry.AssetType} is no longer the target's unique nested provider.");
             }
 
             // A null candidate restores this provider's last saved draft.
@@ -1673,10 +1742,13 @@ public sealed class FastFileEditingSession : IDisposable
             if (state.SemanticallyEqualsCurrent(candidate))
                 return false;
 
-            var draft = (PhysPresetDraft)state.Adapter.CloneDraft(candidate);
+            object draft = state.Adapter.CloneDraft(candidate);
+            BaseAsset definition = draft is PhysPresetDraft preset && imported is PhysPresetAsset original
+                ? preset.ToAsset(original)
+                : state.Adapter.CreateDefinition(draft);
             var source = LoadedZoneLinkExtensions.CreateCapturedProviderSource(
                 Workspace.LoadedZone,
-                draft.ToAsset(imported),
+                definition,
                 imported,
                 provider.OriginalSerializedName,
                 LinkAssetProviderSourceDisposition.AuthoredDetached);
@@ -1696,7 +1768,7 @@ public sealed class FastFileEditingSession : IDisposable
     {
         if (state.TargetProvider is not { } expected ||
             state.Entry.DependencyIdentity is not { } identity ||
-            state.Entry.Definition is not PhysPresetAsset imported ||
+            state.Entry.Definition is not { } imported ||
             imported.RuntimeAddress?.AssetPoolAddress is not { } address)
         {
             return false;

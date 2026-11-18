@@ -1,4 +1,5 @@
 using IW4.Game.Assets.Physics;
+using IW4.Game.Assets.Tracer;
 using IW4.Formats.D3dbsp;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
@@ -268,10 +269,10 @@ public sealed class WorkspaceAssetCatalog
             document.InitialLinkRequest.Roots
                 .Where(root => root.Asset is not null)
                 .Select(root => root.Asset!.Value));
-        ILookup<AssetKey, LinkAssetProvider> targetPresets =
+        ILookup<AssetKey, LinkAssetProvider> targetNestedProviders =
             document.InitialLinkRequest.Assets.Providers
                 .Where(provider =>
-                    provider.SerializedType == XAssetType.PhysPreset &&
+                    provider.SerializedType is (XAssetType.PhysPreset or XAssetType.Tracer) &&
                     !provider.IsReferencePlaceholder)
                 .ToLookup(provider => provider.Key);
         WorkspaceAssetCatalogEntry[] dependencyEntries = document.IsBlank
@@ -291,8 +292,8 @@ public sealed class WorkspaceAssetCatalog
                 .Where(value => !targetKeys.Contains(value.key))
                 .Select(value =>
                 {
-                    LinkAssetProvider? targetProvider = FindEditablePhysPreset(
-                        value.slot, value.providerZone, targetPresets[value.key]);
+                    LinkAssetProvider? targetProvider = FindEditableNestedProvider(
+                        value.slot, value.providerZone, targetNestedProviders[value.key]);
                     return new WorkspaceAssetCatalogEntry(
                         null,
                         WorkspaceAssetOrigin.DependencyOnly,
@@ -325,7 +326,7 @@ public sealed class WorkspaceAssetCatalog
         return new WorkspaceAssetCatalog(document, targetEntries, dependencyEntries);
     }
 
-    private static LinkAssetProvider? FindEditablePhysPreset(
+    private static LinkAssetProvider? FindEditableNestedProvider(
         XAssetSlot slot,
         WorkspaceAssetProviderZone zone,
         IEnumerable<LinkAssetProvider> targetProviders)
@@ -333,7 +334,7 @@ public sealed class WorkspaceAssetCatalog
         XAssetProviderContribution active = slot.ActiveProvider;
         if (!zone.IsTarget ||
             active.IsReferencePlaceholder ||
-            active.Asset is not PhysPresetAsset ||
+            active.Asset is not (PhysPresetAsset or TracerDefAsset) ||
             slot.Providers.Count(provider => !provider.IsReferencePlaceholder) != 1)
         {
             return null;

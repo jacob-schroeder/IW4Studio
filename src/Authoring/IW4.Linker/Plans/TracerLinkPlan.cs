@@ -69,7 +69,8 @@ internal sealed class TracerLinkPlan : AssetLinkPlan
             definition.MaterialPointer.Untyped,
             definition.Material,
             XAssetType.Material,
-            "Tracer.Material");
+            "Tracer.Material",
+            allowExternalReference: freeze.IsAuthoredDetached && definition.Material?.SerializedAssetName?.StartsWith(',') == true);
 
         return new TracerLinkPlan(
             key,

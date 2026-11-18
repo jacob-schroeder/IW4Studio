@@ -24,6 +24,8 @@ public sealed partial class InspectorColorPickerWindow : Window
         ColorView.Color = ToAvaloniaColor(initialValue);
     }
 
+    internal InspectorColorValue SelectedColor => ToInspectorColor(ColorView.Color);
+
     private void CancelButton_Click(
         object? sender,
         RoutedEventArgs e) =>
@@ -32,7 +34,7 @@ public sealed partial class InspectorColorPickerWindow : Window
     private void SetButton_Click(
         object? sender,
         RoutedEventArgs e) =>
-        Close(ToInspectorColor(ColorView.Color));
+        Close(SelectedColor);
 
     private static InspectorColorValue ToInspectorColor(Color color) =>
         new(

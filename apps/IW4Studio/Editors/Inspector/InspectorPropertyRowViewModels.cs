@@ -742,6 +742,8 @@ public sealed class InspectorColorPropertyRowViewModel
     public IBrush PreviewBrush =>
         new SolidColorBrush(ToAvaloniaColor(CurrentValue));
 
+    public double PreviewOpacity => ToColorComponent(CurrentValue.Alpha) / (double)byte.MaxValue;
+
     public bool CommitInput()
     {
         if (!CanCommit || !TryReadValue(out InspectorColorValue value))
@@ -832,6 +834,7 @@ public sealed class InspectorColorPropertyRowViewModel
         OnPropertyChanged(nameof(CanCommit));
         OnPropertyChanged(nameof(CurrentValue));
         OnPropertyChanged(nameof(PreviewBrush));
+        OnPropertyChanged(nameof(PreviewOpacity));
     }
 
     private static bool IsFinite(InspectorColorValue value) =>

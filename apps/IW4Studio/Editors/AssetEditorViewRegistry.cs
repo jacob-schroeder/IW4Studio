@@ -16,6 +16,7 @@ using IW4.Studio.Desktop.Editors.RawFile;
 using IW4.Studio.Desktop.Editors.Sound;
 using IW4.Studio.Desktop.Editors.StringTable;
 using IW4.Studio.Desktop.Editors.StructuredData;
+using IW4.Studio.Desktop.Editors.Tracer;
 using IW4.Studio.Desktop.Editors.XAnim;
 using IW4.Studio.Desktop.Editors.XModel;
 using IW4.Studio.Desktop.Editors.Weapon;
@@ -93,6 +94,7 @@ public sealed class AssetEditorViewRegistry
         registry.Register(new FxViewFactory(workspace));
         registry.Register(new LightDefViewFactory(workspace));
         registry.Register(new PhysPresetViewFactory());
+        registry.Register(new TracerViewFactory(assetReferencePicker));
         registry.Register(new MaterialViewFactory());
         registry.Register(new ImageViewFactory());
         registry.Register(new MaterialTechsetViewFactory());

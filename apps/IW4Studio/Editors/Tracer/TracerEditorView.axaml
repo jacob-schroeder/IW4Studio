@@ -1,0 +1,159 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tracer="using:IW4.Studio.Desktop.Editors.Tracer"
+             xmlns:vm="using:IW4.Studio.Desktop.ViewModels"
+             xmlns:inspector="using:IW4.Studio.Desktop.Editors.Inspector"
+             x:Class="IW4.Studio.Desktop.Editors.Tracer.TracerEditorView"
+             x:DataType="vm:TracerEditorViewModel">
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="../Image/ImagePreviewBrushes.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="Border.panel">
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.heading">
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.detail">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="5,3" />
+    </Style>
+  </UserControl.Styles>
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="{x:Type inspector:InspectorUnsignedIntegerPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorUnsignedIntegerPropertyRowViewModel">
+      <Grid ColumnDefinitions="*,104" ColumnSpacing="8" Margin="0,3">
+        <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+        <TextBox Grid.Column="1" Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 IsReadOnly="{Binding IsReadOnly}" AutomationProperties.Name="{Binding Label}" />
+      </Grid>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type inspector:InspectorFloatPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorFloatPropertyRowViewModel">
+      <Grid ColumnDefinitions="*,104" ColumnSpacing="8" Margin="0,3">
+        <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+        <TextBox Grid.Column="1" Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 IsReadOnly="{Binding IsReadOnly}" AutomationProperties.Name="{Binding Label}" />
+      </Grid>
+    </DataTemplate>
+  </UserControl.DataTemplates>
+  <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+    <Border Classes="panel">
+      <DockPanel LastChildFill="True">
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                    IsVisible="{Binding IsEditable}">
+          <Button Content="Revert" Classes="ghost" IsEnabled="{Binding HasUnappliedChanges}"
+                  Click="Revert_Click" ToolTip.Tip="Discard edits since the last Apply" />
+          <Button Content="Apply" Classes="primary" IsEnabled="{Binding CanApply}"
+                  Click="Apply_Click" ToolTip.Tip="Apply this tracer to the workspace" />
+        </StackPanel>
+        <StackPanel Spacing="2" Margin="0,0,8,0">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Classes="detail" Text="Tracer" />
+            <TextBlock Classes="detail" Text="{Binding Status}" />
+          </StackPanel>
+          <TextBlock Text="{Binding Name}" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+      <Grid x:Name="Panes" ColumnDefinitions="*,275" RowDefinitions="Auto" ColumnSpacing="8" RowSpacing="8">
+        <StackPanel Spacing="8">
+          <Border Classes="panel">
+            <StackPanel Spacing="8">
+              <WrapPanel>
+                <TextBlock Classes="heading" Text="Beam preview" Margin="0,0,16,0" VerticalAlignment="Center" />
+                <ToggleButton x:Name="Animate" Content="Animate" IsChecked="True" Margin="0,0,6,0" />
+                <ToggleButton x:Name="EndOn" Content="End-on view" />
+              </WrapPanel>
+              <Border CornerRadius="5" ClipToBounds="True">
+                <Grid>
+                  <tracer:TracerPreviewControl Height="220" Tracer="{Binding Preview}"
+                       IsPlaying="{Binding #Animate.IsChecked, TargetNullValue=False}"
+                       EndOn="{Binding #EndOn.IsChecked, TargetNullValue=False}"
+                       AutomationProperties.Name="Illustrative tracer beam preview" />
+                  <TextBlock Text="{Binding PreviewHint}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                             IsVisible="{Binding PreviewHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                             TextAlignment="Center" TextWrapping="Wrap" Margin="12" Foreground="#E0E6EB" />
+                </Grid>
+              </Border>
+              <TextBlock Classes="detail" Text="Illustrative geometry and timing. Material shading is omitted."
+                         TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+          <Border Classes="panel">
+            <StackPanel Spacing="7">
+              <TextBlock Classes="heading" Text="Beam colors" />
+              <Grid ColumnDefinitions="76,*,*,*,*" ColumnSpacing="4">
+                <TextBlock Classes="detail" Text="Sample" />
+                <TextBlock Grid.Column="1" Classes="detail" Text="R" />
+                <TextBlock Grid.Column="2" Classes="detail" Text="G" />
+                <TextBlock Grid.Column="3" Classes="detail" Text="B" />
+                <TextBlock Grid.Column="4" Classes="detail" Text="A" />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding Colors}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="inspector:InspectorColorPropertyRowViewModel">
+                    <Grid ColumnDefinitions="76,*,*,*,*" ColumnSpacing="4" Margin="0,2"
+                          AutomationProperties.Name="{Binding Label}">
+                      <Button Padding="4,2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                              IsEnabled="{Binding IsEditable}" Click="Color_Click"
+                              AutomationProperties.Name="{Binding Label, StringFormat='Pick color for {0}'}"
+                              ToolTip.Tip="{Binding Label}">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                          <Border Width="16" Height="16" Background="{StaticResource Checkerboard}"
+                                  BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+                            <Border Background="{Binding PreviewBrush}" Opacity="{Binding PreviewOpacity}" />
+                          </Border>
+                          <TextBlock Text="{Binding Label}" FontSize="10" />
+                        </StackPanel>
+                      </Button>
+                      <TextBox Grid.Column="1" Text="{Binding RedInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                               IsReadOnly="{Binding IsReadOnly}" AutomationProperties.Name="{Binding Label, StringFormat='{}{0} red'}" />
+                      <TextBox Grid.Column="2" Text="{Binding GreenInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                               IsReadOnly="{Binding IsReadOnly}" AutomationProperties.Name="{Binding Label, StringFormat='{}{0} green'}" />
+                      <TextBox Grid.Column="3" Text="{Binding BlueInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                               IsReadOnly="{Binding IsReadOnly}" AutomationProperties.Name="{Binding Label, StringFormat='{}{0} blue'}" />
+                      <TextBox Grid.Column="4" Text="{Binding AlphaInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                               IsReadOnly="{Binding IsReadOnly}" AutomationProperties.Name="{Binding Label, StringFormat='{}{0} alpha'}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+        <Border x:Name="PropertiesPane" Grid.Column="1" Classes="panel" VerticalAlignment="Top">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="heading" Text="Beam properties" />
+            <TextBlock Classes="detail" Text="Material" />
+            <TextBlock Text="{Binding MaterialDisplay}" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsEditable}">
+              <Button x:Name="BrowseMaterial" Content="Choose material…" Click="ChooseMaterial_Click" />
+              <Button Content="Clear" Classes="ghost" IsEnabled="{Binding CanClearMaterial}" Click="ClearMaterial_Click" />
+            </StackPanel>
+            <Separator Margin="0,4" />
+            <ItemsControl ItemsSource="{Binding Parameters}" />
+          </StackPanel>
+        </Border>
+      </Grid>
+    </ScrollViewer>
+    <TextBlock Grid.Row="2" Text="{Binding ErrorMessage}" TextWrapping="Wrap"
+               IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+               Foreground="{DynamicResource StudioErrorBrush}" />
+  </Grid>
+</UserControl>

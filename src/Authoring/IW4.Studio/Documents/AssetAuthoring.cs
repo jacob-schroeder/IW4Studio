@@ -134,6 +134,7 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new WeaponAdapter());
         registry.Register(new StructuredDataAdapter());
         registry.Register(new SoundAdapter());
+        registry.Register(new TracerAdapter());
         foreach (XAssetType assetType in D3dbspAssetTypeFacts.MultiplayerTypes)
             registry.Register(new D3dbspAssetAdapter(assetType));
         return registry;
@@ -600,6 +601,13 @@ public sealed class AssetEditorSession : AssetEditorSurface
         return Workspace.LoadedZone.Context.AssetPool.Revision == revision
             ? result.ToArray()
             : [];
+    }
+
+    /// <summary>Resolves a Tracer material against the current authored link graph and workspace catalog.</summary>
+    public bool TryResolveTracerMaterial(string? name, out MaterialAsset? material)
+    {
+        ThrowIfClosed();
+        return _session.TryResolveTracerMaterial(name, out material);
     }
 
     /// <summary>Resolves a Material name to its current non-placeholder pool definition.</summary>
