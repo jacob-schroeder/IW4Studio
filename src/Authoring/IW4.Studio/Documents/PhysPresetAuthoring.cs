@@ -45,13 +45,17 @@ public sealed class PhysPresetDraft
             ? "Enter a Latin-1 sound alias prefix without NUL characters."
             : null;
 
-    internal PhysPresetAsset ToAsset() => new()
+    internal PhysPresetAsset ToAsset(PhysPresetAsset? imported = null) => new()
     {
         Name = Name, Type = Type,
         Mass = Mass, Bounce = Bounce, Friction = Friction,
         BulletForceScale = BulletForceScale, ExplosiveForceScale = ExplosiveForceScale,
         PiecesSpreadFraction = PiecesSpreadFraction, PiecesUpwardVelocity = PiecesUpwardVelocity,
-        SndAliasPrefix = SndAliasPrefix, PerSurfaceSndAlias = PerSurfaceSndAlias,
+        SndAliasPrefix = SndAliasPrefix,
+        SndAliasPrefixPointer = imported is not null && imported.SndAliasPrefix == SndAliasPrefix
+            ? imported.SndAliasPrefixPointer
+            : default,
+        PerSurfaceSndAlias = PerSurfaceSndAlias,
         TempDefaultToCylinder = TempDefaultToCylinder, Pad2A = Pad2A
     };
 

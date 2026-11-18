@@ -2,6 +2,7 @@ using System.Numerics;
 using IW4.Game.Assets;
 using IW4.Game.Assets.ColMap;
 using IW4.Game.Assets.Image;
+using IW4.Game.Assets.Physics;
 using IW4.Game.Assets.RawFile;
 using IW4.Game.Assets.Sound;
 using IW4.Game.Assets.StringTable;
@@ -24,11 +25,12 @@ namespace IW4.Studio.Documents;
 public sealed class FastFileEditingSession : IDisposable
 {
     private readonly object _gate = new();
-    private readonly LinkAssetPool _targetBaseAssets;
+    private LinkAssetPool _targetBaseAssets;
     private LinkAssetPool _authoredAssets;
     private IReadOnlySet<AssetKey> _maskedTargetBaseProviderKeys =
         new HashSet<AssetKey>();
     private readonly Dictionary<TargetZoneRowIdentity, DraftState> _drafts = [];
+    private readonly Dictionary<WorkspaceDependencyAssetIdentity, DraftState> _providerDrafts = [];
     private readonly Dictionary<TargetZoneRowIdentity, long> _addedRows = [];
     // Each group records every provider it requires; the authored subset lets
     // the last consumer withdraw providers managed by the D3DBSP lifecycle.
@@ -65,6 +67,15 @@ public sealed class FastFileEditingSession : IDisposable
             AssetAuthoringAdapterRegistry.CreateDefault();
         foreach (WorkspaceAssetCatalogEntry entry in Document.Rows)
             AddInitialDraft(entry, adapters);
+        foreach (WorkspaceAssetCatalogEntry entry in workspace.AssetCatalog.DependencyEntries)
+        {
+            if (entry.DependencyIdentity is { } identity &&
+                entry.TargetProvider is { } provider)
+            {
+                _providerDrafts.Add(identity, new DraftState(
+                    entry, adapters.RequireAdapter(entry.AssetType), provider));
+            }
+        }
         workspace.ClaimEditingSession(this);
     }
 
@@ -784,11 +795,15 @@ public sealed class FastFileEditingSession : IDisposable
             IEnumerable<BaseAsset> targetProviders = Workspace.AssetCatalog.DependencyEntries
                 .Where(entry =>
                     entry.Origin == WorkspaceAssetOrigin.DependencyOnly &&
-                    entry.Access == WorkspaceAssetAccess.ReadOnly &&
                     entry.ContentSource == WorkspaceAssetContentSource.ResolvedProvider &&
                     entry.ProviderZone?.IsTarget == true &&
                     requested.Contains(entry.AssetType))
-                .Select(entry => entry.Definition)
+                .Select(entry => entry.DependencyIdentity is { } identity &&
+                    _providerDrafts.TryGetValue(identity, out DraftState? state) &&
+                    !ReferenceEquals(state.TargetProvider, entry.TargetProvider) &&
+                    IsCurrentProviderDraft(state)
+                        ? state.CreateCurrentDefinition()
+                        : entry.Definition)
                 .OfType<BaseAsset>();
             BaseAsset[] providers = resolvedReferences.Concat(targetProviders).ToArray();
             return Array.AsReadOnly(providers);
@@ -1603,6 +1618,104 @@ public sealed class FastFileEditingSession : IDisposable
         }
     }
 
+    internal bool CanEditProvider(
+        WorkspaceAssetCatalogEntry entry,
+        IAssetAuthoringAdapter adapter)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            return entry.DependencyIdentity is { } identity &&
+                _providerDrafts.TryGetValue(identity, out DraftState? state) &&
+                ReferenceEquals(entry, state.Entry) &&
+                state.Adapter.AssetType == adapter.AssetType &&
+                state.Adapter.DraftType == adapter.DraftType &&
+                IsCurrentProviderDraft(state);
+        }
+    }
+
+    internal object CloneCurrentProviderDraft(WorkspaceDependencyAssetIdentity identity)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            return _providerDrafts[identity].CloneCurrent();
+        }
+    }
+
+    internal bool IsProviderDraftChanged(WorkspaceDependencyAssetIdentity identity)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            return _providerDrafts[identity].IsChanged;
+        }
+    }
+
+    internal bool PublishProviderDraft(
+        WorkspaceDependencyAssetIdentity identity,
+        object? candidate)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            DraftState state = _providerDrafts[identity];
+            if (state.TargetProvider is not { } provider ||
+                state.Entry.Definition is not PhysPresetAsset imported ||
+                !IsCurrentProviderDraft(state))
+            {
+                throw new InvalidOperationException(
+                    "The selected PhysPreset is no longer the target's unique nested provider.");
+            }
+
+            // A null candidate restores this provider's last saved draft.
+            candidate ??= state.CloneSaved();
+            if (state.SemanticallyEqualsCurrent(candidate))
+                return false;
+
+            var draft = (PhysPresetDraft)state.Adapter.CloneDraft(candidate);
+            var source = LoadedZoneLinkExtensions.CreateCapturedProviderSource(
+                Workspace.LoadedZone,
+                draft.ToAsset(imported),
+                imported,
+                provider.OriginalSerializedName,
+                LinkAssetProviderSourceDisposition.AuthoredDetached);
+            LinkAssetPool assets = _targetBaseAssets.WithReplacedProvider(
+                provider, source, out LinkAssetProvider current);
+            Publish(_authoredAssets, _revision.LinkRequest.Roots, targetProviderAssets: assets);
+            state.TargetProvider = current;
+            state.SetCurrent(draft, _revision.Revision);
+            RebuildChangeSet();
+        }
+
+        AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    private bool IsCurrentProviderDraft(DraftState state)
+    {
+        if (state.TargetProvider is not { } expected ||
+            state.Entry.DependencyIdentity is not { } identity ||
+            state.Entry.Definition is not PhysPresetAsset imported ||
+            imported.RuntimeAddress?.AssetPoolAddress is not { } address)
+        {
+            return false;
+        }
+
+        LoadedXZone zone = Workspace.LoadedZone;
+        return zone.Context.AssetPool.TryGetSlot(address, out var slot) &&
+            slot is not null &&
+            slot.ActiveProvider.Id.Value == identity.ProviderId &&
+            slot.ActiveProvider.Owner == zone.Context.ZoneOwner &&
+            ReferenceEquals(slot.ActiveProvider.Asset, imported) &&
+            slot.Providers.Count(provider => !provider.IsReferencePlaceholder) == 1 &&
+            !_revision.LinkRequest.Roots.Any(root => root.Asset == expected.Key) &&
+            _revision.LinkRequest.Assets.Providers
+                .Where(provider => provider.Key == expected.Key && !provider.IsReferencePlaceholder)
+                .Take(2)
+                .SequenceEqual([expected]);
+    }
+
     internal IReadOnlyList<IW4.Game.Assets.BaseAsset> CaptureAppliedXModelProviders(
         TargetZoneRowIdentity identity) =>
         CaptureAppliedCompiledProviders(identity, XAssetType.XModel);
@@ -1913,6 +2026,8 @@ public sealed class FastFileEditingSession : IDisposable
             commit();
             foreach (DraftState state in _drafts.Values)
                 state.AcknowledgeSaved();
+            foreach (DraftState state in _providerDrafts.Values)
+                state.AcknowledgeSaved();
             WithdrawSavedAuxiliaries();
             _addedRows.Clear();
             _savedHeaderMetadata = _revision.HeaderMetadata;
@@ -2001,7 +2116,8 @@ public sealed class FastFileEditingSession : IDisposable
         LinkAssetPool authoredAssets,
         IEnumerable<LinkRoot> roots,
         IEnumerable<AssetKey>? withdrawnTargetProviderKeys = null,
-        IEnumerable<AssetKey>? publishedProviderKeys = null)
+        IEnumerable<AssetKey>? publishedProviderKeys = null,
+        LinkAssetPool? targetProviderAssets = null)
     {
         ArgumentNullException.ThrowIfNull(authoredAssets);
         var maskedTargetBaseProviderKeys = new HashSet<AssetKey>(
@@ -2011,11 +2127,24 @@ public sealed class FastFileEditingSession : IDisposable
         if (publishedProviderKeys is not null)
             maskedTargetBaseProviderKeys.ExceptWith(publishedProviderKeys);
 
-        ZoneLinkRequest previous = _revision.LinkRequest;
-        LinkAssetPool targetBaseAssets = _targetBaseAssets.WithoutProviders(
+        targetProviderAssets ??= _targetBaseAssets;
+        LinkAssetPool targetBaseAssets = targetProviderAssets.WithoutProviders(
             maskedTargetBaseProviderKeys);
         LinkAssetPool effectiveAuthoredAssets = authoredAssets.WithoutProviders(
             maskedTargetBaseProviderKeys);
+        foreach (DraftState state in _providerDrafts.Values.Where(state => state.IsChanged))
+        {
+            if (state.TargetProvider is { } provider &&
+                (maskedTargetBaseProviderKeys.Contains(provider.Key) ||
+                 effectiveAuthoredAssets.Providers.Any(authored =>
+                     authored.Key == provider.Key && !authored.IsReferencePlaceholder)))
+            {
+                throw new InvalidOperationException(
+                    $"The new revision would replace unsaved edits to {provider.Key}.");
+            }
+        }
+
+        ZoneLinkRequest previous = _revision.LinkRequest;
         LinkAssetPool assets = targetBaseAssets.WithHighestPrecedencePool(
             effectiveAuthoredAssets);
         var request = new ZoneLinkRequest(
@@ -2029,6 +2158,7 @@ public sealed class FastFileEditingSession : IDisposable
             _revision.HeaderMetadata,
             request);
         _authoredAssets = effectiveAuthoredAssets;
+        _targetBaseAssets = targetProviderAssets;
         _maskedTargetBaseProviderKeys = maskedTargetBaseProviderKeys;
         _revision = revision;
     }
@@ -2144,7 +2274,9 @@ public sealed class FastFileEditingSession : IDisposable
             DraftState state = RequireDraft(value.Key);
             return state.CreateAddedChange(value.Value);
         });
-        _changeSet = new AssetChangeSet(modified.Concat(added));
+        _changeSet = new AssetChangeSet(
+            modified.Concat(added),
+            _providerDrafts.Values.Count(state => state.IsChanged));
     }
 
     private bool HasPendingHeaderPropertiesChangeCore() =>
@@ -2158,12 +2290,14 @@ public sealed class FastFileEditingSession : IDisposable
         private long? _firstChangedRevision;
         private long _lastChangedRevision;
 
-        public DraftState(WorkspaceAssetCatalogEntry entry, IAssetAuthoringAdapter adapter)
+        public DraftState(
+            WorkspaceAssetCatalogEntry entry,
+            IAssetAuthoringAdapter adapter,
+            LinkAssetProvider? targetProvider = null)
         {
             Entry = entry;
             Adapter = adapter;
-            Identity = entry.TargetRowIdentity ?? throw new InvalidDataException(
-                "A hosted editor state requires a target row.");
+            TargetProvider = targetProvider;
             _saved = adapter.CreateDraft(entry.Definition ?? throw new InvalidDataException(
                 "A hosted editor state requires a detached definition."));
             // Stored drafts are immutable snapshots: every outward edit and
@@ -2175,7 +2309,10 @@ public sealed class FastFileEditingSession : IDisposable
 
         public WorkspaceAssetCatalogEntry Entry { get; }
         public IAssetAuthoringAdapter Adapter { get; }
-        public TargetZoneRowIdentity Identity { get; }
+        public LinkAssetProvider? TargetProvider { get; set; }
+        public TargetZoneRowIdentity Identity =>
+            Entry.TargetRowIdentity ?? throw new InvalidDataException(
+                "This editor state does not represent a target row.");
         public bool IsChanged => !ReferenceEquals(_saved, _current) &&
             !Adapter.SemanticallyEquals(_saved, _current);
 

@@ -62,16 +62,17 @@ public sealed record AssetRowChange(
     long LastChangedRevision,
     AssetRowChangeKind Kind = AssetRowChangeKind.Modified);
 
-/// <summary>Immutable, row-ordered change state for destructive navigation.</summary>
+/// <summary>Immutable target-row and nested-provider change state.</summary>
 public sealed class AssetChangeSet
 {
     private readonly IReadOnlyList<AssetRowChange> _changes;
     private readonly IReadOnlyDictionary<TargetZoneRowIdentity, AssetRowChange>
         _byRow;
 
-    internal AssetChangeSet(IEnumerable<AssetRowChange> changes)
+    internal AssetChangeSet(IEnumerable<AssetRowChange> changes, int changedProviderCount = 0)
     {
         ArgumentNullException.ThrowIfNull(changes);
+        ArgumentOutOfRangeException.ThrowIfNegative(changedProviderCount);
         AssetRowChange[] ordered = changes
             .OrderBy(change => change.RowIdentity.SerializedIndex)
             .ToArray();
@@ -90,10 +91,12 @@ public sealed class AssetChangeSet
 
         _changes = Array.AsReadOnly(ordered);
         _byRow = byRow;
+        ChangedProviderCount = changedProviderCount;
     }
 
-    public bool IsEmpty => _changes.Count == 0;
+    public bool IsEmpty => _changes.Count == 0 && ChangedProviderCount == 0;
     public int ChangedRowCount => _changes.Count;
+    public int ChangedProviderCount { get; }
     public IReadOnlyList<AssetRowChange> Changes => _changes;
 
     public bool TryGetChange(

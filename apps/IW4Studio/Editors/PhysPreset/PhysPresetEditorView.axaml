@@ -3,6 +3,7 @@
              xmlns:local="using:IW4.Studio.Desktop.Editors.PhysPreset"
              xmlns:vm="using:IW4.Studio.Desktop.ViewModels"
              xmlns:inspector="using:IW4.Studio.Desktop.Editors.Inspector"
+             xmlns:documents="using:IW4.Studio.Documents"
              x:Class="IW4.Studio.Desktop.Editors.PhysPreset.PhysPresetEditorView"
              x:DataType="vm:PhysPresetEditorViewModel">
   <UserControl.Styles>
@@ -69,6 +70,24 @@
                   <ContentControl Classes="numericField" Content="{Binding Friction}" />
                   <CheckBox Content="Infinite friction" IsChecked="{Binding InfiniteFriction, Mode=TwoWay}"
                             IsEnabled="{Binding IsEditable}" />
+                </StackPanel>
+              </Expander>
+              <Expander Header="Used by" IsExpanded="{Binding IsUsedByExpanded, Mode=TwoWay}">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="Direct XModel, ClipMap, Fx glass and Vehicle references in the workspace catalog, including applied edits."
+                             TextWrapping="Wrap" Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  <TextBlock Text="No direct references found." IsVisible="{Binding HasNoUsages}" />
+                  <ItemsControl ItemsSource="{Binding Usages}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="documents:PhysPresetUsage">
+                        <StackPanel Margin="0,0,0,5">
+                          <TextBlock Text="{Binding AssetName}" TextWrapping="Wrap" />
+                          <TextBlock Text="{Binding Field}" TextWrapping="Wrap"
+                                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                 </StackPanel>
               </Expander>
               <Expander Header="Force scales">

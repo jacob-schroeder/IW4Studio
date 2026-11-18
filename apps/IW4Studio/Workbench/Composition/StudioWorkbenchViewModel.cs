@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Avalonia.Controls;
 using IW4.Game.Assets;
+using IW4.Game.Assets.Physics;
 using IW4.Formats.D3dbsp;
 using IW4.Game.Zone;
 using IW4.Runtime.Assets;
@@ -107,7 +108,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     _gscSourceNavigation,
                     _gscUsagesPresenter,
                     assetReferencePicker,
-                    workspace);
+                    workspace,
+                    OpenPhysPreset);
             editorViewRegistry.Register(new FontViewFactory(
                 menuMaterialResolver));
             editorViewRegistry.Register(new MenuEditorViewFactory(
@@ -433,17 +435,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     public string SelectedKind =>
         SelectedEditorTab?.Kind ?? string.Empty;
 
-    public string SelectedAccessBadge =>
-        SelectedEditorTab?.Selection.Source switch
-        {
-            WorkbenchAssetSelectionSource.AssetPool =>
-                "RUNTIME INSPECTION",
-            WorkbenchAssetSelectionSource.ImageFilePak =>
-                "READ ONLY",
-            WorkbenchAssetSelectionSource.PackFilePak =>
-                "READ ONLY",
-            _ => SelectedEditorTab?.AccessBadge ?? string.Empty
-        };
+    public string SelectedAccessBadge => SelectedEditorTab?.AccessBadge ?? string.Empty;
 
     public string SelectedProviderZone =>
         SelectedEditorTab?.ProviderZone ?? string.Empty;
@@ -925,15 +917,15 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 AssetExplorerItemIdentity.From(entry);
             if (selection.Source == WorkbenchAssetSelectionSource.AssetPool)
             {
-                if (TryResolveRuntimePreviewDefinition(
+                if (TryResolvePoolDefinition(
                         selection,
                         out BaseAsset? definition,
                         out string unavailableReason) &&
                     definition is not null)
                 {
-                    catalogEditor = Editor.SelectReadOnlyEntry(
-                        identity,
-                        definition);
+                    catalogEditor = selection.Access == WorkspaceAssetAccess.Editable
+                        ? Editor.SelectEntry(identity)
+                        : Editor.SelectReadOnlyEntry(identity, definition);
                 }
                 else
                 {
@@ -1051,7 +1043,23 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         NotifyCenterSelectionChanged();
     }
 
-    private bool TryResolveRuntimePreviewDefinition(
+    private void OpenPhysPreset(PhysPresetAsset preset)
+    {
+        if (preset.RuntimeAddress?.AssetPoolAddress is { } address &&
+            Workspace.LoadedZone.Context.AssetPool.TryGetSlot(address, out var slot) && slot is not null &&
+            ReferenceEquals(slot.ActiveProvider.Asset, preset) &&
+            AssetPool.AllRows.FirstOrDefault(row => row.Address == address &&
+                row.ActiveProviderId == slot.ActiveProvider.Id) is { } row)
+        {
+            _selectionContext.Select(row.ToSelection());
+            return;
+        }
+
+        ConsoleOutput.Append(ConsoleOutputLevel.Warning, "Asset Pool",
+            $"The referenced PhysPreset '{preset.Name}' is no longer the active pool definition.");
+    }
+
+    private bool TryResolvePoolDefinition(
         WorkbenchAssetSelection selection,
         out BaseAsset? definition,
         out string unavailableReason)

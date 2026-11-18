@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Avalonia.Threading;
 using IW4.Game.Assets.Physics;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.Inspector;
@@ -6,7 +7,7 @@ using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.ViewModels;
 
-public sealed class PhysPresetEditorViewModel : ObservableObject, IAssetEditorStagingState
+public sealed class PhysPresetEditorViewModel : ObservableObject, IAssetEditorStagingState, IDisposable
 {
     private readonly AssetEditorSession _session;
     private PhysPresetDraft _original;
@@ -14,6 +15,8 @@ public sealed class PhysPresetEditorViewModel : ObservableObject, IAssetEditorSt
     private bool _infiniteFriction;
     private bool _hasSoundPrefix;
     private string? _applyError;
+    private bool _isUsedByExpanded;
+    private bool _disposed;
 
     public PhysPresetEditorViewModel(AssetEditorSession session)
     {
@@ -22,6 +25,7 @@ public sealed class PhysPresetEditorViewModel : ObservableObject, IAssetEditorSt
         _working = _original.Clone();
         _infiniteFriction = PhysPresetAsset.IsInfiniteFriction(_original.Friction);
         _hasSoundPrefix = _original.SndAliasPrefix is not null;
+        SourceZone = GetSourceZone(session) is { } zone ? $"Defined in {zone}" : "Source zone unavailable";
 
         Mass = Float("Mass", _original.Mass, value => _working.Mass = value);
         Bounce = Float("Bounce", _original.Bounce, value => _working.Bounce = value, slider: true);
@@ -37,13 +41,25 @@ public sealed class PhysPresetEditorViewModel : ObservableObject, IAssetEditorSt
         foreach (var input in _inputs)
             input.PropertyChanged += InputChanged;
         UpdateInputAccess();
+        _session.WorkspaceAssetsChanged += WorkspaceAssetsChanged;
     }
 
     private readonly InspectorPropertyRowViewModel[] _inputs;
     public string Name => _original.Name ?? _session.Entry.OriginalName ?? "PhysPreset";
     public bool IsEditable => _session.CanEdit;
-    public string SourceZone => (!IsEditable ? _session.Entry.ResolvedProviderZone?.LogicalZoneName : null)
-        ?? (_session.Workspace.IsBlank ? "New fastfile" : Path.GetFileName(_session.Workspace.SourcePath));
+    public string SourceZone { get; }
+    public IReadOnlyList<PhysPresetUsage> Usages { get; private set; } = [];
+    public bool HasNoUsages => Usages.Count == 0;
+    public bool IsUsedByExpanded
+    {
+        get => _isUsedByExpanded;
+        set
+        {
+            if (SetProperty(ref _isUsedByExpanded, value))
+                RefreshUsages();
+        }
+    }
+
     public InspectorFloatPropertyRowViewModel Mass { get; }
     public InspectorFloatPropertyRowViewModel Bounce { get; }
     public InspectorFloatPropertyRowViewModel Friction { get; }
@@ -149,6 +165,42 @@ public sealed class PhysPresetEditorViewModel : ObservableObject, IAssetEditorSt
     public void Revert()
     {
         if (IsEditable) Load(_session.ReadDraft<PhysPresetDraft>());
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _session.WorkspaceAssetsChanged -= WorkspaceAssetsChanged;
+    }
+
+    private static string? GetSourceZone(AssetEditorSession session)
+    {
+        FastFileWorkspace workspace = session.Workspace;
+        if (!workspace.IsBlank &&
+            session.Definition?.RuntimeAddress?.AssetPoolAddress is { } address &&
+            workspace.LoadedZone.Context.AssetPool.TryGetSlot(address, out var slot) &&
+            slot?.Providers.FirstOrDefault(provider => ReferenceEquals(provider.Asset, session.Definition)) is { } exactProvider)
+        {
+            return workspace.LoadedZones.FirstOrDefault(zone =>
+                zone.LoadResult.Context.ZoneOwner == exactProvider.Owner)?.LogicalZoneName;
+        }
+
+        return session.Entry.Origin == WorkspaceAssetOrigin.TargetOwnedDefinition
+            ? workspace.IsBlank ? "new fastfile" : workspace.LoadedZones.FirstOrDefault(zone => zone.IsTarget)?.LogicalZoneName
+            : session.Entry.ResolvedProviderZone?.LogicalZoneName;
+    }
+
+    private void WorkspaceAssetsChanged(object? sender, EventArgs args) =>
+        Dispatcher.UIThread.Post(RefreshUsages);
+
+    private void RefreshUsages()
+    {
+        if (_disposed || !IsUsedByExpanded)
+            return;
+
+        Usages = _session.CapturePhysPresetUsages();
+        OnPropertyChanged(nameof(Usages));
+        OnPropertyChanged(nameof(HasNoUsages));
     }
 
     private void Load(PhysPresetDraft draft)

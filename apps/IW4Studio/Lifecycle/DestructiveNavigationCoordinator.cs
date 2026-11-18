@@ -408,6 +408,7 @@ public sealed class DestructiveNavigationCoordinator
             CaptureSupplementalChanges(supplementalChanges);
         int changedItemCount = checked(
             sessionChanges.ChangedRowCount +
+            sessionChanges.ChangedProviderCount +
             pendingDocumentChangeCount +
             supplemental.ChangedItemCount);
         bool isDirty =

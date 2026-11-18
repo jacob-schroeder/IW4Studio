@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using IW4.Game.Assets.Physics;
 using IW4.Game.Zone;
 using IW4.Gsc.Analysis;
 using IW4.Studio.Documents;
@@ -76,7 +77,8 @@ public sealed class AssetEditorViewRegistry
         IGscSourceNavigator? gscSourceNavigator = null,
         IGscUsagesPresenter? gscUsagesPresenter = null,
         AssetReferencePickerService? assetReferencePicker = null,
-        FastFileWorkspace? workspace = null)
+        FastFileWorkspace? workspace = null,
+        Action<PhysPresetAsset>? openPhysPreset = null)
     {
         var registry = new AssetEditorViewRegistry();
         registry.Register(new RawFileViewFactory(
@@ -95,7 +97,7 @@ public sealed class AssetEditorViewRegistry
         registry.Register(new ImageViewFactory());
         registry.Register(new MaterialTechsetViewFactory());
         registry.Register(new XAnimViewFactory(workspace));
-        registry.Register(new XModelViewFactory(assetReferencePicker));
+        registry.Register(new XModelViewFactory(assetReferencePicker, openPhysPreset));
         registry.Register(new WeaponViewFactory(assetReferencePicker));
         return registry;
     }

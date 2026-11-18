@@ -196,6 +196,13 @@ public sealed class AssetAuthoringAdapterRegistry
                 definition);
         }
 
+        if (mode == WorkspaceAssetAccess.Editable &&
+            entry.DependencyIdentity is not null &&
+            !session.CanEditProvider(entry, adapter!))
+        {
+            mode = WorkspaceAssetAccess.ReadOnly;
+        }
+
         return new AssetEditorSession(
             session,
             entry,
@@ -316,7 +323,8 @@ public sealed class AssetEditorSession : AssetEditorSurface
     private readonly FastFileEditingSession _session;
     private readonly IAssetAuthoringAdapter _adapter;
     private readonly TargetZoneRowIdentity? _rowIdentity;
-    private readonly object _readOnlyDraft;
+    private readonly WorkspaceDependencyAssetIdentity? _providerIdentity;
+    private readonly object? _readOnlyDraft;
     private bool _closed;
 
     internal AssetEditorSession(
@@ -337,15 +345,25 @@ public sealed class AssetEditorSession : AssetEditorSurface
         }
 
         Mode = mode;
-        _rowIdentity = Mode == WorkspaceAssetAccess.Editable
-            ? entry.TargetRowIdentity ?? throw new InvalidDataException(
-                "An editable editor requires a stable target row.")
-            : null;
-        object draft = _rowIdentity is { } identity
-            ? _session.CloneCurrentDraft(identity, _adapter)
-            : _adapter.CreateDraft(Definition ?? throw new InvalidDataException(
-                "A read-only editor requires a detached definition."));
-        _readOnlyDraft = _adapter.CloneDraft(draft);
+        object draft;
+        if (CanEdit)
+        {
+            _rowIdentity = entry.TargetRowIdentity;
+            _providerIdentity = entry.DependencyIdentity;
+            if (_rowIdentity is null && _providerIdentity is null)
+            {
+                throw new InvalidDataException(
+                    "An editable editor requires a stable target row or provider.");
+            }
+
+            draft = CloneCurrentDraft();
+        }
+        else
+        {
+            draft = _adapter.CreateDraft(definition);
+            _readOnlyDraft = _adapter.CloneDraft(draft);
+        }
+
         Validation = new AssetEditorValidationState(_adapter.Validate(draft));
     }
 
@@ -354,21 +372,46 @@ public sealed class AssetEditorSession : AssetEditorSurface
     public AssetEditorValidationState Validation { get; private set; }
     public FastFileWorkspace Workspace => _session.Workspace;
     public TargetZoneRowIdentity? RowIdentity => _rowIdentity;
+    public WorkspaceDependencyAssetIdentity? ProviderIdentity => _providerIdentity;
     public bool IsDraftOpen => CanEdit && !_closed;
-    public bool HasUnsavedChanges =>
-        !_closed && _rowIdentity is { } identity &&
-        _session.IsDraftChanged(identity, _adapter);
+    public bool HasUnsavedChanges => !_closed &&
+        (_rowIdentity is { } row && _session.IsDraftChanged(row, _adapter) ||
+         _providerIdentity is { } provider && _session.IsProviderDraftChanged(provider));
+
+    public event EventHandler? WorkspaceAssetsChanged
+    {
+        add
+        {
+            _session.AppliedAssetsChanged += value;
+            _session.TargetRowsChanged += value;
+        }
+        remove
+        {
+            _session.AppliedAssetsChanged -= value;
+            _session.TargetRowsChanged -= value;
+        }
+    }
+
+    public IReadOnlyList<PhysPresetUsage> CapturePhysPresetUsages() =>
+        PhysPresetUsage.Capture(_session, this);
 
     public T OpenDraft<T>() where T : notnull
     {
         ThrowIfClosed();
-        object draft = _rowIdentity is { } identity
-            ? _session.CloneCurrentDraft(identity, _adapter)
-            : _adapter.CloneDraft(_readOnlyDraft);
-        return (T)draft;
+        return (T)CloneCurrentDraft();
     }
 
     public T ReadDraft<T>() where T : notnull => OpenDraft<T>();
+
+    private object CloneCurrentDraft()
+    {
+        if (_rowIdentity is { } row)
+            return _session.CloneCurrentDraft(row, _adapter);
+        if (_providerIdentity is { } provider)
+            return _session.CloneCurrentProviderDraft(provider);
+        return _adapter.CloneDraft(_readOnlyDraft ?? throw new InvalidOperationException(
+            "This editor has no draft."));
+    }
 
     /// <summary>Resolves a picker name only to a live, typed workspace catalog definition.</summary>
     public bool TryResolveWorkspaceDefinition<T>(string? name, out T? definition)
@@ -627,10 +670,7 @@ public sealed class AssetEditorSession : AssetEditorSurface
     {
         ThrowIfClosed();
         ArgumentNullException.ThrowIfNull(candidate);
-        object current = _rowIdentity is { } identity
-            ? _session.CloneCurrentDraft(identity, _adapter)
-            : _adapter.CloneDraft(_readOnlyDraft);
-        return _adapter.SemanticallyEquals(current, candidate);
+        return _adapter.SemanticallyEquals(CloneCurrentDraft(), candidate);
     }
 
     public bool Apply<T>(Action<T> mutation) where T : notnull
@@ -640,18 +680,17 @@ public sealed class AssetEditorSession : AssetEditorSurface
         ThrowIfClosed();
         ArgumentNullException.ThrowIfNull(mutation);
 
-        TargetZoneRowIdentity identity = _rowIdentity ?? throw new InvalidOperationException(
-            "An editable editor requires a stable target row.");
-        object next = _session.CloneCurrentDraft(identity, _adapter);
+        object next = CloneCurrentDraft();
         mutation((T)next);
         var validation = new AssetEditorValidationState(_adapter.Validate(next));
         if (validation.HasErrors)
             return false;
 
-        bool changed = _session.ApplyDraft(
-            identity,
-            _adapter,
-            next);
+        bool changed = _rowIdentity is { } row
+            ? _session.ApplyDraft(row, _adapter, next)
+            : _session.PublishProviderDraft(
+                _providerIdentity ?? throw new InvalidOperationException("This editor has no writable provider."),
+                next);
         Validation = validation;
         return changed;
     }
@@ -853,10 +892,12 @@ public sealed class AssetEditorSession : AssetEditorSurface
         if (!CanEdit || _closed)
             return false;
 
-        TargetZoneRowIdentity identity = _rowIdentity ?? throw new InvalidOperationException(
-            "An editable editor requires a stable target row.");
-        bool reverted = _session.RevertDraft(identity, _adapter);
-        object baseline = _session.CloneCurrentDraft(identity, _adapter);
+        bool reverted = _rowIdentity is { } row
+            ? _session.RevertDraft(row, _adapter)
+            : _session.PublishProviderDraft(
+                _providerIdentity ?? throw new InvalidOperationException("This editor has no writable provider."),
+                candidate: null);
+        object baseline = CloneCurrentDraft();
         Validation = new AssetEditorValidationState(_adapter.Validate(baseline));
         return reverted;
     }
@@ -866,10 +907,7 @@ public sealed class AssetEditorSession : AssetEditorSurface
     public AssetEditorValidationState RefreshValidation()
     {
         ThrowIfClosed();
-        object draft = _rowIdentity is { } identity
-            ? _session.CloneCurrentDraft(identity, _adapter)
-            : _adapter.CloneDraft(_readOnlyDraft);
-        Validation = new AssetEditorValidationState(_adapter.Validate(draft));
+        Validation = new AssetEditorValidationState(_adapter.Validate(CloneCurrentDraft()));
         return Validation;
     }
 

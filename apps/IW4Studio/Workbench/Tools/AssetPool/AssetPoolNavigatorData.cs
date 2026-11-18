@@ -23,7 +23,8 @@ public sealed record AssetPoolSlotSnapshot
         long activeProviderRegistrationSequence,
         bool isReferencePlaceholder,
         string? providerZone,
-        bool hasEditor)
+        bool hasEditor,
+        bool canEdit)
     {
         Address = address;
         AssetType = assetType;
@@ -36,6 +37,7 @@ public sealed record AssetPoolSlotSnapshot
         IsReferencePlaceholder = isReferencePlaceholder;
         ProviderZone = providerZone;
         HasEditor = hasEditor;
+        CanEdit = canEdit;
     }
 
     public XAssetPoolAddress Address { get; }
@@ -65,6 +67,7 @@ public sealed record AssetPoolSlotSnapshot
     public string? ProviderZone { get; }
 
     public bool HasEditor { get; }
+    public bool CanEdit { get; }
 
     public string TypeName => AssetType.ToString();
 
@@ -80,7 +83,7 @@ public sealed record AssetPoolSlotSnapshot
             AssetType,
             DisplayName,
             NormalizedName,
-            WorkspaceAssetAccess.ReadOnly,
+            CanEdit ? WorkspaceAssetAccess.Editable : WorkspaceAssetAccess.ReadOnly,
             "RuntimeAssetPool",
             ProviderZone,
             hasEditor: HasEditor && !IsReferencePlaceholder,
@@ -221,6 +224,7 @@ public sealed class AssetPoolNavigatorSnapshot
                     ?.LogicalZoneName ?? provider.Owner.ToString();
             }
 
+            bool hasEditor = hasDesktopEditor(slot.AssetType, slot.Name);
             return new AssetPoolSlotSnapshot(
                 slot.Address,
                 slot.AssetType,
@@ -232,7 +236,9 @@ public sealed class AssetPoolNavigatorSnapshot
                 provider.RegistrationSequence,
                 provider.IsReferencePlaceholder,
                 zoneName,
-                hasDesktopEditor(slot.AssetType, slot.Name));
+                hasEditor,
+                hasEditor && !provider.IsReferencePlaceholder &&
+                workspace.AssetCatalog.FindEditablePoolEntry(provider.Id)?.AssetType == slot.AssetType);
         }).ToArray();
 
         if (pool.Revision != revision)

@@ -1,5 +1,8 @@
+using IW4.Game.Assets.Physics;
+using IW4.Formats.D3dbsp;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
+using IW4.Loaders.Database;
 using IW4.Runtime.Assets;
 using IW4.Runtime.Database;
 
@@ -56,7 +59,8 @@ public sealed class WorkspaceAssetCatalogEntry
         XAssetHeaderKind? headerKind = null,
         WorkspaceAssetResolvedProvider? resolvedProvider = null,
         WorkspaceAssetProviderZone? providerZone = null,
-        WorkspaceDependencyAssetIdentity? dependencyIdentity = null)
+        WorkspaceDependencyAssetIdentity? dependencyIdentity = null,
+        LinkAssetProvider? targetProvider = null)
     {
         if ((targetRowIdentity is null) == (dependencyIdentity is null))
         {
@@ -77,6 +81,7 @@ public sealed class WorkspaceAssetCatalogEntry
         ResolvedProvider = resolvedProvider;
         ProviderZone = providerZone ?? resolvedProvider?.Zone;
         DependencyIdentity = dependencyIdentity;
+        TargetProvider = targetProvider;
     }
     public TargetZoneRowIdentity? TargetRowIdentity { get; }
     public WorkspaceDependencyAssetIdentity? DependencyIdentity { get; }
@@ -99,19 +104,38 @@ public sealed class WorkspaceAssetCatalogEntry
             StringComparison.OrdinalIgnoreCase) == true;
     public bool HasDefinition => Definition is not null;
     internal IW4.Game.Assets.BaseAsset? Definition { get; }
+    internal LinkAssetProvider? TargetProvider { get; }
 }
 
 public sealed class WorkspaceAssetCatalog
 {
     private readonly IReadOnlyList<WorkspaceAssetCatalogEntry> _targetEntries;
+    private readonly Dictionary<long, WorkspaceAssetCatalogEntry> _editablePoolEntries;
     private WorkspaceAssetCatalog(
+        FastFileDocument document,
         IEnumerable<WorkspaceAssetCatalogEntry> targetEntries,
         IEnumerable<WorkspaceAssetCatalogEntry> dependencyEntries)
     {
         _targetEntries = Array.AsReadOnly(targetEntries.ToArray());
         DependencyEntries = Array.AsReadOnly(dependencyEntries.ToArray());
         Entries = Array.AsReadOnly(_targetEntries.Concat(DependencyEntries).ToArray());
+        var adapters = AssetAuthoringAdapterRegistry.CreateDefault();
+        _editablePoolEntries = Entries.Where(entry =>
+                entry.Access == WorkspaceAssetAccess.Editable &&
+                entry.ResolvedProviderZone?.IsTarget == true &&
+                !entry.IsGeneratedConfigStringBaseline &&
+                !D3dbspAssetTypeFacts.IsMultiplayerType(entry.AssetType) &&
+                adapters.TryGetAdapter(entry.AssetType, out _))
+            .GroupBy(entry => entry.ResolvedProvider!.ProviderId)
+            .Where(group => group.Count() == 1)
+            .Select(group => group.First())
+            .Where(entry => entry.TargetRowIdentity is not { } row ||
+                document.LoadedZone.LoadedAssets[row.SerializedIndex].Materialization.RootProvider?.ProviderId.Value
+                    == entry.ResolvedProvider!.ProviderId)
+            .ToDictionary(entry => entry.ResolvedProvider!.ProviderId);
     }
+    public WorkspaceAssetCatalogEntry? FindEditablePoolEntry(XAssetProviderId providerId) =>
+        _editablePoolEntries.GetValueOrDefault(providerId.Value);
     public IReadOnlyList<WorkspaceAssetCatalogEntry> TargetEntries => _targetEntries;
     public IReadOnlyList<WorkspaceAssetCatalogEntry> DependencyEntries { get; }
     public IReadOnlyList<WorkspaceAssetCatalogEntry> Entries { get; }
@@ -244,6 +268,12 @@ public sealed class WorkspaceAssetCatalog
             document.InitialLinkRequest.Roots
                 .Where(root => root.Asset is not null)
                 .Select(root => root.Asset!.Value));
+        ILookup<AssetKey, LinkAssetProvider> targetPresets =
+            document.InitialLinkRequest.Assets.Providers
+                .Where(provider =>
+                    provider.SerializedType == XAssetType.PhysPreset &&
+                    !provider.IsReferencePlaceholder)
+                .ToLookup(provider => provider.Key);
         WorkspaceAssetCatalogEntry[] dependencyEntries = document.IsBlank
             ? []
             : activeSlots
@@ -259,32 +289,63 @@ public sealed class WorkspaceAssetCatalog
                     return (slot, provider, providerZone, key);
                 })
                 .Where(value => !targetKeys.Contains(value.key))
-                .Select(value => new WorkspaceAssetCatalogEntry(
-                    null,
-                    WorkspaceAssetOrigin.DependencyOnly,
-                    value.provider.IsReferencePlaceholder
-                        ? WorkspaceAssetAccess.ContentUnavailable
-                        : WorkspaceAssetAccess.ReadOnly,
-                    value.provider.IsReferencePlaceholder
-                        ? WorkspaceAssetContentSource.Unavailable
-                        : WorkspaceAssetContentSource.ResolvedProvider,
-                    value.slot.AssetType,
-                    value.slot.Name,
-                    value.key.NormalizedName,
-                    value.provider.IsReferencePlaceholder
-                        ? null
-                        : value.provider.Asset,
-                    resolvedProvider: value.provider.IsReferencePlaceholder
-                        ? null
-                        : new WorkspaceAssetResolvedProvider(
-                            value.provider.Id.Value,
-                            value.providerZone),
-                    providerZone: value.providerZone,
-                    dependencyIdentity: new WorkspaceDependencyAssetIdentity(
-                        document.DocumentId,
-                        value.provider.Id.Value)))
+                .Select(value =>
+                {
+                    LinkAssetProvider? targetProvider = FindEditablePhysPreset(
+                        value.slot, value.providerZone, targetPresets[value.key]);
+                    return new WorkspaceAssetCatalogEntry(
+                        null,
+                        WorkspaceAssetOrigin.DependencyOnly,
+                        value.provider.IsReferencePlaceholder
+                            ? WorkspaceAssetAccess.ContentUnavailable
+                            : targetProvider is null
+                                ? WorkspaceAssetAccess.ReadOnly
+                                : WorkspaceAssetAccess.Editable,
+                        value.provider.IsReferencePlaceholder
+                            ? WorkspaceAssetContentSource.Unavailable
+                            : WorkspaceAssetContentSource.ResolvedProvider,
+                        value.slot.AssetType,
+                        value.slot.Name,
+                        value.key.NormalizedName,
+                        value.provider.IsReferencePlaceholder
+                            ? null
+                            : value.provider.Asset,
+                        resolvedProvider: value.provider.IsReferencePlaceholder
+                            ? null
+                            : new WorkspaceAssetResolvedProvider(
+                                value.provider.Id.Value,
+                                value.providerZone),
+                        providerZone: value.providerZone,
+                        dependencyIdentity: new WorkspaceDependencyAssetIdentity(
+                            document.DocumentId,
+                            value.provider.Id.Value),
+                        targetProvider: targetProvider);
+                })
                 .ToArray();
-        return new WorkspaceAssetCatalog(targetEntries, dependencyEntries);
+        return new WorkspaceAssetCatalog(document, targetEntries, dependencyEntries);
+    }
+
+    private static LinkAssetProvider? FindEditablePhysPreset(
+        XAssetSlot slot,
+        WorkspaceAssetProviderZone zone,
+        IEnumerable<LinkAssetProvider> targetProviders)
+    {
+        XAssetProviderContribution active = slot.ActiveProvider;
+        if (!zone.IsTarget ||
+            active.IsReferencePlaceholder ||
+            active.Asset is not PhysPresetAsset ||
+            slot.Providers.Count(provider => !provider.IsReferencePlaceholder) != 1)
+        {
+            return null;
+        }
+
+        LinkAssetProvider[] matches = targetProviders.Take(2).ToArray();
+        return matches.Length == 1 && string.Equals(
+            matches[0].OriginalSerializedName,
+            DbLoadExecutionContext.NormalizeLoadedAssetName(active.Name),
+            StringComparison.Ordinal)
+            ? matches[0]
+            : null;
     }
 
     private static WorkspaceAssetProviderZone ResolveProviderZone(

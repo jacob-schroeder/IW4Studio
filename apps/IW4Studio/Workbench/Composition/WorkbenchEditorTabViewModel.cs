@@ -74,7 +74,7 @@ public sealed class WorkbenchEditorTabViewModel : ObservableObject, IDisposable
 
     public string Kind => Selection.AssetType.ToString();
 
-    public string AccessBadge => Selection.Access switch
+    public string AccessBadge => (CatalogEditor?.BackendEditor?.Mode ?? Selection.Access) switch
     {
         WorkspaceAssetAccess.Editable => "EDITABLE",
         WorkspaceAssetAccess.ReadOnly => "READ ONLY",
@@ -179,7 +179,8 @@ internal readonly record struct WorkbenchEditorTabKey(
     {
         ArgumentNullException.ThrowIfNull(selection);
         bool isRuntimePreview =
-            selection.Source == WorkbenchAssetSelectionSource.AssetPool;
+            selection.Source == WorkbenchAssetSelectionSource.AssetPool &&
+            selection.Access != WorkspaceAssetAccess.Editable;
         if (route is { CatalogEntry: { } entry })
         {
             if (D3dbspAssetTypeFacts.IsMultiplayerType(entry.AssetType) &&

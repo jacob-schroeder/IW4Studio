@@ -21,6 +21,7 @@ public sealed record WorkbenchAssetSelectionRoute(
 /// </summary>
 public sealed class WorkbenchAssetSelectionRouter
 {
+    private readonly WorkspaceAssetCatalog _catalog;
     private readonly TargetZoneDocument? _targetDocument;
     private readonly IReadOnlyDictionary<TargetZoneRowIdentity, WorkspaceAssetCatalogEntry>
         _targetRows;
@@ -36,6 +37,7 @@ public sealed class WorkbenchAssetSelectionRouter
         TargetZoneDocument? targetDocument = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        _catalog = catalog;
         Guid? catalogDocumentId = catalog.TargetEntries
             .Select(entry => entry.TargetRowIdentity?.DocumentId)
             .FirstOrDefault(documentId => documentId is not null);
@@ -96,6 +98,16 @@ public sealed class WorkbenchAssetSelectionRouter
                     OpensCatalogEditor: true,
                     UnavailableReason: null)
                 : Unavailable("The selected target row is not present in this workspace catalog.");
+        }
+
+        if (selection.Source == WorkbenchAssetSelectionSource.AssetPool &&
+            selection.Access == WorkspaceAssetAccess.Editable)
+        {
+            var owned = selection.ProviderId is { } id ? _catalog.FindEditablePoolEntry(id) : null;
+            if (owned is null || owned.AssetType != selection.AssetType ||
+                !string.Equals(owned.NormalizedName, selection.NormalizedName, StringComparison.Ordinal))
+                return Unavailable("This selection no longer identifies an editable provider in the opened fastfile.");
+            return new WorkbenchAssetSelectionRoute(owned, true, null);
         }
 
         WorkspaceAssetCatalogEntry? entry = null;

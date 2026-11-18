@@ -5,6 +5,7 @@ using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
 using IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
 using IW4.Studio.Desktop.Workbench.Tools.PackFilePak;
+using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.Properties;
 
@@ -72,7 +73,8 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
 
     public string Access => _selection?.Source switch
     {
-        WorkbenchAssetSelectionSource.AssetPool => "Runtime inspection",
+        WorkbenchAssetSelectionSource.AssetPool =>
+            _selection.Access == WorkspaceAssetAccess.Editable ? "Editable" : "Read only",
         WorkbenchAssetSelectionSource.ImageFilePak => "Read-only stream",
         WorkbenchAssetSelectionSource.PackFilePak => "Read-only stream",
         _ => _selection?.Access.ToString() ?? "—"

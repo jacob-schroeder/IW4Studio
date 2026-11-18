@@ -344,6 +344,34 @@ public sealed class LinkAssetPool
         return new LinkAssetPool(frozen.Concat(_providers), catalog);
     }
 
+    /// <summary>Replaces one frozen occurrence while retaining its position and wire identity.</summary>
+    public LinkAssetPool WithReplacedProvider(
+        LinkAssetProvider provider,
+        LinkAssetProviderSource replacement,
+        out LinkAssetProvider current)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        ArgumentNullException.ThrowIfNull(replacement);
+        LinkAssetProvider[] providers = _providers.ToArray();
+        int index = Array.IndexOf(providers, provider);
+        if (index < 0)
+            throw new ArgumentException("The provider is absent from this pool.", nameof(provider));
+
+        (LinkAssetProvider[] frozen, LinkAssetFrozenIdentityCatalog catalog) =
+            FreezeProviders([replacement], _identityCatalog.Clone());
+        current = frozen[0];
+        if (current.Key != provider.Key ||
+            current.SerializedType != provider.SerializedType ||
+            current.IsReferencePlaceholder != provider.IsReferencePlaceholder ||
+            !string.Equals(current.OriginalSerializedName, provider.OriginalSerializedName, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("A replacement must keep the selected provider's wire identity.");
+        }
+
+        providers[index] = current;
+        return new LinkAssetPool(providers, catalog);
+    }
+
     /// <summary>
     /// Returns a pool without any provider occurrence for the supplied
     /// logical asset keys.

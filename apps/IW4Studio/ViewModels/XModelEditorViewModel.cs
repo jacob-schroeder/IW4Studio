@@ -4,6 +4,7 @@ using IW4.Game.Assets;
 using IW4.Game.Assets.XModel;
 using IW4.Game.Assets.Image;
 using IW4.Game.Assets.Material;
+using IW4.Game.Assets.Physics;
 using IW4.Formats.XModel;
 using IW4.Loaders.Database;
 using IW4.Game.Zone;
@@ -37,6 +38,7 @@ public sealed class XModelEditorViewModel
       IDisposable
 {
     private readonly AssetEditorSession _session;
+    private readonly Action<PhysPresetAsset>? _openPhysPreset;
     private readonly XModelSceneBuilder _sceneBuilder = new();
     private readonly WorkspaceGfxImagePayloadResolver _imagePayloads;
     private XModelAsset? _model;
@@ -66,9 +68,10 @@ public sealed class XModelEditorViewModel
 
     public event EventHandler<AssetReferenceSelectionRequestedEventArgs>? AssetReferenceSelectionRequested;
 
-    public XModelEditorViewModel(AssetEditorSession session)
+    public XModelEditorViewModel(AssetEditorSession session, Action<PhysPresetAsset>? openPhysPreset = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
+        _openPhysPreset = openPhysPreset;
         if (session.Entry.AssetType != XAssetType.XModel)
         {
             throw new InvalidDataException(
@@ -1293,7 +1296,14 @@ public sealed class XModelEditorViewModel
                 collisionRows.Add(new InspectorIntegerPropertyRowViewModel($"CollSurf {rowIndex} contents", prefix + ".contents", row.Contents, IsEditable ? value => Update(bounds => bounds, contents: value) : null));
                 collisionRows.Add(new InspectorIntegerPropertyRowViewModel($"CollSurf {rowIndex} surface flags", prefix + ".surfaceFlags", row.SurfaceFlags, IsEditable ? value => Update(bounds => bounds, flags: value) : null));
             }
-            collisionRows.Add(new InspectorAssetReferencePropertyRowViewModel("PhysPreset", "xmodel.physPreset", XAssetType.PhysPreset, _workingDraft.PhysPreset?.Name, IsEditable ? name => { if (name is null) _workingDraft.SetPhysPreset(null); else if (_session.TryResolveWorkspaceDefinition<IW4.Game.Assets.Physics.PhysPresetAsset>(name, out var asset)) _workingDraft.SetPhysPreset(asset); else throw new InvalidOperationException("Selected PhysPreset is not a live typed workspace definition."); RefreshCandidateState(); } : null, RequestAssetReferenceSelection));
+            collisionRows.Add(new InspectorAssetReferencePropertyRowViewModel(
+                "PhysPreset", "xmodel.physPreset", XAssetType.PhysPreset, _workingDraft.PhysPreset?.Name,
+                IsEditable ? SetPhysPreset : null, RequestAssetReferenceSelection)
+            {
+                OpenCommand = _openPhysPreset is null ? null : new ViewModelCommand(
+                    () => { if (_workingDraft.PhysPreset is { } preset) _openPhysPreset(preset); },
+                    () => _workingDraft.PhysPreset?.RuntimeAddress?.AssetPoolAddress is not null)
+            });
             collisionRows.Add(new InspectorAssetReferencePropertyRowViewModel("PhysCollmap", "xmodel.physCollmap", XAssetType.PhysCollmap, _workingDraft.PhysCollmap?.Name, IsEditable ? name => { if (name is null) _workingDraft.SetPhysCollmap(null); else if (_session.TryResolveWorkspaceDefinition<IW4.Game.Assets.Physics.PhysCollmapAsset>(name, out var asset)) _workingDraft.SetPhysCollmap(asset); else throw new InvalidOperationException("Selected PhysCollmap is not a live typed workspace definition."); RefreshCandidateState(); } : null, RequestAssetReferenceSelection));
             sections.Add(new InspectorSectionViewModel("Collision", collisionRows));
         }
@@ -1376,6 +1386,16 @@ public sealed class XModelEditorViewModel
 
     private static string FormatFloat(float value) =>
         value.ToString("G9", CultureInfo.InvariantCulture);
+
+    private void SetPhysPreset(string? name)
+    {
+        if (_workingDraft is not { } draft) return;
+        PhysPresetAsset? preset = null;
+        if (name is not null && !_session.TryResolveWorkspaceDefinition(name, out preset))
+            throw new InvalidOperationException("Selected PhysPreset is not a live typed workspace definition.");
+        draft.SetPhysPreset(preset);
+        RefreshCandidateState();
+    }
 
     private void RequestAssetReferenceSelection(
         InspectorAssetReferencePropertyRowViewModel row) =>
