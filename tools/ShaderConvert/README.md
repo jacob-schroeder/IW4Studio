@@ -39,6 +39,24 @@ to override. Compiled SM1/SM2/SM3 input determines its stage and model from the
 bytecode. Source input requires `--stage vertex|pixel`; entry point defaults to
 `main`, and profile defaults to `vs_3_0` or `ps_3_0`.
 
+For editable PS3 Cg text, use `--format cg --stage vertex` or `--format cg --stage pixel`.
+This mode accepts the Cg/SM3-compatible subset, maps RSX semantics such as
+`ATTR0`, `C4` and `TEXUNIT0` to native bindings, and skips the IW3 PC material
+adaptations. It requires the same Wine frontend as HLSL on macOS.
+Both editable source and compiled stock program blobs can have a `.cg` extension.
+
+Studio defaults to an in-process C# compiler for vertex and pixel Cg. It supports scalar
+and vector arithmetic, swizzles, `dot`, `min`, `max`, `saturate`, and scalar
+comparisons. Vertex numeric uniforms use explicit `Cn` bindings. Pixel programs
+support named numeric uniforms, `tex2D`, and scalar `if` guards on assignments. The compiler menu also lists installed external tools. Studio
+looks for PS3DK's `rsx-cg-compiler` on `PATH` (and in `~/.local/bin` on macOS),
+and for `sce-cgc` via `SCE_PS3_ROOT` or `PATH`. Choose ShaderConvert explicitly
+to use this tool's SM3 frontend.
+ShaderConvert defines `IW4_SHADERCONVERT_SM3` when it compiles Cg through the
+SM3 frontend. Reconstructed fragment shaders that need reciprocal clip W for
+explicit perspective correction use `WPOS.w` and require `rsx-cg-compiler` or
+`sce-cgc`. The SM3 pixel-position input supplies only x and y.
+
 Use `--technique /path/to/material.tech` to supply the original IW3 code/material
 argument assignments, and `--pass 0` to select a pass (zero by default). The existing
 MapConverter technique parser and binding rules are reused. Without a technique,

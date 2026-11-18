@@ -127,6 +127,8 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new MenuAdapter());
         registry.Register(new MenuFileAdapter());
         registry.Register(new MaterialAdapter());
+        registry.Register(new ShaderAdapter(XAssetType.VertexShader));
+        registry.Register(new ShaderAdapter(XAssetType.PixelShader));
         registry.Register(new ImageAdapter());
         registry.Register(new XModelAdapter());
         registry.Register(new FontAdapter());
@@ -395,6 +397,14 @@ public sealed class AssetEditorSession : AssetEditorSurface
 
     public IReadOnlyList<PhysPresetUsage> CapturePhysPresetUsages() =>
         PhysPresetUsage.Capture(_session, this);
+
+    public IReadOnlyList<ShaderUsage> CaptureShaderUsages()
+    {
+        ThrowIfClosed();
+        return Definition is MaterialShaderAsset shader
+            ? _session.CaptureShaderUsages(shader)
+            : [];
+    }
 
     public T OpenDraft<T>() where T : notnull
     {
@@ -701,6 +711,27 @@ public sealed class AssetEditorSession : AssetEditorSurface
                 next);
         Validation = validation;
         return changed;
+    }
+
+    /// <summary>Replaces the selected shader program if it still matches the opened draft.</summary>
+    public bool ApplyCompiledShader(ShaderDraft expectedProgram, ReadOnlyMemory<byte> bytecode)
+    {
+        RequireEditableShader(expectedProgram);
+        return _session.PublishCompiledShader(Entry, expectedProgram, bytecode);
+    }
+
+    public void ValidateCompiledShader(ShaderDraft expectedProgram, ReadOnlyMemory<byte> bytecode)
+    {
+        RequireEditableShader(expectedProgram);
+        _session.ValidateCompiledShader(Entry, expectedProgram, bytecode);
+    }
+
+    private void RequireEditableShader(ShaderDraft expectedProgram)
+    {
+        ArgumentNullException.ThrowIfNull(expectedProgram);
+        ThrowIfClosed();
+        if (!CanEdit || _adapter.DraftType != typeof(ShaderDraft))
+            throw new InvalidOperationException("This editor does not host a writable shader.");
     }
 
     /// <summary>Publishes a compiled XModel and its owned dependency closure in one revision.</summary>

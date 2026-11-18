@@ -71,7 +71,7 @@ public static class RuntimePhysicsAuthoring
         // contents 1, soccer_ball XModel/PhysPreset; retain that XModel's native collmap.
         return new DynEntityDef
         {
-            Type = 1,
+            Type = DynEntityType.Clutter,
             Pose = new GfxPlacement
             {
                 Quat = [quaternion.X, quaternion.Y, quaternion.Z, quaternion.W],

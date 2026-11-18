@@ -703,7 +703,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                 ReadOnlySpan<byte> bytes = _data.AsSpan(row, 0x60);
                 definitions.Add(new DynEntityDef
                 {
-                    Type = BinaryPrimitives.ReadInt32BigEndian(bytes),
+                    Type = (DynEntityType)BinaryPrimitives.ReadInt32BigEndian(bytes),
                     Pose = new GfxPlacement
                     {
                         Quat = [BeFloat(bytes, 4), BeFloat(bytes, 8),

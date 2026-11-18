@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using IW4.Game.Assets.TechniqueSet;
 
 namespace IW4.Formats.SourceFormat.Technique;
@@ -10,7 +11,8 @@ public sealed class TechniqueExchange
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter<MaterialTextureSource>() }
     };
 
     public IReadOnlyList<string> Unlink(string sourceDirectory, MaterialTechniqueAsset asset)
@@ -22,7 +24,7 @@ public sealed class TechniqueExchange
         var document = new Document
         {
             Format = Format,
-            Version = 1,
+            Version = 2,
             Name = name,
             Flags = (ushort)asset.Flags,
             Passes = asset.Passes.Select((pass, index) =>
@@ -43,7 +45,7 @@ public sealed class TechniqueExchange
         using FileStream stream = File.OpenRead(path);
         Document document = JsonSerializer.Deserialize<Document>(stream, JsonOptions)
             ?? throw new InvalidDataException($"Technique '{name}' has an empty source document.");
-        if (document.Format != Format || document.Version != 1 || document.Name != name)
+        if (document.Format != Format || document.Version is not (1 or 2) || document.Name != name)
             throw new InvalidDataException($"Technique '{name}' has an unsupported format, version, or name.");
         if (document.Passes is null || document.Passes.Length > ushort.MaxValue)
             throw new InvalidDataException($"Technique '{name}' has an invalid pass count.");
@@ -53,7 +55,7 @@ public sealed class TechniqueExchange
             Flags = (MaterialTechniqueFlags)document.Flags,
             PassCount = checked((ushort)document.Passes.Length),
             Passes = document.Passes.Select((pass, index) =>
-                ReadPass(pass, name, index)).ToArray()
+                ReadPass(pass, name, index, document.Version)).ToArray()
         };
     }
 
@@ -84,7 +86,7 @@ public sealed class TechniqueExchange
         };
     }
 
-    private static MaterialPassAsset ReadPass(PassDocument pass, string name, int index)
+    private static MaterialPassAsset ReadPass(PassDocument pass, string name, int index, int version)
     {
         string path = $"Technique '{name}' pass {index}";
         if (pass is null || pass.Arguments is null)
@@ -107,7 +109,7 @@ public sealed class TechniqueExchange
             VertexDeclaration = pass.VertexDeclaration is null
                 ? null : ReadDeclaration(pass.VertexDeclaration, path),
             Args = pass.Arguments.Select((argument, argumentIndex) =>
-                ReadArgument(argument, $"{path} argument {argumentIndex}")).ToArray()
+                ReadArgument(argument, $"{path} argument {argumentIndex}", version)).ToArray()
         };
     }
 
@@ -170,43 +172,98 @@ public sealed class TechniqueExchange
     private static ArgumentDocument WriteArgument(
         MaterialShaderArgumentAsset argument, string name, int passIndex, int argumentIndex)
     {
-        if ((ushort)argument.Type > 7)
-            throw new InvalidDataException($"Technique '{name}' pass {passIndex} argument {argumentIndex} has an unsupported type.");
+        string path = $"Technique '{name}' pass {passIndex} argument {argumentIndex}";
         bool isLiteral = argument.Type is MaterialShaderArgumentType.LiteralVertexConst or
             MaterialShaderArgumentType.LiteralPixelConst;
         if (isLiteral != argument.LiteralConstant.HasValue)
-            throw new InvalidDataException($"Technique '{name}' pass {passIndex} argument {argumentIndex} has an invalid literal value.");
-        MaterialShaderLiteralConstant literal = argument.LiteralConstant.GetValueOrDefault();
-        return new ArgumentDocument
+            throw new InvalidDataException($"{path} has an invalid literal value.");
+        var document = new ArgumentDocument
         {
-            Type = (ushort)argument.Type,
-            Destination = argument.Dest,
-            ArgumentRaw = isLiteral ? 0 : argument.ArgumentRaw,
-            LiteralBits = isLiteral ?
-                [BitConverter.SingleToUInt32Bits(literal.X), BitConverter.SingleToUInt32Bits(literal.Y),
-                 BitConverter.SingleToUInt32Bits(literal.Z), BitConverter.SingleToUInt32Bits(literal.W)] : null
+            Type = JsonSerializer.SerializeToElement(argument.TypeName),
+            Destination = argument.Dest
         };
+        switch (argument.Type)
+        {
+            case MaterialShaderArgumentType.CodeVertexConst:
+            case MaterialShaderArgumentType.CodePixelConst:
+                var code = argument.CodeConstant;
+                document.CodeConstant = new CodeConstantDocument
+                {
+                    Source = code.SourceName, FirstRow = code.FirstRow, RowCount = code.RowCount
+                };
+                break;
+            case MaterialShaderArgumentType.CodePixelSampler:
+                document.CodeSampler = argument.CodeTextureSource;
+                break;
+            case MaterialShaderArgumentType.MaterialPixelSampler:
+            case MaterialShaderArgumentType.MaterialVertexConst:
+            case MaterialShaderArgumentType.MaterialPixelConst:
+                document.NameHash = argument.MaterialNameHash;
+                break;
+            case MaterialShaderArgumentType.LiteralVertexConst:
+            case MaterialShaderArgumentType.LiteralPixelConst:
+                var literal = argument.LiteralConstant.GetValueOrDefault();
+                document.LiteralBits =
+                    [BitConverter.SingleToUInt32Bits(literal.X), BitConverter.SingleToUInt32Bits(literal.Y),
+                     BitConverter.SingleToUInt32Bits(literal.Z), BitConverter.SingleToUInt32Bits(literal.W)];
+                break;
+            default:
+                throw new InvalidDataException($"{path} has an unsupported type.");
+        }
+        return document;
     }
 
-    private static MaterialShaderArgumentAsset ReadArgument(ArgumentDocument argument, string path)
+    private static MaterialShaderArgumentAsset ReadArgument(ArgumentDocument argument, string path, int version)
     {
-        if (argument is null || argument.Type > 7)
-            throw new InvalidDataException($"{path} has an unsupported argument type.");
-        var type = (MaterialShaderArgumentType)argument.Type;
-        bool isLiteral = type is MaterialShaderArgumentType.LiteralVertexConst or
-            MaterialShaderArgumentType.LiteralPixelConst;
-        if (isLiteral ? argument.LiteralBits is not { Length: 4 } : argument.LiteralBits is not null)
+        if (argument is null)
+            throw new InvalidDataException($"{path} is missing.");
+        MaterialShaderArgumentType type;
+        int raw;
+        if (version == 1)
+        {
+            if (argument.Type.ValueKind != JsonValueKind.Number || !argument.Type.TryGetUInt16(out ushort id) ||
+                id > 7 || argument.ArgumentRaw is not int legacyRaw ||
+                argument.CodeConstant is not null || argument.CodeSampler.HasValue || argument.NameHash.HasValue)
+                throw new InvalidDataException($"{path} has an invalid version 1 argument.");
+            type = (MaterialShaderArgumentType)id;
+            raw = legacyRaw;
+        }
+        else
+        {
+            if (argument.Type.ValueKind != JsonValueKind.String ||
+                !TryParseName(argument.Type.GetString(), out type) || argument.ArgumentRaw.HasValue)
+                throw new InvalidDataException($"{path} has an invalid version 2 argument.");
+            raw = (type, argument.CodeConstant, argument.CodeSampler, argument.NameHash) switch
+            {
+                (MaterialShaderArgumentType.CodeVertexConst or MaterialShaderArgumentType.CodePixelConst,
+                    { } code, null, null) when TryParseName(code.Source, out MaterialConstantSource source) =>
+                    new MaterialCodeConstantArgument(source, code.FirstRow, code.RowCount).Raw,
+                (MaterialShaderArgumentType.CodePixelSampler, null, { } sampler, null) =>
+                    unchecked((int)(uint)sampler),
+                (MaterialShaderArgumentType.MaterialVertexConst or MaterialShaderArgumentType.MaterialPixelSampler or
+                    MaterialShaderArgumentType.MaterialPixelConst, null, null, { } hash) => unchecked((int)hash),
+                (MaterialShaderArgumentType.LiteralVertexConst or MaterialShaderArgumentType.LiteralPixelConst,
+                    null, null, null) => 0,
+                _ => throw new InvalidDataException($"{path} has an invalid payload for {type}.")
+            };
+        }
+
+        MaterialShaderLiteralConstant? literal = null;
+        if (type is MaterialShaderArgumentType.LiteralVertexConst or MaterialShaderArgumentType.LiteralPixelConst)
+        {
+            if (argument.LiteralBits is not { Length: 4 } bits)
+                throw new InvalidDataException($"{path} requires four literal words.");
+            literal = new MaterialShaderLiteralConstant(
+                BitConverter.UInt32BitsToSingle(bits[0]), BitConverter.UInt32BitsToSingle(bits[1]),
+                BitConverter.UInt32BitsToSingle(bits[2]), BitConverter.UInt32BitsToSingle(bits[3]));
+        }
+        else if (argument.LiteralBits is not null)
             throw new InvalidDataException($"{path} has an invalid literal payload.");
-        MaterialShaderLiteralConstant? literal = isLiteral
-            ? new MaterialShaderLiteralConstant(
-                BitConverter.UInt32BitsToSingle(argument.LiteralBits![0]),
-                BitConverter.UInt32BitsToSingle(argument.LiteralBits[1]),
-                BitConverter.UInt32BitsToSingle(argument.LiteralBits[2]),
-                BitConverter.UInt32BitsToSingle(argument.LiteralBits[3]))
-            : null;
-        return new MaterialShaderArgumentAsset(0, type, argument.Destination,
-            argument.ArgumentRaw, literal);
+        return new MaterialShaderArgumentAsset(0, type, argument.Destination, raw, literal);
     }
+
+    private static bool TryParseName<T>(string? text, out T value) where T : struct, Enum =>
+        Enum.TryParse(text, out value) && text?.Contains(',') == false;
 
     private sealed class Document
     {
@@ -255,10 +312,25 @@ public sealed class TechniqueExchange
     {
         public ArgumentDocument() { }
 
-        public required ushort Type { get; init; }
+        public required JsonElement Type { get; init; }
         public required ushort Destination { get; init; }
-        public required int ArgumentRaw { get; init; }
-        public uint[]? LiteralBits { get; init; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? ArgumentRaw { get; init; } // Version 1 only.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public CodeConstantDocument? CodeConstant { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public MaterialTextureSource? CodeSampler { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public uint? NameHash { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public uint[]? LiteralBits { get; set; }
+    }
+
+    private sealed class CodeConstantDocument
+    {
+        public required string Source { get; init; }
+        public required byte FirstRow { get; init; }
+        public required byte RowCount { get; init; }
     }
 }
 

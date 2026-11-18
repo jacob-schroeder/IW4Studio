@@ -13,7 +13,7 @@ public sealed class DynEntityDef
 {
     public const int SerializedSize = 0x5C;
 
-    public int Type { get; init; }
+    public DynEntityType Type { get; init; }
     public GfxPlacement Pose { get; init; } = new();
     public XPointer<XModelAsset> XModelPointer { get; init; }
     public XModelAsset? XModel { get; init; }

@@ -142,10 +142,10 @@ internal sealed class ClipMapAssetLoader : XAssetLoader<ClipMapAsset>
         IReadOnlyList<uint> brushContents;
         MapEntsAsset? mapEnts;
         IReadOnlyList<SModelAabbNode> smodelNodes;
-        IReadOnlyList<DynEntityDef>[] dynEntDefList = new IReadOnlyList<DynEntityDef>[2];
-        IReadOnlyList<DynEntityPose>[] dynEntPoseList = new IReadOnlyList<DynEntityPose>[2];
-        IReadOnlyList<DynEntityClient>[] dynEntClientList = new IReadOnlyList<DynEntityClient>[2];
-        IReadOnlyList<DynEntityColl>[] dynEntCollList = new IReadOnlyList<DynEntityColl>[2];
+        IReadOnlyList<DynEntityDef>[] dynEntDefList = new IReadOnlyList<DynEntityDef>[(int)DynEntityDrawType.Count];
+        IReadOnlyList<DynEntityPose>[] dynEntPoseList = new IReadOnlyList<DynEntityPose>[(int)DynEntityDrawType.Count];
+        IReadOnlyList<DynEntityClient>[] dynEntClientList = new IReadOnlyList<DynEntityClient>[(int)DynEntityDrawType.Count];
+        IReadOnlyList<DynEntityColl>[] dynEntCollList = new IReadOnlyList<DynEntityColl>[(int)DynEntityDrawType.Count];
 
         context.Blocks.Push(XFileBlockType.LARGE);
         try
@@ -176,14 +176,24 @@ internal sealed class ClipMapAssetLoader : XAssetLoader<ClipMapAsset>
                 cursor,
                 mapEntsPointer.Untyped,
                 context);
-            dynEntDefList[0] = ReadDynEntityDefArray(cursor, dynEntDefListPointers[0].Untyped, dynEntCount[0], context, "clipMap_t.dynEntDefList[0]");
-            dynEntDefList[1] = ReadDynEntityDefArray(cursor, dynEntDefListPointers[1].Untyped, dynEntCount[1], context, "clipMap_t.dynEntDefList[1]");
-            dynEntPoseList[0] = ReadRuntimeArray(context, () => ReadDynEntityPoseArray(cursor, dynEntPoseListPointers[0].Untyped, dynEntCount[0], context, "clipMap_t.dynEntPoseList[0]"));
-            dynEntPoseList[1] = ReadRuntimeArray(context, () => ReadDynEntityPoseArray(cursor, dynEntPoseListPointers[1].Untyped, dynEntCount[1], context, "clipMap_t.dynEntPoseList[1]"));
-            dynEntClientList[0] = ReadRuntimeArray(context, () => ReadDynEntityClientArray(cursor, dynEntClientListPointers[0].Untyped, dynEntCount[0], context, "clipMap_t.dynEntClientList[0]"));
-            dynEntClientList[1] = ReadRuntimeArray(context, () => ReadDynEntityClientArray(cursor, dynEntClientListPointers[1].Untyped, dynEntCount[1], context, "clipMap_t.dynEntClientList[1]"));
-            dynEntCollList[0] = ReadRuntimeArray(context, () => ReadDynEntityCollArray(cursor, dynEntCollListPointers[0].Untyped, dynEntCount[0], context, "clipMap_t.dynEntCollList[0]"));
-            dynEntCollList[1] = ReadRuntimeArray(context, () => ReadDynEntityCollArray(cursor, dynEntCollListPointers[1].Untyped, dynEntCount[1], context, "clipMap_t.dynEntCollList[1]"));
+            const int modelList = (int)DynEntityDrawType.Model;
+            const int brushList = (int)DynEntityDrawType.Brush;
+            dynEntDefList[modelList] = ReadDynEntityDefArray(
+                cursor, dynEntDefListPointers[modelList].Untyped, dynEntCount[modelList], context, "clipMap_t.dynEntDefList[0]");
+            dynEntDefList[brushList] = ReadDynEntityDefArray(
+                cursor, dynEntDefListPointers[brushList].Untyped, dynEntCount[brushList], context, "clipMap_t.dynEntDefList[1]");
+            dynEntPoseList[modelList] = ReadRuntimeArray(context, () => ReadDynEntityPoseArray(
+                cursor, dynEntPoseListPointers[modelList].Untyped, dynEntCount[modelList], context, "clipMap_t.dynEntPoseList[0]"));
+            dynEntPoseList[brushList] = ReadRuntimeArray(context, () => ReadDynEntityPoseArray(
+                cursor, dynEntPoseListPointers[brushList].Untyped, dynEntCount[brushList], context, "clipMap_t.dynEntPoseList[1]"));
+            dynEntClientList[modelList] = ReadRuntimeArray(context, () => ReadDynEntityClientArray(
+                cursor, dynEntClientListPointers[modelList].Untyped, dynEntCount[modelList], context, "clipMap_t.dynEntClientList[0]"));
+            dynEntClientList[brushList] = ReadRuntimeArray(context, () => ReadDynEntityClientArray(
+                cursor, dynEntClientListPointers[brushList].Untyped, dynEntCount[brushList], context, "clipMap_t.dynEntClientList[1]"));
+            dynEntCollList[modelList] = ReadRuntimeArray(context, () => ReadDynEntityCollArray(
+                cursor, dynEntCollListPointers[modelList].Untyped, dynEntCount[modelList], context, "clipMap_t.dynEntCollList[0]"));
+            dynEntCollList[brushList] = ReadRuntimeArray(context, () => ReadDynEntityCollArray(
+                cursor, dynEntCollListPointers[brushList].Untyped, dynEntCount[brushList], context, "clipMap_t.dynEntCollList[1]"));
         }
         finally
         {
@@ -865,7 +875,7 @@ internal sealed class ClipMapAssetLoader : XAssetLoader<ClipMapAsset>
             var rowCursor = new FastFileCursor(bytes, address).Slice(
                 checked(i * DynEntityDef.SerializedSize),
                 DynEntityDef.SerializedSize);
-            int type = rowCursor.ReadInt32();
+            DynEntityType type = (DynEntityType)rowCursor.ReadInt32();
             GfxPlacement pose = ReadGfxPlacement(rowCursor);
             XPointer<XModelAsset> xmodelPointer = ReadPointer<XModelAsset>(rowCursor, context, XPointerResolutionMode.AliasCell);
             XModelAsset? xmodel = _xmodelLoader.LoadFromPointer(

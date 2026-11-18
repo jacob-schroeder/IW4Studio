@@ -382,13 +382,13 @@ public static class D3dbspAssetLinker
             SModelNodeCount = 1,
             SModelNodes = [clipStaticModelRoot],
             DynEntCount = dynamicEntityCounts,
-            DynEntDefListPointers = new XPointer<DynEntityDef[]>[2],
+            DynEntDefListPointers = new XPointer<DynEntityDef[]>[(int)DynEntityDrawType.Count],
             DynEntDefList = dynamicEntityDefinitions,
-            DynEntPoseListPointers = new XPointer<DynEntityPose[]>[2],
+            DynEntPoseListPointers = new XPointer<DynEntityPose[]>[(int)DynEntityDrawType.Count],
             DynEntPoseList = EmptyDynamicLists<DynEntityPose>(),
-            DynEntClientListPointers = new XPointer<DynEntityClient[]>[2],
+            DynEntClientListPointers = new XPointer<DynEntityClient[]>[(int)DynEntityDrawType.Count],
             DynEntClientList = EmptyDynamicLists<DynEntityClient>(),
-            DynEntCollListPointers = new XPointer<DynEntityColl[]>[2],
+            DynEntCollListPointers = new XPointer<DynEntityColl[]>[(int)DynEntityDrawType.Count],
             DynEntCollList = EmptyDynamicLists<DynEntityColl>(),
             Checksum = checksum,
             PadD0ToFF = new byte[0x30]
@@ -644,13 +644,13 @@ public static class D3dbspAssetLinker
     {
         if (source is null)
             return EmptyDynamicLists<DynEntityDef>();
-        if (source.Count != 2)
+        if (source.Count != (int)DynEntityDrawType.Count)
         {
             throw new InvalidDataException(
                 "The IW4 dynamic-entity definition table must contain model and brush lists.");
         }
 
-        var result = new IReadOnlyList<DynEntityDef>[2];
+        var result = new IReadOnlyList<DynEntityDef>[(int)DynEntityDrawType.Count];
         for (int listIndex = 0; listIndex < result.Length; listIndex++)
         {
             IReadOnlyList<DynEntityDef> definitions = source[listIndex] ??

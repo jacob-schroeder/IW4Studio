@@ -90,7 +90,7 @@ public sealed record PhysPresetUsage(string AssetName, string Field)
                             continue;
 
                         string modelName = entity.XModel?.Name is { } modelAsset ? $", {modelAsset}" : string.Empty;
-                        usages.Add(new(name, $"ClipMap dynamic entity {index} (list {list}{modelName}) · PhysPreset"));
+                        usages.Add(new(name, $"ClipMap dynamic entity {index} ({(DynEntityDrawType)list} list, {entity.Type}{modelName}) · PhysPreset"));
                     }
                 }
                 break;

@@ -1,4 +1,5 @@
 using IW4.Game.Assets.Physics;
+using IW4.Game.Assets.TechniqueSet;
 using IW4.Game.Assets.Tracer;
 using IW4.Formats.D3dbsp;
 using IW4.Game.Zone;
@@ -164,6 +165,16 @@ public sealed class WorkspaceAssetCatalog
             activeSlotsByKey.TryAdd(key, slot);
         }
 
+        ILookup<AssetKey, LinkRoot> rootsByKey = document.InitialLinkRequest.Roots
+            .Where(root => root.Asset.HasValue)
+            .ToLookup(root => root.Asset.GetValueOrDefault());
+        ILookup<AssetKey, LinkAssetProvider> editableProviders =
+            document.InitialLinkRequest.Assets.Providers
+                .Where(provider =>
+                    provider.SerializedType is (XAssetType.PhysPreset or XAssetType.Tracer
+                        or XAssetType.VertexShader or XAssetType.PixelShader) &&
+                    !provider.IsReferencePlaceholder)
+                .ToLookup(provider => provider.Key);
         WorkspaceAssetCatalogEntry[] targetEntries = document.InitialLinkRequest.Roots
             .Select((root, index) =>
             {
@@ -207,12 +218,23 @@ public sealed class WorkspaceAssetCatalog
                             ? activePoolProvider!.Asset
                             : null
                         : provider?.Asset;
+                bool isShader = root.SerializedType is XAssetType.VertexShader or XAssetType.PixelShader;
+                LinkAssetProvider? shaderProvider =
+                    isShader && root.Intent == LinkRootIntent.Owned &&
+                    root.Asset is { } key && rootsByKey[key].Take(2).Count() == 1 &&
+                    activePoolProvider is not null && activeProviderZone is not null &&
+                    ReferenceEquals(definition, activePoolProvider.Asset)
+                        ? FindEditableTargetProvider(
+                            activeSlotsByKey[key], activeProviderZone, editableProviders[key])
+                        : null;
                 return root.Intent switch
                 {
                     LinkRootIntent.Owned => new WorkspaceAssetCatalogEntry(
                         identity,
                         WorkspaceAssetOrigin.TargetOwnedDefinition,
-                        WorkspaceAssetAccess.Editable,
+                        isShader && shaderProvider is null
+                            ? WorkspaceAssetAccess.ReadOnly
+                            : WorkspaceAssetAccess.Editable,
                         WorkspaceAssetContentSource.TargetAuthoredBaseline,
                         root.SerializedType,
                         name,
@@ -221,7 +243,8 @@ public sealed class WorkspaceAssetCatalog
                         sourceRow.RawHeader,
                         sourceRow.HeaderKind,
                         resolvedProvider,
-                        activeProviderZone),
+                        activeProviderZone,
+                        targetProvider: shaderProvider),
                     LinkRootIntent.External => new WorkspaceAssetCatalogEntry(
                         identity,
                         isResolvedReference
@@ -265,16 +288,6 @@ public sealed class WorkspaceAssetCatalog
             })
             .ToArray();
 
-        var targetKeys = new HashSet<AssetKey>(
-            document.InitialLinkRequest.Roots
-                .Where(root => root.Asset is not null)
-                .Select(root => root.Asset!.Value));
-        ILookup<AssetKey, LinkAssetProvider> targetNestedProviders =
-            document.InitialLinkRequest.Assets.Providers
-                .Where(provider =>
-                    provider.SerializedType is (XAssetType.PhysPreset or XAssetType.Tracer) &&
-                    !provider.IsReferencePlaceholder)
-                .ToLookup(provider => provider.Key);
         WorkspaceAssetCatalogEntry[] dependencyEntries = document.IsBlank
             ? []
             : activeSlots
@@ -289,11 +302,11 @@ public sealed class WorkspaceAssetCatalog
                         provider.Owner);
                     return (slot, provider, providerZone, key);
                 })
-                .Where(value => !targetKeys.Contains(value.key))
+                .Where(value => !rootsByKey.Contains(value.key))
                 .Select(value =>
                 {
-                    LinkAssetProvider? targetProvider = FindEditableNestedProvider(
-                        value.slot, value.providerZone, targetNestedProviders[value.key]);
+                    LinkAssetProvider? targetProvider = FindEditableTargetProvider(
+                        value.slot, value.providerZone, editableProviders[value.key]);
                     return new WorkspaceAssetCatalogEntry(
                         null,
                         WorkspaceAssetOrigin.DependencyOnly,
@@ -326,7 +339,7 @@ public sealed class WorkspaceAssetCatalog
         return new WorkspaceAssetCatalog(document, targetEntries, dependencyEntries);
     }
 
-    private static LinkAssetProvider? FindEditableNestedProvider(
+    private static LinkAssetProvider? FindEditableTargetProvider(
         XAssetSlot slot,
         WorkspaceAssetProviderZone zone,
         IEnumerable<LinkAssetProvider> targetProviders)
@@ -334,7 +347,7 @@ public sealed class WorkspaceAssetCatalog
         XAssetProviderContribution active = slot.ActiveProvider;
         if (!zone.IsTarget ||
             active.IsReferencePlaceholder ||
-            active.Asset is not (PhysPresetAsset or TracerDefAsset) ||
+            active.Asset is not (PhysPresetAsset or TracerDefAsset or MaterialShaderAsset) ||
             slot.Providers.Count(provider => !provider.IsReferencePlaceholder) != 1)
         {
             return null;

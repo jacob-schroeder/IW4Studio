@@ -78,7 +78,7 @@ internal static class Iw3DynamicEntityCompiler
 
                 targetRows[index] = new DynEntityDef
                 {
-                    Type = item.Type,
+                    Type = (DynEntityType)item.Type,
                     Pose = new GfxPlacement
                     {
                         Quat = item.Quat.ToArray(),

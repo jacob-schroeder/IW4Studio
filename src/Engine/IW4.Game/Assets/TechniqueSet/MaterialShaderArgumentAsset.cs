@@ -11,6 +11,13 @@ public sealed record MaterialShaderArgumentAsset(
     MaterialShaderLiteralConstant? LiteralConstant,
     XPointerReference ArgumentPointer = default)
 {
+    public string TypeName => Type switch
+    {
+        MaterialShaderArgumentType.CodeVertexConst => nameof(MaterialShaderArgumentType.CodeVertexConst),
+        MaterialShaderArgumentType.MaterialPixelConst => nameof(MaterialShaderArgumentType.MaterialPixelConst),
+        _ => Type.ToString()
+    };
+
     public MaterialCodeConstantArgument CodeConstant => Type switch
     {
         MaterialShaderArgumentType.CodeVertexConst or

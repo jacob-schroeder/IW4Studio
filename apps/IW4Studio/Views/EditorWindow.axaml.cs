@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using IW4.Studio.Desktop.Editors.Gsc;
+using IW4.Studio.Desktop.Editors.Shader;
 using IW4.Studio.Desktop.Lifecycle;
 using IW4.Studio.Desktop.Rendering;
 using IW4.Studio.Desktop.Themes;
@@ -433,6 +434,7 @@ public sealed partial class EditorWindow : Window
                 _unsavedChangesDialog,
                 proceedAsync,
                 workbench.CanSaveAs ? RequestSaveAsAsync : null,
+                supplementalChanges: CaptureShaderSourceChanges,
                 stagedEditorChanges: CaptureStagedEditorChanges);
         }
         finally
@@ -466,12 +468,31 @@ public sealed partial class EditorWindow : Window
         StudioWorkbenchViewModel workbench)
     {
         string originalTitle = Title ?? "IW4 Studio";
+        Control? editorContent = Content as Control;
+        bool wasContentEnabled = editorContent?.IsEnabled == true;
         try
         {
             string? destination =
                 await SelectSaveDestinationAsync(workbench.TargetFileName);
             if (destination is null || _disposed)
                 return WorkspaceSaveOutcome.Cancellation;
+
+            ShaderEditorViewModel[] shaders = workbench.OpenEditorTabs
+                .Select(tab => tab.CatalogEditor?.HostedViewModel)
+                .OfType<ShaderEditorViewModel>().Where(shader => shader.HasUnappliedChanges).ToArray();
+            if (shaders.Length != 0)
+            {
+                if (editorContent is not null) editorContent.IsEnabled = false;
+                Title = $"{originalTitle} — Compiling shaders";
+                string? error = await ShaderEditorViewModel.CompilePendingAsync(
+                    shaders, workbench.Editor.EditingSession.CancellationToken);
+                if (_disposed) return WorkspaceSaveOutcome.Cancellation;
+                if (error is not null)
+                {
+                    await ShowSaveResultAsync(false, [error]);
+                    return WorkspaceSaveOutcome.Failure;
+                }
+            }
 
             var progress = new Progress<SaveAsProgress>(value =>
                 Title = $"{originalTitle} — {value.Message}");
@@ -499,7 +520,10 @@ public sealed partial class EditorWindow : Window
         {
             Volatile.Write(ref _saveAsInProgress, 0);
             if (!_disposed)
+            {
                 Title = originalTitle;
+                if (editorContent is not null) editorContent.IsEnabled = wasContentEnabled;
+            }
         }
     }
 
@@ -655,13 +679,20 @@ public sealed partial class EditorWindow : Window
         await window.ShowDialog(this);
     }
 
+    private SupplementalUnsavedChanges CaptureShaderSourceChanges()
+    {
+        int count = _workbench?.OpenEditorTabs.Count(tab =>
+            tab.IsDirty && tab.CatalogEditor?.HostedViewModel is ShaderEditorViewModel) ?? 0;
+        return new SupplementalUnsavedChanges(count != 0, count);
+    }
+
     private SupplementalUnsavedChanges CaptureStagedEditorChanges()
     {
         if (_disposed || _workbench is not { } workbench)
             return SupplementalUnsavedChanges.Clean;
 
         int changedItemCount = checked(
-            workbench.OpenEditorTabs.Count(tab => tab.IsDirty) +
+            workbench.OpenEditorTabs.Count(tab => tab.IsDirty && tab.CatalogEditor?.HostedViewModel is not ShaderEditorViewModel) +
             (workbench.FastFileDetails.HasDraftChanges ? 1 : 0));
         return changedItemCount == 0
             ? SupplementalUnsavedChanges.Clean

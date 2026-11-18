@@ -619,7 +619,7 @@ internal static class ShaderExecutionContractFactory
             string value = FormattableString.Invariant($"{literal.X:R},{literal.Y:R},{literal.Z:R},{literal.W:R}");
             yield return new ShaderConstantDestination(
                 argumentIndex,
-                argument.Type.ToString(),
+                argument.TypeName,
                 argument.Dest,
                 raw,
                 value,
@@ -641,7 +641,7 @@ internal static class ShaderExecutionContractFactory
                 MaterialVec4 value = materialConstant.Literal;
                 yield return new ShaderConstantDestination(
                     argumentIndex,
-                    argument.Type.ToString(),
+                    argument.TypeName,
                     argument.Dest,
                     raw,
                     FormattableString.Invariant($"{value.X:R},{value.Y:R},{value.Z:R},{value.W:R}"),
@@ -656,7 +656,7 @@ internal static class ShaderExecutionContractFactory
 
             yield return new ShaderConstantDestination(
                 argumentIndex,
-                argument.Type.ToString(),
+                argument.TypeName,
                 argument.Dest,
                 nameHash,
                 $"materialConstantHash0x{nameHash:X8}",
@@ -668,10 +668,7 @@ internal static class ShaderExecutionContractFactory
         ushort codeIndex = codeArgument.SourceIndex;
         byte firstRow = codeArgument.FirstRow;
         byte rowCount = codeArgument.RowCount;
-        string argumentType = argument.Type ==
-            MaterialShaderArgumentType.CodeVertexConst
-            ? "CodeVertexConst"
-            : argument.Type.ToString();
+        string argumentType = argument.TypeName;
         if (rowCount == 0)
         {
             yield return new ShaderConstantDestination(

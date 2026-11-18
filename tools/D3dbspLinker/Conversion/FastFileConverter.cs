@@ -438,7 +438,7 @@ internal static partial class FastFileConverter
         IReadOnlyDictionary<string, string>[] dynamicEntities = sourceBsp.GetEntities()
             .Where(entity => entity.GetValueOrDefault("classname") == RuntimePhysicsAuthoring.ClassName)
             .ToArray();
-        DynEntityDef[] dynamicDefinitions = [];
+        DynEntityDef[] modelDefinitions = [];
         if (dynamicEntities.Length != 0)
         {
             if (modelSources is null)
@@ -447,7 +447,7 @@ internal static partial class FastFileConverter
                 RuntimePhysicsAuthoring.Validate(entity);
             XModelAsset runtimeModel = modelSources.LoadModel(RuntimePhysicsAuthoring.ModelName);
             availableXModels.Add(runtimeModel);
-            dynamicDefinitions = dynamicEntities
+            modelDefinitions = dynamicEntities
                 .Select(entity => RuntimePhysicsAuthoring.CreateDefinition(entity, runtimeModel))
                 .ToArray();
         }
@@ -580,7 +580,7 @@ internal static partial class FastFileConverter
                     WaterMaterialAuthoring.MapPropertyName,
                     MapFactionAuthoring.MapPropertyName
                 },
-                DynamicEntityDefinitions = [dynamicDefinitions, Array.Empty<DynEntityDef>()]
+                DynamicEntityDefinitions = [modelDefinitions, Array.Empty<DynEntityDef>()]
             });
         LightDefAsset? diskLightDef = null;
         if (bootstrapMaterials is not null)

@@ -10,8 +10,7 @@ namespace IW4.Formats.SourceFormat.PhysCollmap;
 /// </summary>
 public sealed partial class PhysCollmapExchange
 {
-    private const int PhysGeomBox = 1;
-    private const int PhysGeomCylinder = 5;
+    private const int MapCylinderType = 5;
 
     public IReadOnlyList<string> Unlink(
         string sourceDirectory,
@@ -21,8 +20,10 @@ public sealed partial class PhysCollmapExchange
         string name = SourceOutput.NormalizeOwnedAssetName(asset.Name, "PhysCollmap");
         string native = WriteNative(asset, name);
         var output = new SourceOutput(sourceDirectory);
-        if (asset.Geoms.All(geom => geom is not null &&
-            geom.Type is PhysGeomBox or PhysGeomCylinder))
+        // The map exchange supports the canonical cylinder tag. Preserve other
+        // cylinder-dispatched tags in the native document.
+        if (asset.Geoms.All(geom => geom is { EffectiveShape: PhysGeomShape.Box } or
+            { EffectiveShape: PhysGeomShape.Cylinder, Type: MapCylinderType }))
         {
             ValidateAsset(asset);
             return output.WriteTextBatch([
@@ -48,10 +49,10 @@ public sealed partial class PhysCollmapExchange
 
         foreach (PhysGeomInfo geom in asset.Geoms)
         {
-            int requiredOrientationCount = geom.Type switch
+            int requiredOrientationCount = geom.EffectiveShape switch
             {
-                PhysGeomBox => 3,
-                PhysGeomCylinder => 1,
+                PhysGeomShape.Box => 3,
+                PhysGeomShape.Cylinder => 1,
                 _ => throw new NotSupportedException(
                     $"PhysCollmap '{assetName}' geometry type {geom.Type} has no complete OpenAssetTools map representation.")
             };
@@ -86,12 +87,12 @@ public sealed partial class PhysCollmapExchange
             PhysGeomInfo geom = asset.Geoms[index];
             writer.WriteLine($"  // brush {index}");
             writer.WriteLine("  {");
-            switch (geom.Type)
+            switch (geom.EffectiveShape)
             {
-                case PhysGeomBox:
+                case PhysGeomShape.Box:
                     WriteBox(writer, geom);
                     break;
-                case PhysGeomCylinder:
+                case PhysGeomShape.Cylinder:
                     WriteCylinder(writer, geom);
                     break;
             }

@@ -109,8 +109,8 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         writer.WriteUInt16(definition.SModelNodeCount);
         writer.WriteUInt16(definition.PadA2ToA3);
         writer.Skip(sizeof(int));
-        writer.WriteUInt16(definition.DynEntCount[0]);
-        writer.WriteUInt16(definition.DynEntCount[1]);
+        writer.WriteUInt16(definition.DynEntCount[(int)DynEntityDrawType.Model]);
+        writer.WriteUInt16(definition.DynEntCount[(int)DynEntityDrawType.Brush]);
         writer.Skip(8 * sizeof(int));
         writer.WriteUInt32(definition.Checksum);
         if (definition.PadD0ToFF.Count == 0)
@@ -306,7 +306,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         foreach (LinkOperation operation in DirectIfPresent(
             root,
             0xac,
-            storage.DynEntDefinitions[0],
+            storage.DynEntDefinitions[(int)DynEntityDrawType.Model],
             "ClipMap.DynEntDefList[0]"))
         {
             yield return operation;
@@ -314,7 +314,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         foreach (LinkOperation operation in DirectIfPresent(
             root,
             0xb0,
-            storage.DynEntDefinitions[1],
+            storage.DynEntDefinitions[(int)DynEntityDrawType.Brush],
             "ClipMap.DynEntDefList[1]"))
         {
             yield return operation;
@@ -322,7 +322,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         foreach (LinkOperation operation in PresenceIfPresent(
             root,
             0xb4,
-            storage.DynEntPoses[0],
+            storage.DynEntPoses[(int)DynEntityDrawType.Model],
             "ClipMap.DynEntPoseList[0]"))
         {
             yield return operation;
@@ -330,7 +330,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         foreach (LinkOperation operation in PresenceIfPresent(
             root,
             0xb8,
-            storage.DynEntPoses[1],
+            storage.DynEntPoses[(int)DynEntityDrawType.Brush],
             "ClipMap.DynEntPoseList[1]"))
         {
             yield return operation;
@@ -338,7 +338,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         foreach (LinkOperation operation in PresenceIfPresent(
             root,
             0xbc,
-            storage.DynEntClients[0],
+            storage.DynEntClients[(int)DynEntityDrawType.Model],
             "ClipMap.DynEntClientList[0]"))
         {
             yield return operation;
@@ -346,7 +346,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         foreach (LinkOperation operation in PresenceIfPresent(
             root,
             0xc0,
-            storage.DynEntClients[1],
+            storage.DynEntClients[(int)DynEntityDrawType.Brush],
             "ClipMap.DynEntClientList[1]"))
         {
             yield return operation;
@@ -354,7 +354,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         foreach (LinkOperation operation in PresenceIfPresent(
             root,
             0xc4,
-            storage.DynEntCollisions[0],
+            storage.DynEntCollisions[(int)DynEntityDrawType.Model],
             "ClipMap.DynEntCollList[0]"))
         {
             yield return operation;
@@ -362,7 +362,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         foreach (LinkOperation operation in PresenceIfPresent(
             root,
             0xc8,
-            storage.DynEntCollisions[1],
+            storage.DynEntCollisions[(int)DynEntityDrawType.Brush],
             "ClipMap.DynEntCollList[1]"))
         {
             yield return operation;
@@ -526,48 +526,50 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
                 value.MapEnts,
                 XAssetType.MapEnts,
                 "ClipMap.MapEnts");
+            const int modelList = (int)DynEntityDrawType.Model;
+            const int brushList = (int)DynEntityDrawType.Brush;
             LinkStorageTarget?[] dynDefinitions =
             [
-                FreezeDynDefinitions(value, 0),
-                FreezeDynDefinitions(value, 1)
+                FreezeDynDefinitions(value, modelList),
+                FreezeDynDefinitions(value, brushList)
             ];
             LinkStorageSymbol?[] dynPoses =
             [
                 FreezeRuntime(
-                    value.DynEntCount[0],
+                    value.DynEntCount[modelList],
                     DynEntityPose.SerializedSize,
-                    value.DynEntPoseListPointers[0].Untyped,
+                    value.DynEntPoseListPointers[modelList].Untyped,
                     "ClipMap.DynEntPoseList[0]"),
                 FreezeRuntime(
-                    value.DynEntCount[1],
+                    value.DynEntCount[brushList],
                     DynEntityPose.SerializedSize,
-                    value.DynEntPoseListPointers[1].Untyped,
+                    value.DynEntPoseListPointers[brushList].Untyped,
                     "ClipMap.DynEntPoseList[1]")
             ];
             LinkStorageSymbol?[] dynClients =
             [
                 FreezeRuntime(
-                    value.DynEntCount[0],
+                    value.DynEntCount[modelList],
                     DynEntityClient.SerializedSize,
-                    value.DynEntClientListPointers[0].Untyped,
+                    value.DynEntClientListPointers[modelList].Untyped,
                     "ClipMap.DynEntClientList[0]"),
                 FreezeRuntime(
-                    value.DynEntCount[1],
+                    value.DynEntCount[brushList],
                     DynEntityClient.SerializedSize,
-                    value.DynEntClientListPointers[1].Untyped,
+                    value.DynEntClientListPointers[brushList].Untyped,
                     "ClipMap.DynEntClientList[1]")
             ];
             LinkStorageSymbol?[] dynCollisions =
             [
                 FreezeRuntime(
-                    value.DynEntCount[0],
+                    value.DynEntCount[modelList],
                     DynEntityColl.SerializedSize,
-                    value.DynEntCollListPointers[0].Untyped,
+                    value.DynEntCollListPointers[modelList].Untyped,
                     "ClipMap.DynEntCollList[0]"),
                 FreezeRuntime(
-                    value.DynEntCount[1],
+                    value.DynEntCount[brushList],
                     DynEntityColl.SerializedSize,
-                    value.DynEntCollListPointers[1].Untyped,
+                    value.DynEntCollListPointers[brushList].Untyped,
                     "ClipMap.DynEntCollList[1]")
             ];
 
@@ -1431,7 +1433,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         DynEntityDef value,
         int index)
     {
-        writer.WriteInt32(value.Type);
+        writer.WriteInt32((int)value.Type);
         RequireCount(value.Pose.Quat, 4, $"DynEntityDef[{index}].Pose.Quat");
         foreach (float item in value.Pose.Quat)
             writer.WriteSingle(item);
@@ -1506,15 +1508,15 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         RequireCount(value.BrushBounds, value.NumBrushes, "ClipMap.BrushBounds");
         RequireCount(value.BrushContents, value.NumBrushes, "ClipMap.BrushContents");
         RequireCount(value.SModelNodes, value.SModelNodeCount, "ClipMap.SModelNodes");
-        RequireCount(value.DynEntCount, 2, "ClipMap.DynEntCount");
-        RequireCount(value.DynEntDefListPointers, 2, "ClipMap.DynEntDefListPointers");
-        RequireCount(value.DynEntDefList, 2, "ClipMap.DynEntDefList");
-        RequireCount(value.DynEntPoseListPointers, 2, "ClipMap.DynEntPoseListPointers");
-        RequireCount(value.DynEntPoseList, 2, "ClipMap.DynEntPoseList");
-        RequireCount(value.DynEntClientListPointers, 2, "ClipMap.DynEntClientListPointers");
-        RequireCount(value.DynEntClientList, 2, "ClipMap.DynEntClientList");
-        RequireCount(value.DynEntCollListPointers, 2, "ClipMap.DynEntCollListPointers");
-        RequireCount(value.DynEntCollList, 2, "ClipMap.DynEntCollList");
+        RequireCount(value.DynEntCount, (int)DynEntityDrawType.Count, "ClipMap.DynEntCount");
+        RequireCount(value.DynEntDefListPointers, (int)DynEntityDrawType.Count, "ClipMap.DynEntDefListPointers");
+        RequireCount(value.DynEntDefList, (int)DynEntityDrawType.Count, "ClipMap.DynEntDefList");
+        RequireCount(value.DynEntPoseListPointers, (int)DynEntityDrawType.Count, "ClipMap.DynEntPoseListPointers");
+        RequireCount(value.DynEntPoseList, (int)DynEntityDrawType.Count, "ClipMap.DynEntPoseList");
+        RequireCount(value.DynEntClientListPointers, (int)DynEntityDrawType.Count, "ClipMap.DynEntClientListPointers");
+        RequireCount(value.DynEntClientList, (int)DynEntityDrawType.Count, "ClipMap.DynEntClientList");
+        RequireCount(value.DynEntCollListPointers, (int)DynEntityDrawType.Count, "ClipMap.DynEntCollListPointers");
+        RequireCount(value.DynEntCollList, (int)DynEntityDrawType.Count, "ClipMap.DynEntCollList");
         RequireOptionalFixedCount(value.PadD0ToFF, 0x30, "ClipMap.PadD0ToFF");
 
         for (int index = 0; index < value.Planes.Count; index++)
@@ -1640,7 +1642,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
             edgeOffset = checked(edgeOffset + edgeCount);
         }
 
-        for (int list = 0; list < 2; list++)
+        for (int list = 0; list < (int)DynEntityDrawType.Count; list++)
         {
             int count = value.DynEntCount[list];
             RequireCount(value.DynEntDefList[list], count, $"ClipMap.DynEntDefList[{list}]");
@@ -1663,7 +1665,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
                     throw new InvalidDataException(
                         $"ClipMap.DynEntDefList[{list}][{index}] requires Pose and Mass.");
                 }
-                if (definition.Type is not (1 or 2))
+                if (definition.Type is not (DynEntityType.Clutter or DynEntityType.Destruct))
                 {
                     throw new InvalidDataException(
                         $"ClipMap.DynEntDefList[{list}][{index}].Type must be " +
@@ -1675,7 +1677,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
                         $"ClipMap.DynEntDefList[{list}][{index}] requires a " +
                         "physics preset.");
                 }
-                if (list == 0 && definition.XModel is null)
+                if (list == (int)DynEntityDrawType.Model && definition.XModel is null)
                 {
                     throw new InvalidDataException(
                         $"ClipMap.DynEntDefList[0][{index}] requires an XModel.");
@@ -1687,7 +1689,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
                         $"ClipMap.DynEntDefList[{list}][{index}].PhysicsBrushModel " +
                         $"{definition.PhysicsBrushModel} is out of range.");
                 }
-                if (list == 1)
+                if (list == (int)DynEntityDrawType.Brush)
                 {
                     if (definition.XModel is not null)
                     {
@@ -1712,7 +1714,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
 
     private static void ValidateReferenceShape(ClipMapAsset value)
     {
-        RequireCount(value.DynEntCount, 2, "ClipMap.DynEntCount");
+        RequireCount(value.DynEntCount, (int)DynEntityDrawType.Count, "ClipMap.DynEntCount");
         RequireOptionalFixedCount(value.PadD0ToFF, 0x30, "ClipMap.PadD0ToFF");
         bool hasPointer = EnumerateRootPointers(value).Any(pointer => pointer.Raw != 0);
         bool hasPayload = value.Planes.Count != 0 ||
@@ -1782,8 +1784,8 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         writer.WriteUInt16(value.SModelNodeCount);
         writer.WriteUInt16(value.PadA2ToA3);
         writer.Skip(sizeof(int));
-        writer.WriteUInt16(value.DynEntCount[0]);
-        writer.WriteUInt16(value.DynEntCount[1]);
+        writer.WriteUInt16(value.DynEntCount[(int)DynEntityDrawType.Model]);
+        writer.WriteUInt16(value.DynEntCount[(int)DynEntityDrawType.Brush]);
         writer.Skip(8 * sizeof(int));
         writer.WriteUInt32(value.Checksum);
         if (value.PadD0ToFF.Count == 0)

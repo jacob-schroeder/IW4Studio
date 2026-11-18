@@ -395,7 +395,7 @@ public sealed class MaterialTechniqueGraphControl : Control
         {
             MaterialShaderArgumentType.CodeVertexConst or
             MaterialShaderArgumentType.CodePixelConst =>
-                $"{argument.CodeConstant.Source} [{argument.CodeConstant.FirstRow}+{argument.CodeConstant.RowCount}]",
+                $"{argument.CodeConstant.SourceName} [{argument.CodeConstant.FirstRow}+{argument.CodeConstant.RowCount}]",
             MaterialShaderArgumentType.CodePixelSampler =>
                 argument.CodeTextureSource.ToString(),
             MaterialShaderArgumentType.MaterialVertexConst or
@@ -407,7 +407,7 @@ public sealed class MaterialTechniqueGraphControl : Control
                 $"({literal.X:G4}, {literal.Y:G4}, {literal.Z:G4}, {literal.W:G4})",
             _ => $"0x{unchecked((uint)argument.ArgumentRaw):X8}"
         };
-        return $"r{argument.Dest} · {FormatIdentifier(argument.Type.ToString())} · {value}";
+        return $"r{argument.Dest} · {FormatIdentifier(argument.TypeName)} · {value}";
     }
 
     private static IReadOnlyList<string> PassRows(MaterialPassAsset pass) =>

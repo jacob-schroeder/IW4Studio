@@ -4,7 +4,7 @@ using IW4.Game.Zone;
 
 namespace IW4.Linker.Plans;
 
-public static class MaterialShaderVertexReservation
+public static partial class MaterialShaderVertexReservation
 {
     private const int HeaderSize = 0x20;
     private const int ParameterSize = 0x30;
@@ -302,7 +302,7 @@ public static class MaterialShaderVertexReservation
             uploadSize,
             fieldPath,
             "upload payload");
-        return new CgProgramLayout(parameterCount, parameterTableOffset, descriptorOffset, uploadSize);
+        return new CgProgramLayout(parameterCount, parameterTableOffset, descriptorOffset, uploadSize, uploadOffset);
     }
 
     private static LinkStorageSymbol VertexReservation(int byteLength) =>
@@ -335,7 +335,8 @@ public static class MaterialShaderVertexReservation
         int ParameterCount,
         int ParameterTableOffset,
         int DescriptorOffset,
-        int UploadSize);
+        int UploadSize,
+        int UploadOffset);
 
     private readonly record struct MaterialShaderVertexDefaultMetrics(
         int VectorCount,

@@ -51,7 +51,8 @@ internal sealed class Iw3PcShaderCompiler
         Iw3ShaderSource source,
         string shaderProgramPath,
         ushort signedNormalInputMask,
-        ushort decodedTexCoordInputMask)
+        ushort decodedTexCoordInputMask,
+        bool nativeRsxSource = false)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentException.ThrowIfNullOrWhiteSpace(shaderProgramPath);
@@ -65,9 +66,10 @@ internal sealed class Iw3PcShaderCompiler
         IReadOnlyList<Direct3DConstant> constants = ReadConstantTable(direct3D, fullPath);
         ValidateSourceArguments(source, constants, fullPath);
         Iw3ShaderParameter[] parameters = constants.Select(CreateParameter).ToArray();
-        var positionMatrices = GetPositionMatrixRegisters(source, parameters);
-        (ushort comparisonSamplerMask, ushort reflectionProbeSamplerMask) = GetCodeSamplerMasks(source, parameters);
-        var sunShadow = GetSunShadowRegisters(source, parameters);
+        (int World, int ViewProjection) positionMatrices = nativeRsxSource ? (-1, -1) : GetPositionMatrixRegisters(source, parameters);
+        (ushort comparisonSamplerMask, ushort reflectionProbeSamplerMask) = nativeRsxSource ? ((ushort)0, (ushort)0) : GetCodeSamplerMasks(source, parameters);
+        (int Sampler, int PrimarySampler, int ModelSampler, int Switch, int Scale) sunShadow =
+            nativeRsxSource ? (-1, -1, -1, -1, -1) : GetSunShadowRegisters(source, parameters);
         if (constants.Any(constant => constant.RegisterSet == 3 && constant.RegisterIndex < 16 &&
                 (comparisonSamplerMask & (1 << constant.RegisterIndex)) != 0 &&
                 constant.Type != Direct3DSampler2D))
@@ -95,11 +97,12 @@ internal sealed class Iw3PcShaderCompiler
             bool worldPositionLowered = NormalizeAssembly(assemblyPath, source.Stage, signedNormalInputMask,
                 decodedTexCoordInputMask,
                 comparisonSamplerMask, reflectionProbeSamplerMask, positionMatrices,
-                sunShadow, GetFogRegister(source, parameters), GetLightColorRegisters(source, parameters));
+                sunShadow, nativeRsxSource ? -1 : GetFogRegister(source, parameters),
+                nativeRsxSource ? (-1, -1, -1) : GetLightColorRegisters(source, parameters));
             Assemble(assemblyPath, binaryPath, source.Stage, fullPath);
 
             RsxProgram program = ReadRsxProgram(File.ReadAllBytes(binaryPath), source.Stage, fullPath);
-            byte[] data = BuildCgProgram(source.Stage, constants, program, fullPath);
+            byte[] data = BuildCgProgram(source.Stage, constants, program, fullPath, nativeRsxSource);
             MaterialShaderKind kind = source.Stage == Iw3ShaderStage.Vertex
                 ? MaterialShaderKind.Vertex
                 : MaterialShaderKind.Pixel;
@@ -2172,11 +2175,33 @@ internal sealed class Iw3PcShaderCompiler
         Iw3ShaderStage stage,
         IReadOnlyList<Direct3DConstant> constants,
         RsxProgram rsx,
-        string path)
+        string path,
+        bool nativeRsxSource)
     {
         if (rsx.Upload.Length > ushort.MaxValue)
             throw new InvalidDataException($"Shader '{path}' exceeds IW4's supported RSX program size.");
 
+        // Stock Cg vertex reflection stores each matrix followed by its bound row vectors.
+        // Preserve that layout so subsequent edits can recover the register assignments.
+        if (nativeRsxSource && stage == Iw3ShaderStage.Vertex)
+        {
+            var reflected = new List<Direct3DConstant>(constants.Count);
+            foreach (Direct3DConstant uniform in constants)
+            {
+                reflected.Add(uniform);
+                if (uniform.RegisterSet != 2 || uniform.Class < 2) continue;
+                if (uniform.Class != 2 || uniform.Elements != 1 || uniform.Rows is < 1 or > 4 ||
+                    uniform.Columns != 4 || uniform.RegisterCount != uniform.Rows)
+                    throw new InvalidDataException($"Unsupported RSX matrix layout for '{uniform.Name}'.");
+                for (int row = 0; row < uniform.Rows; row++)
+                    reflected.Add(uniform with
+                    {
+                        Name = $"{uniform.Name}[{row}]", Class = 1, Rows = 1, RegisterCount = 1,
+                        RegisterIndex = checked((ushort)(uniform.RegisterIndex + row))
+                    });
+            }
+            constants = reflected;
+        }
         IReadOnlyList<uint>[] patchLists = BuildFragmentPatchLists(stage, constants, rsx, path);
         foreach ((uint register, _) in rsx.VertexConstants)
         {
@@ -2235,7 +2260,18 @@ internal sealed class Iw3PcShaderCompiler
             bool sampler = constant.RegisterSet == 3;
             if (constant.RegisterSet is not (2 or 3))
                 throw new InvalidDataException($"Shader '{path}' uses unsupported Direct3D CTAB register set {constant.RegisterSet} for '{constant.Name}'.");
-            WriteBigEndian(data, entry, GetCgParameterType(constant, path));
+            uint cgType = GetCgParameterType(constant, path);
+            if (nativeRsxSource && !sampler)
+            {
+                if (constant.Class == 2 && stage == Iw3ShaderStage.Vertex)
+                    cgType = (uint)(0x419 + 4 * (constant.Rows - 1) + constant.Columns - 1);
+                else if (constant.Class <= 1 && constant.Columns is >= 1 and <= 4 &&
+                    constant.Elements == 1 && constant.RegisterCount == 1)
+                    cgType = (uint)(0x415 + constant.Columns - 1);
+                else
+                    throw new InvalidDataException($"Unsupported RSX uniform layout for '{constant.Name}'.");
+            }
+            WriteBigEndian(data, entry, cgType);
             WriteBigEndian(data, entry + 4, sampler
                 ? checked(CgTextureUnitBase + constant.RegisterIndex)
                 : CgConstantRegister);

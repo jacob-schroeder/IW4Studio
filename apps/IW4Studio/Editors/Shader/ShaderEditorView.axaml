@@ -1,0 +1,98 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:edit="using:AvaloniaEdit"
+             xmlns:shader="using:IW4.Studio.Desktop.Editors.Shader"
+             xmlns:material="using:IW4.Game.Assets.Material"
+             x:Class="IW4.Studio.Desktop.Editors.Shader.ShaderEditorView"
+             x:DataType="shader:ShaderEditorViewModel">
+  <Grid RowDefinitions="Auto,*" RowSpacing="8">
+    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="8,4">
+      <StackPanel VerticalAlignment="Center">
+        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+        <TextBlock Text="{Binding ProgramSummary}" Foreground="{DynamicResource StudioTextMutedBrush}"/>
+      </StackPanel>
+      <ComboBox Grid.Column="1" ItemsSource="{Binding Compilers}" SelectedItem="{Binding SelectedCompiler, Mode=TwoWay}"
+                IsEnabled="{Binding !IsReadOnly}" VerticalAlignment="Center" AutomationProperties.Name="Cg compiler"
+                ToolTip.Tip="Compiler used for this shader"/>
+      <Button Grid.Column="2" Content="{Binding CompileAction}" IsEnabled="{Binding CanCompile}" Click="Compile_Click"/>
+    </Grid>
+    <TabControl Grid.Row="1">
+      <TabItem Header="Cg source">
+        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="4">
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="6,2">
+            <TextBlock Text="{Binding EditingHint}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Content="Find output" IsVisible="{Binding CanFindOutput}" Click="FindOutput_Click"/>
+            <Button Grid.Column="2" Content="Next missing operation" IsVisible="{Binding HasRecoveryGaps}" Click="NextGap_Click"/>
+          </Grid>
+          <edit:TextEditor Grid.Row="1" Name="CodeEditor" TextChanged="Source_Changed" IsReadOnly="{Binding IsReadOnly}"
+                           ShowLineNumbers="True" FontFamily="Menlo, Consolas, monospace" FontSize="13"
+                           Foreground="{DynamicResource StudioTextBrush}"
+                           LineNumbersForeground="{DynamicResource StudioTextSubtleBrush}"
+                           Background="{DynamicResource StudioSurfaceBrush}"
+                           AutomationProperties.Name="Cg source"/>
+          <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+            <ScrollViewer MaxHeight="100" VerticalScrollBarVisibility="Auto">
+              <SelectableTextBlock Text="{Binding Messages}" TextWrapping="Wrap" Margin="6"/>
+            </ScrollViewer>
+            <Button Grid.Column="1" Content="Load .cg…" IsEnabled="{Binding !IsReadOnly}" Click="LoadSource_Click"/>
+            <Button Grid.Column="2" Content="Export .cg…" Click="ExportSource_Click"/>
+            <Button Grid.Column="3" Content="Discard source edits" IsEnabled="{Binding CanRestoreSource}" Click="Restore_Click"/>
+          </Grid>
+        </Grid>
+      </TabItem>
+      <TabItem Header="Technique passes">
+        <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="8" Margin="6">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="{Binding PassCount}" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Content="Refresh passes" Click="RefreshPasses_Click"/>
+          </Grid>
+          <ComboBox Grid.Row="1" ItemsSource="{Binding Passes}" SelectedItem="{Binding SelectedPass, Mode=TwoWay}"
+                    HorizontalAlignment="Stretch" AutomationProperties.Name="Technique pass"/>
+          <ComboBox Grid.Row="2" ItemsSource="{Binding Materials}" SelectedItem="{Binding SelectedMaterial, Mode=TwoWay}"
+                    HorizontalAlignment="Stretch" PlaceholderText="No resolved materials" AutomationProperties.Name="Material">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="material:MaterialAsset">
+                <TextBlock Text="{Binding Info.Name}"/>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <ScrollViewer Grid.Row="3" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <SelectableTextBlock Text="{Binding PassDetails}" FontFamily="Menlo, Consolas, monospace"/>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+      <TabItem Header="Program parameters">
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+          <SelectableTextBlock Text="{Binding Parameters}" Margin="6" FontFamily="Menlo, Consolas, monospace"/>
+        </ScrollViewer>
+      </TabItem>
+      <TabItem Header="Editing guide">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="8" Margin="12" MaxWidth="680" HorizontalAlignment="Left">
+            <TextBlock Text="Writing a shader" FontSize="18" FontWeight="SemiBold"/>
+            <TextBlock Text="In Fastfile Assets, choose Add Asset, then VertexShader or PixelShader. Studio opens a starter program. To change an effect already in use, open its shader in the owning fastfile and check Technique passes for the inputs and bindings." TextWrapping="Wrap"/>
+            <TextBlock Text="Edit main here or use Load .cg to bring in source from a text editor. Compile and apply checks the program and its existing technique bindings. Save As writes the fastfile. Export .cg saves a portable copy of the current text." TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding ExampleTitle}" FontSize="18" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding ExampleInstruction}" TextWrapping="Wrap"/>
+            <Border Background="{DynamicResource StudioSurfaceBrush}" Padding="10,8">
+              <SelectableTextBlock Text="{Binding ExampleCode}" FontFamily="Menlo, Consolas, monospace"/>
+            </Border>
+            <TextBlock Text="{Binding ExampleNameHint}" TextWrapping="Wrap"/>
+            <TextBlock Text="Reading the program" Margin="0,8,0,0" FontWeight="SemiBold"/>
+            <TextBlock Text="A uniform comes from outside main. Open Technique passes to see which engine value, material constant, or texture feeds it. Program parameters lists its compiled type and binding." TextWrapping="Wrap"/>
+            <TextBlock Text="TEXCOORD0 carries data between shader stages. TEXUNIT0 selects a texture unit. Studio uses names retained in the program for shader parameters. It names recovered calculations from their operations. Registers such as iw4_H0 can still appear where separate calculations share channels or a write depends on a condition." TextWrapping="Wrap"/>
+            <TextBlock Text="Compiling an edit" Margin="0,8,0,0" FontWeight="SemiBold"/>
+            <TextBlock Text="Built-in Cg supports vector math, swizzles, dot, min, max, saturate, and scalar comparisons. Vertex constants use explicit bindings such as uniform float4 scale : C4. Pixel shaders accept named numeric uniforms, TEXUNIT-bound sampler2D textures, and scalar if statements guarding assignments. They write COLOR0. Matrices, loops, and WPOS currently require a compiler with wider Cg support." TextWrapping="Wrap"/>
+            <TextBlock Text="If installed, PS3DK and sce-cgc appear in the compiler menu. Choose a compiler before applying your edit." TextWrapping="Wrap"/>
+            <TextBlock Text="Studio keeps applied Cg source in your local user data. Reopen the shader on the same computer and account to see the exact text. A shader name, stage, and identical compiled program share the most recently saved source." TextWrapping="Wrap"/>
+            <TextBlock Text="A recovery #error marks missing shader behavior. Next missing operation jumps to the code that needs replacing. You can also supply complete Cg source for the same pass. Leaving the shader untouched preserves its compiled program." TextWrapping="Wrap"/>
+            <TextBlock Text="Compiler references" Margin="0,8,0,0" FontWeight="SemiBold"/>
+            <HyperlinkButton Content="NVIDIA Cg language specification" NavigateUri="https://developer.download.nvidia.com/cg/Cg_language.html"/>
+            <HyperlinkButton Content="NVIDIA cgc options and profiles" NavigateUri="https://developer.download.nvidia.com/cg/cgc.html"/>
+            <HyperlinkButton Content="Compiling for PS3 with sce-cgc · Newcastle University" NavigateUri="https://research.ncl.ac.uk/game/mastersdegree/workshops/ps3introductiontogcm/tutorial6.pdf#page=4"/>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
+  </Grid>
+</UserControl>

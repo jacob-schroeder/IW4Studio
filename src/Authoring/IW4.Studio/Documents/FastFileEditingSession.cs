@@ -7,6 +7,7 @@ using IW4.Game.Assets.Physics;
 using IW4.Game.Assets.RawFile;
 using IW4.Game.Assets.Sound;
 using IW4.Game.Assets.StringTable;
+using IW4.Game.Assets.TechniqueSet;
 using IW4.Game.Assets.XModel;
 using IW4.Formats.D3dbsp;
 using IW4.Game.Database;
@@ -1729,45 +1730,166 @@ public sealed class FastFileEditingSession : IDisposable
         {
             ThrowIfDisposedCore();
             DraftState state = _providerDrafts[identity];
-            if (state.TargetProvider is not { } provider ||
-                state.Entry.Definition is not { } imported ||
-                !IsCurrentProviderDraft(state))
-            {
-                throw new InvalidOperationException(
-                    $"The selected {state.Entry.AssetType} is no longer the target's unique nested provider.");
-            }
-
-            // A null candidate restores this provider's last saved draft.
-            candidate ??= state.CloneSaved();
-            if (state.SemanticallyEqualsCurrent(candidate))
+            if (!PublishProviderDraftCore(state, candidate))
                 return false;
-
-            object draft = state.Adapter.CloneDraft(candidate);
-            BaseAsset definition = draft is PhysPresetDraft preset && imported is PhysPresetAsset original
-                ? preset.ToAsset(original)
-                : state.Adapter.CreateDefinition(draft);
-            var source = LoadedZoneLinkExtensions.CreateCapturedProviderSource(
-                Workspace.LoadedZone,
-                definition,
-                imported,
-                provider.OriginalSerializedName,
-                LinkAssetProviderSourceDisposition.AuthoredDetached);
-            LinkAssetPool assets = _targetBaseAssets.WithReplacedProvider(
-                provider, source, out LinkAssetProvider current);
-            Publish(_authoredAssets, _revision.LinkRequest.Roots, targetProviderAssets: assets);
-            state.TargetProvider = current;
-            state.SetCurrent(draft, _revision.Revision);
-            RebuildChangeSet();
         }
 
         AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
         return true;
     }
 
+    internal IReadOnlyList<ShaderUsage> CaptureShaderUsages(MaterialShaderAsset shader)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            return CaptureShaderUsagesCore(shader);
+        }
+    }
+
+    private IReadOnlyList<ShaderUsage> CaptureShaderUsagesCore(MaterialShaderAsset shader)
+    {
+        var seen = new HashSet<BaseAsset>(ReferenceEqualityComparer.Instance);
+        var definitions = new List<BaseAsset>();
+        foreach (WorkspaceAssetCatalogEntry entry in Document.Rows.Concat(Workspace.AssetCatalog.DependencyEntries))
+        {
+            BaseAsset? definition = entry.Definition;
+            if (definition is not (MaterialAsset or MaterialTechniqueSetAsset) ||
+                !seen.Add(definition))
+            {
+                continue;
+            }
+
+            definitions.Add(entry.Origin == WorkspaceAssetOrigin.TargetOwnedDefinition
+                ? CurrentDefinitionForEntry(entry)
+                : definition);
+        }
+
+        return ShaderUsage.Capture(
+            shader,
+            definitions.OfType<MaterialTechniqueSetAsset>(),
+            definitions.OfType<MaterialAsset>());
+    }
+
+    internal void ValidateCompiledShader(
+        WorkspaceAssetCatalogEntry entry,
+        ShaderDraft expectedProgram,
+        ReadOnlyMemory<byte> bytecode)
+    {
+        lock (_gate)
+            _ = PrepareCompiledShader(entry, expectedProgram, bytecode);
+    }
+
+    internal bool PublishCompiledShader(
+        WorkspaceAssetCatalogEntry entry,
+        ShaderDraft expectedProgram,
+        ReadOnlyMemory<byte> bytecode)
+    {
+        lock (_gate)
+        {
+            (DraftState state, ShaderDraft candidate) =
+                PrepareCompiledShader(entry, expectedProgram, bytecode);
+            if (state.SemanticallyEqualsCurrent(candidate))
+                return false;
+            if (state.TargetProvider is not null)
+                _ = PublishProviderDraftCore(state, candidate);
+            else
+                PublishDefinitionCore(state, candidate);
+        }
+
+        AppliedAssetsChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    private (DraftState State, ShaderDraft Candidate) PrepareCompiledShader(
+        WorkspaceAssetCatalogEntry entry,
+        ShaderDraft expectedProgram,
+        ReadOnlyMemory<byte> bytecode)
+    {
+        ThrowIfDisposedCore();
+        DraftState state = entry.TargetRowIdentity is { } row
+            ? RequireDraft(row)
+            : entry.DependencyIdentity is { } identity
+                ? _providerDrafts[identity]
+                : throw new InvalidOperationException("The shader has no editable provider.");
+        if (!ReferenceEquals(state.Entry, entry) ||
+            state.CloneCurrent() is not ShaderDraft current ||
+            !ReferenceEquals(current.Revision, expectedProgram.Revision))
+        {
+            throw new InvalidOperationException(
+                "The shader program changed after this source was opened. Reopen its current program before applying.");
+        }
+        if (state.TargetProvider is not null && !IsCurrentProviderDraft(state))
+        {
+            throw new InvalidOperationException(
+                "The selected shader is no longer the target's unique provider.");
+        }
+
+        var destinations = new HashSet<ushort>();
+        if (entry.Definition is MaterialShaderAsset { Data.Length: > 0 } imported)
+        {
+            foreach (var arg in CaptureShaderUsagesCore(imported).SelectMany(usage => usage.Pass.Args))
+            {
+                if (imported.Kind == MaterialShaderKind.Vertex)
+                {
+                    if (arg.Type == MaterialShaderArgumentType.CodeVertexConst)
+                    {
+                        for (int offset = 0; offset < arg.CodeConstant.RowCount; offset++)
+                        {
+                            if (arg.Dest + offset > RsxVertexConstantLayout.MaximumDestination)
+                                throw new InvalidDataException($"Vertex constant range at c{arg.Dest} exceeds the register file.");
+                            destinations.Add((ushort)(arg.Dest + offset));
+                        }
+                    }
+                    else if (arg.Type is MaterialShaderArgumentType.MaterialVertexConst or MaterialShaderArgumentType.LiteralVertexConst)
+                        destinations.Add(arg.Dest);
+                }
+                else if (arg.Type is MaterialShaderArgumentType.CodePixelConst or MaterialShaderArgumentType.MaterialPixelConst
+                    or MaterialShaderArgumentType.LiteralPixelConst)
+                    destinations.Add(arg.Dest);
+            }
+        }
+        return (state, current.ReplaceBytecode(bytecode, destinations));
+    }
+
+    private bool PublishProviderDraftCore(DraftState state, object? candidate)
+    {
+        if (state.TargetProvider is not { } provider ||
+            state.Entry.Definition is not { } imported ||
+            !IsCurrentProviderDraft(state))
+        {
+            throw new InvalidOperationException(
+                $"The selected {state.Entry.AssetType} is no longer the target's unique provider.");
+        }
+
+        // A null candidate restores this provider's last saved draft.
+        candidate ??= state.CloneSaved();
+        if (state.SemanticallyEqualsCurrent(candidate))
+            return false;
+
+        object draft = state.Adapter.CloneDraft(candidate);
+        BaseAsset definition = draft is PhysPresetDraft preset && imported is PhysPresetAsset original
+            ? preset.ToAsset(original)
+            : state.Adapter.CreateDefinition(draft);
+        var source = LoadedZoneLinkExtensions.CreateCapturedProviderSource(
+            Workspace.LoadedZone,
+            definition,
+            imported,
+            provider.OriginalSerializedName,
+            LinkAssetProviderSourceDisposition.AuthoredDetached);
+        LinkAssetPool assets = _targetBaseAssets.WithReplacedProvider(
+            provider, source, out LinkAssetProvider current);
+        Publish(_authoredAssets, _revision.LinkRequest.Roots, targetProviderAssets: assets);
+        state.TargetProvider = current;
+        state.SetCurrent(draft, _revision.Revision);
+        RebuildChangeSet();
+        return true;
+    }
+
     private bool IsCurrentProviderDraft(DraftState state)
     {
         if (state.TargetProvider is not { } expected ||
-            state.Entry.DependencyIdentity is not { } identity ||
+            state.Entry.ResolvedProvider is not { } resolved ||
             state.Entry.Definition is not { } imported ||
             imported.RuntimeAddress?.AssetPoolAddress is not { } address)
         {
@@ -1777,11 +1899,14 @@ public sealed class FastFileEditingSession : IDisposable
         LoadedXZone zone = Workspace.LoadedZone;
         return zone.Context.AssetPool.TryGetSlot(address, out var slot) &&
             slot is not null &&
-            slot.ActiveProvider.Id.Value == identity.ProviderId &&
+            slot.ActiveProvider.Id.Value == resolved.ProviderId &&
             slot.ActiveProvider.Owner == zone.Context.ZoneOwner &&
             ReferenceEquals(slot.ActiveProvider.Asset, imported) &&
             slot.Providers.Count(provider => !provider.IsReferencePlaceholder) == 1 &&
-            !_revision.LinkRequest.Roots.Any(root => root.Asset == expected.Key) &&
+            _revision.LinkRequest.Roots
+                .Where(root => root.Asset == expected.Key)
+                .Select(root => root.Intent)
+                .SequenceEqual(state.Entry.TargetRowIdentity is null ? [] : [LinkRootIntent.Owned]) &&
             _revision.LinkRequest.Assets.Providers
                 .Where(provider => provider.Key == expected.Key && !provider.IsReferencePlaceholder)
                 .Take(2)
@@ -1896,7 +2021,9 @@ public sealed class FastFileEditingSession : IDisposable
             DraftState state = RequireDraft(identity, adapter);
             if (!state.IsChanged)
                 return false;
-            if (_compiledAuxiliaryProviders.ContainsKey(identity))
+            if (state.TargetProvider is not null)
+                _ = PublishProviderDraftCore(state, candidate: null);
+            else if (_compiledAuxiliaryProviders.ContainsKey(identity))
                 RevertCompiledDefinitionCore(identity, state);
             else
                 PublishDefinitionCore(state, state.CloneSaved());
@@ -2303,7 +2430,7 @@ public sealed class FastFileEditingSession : IDisposable
             return;
         }
 
-        _drafts.Add(identity, new DraftState(entry, adapter!));
+        _drafts.Add(identity, new DraftState(entry, adapter!, entry.TargetProvider));
     }
 
     private IAssetAuthoringAdapter RequireHostedAdapter(
@@ -2400,6 +2527,8 @@ public sealed class FastFileEditingSession : IDisposable
         public void SetCurrent(object value, long revision)
         {
             _current = Adapter.CloneDraft(value);
+            if (_current is ShaderDraft shader)
+                _current = shader.WithNewRevision();
             if (IsChanged)
             {
                 _firstChangedRevision ??= revision;

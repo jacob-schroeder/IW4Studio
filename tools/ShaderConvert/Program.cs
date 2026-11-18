@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using IW4.Linker.Plans;
 using MapConverter.Game.IW3.PC.Shaders;
 using MapConverter.Game.IW3.PC.Techniques;
@@ -9,21 +10,22 @@ return await RunAsync(args);
 
 static async Task<int> RunAsync(string[] arguments)
 {
-    const int vertexCommandBudgetBytes = 3 * 1024;
+    const int vertexCommandBudgetBytes = MaterialShaderVertexReservation.Mw2VertexCommandBudgetBytes;
 
     if (arguments.Length == 0 || arguments is ["--help"] or ["-h"])
     {
         Console.WriteLine("""
-            ShaderConvert: Direct3D 9 shaders to PS3 RSX Cg programs
+            ShaderConvert: compile shader source or Direct3D 9 bytecode to PS3 RSX Cg programs
 
             --input PATH --output PATH
-            [--format bytecode|hlsl] [--stage vertex|pixel]
+            [--format bytecode|hlsl|cg] [--stage vertex|pixel]
             [--entry NAME] [--profile vs_3_0|ps_3_0] [--wine PATH] [--d3dcompiler PATH]
             [--technique PATH] [--pass ZERO_BASED_INDEX]
             [--signed-normal-input-mask UINT16] [--decoded-texcoord-input-mask UINT16]
 
             .hlsl and .fx inputs default to HLSL; other inputs default to bytecode.
-            Bytecode stage/model are inferred. HLSL requires --stage, defaults to
+            --format cg accepts Cg source in the SM3-compatible subset with native RSX bindings.
+            Bytecode stage/model are inferred. Source requires --stage, defaults to
             entry main and shader model 3.0, and resolves includes beside the source.
             Masks use the existing MapConverter RSX input-slot bits (decimal or 0x hex).
             Output is a native Cg blob; stdout lists its required parameter bindings.
@@ -52,17 +54,17 @@ static async Task<int> RunAsync(string[] arguments)
         string format = options.GetValueOrDefault("--format") ??
             (extension.Equals(".hlsl", StringComparison.OrdinalIgnoreCase) ||
              extension.Equals(".fx", StringComparison.OrdinalIgnoreCase) ? "hlsl" : "bytecode");
-        if (format is not ("hlsl" or "bytecode"))
-            throw new ArgumentException("--format must be hlsl or bytecode.");
+        if (format is not ("hlsl" or "bytecode" or "cg"))
+            throw new ArgumentException("--format must be cg, hlsl or bytecode.");
         Iw3ShaderStage? requestedStage = options.TryGetValue("--stage", out string? stageText)
             ? ParseStage(stageText) : null;
         ushort normalMask = ParseMask(options, "--signed-normal-input-mask");
         ushort texCoordMask = ParseMask(options, "--decoded-texcoord-input-mask");
         string programPath = input;
-        if (format == "hlsl")
+        if (format is "hlsl" or "cg")
         {
             if (requestedStage is null)
-                throw new ArgumentException("HLSL input requires --stage vertex or --stage pixel.");
+                throw new ArgumentException("Source input requires --stage vertex or --stage pixel.");
             string prefix = requestedStage == Iw3ShaderStage.Vertex ? "vs_" : "ps_";
             string profile = options.GetValueOrDefault("--profile") ?? prefix + "3_0";
             if (!profile.StartsWith(prefix, StringComparison.Ordinal) ||
@@ -73,13 +75,21 @@ static async Task<int> RunAsync(string[] arguments)
             scratch = Path.Combine(Path.GetTempPath(), "shaderconvert", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(scratch);
             programPath = Path.Combine(scratch, "source.cso");
-            await CompileHlslAsync(input, programPath, options.GetValueOrDefault("--entry") ?? "main",
+            string frontendSource = input;
+            if (format == "cg")
+            {
+                if (normalMask != 0 || texCoordMask != 0 || options.ContainsKey("--technique"))
+                    throw new ArgumentException("RSX Cg source already specifies its native inputs and bindings.");
+                frontendSource = Path.Combine(scratch, "cg-input.hlsl");
+                await File.WriteAllTextAsync(frontendSource, CgCompatibilityUnit(input, requestedStage.Value));
+            }
+            await CompileHlslAsync(frontendSource, programPath, options.GetValueOrDefault("--entry") ?? "main",
                 profile, options.GetValueOrDefault("--wine"), options.GetValueOrDefault("--d3dcompiler"));
         }
         else if (options.ContainsKey("--entry") || options.ContainsKey("--profile") ||
                  options.ContainsKey("--wine") || options.ContainsKey("--d3dcompiler"))
         {
-            throw new ArgumentException("--entry, --profile, --wine and --d3dcompiler apply only to HLSL input.");
+            throw new ArgumentException("--entry, --profile, --wine and --d3dcompiler require source input.");
         }
 
         Iw3ShaderSource source = Iw3PcShaderCompiler.ReadSource(programPath) with
@@ -108,7 +118,8 @@ static async Task<int> RunAsync(string[] arguments)
             throw new ArgumentException("--pass requires --technique.");
         }
 
-        Iw3ShaderCompilation compiled = new Iw3PcShaderCompiler().Compile(source, programPath, normalMask, texCoordMask);
+        Iw3ShaderCompilation compiled = new Iw3PcShaderCompiler().Compile(source, programPath, normalMask, texCoordMask,
+            nativeRsxSource: format == "cg");
         byte[] data = compiled.Asset.Data ?? throw new InvalidDataException("The compiler returned no Cg program.");
         MaterialShaderVertexCommandMetrics? vertexMetrics = source.Stage == Iw3ShaderStage.Vertex
             ? MaterialShaderVertexReservation.CalculateCommandMetrics(data, $"Converted shader '{input}'")
@@ -179,6 +190,37 @@ static Dictionary<string, string> ParseOptions(string[] arguments)
             throw new ArgumentException($"{name} was specified more than once.");
     }
     return options;
+}
+
+// The existing D3D frontend accepts the Cg/SM3 intersection. Map the Sony/NVIDIA
+// binding semantics onto the D3D declarations consumed by the MojoShader bridge.
+static string CgCompatibilityUnit(string input, Iw3ShaderStage stage)
+{
+    var text = new StringBuilder();
+    text.AppendLine("#define IW4_SHADERCONVERT_SM3 1");
+    if (stage == Iw3ShaderStage.Vertex)
+    {
+        text.AppendLine("#pragma pack_matrix(row_major)");
+        string[] semantics = ["POSITION0", "BLENDWEIGHT0", "NORMAL0", "COLOR0", "COLOR1", "FOG0"];
+        for (int i = 0; i < semantics.Length; i++)
+            text.AppendLine($"#define ATTR{i} {semantics[i]}");
+        for (int i = 0; i < 8; i++)
+            text.AppendLine($"#define ATTR{i + 8} TEXCOORD{i}");
+    }
+    else
+    {
+        text.AppendLine("#define WPOS VPOS");
+    }
+    for (int i = 0; i < 256; i++)
+        text.AppendLine($"#define C{i} register(c{i})");
+    for (int i = 0; i < 16; i++)
+        text.AppendLine($"#define TEXUNIT{i} register(s{i})");
+
+    string include = (OperatingSystem.IsWindows() ? input : "Z:" + input).Replace('\\', '/');
+    if (include.IndexOfAny(['"', '\r', '\n']) >= 0)
+        throw new ArgumentException("The Cg source path cannot be represented by a compiler include.");
+    text.AppendLine($"#include \"{include}\"");
+    return text.ToString();
 }
 
 static string Required(Dictionary<string, string> options, string name) =>

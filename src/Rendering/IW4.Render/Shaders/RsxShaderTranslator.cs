@@ -231,7 +231,7 @@ internal static class RsxShaderTranslator
         blocker.Contains("ambiguous", StringComparison.Ordinal) ||
         blocker.Contains("conflicting", StringComparison.Ordinal);
 
-    private static RsxFragmentProgramControl ReadFragmentProgramControl(
+    internal static RsxFragmentProgramControl ReadFragmentProgramControl(
         byte[] data)
     {
         ArgumentNullException.ThrowIfNull(data);
@@ -282,7 +282,7 @@ internal static class RsxShaderTranslator
             (uint)flags);
     }
 
-    private static ImmutableArray<RsxFragmentColorExport>
+    internal static ImmutableArray<RsxFragmentColorExport>
         ReadFragmentColorExports(
         IReadOnlyList<RsxFragmentInstruction> instructions,
         RsxFragmentProgramControl fragmentProgramControl)
@@ -941,7 +941,7 @@ internal static class RsxShaderTranslator
         }
     }
 
-    private static bool TryReadRuntimeInfo(byte[] data, out RuntimeInfo info)
+    internal static bool TryReadRuntimeInfo(byte[] data, out RuntimeInfo info)
     {
         info = default;
         if (data.Length < 0x20)
@@ -963,7 +963,7 @@ internal static class RsxShaderTranslator
         return true;
     }
 
-    private static bool TryReadPatchEntry(byte[] data, RuntimeInfo info, ushort dest, out PatchEntry entry)
+    internal static bool TryReadPatchEntry(byte[] data, RuntimeInfo info, ushort dest, out PatchEntry entry)
     {
         entry = default;
         if (dest >= info.ParameterCount)
@@ -978,10 +978,10 @@ internal static class RsxShaderTranslator
             entry = new PatchEntry(defaultConstantOffset, []);
             return true;
         }
-        if (patchListOffset + 4 > data.Length)
+        if ((ulong)patchListOffset + 4 > (ulong)data.Length)
             return false;
         uint count = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)patchListOffset, 4));
-        if (count > ushort.MaxValue || patchListOffset + 4 + count * 4UL > (ulong)data.Length)
+        if (count > ushort.MaxValue || (ulong)patchListOffset + 4 + count * 4UL > (ulong)data.Length)
             return false;
         var offsets = new ushort[(int)count];
         for (int index = 0; index < offsets.Length; index++)

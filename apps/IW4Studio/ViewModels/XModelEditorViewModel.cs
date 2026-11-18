@@ -1305,6 +1305,16 @@ public sealed class XModelEditorViewModel
                     () => _workingDraft.PhysPreset?.RuntimeAddress?.AssetPoolAddress is not null)
             });
             collisionRows.Add(new InspectorAssetReferencePropertyRowViewModel("PhysCollmap", "xmodel.physCollmap", XAssetType.PhysCollmap, _workingDraft.PhysCollmap?.Name, IsEditable ? name => { if (name is null) _workingDraft.SetPhysCollmap(null); else if (_session.TryResolveWorkspaceDefinition<IW4.Game.Assets.Physics.PhysCollmapAsset>(name, out var asset)) _workingDraft.SetPhysCollmap(asset); else throw new InvalidOperationException("Selected PhysCollmap is not a live typed workspace definition."); RefreshCandidateState(); } : null, RequestAssetReferenceSelection));
+            if (_workingDraft.PhysCollmap is { } collmap)
+            {
+                for (int index = 0; index < collmap.Geoms.Count; index++)
+                {
+                    PhysGeomInfo geom = collmap.Geoms[index];
+                    collisionRows.Add(ReadOnly(
+                        $"Physics geometry {index}", $"xmodel.physCollmap.geoms[{index}]",
+                        $"{geom.EffectiveShape} (raw type {geom.Type})"));
+                }
+            }
             sections.Add(new InspectorSectionViewModel("Collision", collisionRows));
         }
 
