@@ -27,7 +27,7 @@ public enum RawFileDisplayEncoding
 /// moving logical text or bytes to/from the detached session draft; it
 /// deliberately performs no filesystem write or runtime mutation.
 /// </summary>
-public sealed class RawFileEditorViewModel
+public class RawFileEditorViewModel
     : ObservableObject,
       IAssetEditorProperties,
       IAssetEditorDiagnostics,
@@ -303,7 +303,7 @@ public sealed class RawFileEditorViewModel
     public string StatusMessage
     {
         get => _statusMessage;
-        private set => SetProperty(ref _statusMessage, value);
+        protected set => SetProperty(ref _statusMessage, value);
     }
 
     public IReadOnlyList<AssetValidationIssue> Diagnostics
@@ -778,9 +778,12 @@ public sealed class RawFileEditorViewModel
         OnPropertyChanged(nameof(CanAnalyzeGsc));
     }
 
+    public string BaselineSource => _draftPayloadPresentation;
+
     private void SetDraftPayloadPresentation(string value)
     {
         _draftPayloadPresentation = value;
+        OnPropertyChanged(nameof(BaselineSource));
         if (!string.Equals(PayloadInput, value, StringComparison.Ordinal))
         {
             PayloadInput = value;
@@ -797,7 +800,7 @@ public sealed class RawFileEditorViewModel
         OnPropertyChanged(nameof(CanApply));
     }
 
-    public void Dispose()
+    public virtual void Dispose()
     {
         if (_disposed)
             return;

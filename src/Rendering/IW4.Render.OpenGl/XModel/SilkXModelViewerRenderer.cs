@@ -328,7 +328,8 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         float materialTimeSeconds,
         bool studioEnvironmentEnabled,
         bool showWireframe,
-        bool showCollision = false)
+        bool showCollision = false,
+        bool useCheckerboard = true)
     {
         ThrowIfDisposed();
         if (width <= 0 || height <= 0)
@@ -346,8 +347,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 camera,
                 aspect);
         ApplyViewerReflectionEnvironment(studioEnvironmentEnabled);
-        EstablishFrameState(framebuffer, width, height);
-        DrawCheckerboard();
+        EstablishFrameState(framebuffer, width, height, useCheckerboard);
+        if (useCheckerboard)
+            DrawCheckerboard();
         if (showWireframe)
         {
             DrawWireframe(_wireframe, CreateHostViewProjection(camera, aspect), 0.55f, 0.88f, 0.22f);
@@ -1266,7 +1268,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         }
     }
 
-    private void EstablishFrameState(int framebuffer, int width, int height)
+    private void EstablishFrameState(int framebuffer, int width, int height, bool useCheckerboard)
     {
         _state.InvalidateAll();
         _state.EstablishKnownTextureBaseline(TextureUnitCount);
@@ -1277,6 +1279,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             ? DrawBufferMode.Back
             : DrawBufferMode.ColorAttachment0);
         _state.Viewport(0, 0, width, height);
+        _state.SetEnabled(EnableCap.FramebufferSrgb, false);
         _state.SetEnabled(EnableCap.ScissorTest, false);
         _state.SetEnabled(EnableCap.TextureCubeMapSeamless, true);
         _state.ColorMask(true, true, true, true);
@@ -1287,7 +1290,10 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         _gl.DepthRange(
             OpenGlRsxClipSpaceLowering.SceneDepthRange.Minimum,
             OpenGlRsxClipSpaceLowering.SceneDepthRange.Maximum);
-        _gl.ClearColor(0.52f, 0.52f, 0.52f, 1f);
+        if (useCheckerboard)
+            _gl.ClearColor(0.52f, 0.52f, 0.52f, 1f);
+        else
+            _gl.ClearColor(0.20f, 0.21f, 0.23f, 1f);
         _gl.ClearDepth(1d);
         _gl.Clear(
             ClearBufferMask.ColorBufferBit |

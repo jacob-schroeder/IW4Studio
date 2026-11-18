@@ -11,8 +11,8 @@
              mc:Ignorable="d"
              d:DesignWidth="900"
              d:DesignHeight="640">
-  <Grid RowDefinitions="Auto,10,*">
-    <Border Grid.Row="0"
+  <Grid RowDefinitions="Auto,*">
+    <Border x:Name="EditorToolbar" Grid.Row="0" Margin="0,0,0,10"
             Padding="14,10"
             CornerRadius="8"
             Background="{DynamicResource StudioSurfaceBrush}"
@@ -85,7 +85,7 @@
       </Grid>
     </Border>
 
-    <Border Grid.Row="2"
+    <Border x:Name="EditorBody" Grid.Row="1"
             CornerRadius="8"
             ClipToBounds="True"
             Background="{DynamicResource StudioInputBrush}"

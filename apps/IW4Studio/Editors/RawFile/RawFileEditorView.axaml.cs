@@ -38,6 +38,23 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
         DataContextChanged += RawFileEditorView_DataContextChanged;
     }
 
+    public bool SourceOnly
+    {
+        get => this.FindControl<Border>("EditorToolbar")?.IsVisible == false;
+        set
+        {
+            if (this.FindControl<Border>("EditorToolbar") is { } toolbar)
+                toolbar.IsVisible = !value;
+            if (this.FindControl<Border>("EditorBody") is { } body)
+            {
+                body.CornerRadius = value ? new CornerRadius(0) : new CornerRadius(8);
+                body.BorderThickness = value ? new Thickness(0) : new Thickness(1);
+            }
+            if (_contentEditor is not null)
+                _contentEditor.MinHeight = value ? 0 : 360;
+        }
+    }
+
     private async void ImportPayloadButton_Click(
         object? sender,
         RoutedEventArgs e)

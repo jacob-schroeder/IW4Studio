@@ -321,7 +321,7 @@ internal sealed class D3dbspAssetAdapter : IAssetAuthoringAdapter
     }
 }
 
-public sealed class AssetEditorSession : AssetEditorSurface
+public sealed partial class AssetEditorSession : AssetEditorSurface
 {
     private readonly FastFileEditingSession _session;
     private readonly IAssetAuthoringAdapter _adapter;

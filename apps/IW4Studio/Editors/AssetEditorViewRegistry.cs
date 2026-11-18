@@ -80,14 +80,16 @@ public sealed class AssetEditorViewRegistry
         IGscUsagesPresenter? gscUsagesPresenter = null,
         AssetReferencePickerService? assetReferencePicker = null,
         FastFileWorkspace? workspace = null,
-        Action<PhysPresetAsset>? openPhysPreset = null)
+        Action<PhysPresetAsset>? openPhysPreset = null,
+        Action<XAssetType, string>? openCharacterReference = null)
     {
         var registry = new AssetEditorViewRegistry();
         registry.Register(new RawFileViewFactory(
             new GscAnalyzer(),
             gscWorkspace,
             gscSourceNavigator,
-            gscUsagesPresenter));
+            gscUsagesPresenter,
+            openCharacterReference));
         registry.Register(new SoundViewFactory(workspace));
         registry.Register(new StringTableViewFactory());
         registry.Register(new StructuredDataDefViewFactory());

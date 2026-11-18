@@ -1,3 +1,4 @@
+using IW4.Game.Zone;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
 using IW4.Studio.Documents;
@@ -203,7 +204,9 @@ public sealed class AssetPoolNavigatorViewModel : ObservableObject, IDisposable
         IEnumerable<AssetPoolSlotSnapshot> rows)
     {
         AssetPoolNavigatorGroup[] groups = rows
-            .GroupBy(row => row.AssetType)
+            .GroupBy(row => row.AssetType == XAssetType.RawFile &&
+                IW4.Gsc.Character.CharacterScriptProjection.IsCharacterPath(row.NormalizedName)
+                    ? XAssetType.Character : row.AssetType)
             .OrderBy(group => group.Key.ToString(), StringComparer.OrdinalIgnoreCase)
             .Select(group => new AssetPoolNavigatorGroup(
                 group.Key,

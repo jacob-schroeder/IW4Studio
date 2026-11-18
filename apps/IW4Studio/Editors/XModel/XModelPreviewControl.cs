@@ -43,6 +43,12 @@ public sealed class XModelPreviewControl : OpenGlControlBase
     public static readonly StyledProperty<bool> ShowCollisionProperty =
         AvaloniaProperty.Register<XModelPreviewControl, bool>(nameof(ShowCollision));
 
+    public static readonly StyledProperty<bool> UseCharacterCameraProperty =
+        AvaloniaProperty.Register<XModelPreviewControl, bool>(nameof(UseCharacterCamera));
+
+    public static readonly StyledProperty<bool> UseCheckerboardProperty =
+        AvaloniaProperty.Register<XModelPreviewControl, bool>(nameof(UseCheckerboard), true);
+
     public static readonly StyledProperty<bool> UseStudioEnvironmentProperty =
         AvaloniaProperty.Register<XModelPreviewControl, bool>(
             nameof(UseStudioEnvironment),
@@ -143,6 +149,18 @@ public sealed class XModelPreviewControl : OpenGlControlBase
         set => SetValue(ShowCollisionProperty, value);
     }
 
+    public bool UseCharacterCamera
+    {
+        get => GetValue(UseCharacterCameraProperty);
+        set => SetValue(UseCharacterCameraProperty, value);
+    }
+
+    public bool UseCheckerboard
+    {
+        get => GetValue(UseCheckerboardProperty);
+        set => SetValue(UseCheckerboardProperty, value);
+    }
+
     public bool UseStudioEnvironment
     {
         get => GetValue(UseStudioEnvironmentProperty);
@@ -177,9 +195,9 @@ public sealed class XModelPreviewControl : OpenGlControlBase
 
     public void Fit()
     {
-        _yaw = MathF.PI * 0.75f;
-        _pitch = MathF.PI * 0.18f;
-        _zoom = 1f;
+        _yaw = MathF.PI * (UseCharacterCamera ? 0.18f : 0.75f);
+        _pitch = MathF.PI * (UseCharacterCamera ? 0.035f : 0.18f);
+        _zoom = UseCharacterCamera ? 1.16f : 1f;
         _panOffset = Vector3.Zero;
         RefreshProjectedBoneTags();
         RequestNextFrameRendering();
@@ -322,7 +340,8 @@ public sealed class XModelPreviewControl : OpenGlControlBase
                 materialTimeSeconds: GetMaterialAnimationTimeSeconds(),
                 studioEnvironmentEnabled: UseStudioEnvironment,
                 showWireframe: ShowWireframe,
-                showCollision: ShowCollision);
+                showCollision: ShowCollision,
+                useCheckerboard: UseCheckerboard);
             if (!ShowWireframe &&
                 _uploadResult is not null &&
                 _rendererFailure is not null)
@@ -360,7 +379,12 @@ public sealed class XModelPreviewControl : OpenGlControlBase
             Fit();
             UpdateMaterialAnimationClock();
         }
+        else if (change.Property == UseCharacterCameraProperty)
+        {
+            Fit();
+        }
         else if (change.Property == ShowWireframeProperty || change.Property == ShowCollisionProperty ||
+                 change.Property == UseCheckerboardProperty ||
                  change.Property == UseStudioEnvironmentProperty)
         {
             RequestNextFrameRendering();

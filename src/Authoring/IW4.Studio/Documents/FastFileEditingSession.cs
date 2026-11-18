@@ -24,7 +24,7 @@ namespace IW4.Studio.Documents;
 /// state. Mutable schema definitions are accepted only as transient provider
 /// sources and are frozen before a revision is published.
 /// </summary>
-public sealed class FastFileEditingSession : IDisposable
+public sealed partial class FastFileEditingSession : IDisposable
 {
     private readonly object _gate = new();
     private LinkAssetPool _targetBaseAssets;
@@ -95,7 +95,9 @@ public sealed class FastFileEditingSession : IDisposable
 
     internal WorkspaceAssetCatalogEntry AddAsset(
         IW4.Game.Assets.BaseAsset definition,
-        IAssetAuthoringAdapter adapter)
+        IAssetAuthoringAdapter adapter,
+        IReadOnlyList<BaseAsset>? generatedProviders = null,
+        bool allowDependencyOverride = false)
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(adapter);
@@ -121,11 +123,19 @@ public sealed class FastFileEditingSession : IDisposable
             ThrowIfDisposedCore();
             string? nameError = ValidateNewAssetName(
                 detachedDefinition.SerializedAssetType,
-                detachedDefinition.SerializedAssetName);
+                detachedDefinition.SerializedAssetName, allowDependencyOverride);
             if (nameError is not null)
                 throw new ArgumentException(nameError, nameof(definition));
             IW4.Linker.Contracts.AssetKey key = IW4.Linker.Contracts.AssetKey.FromDefinition(detachedDefinition);
-            var source = new LinkAssetProviderSource(detachedDefinition).AsAuthoredDetached();
+            var auxiliary = (generatedProviders ?? []).ToDictionary(AssetKey.FromDefinition);
+            foreach (BaseAsset provider in auxiliary.Values)
+            {
+                string? error = ValidateNewAssetName(provider.SerializedAssetType, provider.SerializedAssetName);
+                if (error is not null)
+                    throw new InvalidDataException(error);
+            }
+            BaseAsset[] definitions = [detachedDefinition, .. auxiliary.Values];
+            AssetKey[] keys = definitions.Select(AssetKey.FromDefinition).ToArray();
             LinkRoot[] roots = [.. _revision.LinkRequest.Roots, new LinkRoot(
                 $"authored:{Guid.NewGuid():N}",
                 detachedDefinition.SerializedAssetType,
@@ -134,12 +144,15 @@ public sealed class FastFileEditingSession : IDisposable
                 detachedDefinition.SerializedAssetName,
                 opaqueHeader: null)];
             LinkAssetPool authoredAssets = _authoredAssets
-                .WithoutProviders([key])
-                .WithHighestPrecedenceProviders([source]);
-            Publish(authoredAssets, roots, publishedProviderKeys: [key]);
+                .WithoutProviders(keys)
+                .WithHighestPrecedenceProviders(definitions.Select(asset =>
+                    new LinkAssetProviderSource(asset).AsAuthoredDetached()));
+            Publish(authoredAssets, roots, publishedProviderKeys: keys);
             entry = Document.AppendDefinition(detachedDefinition);
             _drafts.Add(entry.TargetRowIdentity!.Value, new DraftState(entry, adapter));
             _addedRows.Add(entry.TargetRowIdentity.Value, _revision.Revision);
+            if (auxiliary.Count != 0)
+                _compiledAuxiliaryProviders.Add(entry.TargetRowIdentity.Value, auxiliary);
             RebuildChangeSet();
         }
         NotifyTargetRowsChanged();
@@ -619,7 +632,10 @@ public sealed class FastFileEditingSession : IDisposable
         HasPendingHeaderPropertiesChange ? 1 : 0;
 
     /// <summary>Validates one new hosted-definition name against live rows and the imported pool.</summary>
-    public string? ValidateNewAssetName(XAssetType assetType, string? name)
+    public string? ValidateNewAssetName(XAssetType assetType, string? name) =>
+        ValidateNewAssetName(assetType, name, allowDependencyOverride: false);
+
+    internal string? ValidateNewAssetName(XAssetType assetType, string? name, bool allowDependencyOverride)
     {
         lock (_gate)
         {
@@ -648,7 +664,7 @@ public sealed class FastFileEditingSession : IDisposable
                     provider.Key.NormalizedName,
                     normalized,
                     StringComparison.Ordinal));
-            bool dependencyCollision = Workspace.AssetCatalog.DependencyEntries
+            bool dependencyCollision = !allowDependencyOverride && Workspace.AssetCatalog.DependencyEntries
                 .Any(entry =>
                     entry.ProviderZone?.IsTarget != true &&
                     CanonicalAssetFamily.FromSerializedType(entry.AssetType) == family &&

@@ -339,7 +339,9 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
         IEnumerable<FastFileAssetNavigatorRow> rows)
     {
         FastFileAssetNavigatorGroup[] groups = rows
-            .GroupBy(row => row.AssetType)
+            .GroupBy(row => row.AssetType == XAssetType.RawFile &&
+                IW4.Gsc.Character.CharacterScriptProjection.IsCharacterPath(row.NormalizedName)
+                    ? XAssetType.Character : row.AssetType)
             .OrderBy(group => group.Key.ToString(), StringComparer.OrdinalIgnoreCase)
             .Select(group => new FastFileAssetNavigatorGroup(
                 group.Key,

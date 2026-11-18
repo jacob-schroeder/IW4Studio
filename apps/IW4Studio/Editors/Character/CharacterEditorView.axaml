@@ -1,0 +1,538 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:character="using:IW4.Studio.Desktop.Editors.Character"
+             xmlns:raw="using:IW4.Studio.Desktop.Editors.RawFile"
+             xmlns:vm="using:IW4.Studio.Desktop.ViewModels"
+             xmlns:xmodel="using:IW4.Studio.Desktop.Editors.XModel"
+             x:Class="IW4.Studio.Desktop.Editors.Character.CharacterEditorView"
+             x:DataType="vm:CharacterEditorViewModel">
+  <UserControl.Styles>
+    <Style Selector="Border.characterPanel">
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style Selector="Border.characterHeading">
+      <Setter Property="Padding" Value="13,10" />
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceRaisedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+    <Style Selector="Border.characterCard">
+      <Setter Property="Padding" Value="10" />
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceRaisedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+    </Style>
+    <Style Selector="Border.characterCard.current">
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.characterMuted">
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="TextBlock.characterLabel">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.characterSmall">
+      <Setter Property="MinHeight" Value="29" />
+      <Setter Property="Padding" Value="9,4" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="TabStrip.characterTabs > TabStripItem">
+      <Setter Property="Padding" Value="12,5" />
+      <Setter Property="MinHeight" Value="31" />
+      <Setter Property="Margin" Value="0,0,3,0" />
+      <Setter Property="CornerRadius" Value="5" />
+    </Style>
+    <Style Selector="Button.characterNode">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceRaisedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+      <Setter Property="Padding" Value="14,10" />
+    </Style>
+    <Style Selector="TabStrip.characterTabs > TabStripItem:selected, Button.characterMode.current, Button.characterNode.current">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioAccentBrush}" />
+    </Style>
+    <Style Selector="AutoCompleteBox.characterField, TextBox.characterField">
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="TextBox.characterValue">
+      <Setter Property="IsReadOnly" Value="True" />
+      <Setter Property="Padding" Value="7,4" />
+    </Style>
+    <Style Selector="ListBox.characterBodies">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.characterBodies ListBoxItem">
+      <Setter Property="Height" Value="37" />
+      <Setter Property="Padding" Value="9,4" />
+      <Setter Property="Margin" Value="0,0,5,0" />
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceRaisedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="MaxWidth" Value="230" />
+    </Style>
+    <Style Selector="ListBox.characterBodies ListBoxItem:selected">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioAccentBrush}" />
+    </Style>
+    <Style Selector="Path.characterEdge">
+      <Setter Property="Stroke" Value="{DynamicResource StudioBorderStrongBrush}" />
+      <Setter Property="StrokeThickness" Value="2" />
+    </Style>
+    <Style Selector="Path.characterEdge.current">
+      <Setter Property="Stroke" Value="{DynamicResource StudioAccentBrush}" />
+    </Style>
+    <Style Selector="Border.characterChange.removed">
+      <Setter Property="Background" Value="{DynamicResource StudioErrorSurfaceBrush}" />
+    </Style>
+    <Style Selector="Border.characterChange.added">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+    </Style>
+    <Style Selector="Border.characterChange.removed TextBlock.changeMark">
+      <Setter Property="Foreground" Value="{DynamicResource StudioErrorBrush}" />
+    </Style>
+    <Style Selector="Border.characterChange.added TextBlock.changeMark">
+      <Setter Property="Foreground" Value="{DynamicResource StudioSuccessBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,8,*">
+    <Border Classes="characterPanel">
+      <Grid RowDefinitions="Auto,Auto">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="12,10,12,5">
+          <icons:MaterialIcon Kind="CubeOutline" Width="23" Height="23"
+                              VerticalAlignment="Center" Foreground="{DynamicResource StudioAccentBrush}" />
+          <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+            <TextBlock Text="{Binding CharacterName}" FontWeight="SemiBold" FontSize="18"
+                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding OriginalName}" />
+            <TextBlock Classes="characterMuted" Text="{Binding StatusMessage}"
+                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusMessage}" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <Button Classes="primary characterSmall" Content="Override in this fastfile"
+                    IsVisible="{Binding CanOverrideCharacter}" Click="OverrideCharacter_Click" />
+            <Button Classes="ghost characterSmall" IsEnabled="{Binding CanRevert}" IsVisible="{Binding IsEditable}"
+                    Click="Revert_Click"
+                    ToolTip.Tip="Revert Character draft">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <icons:MaterialIcon Kind="Undo" Width="15" Height="15" />
+                <TextBlock Text="Revert" />
+              </StackPanel>
+            </Button>
+            <Button Classes="primary characterSmall" IsEnabled="{Binding CanApply}" IsVisible="{Binding IsEditable}"
+                    Click="Apply_Click"
+                    ToolTip.Tip="Apply the draft to the asset. Use Save As to write the fastfile.">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <icons:MaterialIcon Kind="Check" Width="15" Height="15" />
+                <TextBlock Text="Apply" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Grid>
+        <TabStrip Grid.Row="1" x:Name="CharacterTabs" Classes="characterTabs" SelectionChanged="Tabs_SelectionChanged"
+                  Margin="9,0,9,6" SelectedIndex="0" AutomationProperties.Name="Character editor tabs">
+          <TabStripItem>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <icons:MaterialIcon Kind="LayersOutline" Width="15" Height="15" />
+              <TextBlock Text="Assembly" />
+            </StackPanel>
+          </TabStripItem>
+          <TabStripItem>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <icons:MaterialIcon Kind="FileTree" Width="15" Height="15" />
+              <TextBlock Text="References" />
+            </StackPanel>
+          </TabStripItem>
+          <TabStripItem>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <icons:MaterialIcon Kind="FileCodeOutline" Width="15" Height="15" />
+              <TextBlock Text="Source" />
+            </StackPanel>
+          </TabStripItem>
+        </TabStrip>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="2" x:Name="AssemblyPage" ColumnDefinitions="2*,*" ColumnSpacing="8">
+      <Grid RowDefinitions="*,8,Auto">
+        <Border Classes="characterPanel" Background="{DynamicResource StudioSurfaceSunkenBrush}">
+          <Grid>
+            <xmodel:XModelPreviewControl x:Name="AssemblyPreview" UseCharacterCamera="True" UseCheckerboard="False"
+                                        ToolTip.Tip="Drag to orbit, right-drag to pan, scroll to zoom" />
+            <TextBlock x:Name="AssemblyPreviewMessage" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="235"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" Classes="characterMuted"
+                       IsHitTestVisible="False" />
+            <Grid ColumnDefinitions="*,Auto" Margin="9" VerticalAlignment="Top" ColumnSpacing="5">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <Button Classes="characterSmall" Click="FitPreview_Click" ToolTip.Tip="Reset orbit, pan and zoom">
+                  <StackPanel Orientation="Horizontal" Spacing="5">
+                    <icons:MaterialIcon Kind="FitToPageOutline" Width="14" Height="14" />
+                    <TextBlock Text="Fit" />
+                  </StackPanel>
+                </Button>
+                <ComboBox x:Name="ShadingMode" SelectedIndex="0" SelectionChanged="Shading_SelectionChanged"
+                          MinHeight="29" FontSize="11" Padding="7,3" AutomationProperties.Name="Preview shading">
+                  <ComboBoxItem Content="Lit" />
+                  <ComboBoxItem Content="Wireframe" />
+                </ComboBox>
+              </StackPanel>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3">
+                <Button x:Name="AssemblyThirdPerson" Classes="characterSmall characterMode"
+                        Content="Third person" Click="ThirdPerson_Click" />
+                <Button x:Name="AssemblyHands" Classes="characterSmall characterMode"
+                        Content="View hands" Click="ViewHands_Click" />
+              </StackPanel>
+            </Grid>
+            <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="9" Padding="6,4"
+                    Background="{DynamicResource StudioSurfaceBrush}" CornerRadius="4" IsHitTestVisible="False">
+              <TextBlock x:Name="AssemblyPreviewHint" Classes="characterMuted" />
+            </Border>
+          </Grid>
+        </Border>
+        <Border Grid.Row="2" Classes="characterPanel">
+          <Grid RowDefinitions="Auto,Auto">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="10,7,10,3">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <icons:MaterialIcon Kind="CubeOutline" Width="15" Height="15"
+                                    Foreground="{DynamicResource StudioAccentBrush}" />
+                <TextBlock Text="Body models" Classes="characterLabel" />
+              </StackPanel>
+              <Button Grid.Column="1" Classes="characterSmall" Content="+  Import body GLB…"
+                      IsEnabled="{Binding CanEditBody}" Click="ImportBody_Click" />
+            </Grid>
+            <ListBox Grid.Row="1" x:Name="BodyModels" Classes="characterBodies" Margin="9,3,9,7"
+                     SelectionChanged="BodyModels_SelectionChanged" IsEnabled="{Binding CanEditBody}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                     AutomationProperties.Name="Available body models">
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <VirtualizingStackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <icons:MaterialIcon Kind="CubeOutline" Width="14" Height="14" />
+                    <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" FontSize="11" ToolTip.Tip="{Binding}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <Border Grid.Column="1" Classes="characterPanel">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <Border Classes="characterHeading">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <icons:MaterialIcon Kind="LayersOutline" Width="17" Height="17"
+                                  Foreground="{DynamicResource StudioAccentBrush}" />
+              <TextBlock Text="Character assembly" Classes="characterLabel" FontSize="13" />
+            </StackPanel>
+          </Border>
+          <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="7" Margin="9">
+              <Border Classes="characterCard current">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="Body model" Classes="characterLabel" />
+                  <AutoCompleteBox x:Name="BodyField" Classes="characterField"
+                                   ItemsSource="{Binding BodyOptions}" Text="{Binding BodyModel, Mode=OneWay}"
+                                   IsVisible="{Binding CanEditBody}" PlaceholderText="Choose an XModel"
+                                   MinimumPrefixLength="0" FilterMode="Contains"
+                                   DropDownClosed="ReferenceValue_DropDownClosed" LostFocus="ReferenceValue_LostFocus"
+                                   AutomationProperties.Name="Body model" />
+                  <TextBox Classes="characterField characterValue" Text="{Binding BodyModel, Mode=OneWay}"
+                           IsVisible="{Binding !CanEditBody}" AutomationProperties.Name="Body model" />
+                  <Button Content="Open XModel" Classes="characterSmall ghost" Click="OpenBody_Click"
+                          HorizontalAlignment="Left" />
+                </StackPanel>
+              </Border>
+              <Border Classes="characterCard">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="Head alias" Classes="characterLabel" />
+                  <AutoCompleteBox x:Name="HeadField" Classes="characterField"
+                                   ItemsSource="{Binding HeadOptions}" Text="{Binding HeadAlias, Mode=OneWay}"
+                                   IsVisible="{Binding CanEditHead}" PlaceholderText="Choose a model alias"
+                                   MinimumPrefixLength="0" FilterMode="Contains"
+                                   DropDownClosed="ReferenceValue_DropDownClosed" LostFocus="ReferenceValue_LostFocus"
+                                   AutomationProperties.Name="Head alias" />
+                  <TextBox Classes="characterField characterValue" Text="{Binding HeadAlias, Mode=OneWay}"
+                           IsVisible="{Binding !CanEditHead}" AutomationProperties.Name="Head alias" />
+                </StackPanel>
+              </Border>
+              <Border Classes="characterCard">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="View hands" Classes="characterLabel" />
+                  <AutoCompleteBox x:Name="HandsField" Classes="characterField"
+                                   ItemsSource="{Binding HandsOptions}" Text="{Binding ViewHands, Mode=OneWay}"
+                                   IsVisible="{Binding CanEditHands}" PlaceholderText="Choose an XModel"
+                                   MinimumPrefixLength="0" FilterMode="Contains"
+                                   DropDownClosed="ReferenceValue_DropDownClosed" LostFocus="ReferenceValue_LostFocus"
+                                   AutomationProperties.Name="View hands" />
+                  <TextBox Classes="characterField characterValue" Text="{Binding ViewHands, Mode=OneWay}"
+                           IsVisible="{Binding !CanEditHands}" AutomationProperties.Name="View hands" />
+                  <Button Classes="characterSmall ghost" Content="Import hands GLB…" HorizontalAlignment="Left"
+                          IsEnabled="{Binding CanEditHands}" Click="ImportHands_Click" />
+                </StackPanel>
+              </Border>
+              <Border Classes="characterCard">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="Voice" Classes="characterLabel" />
+                  <TextBox Text="{Binding Voice, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Classes="characterField"
+                           IsReadOnly="{Binding !CanEditVoice}" AutomationProperties.Name="Voice" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+          <Button Grid.Row="2" Margin="9" HorizontalAlignment="Stretch" Classes="characterSmall" Click="OpenSource_Click">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <icons:MaterialIcon Kind="FileCodeOutline" Width="15" Height="15" />
+              <TextBlock Text="Open character script" />
+            </StackPanel>
+          </Button>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <Grid Grid.Row="2" x:Name="ReferencesPage" IsVisible="False" ColumnDefinitions="2*,*" ColumnSpacing="8">
+      <Border x:Name="ReferenceGraphSurface" Classes="characterPanel"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              PointerPressed="Graph_PointerPressed" PointerMoved="Graph_PointerMoved"
+              PointerReleased="Graph_PointerReleased" PointerCaptureLost="Graph_PointerCaptureLost">
+        <Grid>
+          <character:CharacterGraphGrid IsHitTestVisible="False" />
+          <Viewbox x:Name="ReferenceGraph" Margin="12,43,12,13" StretchDirection="DownOnly" Stretch="Uniform">
+            <Canvas Width="660" Height="364">
+              <Path x:Name="BodyEdge" Classes="characterEdge" Data="M 300,176 C 361,176 347,73 414,73" />
+              <Path x:Name="HeadEdge" Classes="characterEdge" Data="M 300,206 C 355,206 358,182 414,182" />
+              <Path x:Name="HandsEdge" Classes="characterEdge" Data="M 300,236 C 360,236 354,291 414,291" />
+              <Border Canvas.Left="16" Canvas.Top="117" Width="284" Height="142" Classes="characterCard">
+                <Grid RowDefinitions="Auto,Auto,*,*,*" ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                  <icons:MaterialIcon Grid.RowSpan="2" Kind="FileCodeOutline" Width="25" Height="25"
+                                      Foreground="{DynamicResource StudioAccentBrush}" />
+                  <TextBlock Grid.Column="1" Text="Character script" Classes="characterMuted" />
+                  <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding CharacterName}" FontSize="14"
+                             FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding CharacterName}" />
+                  <TextBlock Grid.Row="2" Grid.Column="1" Text="Body model" VerticalAlignment="Bottom" />
+                  <TextBlock Grid.Row="3" Grid.Column="1" Text="Head alias" VerticalAlignment="Bottom" />
+                  <TextBlock Grid.Row="4" Grid.Column="1" Text="View hands" VerticalAlignment="Bottom" />
+                </Grid>
+              </Border>
+              <Button x:Name="BodyNode" Classes="characterNode" Canvas.Left="414" Canvas.Top="38" Width="230" Height="70"
+                      Click="SelectBody_Click" AutomationProperties.Name="Inspect body model">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
+                  <icons:MaterialIcon Kind="CubeOutline" Width="23" Height="23" VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="1" Spacing="3">
+                    <TextBlock Text="{Binding BodyModel}" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding BodyModel}" />
+                    <TextBlock Text="Body · XModel" Classes="characterMuted" />
+                  </StackPanel>
+                </Grid>
+              </Button>
+              <Button x:Name="HeadNode" Classes="characterNode" Canvas.Left="414" Canvas.Top="147" Width="230" Height="70"
+                      Click="SelectHead_Click" AutomationProperties.Name="Inspect head alias">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
+                  <icons:MaterialIcon Kind="LayersOutline" Width="23" Height="23" VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="1" Spacing="3">
+                    <TextBlock Text="{Binding HeadAlias}" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding HeadAlias}" />
+                    <TextBlock Text="Head · Model alias" Classes="characterMuted" />
+                  </StackPanel>
+                </Grid>
+              </Button>
+              <Button x:Name="HandsNode" Classes="characterNode" Canvas.Left="414" Canvas.Top="256" Width="230" Height="70"
+                      Click="SelectHands_Click" AutomationProperties.Name="Inspect view hands">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
+                  <icons:MaterialIcon Kind="CubeOutline" Width="23" Height="23" VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="1" Spacing="3">
+                    <TextBlock Text="{Binding ViewHands}" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ViewHands}" />
+                    <TextBlock Text="View hands · XModel" Classes="characterMuted" />
+                  </StackPanel>
+                </Grid>
+              </Button>
+              <Ellipse Canvas.Left="296" Canvas.Top="172" Width="8" Height="8" IsHitTestVisible="False"
+                       Fill="{DynamicResource StudioSurfaceBrush}" Stroke="{DynamicResource StudioBorderStrongBrush}" />
+              <Ellipse Canvas.Left="296" Canvas.Top="202" Width="8" Height="8" IsHitTestVisible="False"
+                       Fill="{DynamicResource StudioSurfaceBrush}" Stroke="{DynamicResource StudioBorderStrongBrush}" />
+              <Ellipse Canvas.Left="296" Canvas.Top="232" Width="8" Height="8" IsHitTestVisible="False"
+                       Fill="{DynamicResource StudioSurfaceBrush}" Stroke="{DynamicResource StudioBorderStrongBrush}" />
+            </Canvas>
+          </Viewbox>
+          <StackPanel Margin="9" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+            <Button Classes="characterSmall" Click="FitGraph_Click" Content="Fit graph" />
+            <Button Classes="characterSmall" Click="ZoomGraphOut_Click" Content="−" AutomationProperties.Name="Zoom graph out" />
+            <Button Classes="characterSmall" Click="ZoomGraphIn_Click" Content="+" AutomationProperties.Name="Zoom graph in" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Grid.Column="1" Classes="characterPanel">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <Border Classes="characterHeading">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <icons:MaterialIcon Kind="LayersOutline" Width="17" Height="17"
+                                  Foreground="{DynamicResource StudioAccentBrush}" />
+              <TextBlock x:Name="ReferenceTitle" Classes="characterLabel" FontSize="13" />
+            </StackPanel>
+          </Border>
+          <Border Grid.Row="1" Margin="9" CornerRadius="5" ClipToBounds="True"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+            <Grid>
+              <xmodel:XModelPreviewControl x:Name="ReferencePreview" UseCharacterCamera="True" UseCheckerboard="False"
+                                          ToolTip.Tip="Drag to orbit, right-drag to pan, scroll to zoom" />
+              <TextBlock x:Name="ReferencePreviewMessage" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="230"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" Classes="characterMuted"
+                         IsHitTestVisible="False" />
+            </Grid>
+          </Border>
+          <StackPanel Grid.Row="2" Spacing="7" Margin="9,0,9,9">
+            <TextBlock Text="Reference" Classes="characterLabel" />
+            <AutoCompleteBox x:Name="ReferenceBodyField" Classes="characterField"
+                             ItemsSource="{Binding BodyOptions}" Text="{Binding BodyModel, Mode=OneWay}"
+                             IsEnabled="{Binding CanEditBody}" PlaceholderText="Choose an XModel"
+                             MinimumPrefixLength="0" FilterMode="Contains"
+                             DropDownClosed="ReferenceValue_DropDownClosed" LostFocus="ReferenceValue_LostFocus"
+                             AutomationProperties.Name="Replace body model" />
+            <AutoCompleteBox x:Name="ReferenceHeadField" Classes="characterField"
+                             ItemsSource="{Binding HeadOptions}" Text="{Binding HeadAlias, Mode=OneWay}"
+                             IsEnabled="{Binding CanEditHead}" PlaceholderText="Choose a model alias"
+                             MinimumPrefixLength="0" FilterMode="Contains"
+                             DropDownClosed="ReferenceValue_DropDownClosed" LostFocus="ReferenceValue_LostFocus"
+                             AutomationProperties.Name="Replace head alias" />
+            <AutoCompleteBox x:Name="ReferenceHandsField" Classes="characterField"
+                             ItemsSource="{Binding HandsOptions}" Text="{Binding ViewHands, Mode=OneWay}"
+                             IsEnabled="{Binding CanEditHands}" PlaceholderText="Choose an XModel"
+                             MinimumPrefixLength="0" FilterMode="Contains"
+                             DropDownClosed="ReferenceValue_DropDownClosed" LostFocus="ReferenceValue_LostFocus"
+                             AutomationProperties.Name="Replace view hands" />
+            <TextBox x:Name="ReferenceValue" Classes="characterField characterValue"
+                     AutomationProperties.Name="Selected reference" />
+            <Button x:Name="ReplaceReference" Classes="characterSmall" Content="Replace reference…"
+                    HorizontalAlignment="Stretch" Click="ReplaceReference_Click" />
+            <StackPanel x:Name="AliasScopePanel" Spacing="2">
+              <Separator Margin="0,2,0,4" />
+              <TextBlock Text="Editing scope" Classes="characterLabel" />
+              <RadioButton x:Name="LocalAliasScope" Content="This character only"
+                           IsChecked="True" IsEnabled="{Binding CanEditHead}" IsCheckedChanged="AliasScope_Changed"
+                           ToolTip.Tip="Create an editable copy and retarget this character's draft." />
+              <RadioButton x:Name="SharedAliasScope" Content="Edit shared alias"
+                           IsCheckedChanged="AliasScope_Changed"
+                           ToolTip.Tip="Open the referenced alias. Changes can affect every character that uses it." />
+            </StackPanel>
+            <Button x:Name="OpenReference" Classes="characterSmall" HorizontalAlignment="Stretch"
+                    Click="OpenReference_Click" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <Grid Grid.Row="2" x:Name="SourcePage" IsVisible="False" RowDefinitions="*,8,Auto">
+      <Grid ColumnDefinitions="2*,*" ColumnSpacing="8">
+        <Border Classes="characterPanel">
+          <Grid RowDefinitions="Auto,*">
+            <Border Classes="characterHeading">
+              <StackPanel Spacing="2">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7">
+                  <icons:MaterialIcon Kind="FileCodeOutline" Width="16" Height="16"
+                                      Foreground="{DynamicResource StudioAccentBrush}" />
+                  <TextBlock Grid.Column="1" Text="{Binding OriginalName}" Classes="characterLabel" TextTrimming="CharacterEllipsis"
+                             ToolTip.Tip="{Binding OriginalName}" />
+                  <TextBlock Grid.Column="2" Text="Read-only" Classes="characterMuted" VerticalAlignment="Center"
+                             IsVisible="{Binding !IsEditable}" ToolTip.Tip="{Binding ModeText}" />
+                </Grid>
+                <TextBlock Text="{Binding GscAnalysisStatusMessage}" Classes="characterMuted"
+                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding GscAnalysisStatusMessage}" />
+              </StackPanel>
+            </Border>
+            <raw:RawFileEditorView Grid.Row="1" x:Name="SourceEditor" SourceOnly="True" />
+          </Grid>
+        </Border>
+        <Border Grid.Column="1" Classes="characterPanel">
+          <Grid RowDefinitions="Auto,*,Auto">
+            <Border Classes="characterHeading">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <icons:MaterialIcon Kind="CubeOutline" Width="16" Height="16"
+                                    Foreground="{DynamicResource StudioAccentBrush}" />
+                <TextBlock Text="Preview" Classes="characterLabel" FontSize="13" />
+              </StackPanel>
+            </Border>
+            <Grid Grid.Row="1" Background="{DynamicResource StudioSurfaceSunkenBrush}">
+              <xmodel:XModelPreviewControl x:Name="SourcePreview" UseCharacterCamera="True" UseCheckerboard="False"
+                                          ToolTip.Tip="Drag to orbit, right-drag to pan, scroll to zoom" />
+              <TextBlock x:Name="SourcePreviewMessage" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="230"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" Classes="characterMuted"
+                         IsHitTestVisible="False" />
+              <StackPanel Orientation="Horizontal" Spacing="3" HorizontalAlignment="Center"
+                          VerticalAlignment="Top" Margin="6">
+                <Button x:Name="SourceThirdPerson" Classes="characterSmall characterMode"
+                        Content="Third person" Click="ThirdPerson_Click" />
+                <Button x:Name="SourceHands" Classes="characterSmall characterMode"
+                        Content="View hands" Click="ViewHands_Click" />
+              </StackPanel>
+            </Grid>
+            <Grid Grid.Row="2" ColumnDefinitions="Auto,*" ColumnSpacing="7" Margin="8">
+              <Button Classes="characterSmall ghost" Content="Reset camera" Click="FitPreview_Click" />
+              <TextBlock Grid.Column="1" Text="{Binding PreviewStatus}" Classes="characterMuted"
+                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding PreviewStatus}" />
+            </Grid>
+          </Grid>
+        </Border>
+      </Grid>
+      <Border Grid.Row="2" Classes="characterPanel">
+        <Grid RowDefinitions="Auto,Auto">
+          <Border Classes="characterHeading">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <icons:MaterialIcon Kind="FileTree" Width="15" Height="15"
+                                    Foreground="{DynamicResource StudioAccentBrush}" />
+                <TextBlock Text="Changes" Classes="characterLabel" />
+              </StackPanel>
+              <TextBlock Grid.Column="1" x:Name="ChangeSummary" Classes="characterMuted" />
+            </Grid>
+          </Border>
+          <ListBox Grid.Row="1" x:Name="SourceChanges" MaxHeight="108" MinHeight="38" Padding="7,5"
+                   Background="Transparent" SelectionMode="Single"
+                   ScrollViewer.HorizontalScrollBarVisibility="Auto" AutomationProperties.Name="Changes to character GSC">
+            <ListBox.Styles>
+              <Style Selector="ListBoxItem">
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="MinHeight" Value="0" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+              </Style>
+            </ListBox.Styles>
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="character:CharacterSourceChange">
+                <Border Classes="characterChange" Classes.added="{Binding IsAddition}" Classes.removed="{Binding !IsAddition}"
+                        Padding="6,2">
+                  <Grid ColumnDefinitions="29,17,*" ColumnSpacing="3">
+                    <TextBlock Text="{Binding LineNumber}" Classes="characterMuted" HorizontalAlignment="Right" />
+                    <TextBlock Grid.Column="1" Classes="changeMark" Text="{Binding Marker}" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Text="{Binding Line}" FontFamily="JetBrains Mono, Menlo, Consolas" FontSize="11" />
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

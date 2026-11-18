@@ -345,6 +345,15 @@ public sealed class XModelSceneBuilder
         ArgumentNullException.ThrowIfNull(assetSource);
         ArgumentNullException.ThrowIfNull(imagePayloadResolver);
         ArgumentNullException.ThrowIfNull(stagedAssets);
+        return Compose(components, preferredLodIndex,
+            model => Build(model, assetSource, imagePayloadResolver, stagedAssets));
+    }
+
+    internal static XModelRenderScene Compose(
+        IReadOnlyList<XAnimPreviewModelComponent> components,
+        int preferredLodIndex,
+        Func<XModelAsset, XModelRenderScene> getModelScene)
+    {
         if (preferredLodIndex < 0)
             throw new ArgumentOutOfRangeException(nameof(preferredLodIndex));
         if (!XAnimPreviewComposition.TryProject(
@@ -370,11 +379,7 @@ public sealed class XModelSceneBuilder
             string modelName = string.IsNullOrWhiteSpace(model.Name)
                 ? "<unnamed XModel>"
                 : model.Name;
-            XModelRenderScene modelScene = Build(
-                model,
-                assetSource,
-                imagePayloadResolver,
-                stagedAssets);
+            XModelRenderScene modelScene = getModelScene(model);
             XModelRenderLod selectedLod = SelectCompositeLod(
                 modelScene,
                 preferredLodIndex,
