@@ -9,19 +9,26 @@ internal sealed class GscAnimationTree
     private readonly GscSourceText _source;
     private readonly string _text;
     private readonly IReadOnlySet<string> _requested;
+    private readonly bool _includeAll;
     private readonly CancellationToken _cancellationToken;
     private int _position;
     private int _lastToken;
     internal HashSet<string> Names { get; } = new(StringComparer.OrdinalIgnoreCase) { "root" };
+    internal HashSet<string> PrimitiveNames { get; } = new(StringComparer.OrdinalIgnoreCase);
     internal string? Error { get; private set; }
     internal int ErrorOffset { get; private set; }
 
-    internal GscAnimationTree(GscSourceText source, IReadOnlySet<string> requested, CancellationToken cancellationToken)
+    internal GscAnimationTree(
+        GscSourceText source,
+        IReadOnlySet<string> requested,
+        CancellationToken cancellationToken,
+        bool includeAll = false)
     {
         _source = source;
         _text = Encoding.Latin1.GetString(source.Bytes);
         _requested = requested;
         _cancellationToken = cancellationToken;
+        _includeAll = includeAll;
         var parsed = ParseBlock(include: true, complete: false, loop: false);
         if (!parsed.EndOfFile && Error is null)
             Fail("bad token");
@@ -44,11 +51,15 @@ internal sealed class GscAnimationTree
             bool completeChild = false, loopChild = false;
             if (Identifier(token))
             {
-                if (current is not null && !ignored) names.Add(current);
+                if (current is not null && !ignored)
+                {
+                    names.Add(current);
+                    if (_includeAll) PrimitiveNames.Add(current);
+                }
                 if (ignored && current is not null) siblings.Remove(current);
                 current = token.ToLowerInvariant();
                 if (!siblings.Add(current)) Fail("duplicate animation");
-                ignored = !complete && !_requested.Contains(current);
+                ignored = !_includeAll && !complete && !_requested.Contains(current);
                 token = Next(onLine: true);
                 if (token is null) continue;
                 if (Identifier(token)) Fail("FIXME: aliases not yet implemented");
@@ -92,7 +103,11 @@ internal sealed class GscAnimationTree
             eof = false;
             break;
         }
-        if (current is not null && !ignored) names.Add(current);
+        if (current is not null && !ignored)
+        {
+            names.Add(current);
+            if (_includeAll) PrimitiveNames.Add(current);
+        }
         if (include && names.Count == 0) names.Add(loop ? "void_loop" : "void");
         foreach (string name in names)
             Names.Add(name);
@@ -160,5 +175,20 @@ internal sealed class GscAnimationTree
             }
         }
         return value.ToString();
+    }
+}
+
+/// <summary>Concrete XAnim entries declared by an animtree source.</summary>
+public static class GscAnimationTreeReferences
+{
+    public static IReadOnlySet<string> FindPrimitiveNames(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        var tree = new GscAnimationTree(
+            new GscSourceText(text),
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            CancellationToken.None,
+            includeAll: true);
+        return tree.Error is null ? tree.PrimitiveNames : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 }

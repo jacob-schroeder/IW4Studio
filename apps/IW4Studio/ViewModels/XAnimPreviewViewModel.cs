@@ -5,6 +5,7 @@ using IW4.Formats.SourceFormat.XAnim;
 using IW4.Render;
 using IW4.Render.EditorPreview;
 using IW4.Studio.Desktop.Editors.XAnim;
+using IW4.Studio.Desktop.Editors.XModel;
 
 namespace IW4.Studio.Desktop.ViewModels;
 
@@ -15,7 +16,8 @@ public sealed class XAnimPreviewViewModel : ObservableObject, IDisposable
 
     private readonly XAnimPlaybackClip? _clip;
     private readonly DispatcherTimer _playbackTimer;
-    private XAnimWeaponPreview? _selectedWeapon;
+    private readonly bool _standalone;
+    private XAnimPreviewReference? _selectedReference;
     private bool _showSkeleton;
     private XAnimPreviewPose? _pose;
     private double _currentFrame;
@@ -30,17 +32,14 @@ public sealed class XAnimPreviewViewModel : ObservableObject, IDisposable
         XAnimPreviewScene? poseScene = null,
         XModelRenderScene? modelScene = null,
         string? previewUnavailableReason = null,
-        IReadOnlyList<XAnimWeaponPreview>? weapons = null)
+        IReadOnlyList<XAnimPreviewReference>? references = null)
     {
         _clip = clip;
         Name = string.IsNullOrWhiteSpace(animationName)
             ? "<unnamed XAnim>"
             : animationName;
-        Weapons = weapons ?? [];
-        if (Weapons.Count == 0 && poseScene is null &&
-            previewUnavailableReason is null && clip is { BoneCount: > 0 })
-            BoneTracksClip = clip;
-
+        References = references ?? [];
+        _standalone = references is not null;
         PoseScene = poseScene;
         ModelScene = modelScene;
         PreviewUnavailableReason = previewUnavailableReason ?? (clip is { BoneCount: 0 }
@@ -50,35 +49,58 @@ public sealed class XAnimPreviewViewModel : ObservableObject, IDisposable
             Interval = PlaybackTickInterval
         };
         _playbackTimer.Tick += PlaybackTimer_Tick;
-        if (Weapons.Count > 0)
-            SelectedWeapon = Weapons[0];
-        else
-            RefreshPose();
+        _selectedReference = References.FirstOrDefault();
+        if (_selectedReference is not null && clip is not null)
+        {
+            foreach (var reference in References)
+            {
+                if (reference.Build is not { } build)
+                    break;
+                var preview = build(clip);
+                if (preview.ModelScene is not null || reference == _selectedReference)
+                {
+                    _selectedReference = reference;
+                    PoseScene = preview.PoseScene;
+                    ModelScene = preview.ModelScene;
+                    PreviewUnavailableReason = preview.Reason ?? string.Empty;
+                }
+                if (preview.ModelScene is not null)
+                    break;
+            }
+        }
+        RefreshPose();
     }
 
     public string Name { get; }
-    public XAnimPlaybackClip? BoneTracksClip { get; }
+    public XAnimPlaybackClip? BoneTracksClip =>
+        _standalone && PoseScene is null && _clip is { BoneCount: > 0 } ? _clip : null;
     public bool ShowBoneTracks => BoneTracksClip is not null;
+    public bool ShowBoneHeading => ShowBoneTracks && !HasReferences;
 
-    public IReadOnlyList<XAnimWeaponPreview> Weapons { get; }
-
-    public bool HasWeaponReferences => Weapons.Count > 0;
-    public bool HasMultipleWeapons => Weapons.Count > 1;
+    public IReadOnlyList<XAnimPreviewReference> References { get; }
+    public bool HasReferences => References.Count > 0;
+    public bool HasMultipleReferences => References.Count > 1;
     public XModelRenderScene? ModelScene { get; private set; }
+    public XModelCameraPreset CameraPreset => SelectedReference?.CameraPreset ?? XModelCameraPreset.Model;
+    public string? ReferenceDetail => string.IsNullOrEmpty(PreviewUnavailableReason)
+        ? SelectedReference?.Source : PreviewUnavailableReason;
 
-    public XAnimWeaponPreview? SelectedWeapon
+    public XAnimPreviewReference? SelectedReference
     {
-        get => _selectedWeapon;
+        get => _selectedReference;
         set
         {
-            if (value is null || ReferenceEquals(value, _selectedWeapon) ||
-                !Weapons.Contains(value) || _clip is null)
+            if (value is null || ReferenceEquals(value, _selectedReference) || !References.Contains(value))
                 return;
 
-            var (poseScene, modelScene, reason) = value.Build(_clip);
-            _selectedWeapon = value;
+            _selectedReference = value;
             OnPropertyChanged();
-            SetPreview(poseScene, modelScene, reason);
+            OnPropertyChanged(nameof(CameraPreset));
+            if (_clip is null)
+                return;
+
+            var (pose, model, reason) = value.Build?.Invoke(_clip) ?? (null, null, null);
+            SetPreview(pose, model, reason);
         }
     }
 
@@ -98,14 +120,13 @@ public sealed class XAnimPreviewViewModel : ObservableObject, IDisposable
     }
 
     public bool ShowModelView => ModelScene is not null && !ShowSkeleton;
-    public bool ShowSkeletonView => HasPreviewScene && ShowSkeleton;
+    public bool ShowSkeletonView => HasPreviewScene && (ShowSkeleton || ModelScene is null);
+    public bool CanToggleSkeleton => HasPreviewScene && ModelScene is not null;
     public bool ShowUnavailable => !ShowModelView && !ShowSkeletonView && !ShowBoneTracks;
 
     public string PreviewUnavailableReason { get; private set; }
 
-    public string PreviewUnavailableTitle => HasWeaponReferences
-        ? "Weapon preview unavailable"
-        : "Animation preview unavailable";
+    public string PreviewUnavailableTitle => "Animation preview unavailable";
 
     public int NumFrames => _clip?.NumFrames ?? 0;
 
@@ -141,7 +162,10 @@ public sealed class XAnimPreviewViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ModelScene));
         OnPropertyChanged(nameof(PreviewUnavailableReason));
         OnPropertyChanged(nameof(PoseScene));
-        OnPropertyChanged(nameof(HasPreviewScene));
+        OnPropertyChanged(nameof(CanToggleSkeleton));
+        OnPropertyChanged(nameof(ReferenceDetail));
+        OnPropertyChanged(nameof(BoneTracksClip));
+        OnPropertyChanged(nameof(ShowBoneTracks));
         OnPropertyChanged(nameof(ShowModelView));
         OnPropertyChanged(nameof(ShowSkeletonView));
         OnPropertyChanged(nameof(ShowUnavailable));
@@ -197,8 +221,8 @@ public sealed class XAnimPreviewViewModel : ObservableObject, IDisposable
                 return IsPlaying ? "Playing timeline only." : "Timeline only.";
             if (IsPlaying)
             {
-                if (HasWeaponReferences)
-                    return $"Playing on {SelectedWeapon?.Name}.";
+                if (SelectedReference is not null && PoseScene is not null)
+                    return $"Playing on {SelectedReference.Name}.";
                 return ShowBoneTracks ? "Playing bone motion." : "Playing animation.";
             }
             if (!IsLooped && CurrentFrame >= NumFrames)

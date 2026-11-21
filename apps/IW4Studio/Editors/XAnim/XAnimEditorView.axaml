@@ -63,52 +63,39 @@
         <Grid Margin="14,0"
               ColumnDefinitions="*,12,Auto"
               VerticalAlignment="Center">
-          <StackPanel Orientation="Horizontal"
-                      VerticalAlignment="Center"
-                      Spacing="8">
-            <StackPanel Orientation="Horizontal"
-                        IsVisible="{Binding HasWeaponReferences}"
-                        Spacing="8">
-              <TextBlock Text="WEAPON"
-                         VerticalAlignment="Center"
-                         FontSize="9"
-                         FontWeight="SemiBold"
-                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
-              <ComboBox MinWidth="180"
-                        MaxWidth="320"
-                        MinHeight="30"
-                        IsVisible="{Binding HasMultipleWeapons}"
-                        ItemsSource="{Binding Weapons}"
-                        SelectedItem="{Binding SelectedWeapon, Mode=TwoWay}"
-                        AutomationProperties.Name="Weapon animation reference"
-                        ToolTip.Tip="Select a weapon that references this animation">
-                <ComboBox.ItemTemplate>
-                  <DataTemplate x:DataType="xanim:XAnimWeaponPreview">
-                    <TextBlock Text="{Binding Name}"
-                               TextTrimming="CharacterEllipsis" />
-                  </DataTemplate>
-                </ComboBox.ItemTemplate>
-              </ComboBox>
-              <TextBlock Text="{Binding SelectedWeapon.Name}"
-                         IsVisible="{Binding !HasMultipleWeapons}"
-                         MaxWidth="320"
-                         VerticalAlignment="Center"
-                         FontSize="11"
-                         TextTrimming="CharacterEllipsis"
-                         Foreground="{DynamicResource StudioTextBrush}" />
-            </StackPanel>
-
-            <TextBlock Text="Local bone motion"
-                       IsVisible="{Binding ShowBoneTracks}"
-                       VerticalAlignment="Center"
-                       FontWeight="SemiBold"
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding HasReferences}">
+            <TextBlock Text="Used by" VerticalAlignment="Center"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <ComboBox Grid.Column="1" MaxWidth="520" MinHeight="32"
+                      HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                      IsVisible="{Binding HasMultipleReferences}"
+                      ItemsSource="{Binding References}"
+                      SelectedItem="{Binding SelectedReference, Mode=TwoWay}"
+                      AutomationProperties.Name="Animation reference"
+                      ToolTip.Tip="{Binding ReferenceDetail}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="xanim:XAnimPreviewReference">
+                  <StackPanel Spacing="1">
+                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Source}" FontSize="10" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource StudioTextMutedBrush}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <TextBlock Grid.Column="1" Text="{Binding SelectedReference.Name}"
+                       IsVisible="{Binding !HasMultipleReferences}" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ReferenceDetail}"
                        Foreground="{DynamicResource StudioTextBrush}" />
-          </StackPanel>
+          </Grid>
+          <TextBlock Text="Local bone motion" IsVisible="{Binding ShowBoneHeading}"
+                     VerticalAlignment="Center" FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextBrush}" />
 
           <CheckBox Grid.Column="2"
                     Content="Skeleton"
                     VerticalAlignment="Center"
-                    IsVisible="{Binding HasPreviewScene}"
+                    IsVisible="{Binding CanToggleSkeleton}"
                     IsChecked="{Binding ShowSkeleton, Mode=TwoWay}"
                     ToolTip.Tip="Show the animated skeleton instead of the selected model" />
         </Grid>
@@ -120,7 +107,7 @@
           <xmodel:XModelPreviewControl x:Name="Preview"
                                       Scene="{Binding ModelScene}"
                                       AnimationPose="{Binding Pose}"
-                                      CameraPreset="Side"
+                                      CameraPreset="{Binding CameraPreset}"
                                       IsVisible="{Binding ShowModelView}"
                                       UseCheckerboard="False"
                                       UseStudioEnvironment="True" />

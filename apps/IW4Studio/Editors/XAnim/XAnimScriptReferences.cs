@@ -3,7 +3,7 @@ using System.Text;
 using IW4.Formats.RawFile;
 using IW4.Game.Assets.RawFile;
 using IW4.Game.Zone;
-using IW4.Gsc.Syntax;
+using IW4.Gsc.Workspace;
 using IW4.Runtime.Assets;
 using IW4.Studio.Documents;
 
@@ -20,12 +20,14 @@ internal static class XAnimScriptReferences
     {
         ArgumentNullException.ThrowIfNull(workspace);
         ArgumentException.ThrowIfNullOrWhiteSpace(animationName);
+        if (workspace.IsBlank)
+            return [];
         Cache cache = Caches.GetValue(workspace, _ => new Cache());
         lock (cache)
         {
             Refresh(workspace, cache);
             cache.References ??= Index(cache.Sources);
-            return cache.References.TryGetValue(animationName, out var references)
+            return cache.References.TryGetValue(XAssetStableIdentity.NormalizeLookupName(animationName), out var references)
                 ? references
                 : [];
         }
@@ -36,6 +38,8 @@ internal static class XAnimScriptReferences
     internal static IReadOnlyList<(string Name, string Text)> GetSources(FastFileWorkspace workspace)
     {
         ArgumentNullException.ThrowIfNull(workspace);
+        if (workspace.IsBlank)
+            return [];
         Cache cache = Caches.GetValue(workspace, _ => new Cache());
         lock (cache)
         {
@@ -95,7 +99,7 @@ internal static class XAnimScriptReferences
         {
             if (name.EndsWith(".atr", StringComparison.OrdinalIgnoreCase))
             {
-                foreach (string animation in AtrPrimitives(text))
+                foreach (string animation in GscAnimationTreeReferences.FindPrimitiveNames(text))
                     Add(animation, name, null);
             }
             else if (name.EndsWith(".script", StringComparison.OrdinalIgnoreCase))
@@ -105,17 +109,13 @@ internal static class XAnimScriptReferences
             }
             else
             {
-                GscSyntaxResult syntax = new GscSyntaxAnalyzer().Analyze(text);
-                if (!syntax.IsAccepted)
+                if (!text.Contains('%') &&
+                    !text.Contains("get_precached_anim", StringComparison.OrdinalIgnoreCase) &&
+                    !text.Contains("precacheMpAnim", StringComparison.OrdinalIgnoreCase) &&
+                    !text.Contains("scriptmodelplayanim", StringComparison.OrdinalIgnoreCase))
                     continue;
-                IReadOnlyList<GscToken> tokens = syntax.Tokens;
-                for (int i = 0; i < tokens.Count; i++)
-                {
-                    if (TryAnimationToken(text, tokens, i, out string? animation))
-                        Add(animation, name, FindImmediateReceiverModel(text, tokens, i));
-                    if (TryAnimationCall(text, tokens, i, out animation))
-                        Add(animation, name, null);
-                }
+                foreach (var (animation, model) in GscAnimationReferences.Find(text))
+                    Add(animation, name, model);
             }
         }
 
@@ -129,119 +129,16 @@ internal static class XAnimScriptReferences
 
         void Add(string animation, string source, string? model)
         {
-            if (!found.TryGetValue(animation, out var references))
-                found.Add(animation, references = []);
+            string key = XAssetStableIdentity.NormalizeLookupName(animation);
+            if (!found.TryGetValue(key, out var references))
+                found.Add(key, references = []);
             references.Add((source, model));
         }
     }
 
-    private static bool TryAnimationToken(
-        string text, IReadOnlyList<GscToken> tokens, int index, out string animation)
-    {
-        animation = string.Empty;
-        if (index + 1 >= tokens.Count || tokens[index].Kind != GscTokenKind.Modulo ||
-            tokens[index + 1].Kind != GscTokenKind.Identifier ||
-            tokens[index].Span.End != tokens[index + 1].Span.Start ||
-            (index > 0 && EndsExpression(tokens[index - 1].Kind)))
-            return false;
-
-        animation = Slice(text, tokens[index + 1]);
-        return IsAssetName(animation);
-    }
-
-    private static bool EndsExpression(GscTokenKind kind) => kind is
-        GscTokenKind.Identifier or GscTokenKind.String or GscTokenKind.LocalizedString or
-        GscTokenKind.Integer or GscTokenKind.Float or GscTokenKind.CloseParenthesis or
-        GscTokenKind.CloseBracket or GscTokenKind.TrueKeyword or GscTokenKind.FalseKeyword or
-        GscTokenKind.SelfKeyword or GscTokenKind.LevelKeyword or GscTokenKind.GameKeyword;
-
-    private static bool TryAnimationCall(
-        string text, IReadOnlyList<GscToken> tokens, int index, out string animation)
-    {
-        animation = string.Empty;
-        if (index + 3 >= tokens.Count || tokens[index].Kind != GscTokenKind.Identifier ||
-            tokens[index + 1].Kind != GscTokenKind.OpenParenthesis ||
-            tokens[index + 2].Kind != GscTokenKind.String ||
-            tokens[index + 3].Kind != GscTokenKind.CloseParenthesis)
-            return false;
-
-        string call = Slice(text, tokens[index]);
-        if (!call.Equals("get_precached_anim", StringComparison.OrdinalIgnoreCase) &&
-            !call.Equals("precacheMpAnim", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        return TrySimpleString(text, tokens[index + 2], out animation);
-    }
-
-    private static string? FindImmediateReceiverModel(
-        string text, IReadOnlyList<GscToken> tokens, int animationIndex)
-    {
-        // A direct, adjacent pair proves which literal model belongs to the
-        // receiver. No binding survives an intervening statement or branch.
-        for (int i = Math.Max(0, animationIndex - 12); i + 11 < tokens.Count && i < animationIndex; i++)
-        {
-            if (tokens[i].Kind != GscTokenKind.Identifier ||
-                tokens[i + 1].Kind != GscTokenKind.Identifier ||
-                !Slice(text, tokens[i + 1]).Equals("setmodel", StringComparison.OrdinalIgnoreCase) ||
-                tokens[i + 2].Kind != GscTokenKind.OpenParenthesis ||
-                tokens[i + 3].Kind != GscTokenKind.String ||
-                tokens[i + 4].Kind != GscTokenKind.CloseParenthesis ||
-                tokens[i + 5].Kind != GscTokenKind.Semicolon ||
-                tokens[i + 6].Kind != GscTokenKind.Identifier ||
-                !Slice(text, tokens[i]).Equals(Slice(text, tokens[i + 6]), StringComparison.Ordinal) ||
-                tokens[i + 7].Kind != GscTokenKind.Identifier ||
-                !IsAnimationMethod(Slice(text, tokens[i + 7])) ||
-                tokens[i + 8].Kind != GscTokenKind.OpenParenthesis ||
-                tokens[i + 9].Kind != GscTokenKind.Modulo ||
-                i + 9 != animationIndex)
-                continue;
-
-            return TrySimpleString(text, tokens[i + 3], out string model) ? model : null;
-        }
-        return null;
-    }
-
-    private static bool IsAnimationMethod(string name) =>
-        name.Equals("setanim", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("setanimknob", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("playanim", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("scriptmodelplayanim", StringComparison.OrdinalIgnoreCase);
-
-    private static bool TrySimpleString(string text, GscToken token, out string value)
-    {
-        string literal = Slice(text, token);
-        value = string.Empty;
-        if (literal.Length < 2 || literal[0] != '"' || literal[^1] != '"')
-            return false;
-        value = literal[1..^1];
-        return IsAssetName(value);
-    }
-
     private static bool IsAssetName(string value) =>
         value.Length != 0 && value.All(character =>
-            char.IsAsciiLetterOrDigit(character) || character == '_');
-
-    private static string Slice(string text, GscToken token) =>
-        text.Substring(token.Span.Start, token.Span.Length);
-
-    private static IEnumerable<string> AtrPrimitives(string text)
-    {
-        // A primitive is a complete name-only line. A following opening brace
-        // makes it a blend-group name instead of a concrete XAnim entry.
-        IReadOnlyList<string> lines = ContentLines(text);
-        for (int i = 0; i < lines.Count; i++)
-        {
-            string line = lines[i];
-            if (!IsAssetName(line))
-                continue;
-            int next = i + 1;
-            while (next < lines.Count && lines[next].Length == 0)
-                next++;
-            if (next < lines.Count && lines[next].StartsWith('{'))
-                continue;
-            yield return line;
-        }
-    }
+            char.IsAsciiLetterOrDigit(character) || character is '_' or '/' or '\\' or '-' or '.');
 
     private static IEnumerable<string> PlayerAnimCommands(string text)
     {

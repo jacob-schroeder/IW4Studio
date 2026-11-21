@@ -36,15 +36,15 @@ public sealed class XAnimViewFactory : IAssetEditorViewFactory
             unavailableReason = $"The XAnim streams could not be decoded: {exception.Message}";
         }
 
-        IReadOnlyList<XAnimWeaponPreview> weapons =
-            clip is not null && _workspace is { IsBlank: false } && !string.IsNullOrWhiteSpace(animation.Name)
-                ? XAnimWeaponPreview.Find(_workspace, animation.Name)
+        IReadOnlyList<XAnimPreviewReference> references =
+            _workspace is { IsBlank: false } && !string.IsNullOrWhiteSpace(animation.Name)
+                ? XAnimPreviewReference.Find(_workspace, animation.Name)
                 : [];
         var viewModel = new XAnimPreviewViewModel(
             animation.Name,
             clip,
             previewUnavailableReason: unavailableReason,
-            weapons: weapons);
+            references: references);
         var view = new XAnimEditorView { DataContext = viewModel };
         return new AssetEditorViewHost(
             view,

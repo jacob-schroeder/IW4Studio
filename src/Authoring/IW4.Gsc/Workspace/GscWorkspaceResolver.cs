@@ -14,7 +14,10 @@ internal static class GscWorkspaceResolver
         CancellationToken cancellationToken)
     {
         var animationReferences = sources.ToDictionary(pair => pair.Key,
-            pair => FindAnimationReferences(pair.Value, cancellationToken).ToArray());
+            pair => FindAnimationReferences(
+                pair.Value.Snapshot.Source,
+                pair.Value.Analysis.SemanticModel,
+                cancellationToken).ToArray());
         var parsedTrees = new Dictionary<string, GscAnimationTree>(StringComparer.OrdinalIgnoreCase);
         foreach (var group in animationReferences.Values.SelectMany(references => references).GroupBy(reference => reference.Tree))
             if (animationTrees.TryGetValue($"animtrees/{group.Key}.atr", out GscSourceText? treeSource))
@@ -201,14 +204,14 @@ internal static class GscWorkspaceResolver
             if (!reference.Developer && reference.QualifiedTarget is { } path) yield return (path, reference.Location.Span);
     }
 
-    private static IEnumerable<(string Tree, string? Name, GscTextSpan Span)> FindAnimationReferences(
-        GscWorkspaceSourceDocument source, CancellationToken cancellationToken)
+    internal static IEnumerable<(string Tree, string? Name, GscTextSpan Span)> FindAnimationReferences(
+        GscSourceText sourceText, GscSemanticModel? model, CancellationToken cancellationToken)
     {
-        if (source.Analysis.SemanticModel is not { } model) yield break;
+        if (model is null) yield break;
         string? tree = null;
         bool developer = false;
         var defines = new Dictionary<string, GscConstant>(StringComparer.OrdinalIgnoreCase);
-        var constants = new GscConstantEvaluator(source.Snapshot.Source, defines, (_, _) => { }, cancellationToken);
+        var constants = new GscConstantEvaluator(sourceText, defines, (_, _) => { }, cancellationToken);
         foreach (GscSyntaxNode item in GscSemanticSyntax.EnumerateTopLevelItems(GscSemanticSyntax.Node(model.SyntaxTree.Root.Children[2])))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -218,7 +221,7 @@ internal static class GscWorkspaceResolver
             {
                 if (constants.Evaluate(GscSemanticSyntax.Node(item.Children[2])) is { } value)
                 {
-                    defines.TryAdd(source.Snapshot.Source.GetText(item.Children[0].Span), value);
+                    defines.TryAdd(sourceText.GetText(item.Children[0].Span), value);
                     constants.DefinesChanged();
                 }
                 continue;
@@ -227,7 +230,7 @@ internal static class GscWorkspaceResolver
             {
                 GscSyntaxTokenElement token = item.Children.OfType<GscSyntaxTokenElement>()
                     .First(child => child.Token.Kind == GscTokenKind.String);
-                tree = GscConstantEvaluator.DecodeString(source.Snapshot.Source.GetText(token.Span)).ToLowerInvariant();
+                tree = GscConstantEvaluator.DecodeString(sourceText.GetText(token.Span)).ToLowerInvariant();
                 if (tree.All(character => char.IsAsciiLetterOrDigit(character) || character == '_'))
                     yield return (tree, null, token.Span);
                 else tree = null;
@@ -241,7 +244,7 @@ internal static class GscWorkspaceResolver
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (node.Production == GscProduction.DeveloperBlockStatement ||
-                Iw4GscBuiltInCatalog.ResolveCall(source.Snapshot.Source, node) is { DeveloperOnly: true }) yield break;
+                Iw4GscBuiltInCatalog.ResolveCall(sourceText, node) is { DeveloperOnly: true }) yield break;
             if (node.Nonterminal == GscNonterminal.Expression && constants.Evaluate(node) is { Kind: GscConstantKind.PreAnimation } value)
             {
                 yield return (value.Text, node.Span);
