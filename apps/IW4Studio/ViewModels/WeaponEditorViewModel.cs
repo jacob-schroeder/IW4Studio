@@ -19,6 +19,7 @@ using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.AssetReferences;
 using IW4.Studio.Desktop.Editors.Inspector;
 using IW4.Studio.Desktop.Editors.Weapon;
+using IW4.Studio.Desktop.Editors.XAnim;
 using IW4.Studio.Desktop.Rendering;
 using IW4.Studio.Documents;
 using Material.Icons;
@@ -595,39 +596,21 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
                     clip,
                     componentFailure);
             }
-            if (!XAnimPreviewScene.TryCreate(
-                    clip,
-                    components,
-                    out XAnimPreviewScene? previewScene,
-                    out string reason) ||
-                previewScene is null)
+            var assembly = XAnimModelPreview.Build(
+                _session.Workspace,
+                clip,
+                components,
+                CaptureCamoPreviewProviders());
+            if (assembly.PoseScene is null || assembly.ModelScene is null)
             {
                 return CreateUnavailableAnimationPreview(
                     animation.Name,
                     clip,
-                    $"XAnim '{animationName}' cannot animate the weapon assembly: {reason}");
+                    $"XAnim '{animationName}' cannot animate the weapon assembly: {assembly.Reason}");
             }
 
-            const int preferredLodIndex = 0;
-            long poolRevision =
-                _session.Workspace.LoadedZone.Context.AssetPool.Revision;
-            XModelRenderScene compositeScene = _sceneBuilder.BuildComposite(
-                components,
-                preferredLodIndex,
-                WorkspaceRenderAssetSource.Create(
-                    _session.Workspace,
-                    "Weapon XAnim preview material assets"),
-                _imagePayloads,
-                CaptureCamoPreviewProviders());
-            if (_session.Workspace.LoadedZone.Context.AssetPool.Revision !=
-                poolRevision)
-            {
-                throw new InvalidOperationException(
-                    "The asset pool changed while the Weapon XAnim preview assembly was being built.");
-            }
-
-            scene = compositeScene;
-            selectedLodIndex = compositeScene.DefaultLodIndex;
+            scene = assembly.ModelScene;
+            selectedLodIndex = assembly.ModelScene.DefaultLodIndex;
             isMaterialAnimationEnabled = components.Any(component =>
                 component.Model.Materials
                     .OfType<MaterialAsset>()
@@ -636,7 +619,8 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
             return new XAnimPreviewViewModel(
                 animation.Name,
                 clip,
-                [previewScene]);
+                assembly.PoseScene,
+                assembly.ModelScene);
         }
         catch (Exception exception) when (exception is
                    InvalidOperationException or
@@ -680,29 +664,20 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
             return false;
         }
 
-        var result = new List<XAnimPreviewModelComponent>
-        {
-            new(handModel),
-            new(gunModel, "tag_weapon")
-        };
-        if (!TryAddOptionalAnimationComponent(
-                result,
+        if (!TryGetOptionalAnimationModel(
                 WeaponIndexedRowKind.RocketModel,
                 "Rocket model",
-                "tag_clip",
-                out reason) ||
-            (includeKnife &&
-             !TryAddOptionalAnimationComponent(
-                 result,
-                 WeaponIndexedRowKind.KnifeModel,
-                 "Knife model",
-                 "tag_knife_attach",
-                 out reason)))
+                out XModelAsset? rocket,
+                out reason))
         {
             return false;
         }
 
-        components = Array.AsReadOnly(result.ToArray());
+        XModelAsset? knife = null;
+        if (includeKnife && !TryGetOptionalAnimationModel(
+                WeaponIndexedRowKind.KnifeModel, "Knife model", out knife, out reason))
+            return false;
+        components = WeaponAnimationAssembly.Components(handModel, gunModel, rocket, knife);
         reason = string.Empty;
         return true;
     }
@@ -723,20 +698,18 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
             selected.Index == (int)WeaponAnimationSlot.MeleeCharge;
     }
 
-    private bool TryAddOptionalAnimationComponent(
-        List<XAnimPreviewModelComponent> components,
+    private bool TryGetOptionalAnimationModel(
         WeaponIndexedRowKind kind,
         string role,
-        string attachmentBoneName,
+        out XModelAsset? model,
         out string reason)
     {
+        model = null;
         WeaponModelSlotItemViewModel? slot = ModelSlots.FirstOrDefault(
             candidate => candidate.Kind == kind && candidate.Index == 0);
-        if (slot?.ResolvedModel is { } model)
+        if (slot?.ResolvedModel is { } resolved)
         {
-            components.Add(new XAnimPreviewModelComponent(
-                model,
-                attachmentBoneName));
+            model = resolved;
             reason = string.Empty;
             return true;
         }
@@ -761,8 +734,7 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
         return new XAnimPreviewViewModel(
             animationName,
             clip,
-            [],
-            message);
+            previewUnavailableReason: message);
     }
 
     private void SetAnimationPreviewDiagnostic(string? message)
@@ -995,26 +967,11 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
         }
         XModelAsset? resolved = null;
         string? sourceDetail = null;
-        if (string.IsNullOrWhiteSpace(name) || !TryResolveModel(name, out resolved, out sourceDetail))
+        if (string.IsNullOrWhiteSpace(name) ||
+            !XAnimModelPreview.TryResolveModel(_session.Workspace, name, out resolved, out sourceDetail))
             return new(kind, index, family, roleLabel, semanticModel, null, WeaponModelSlotState.Unresolved, IsEditable && !malformedStorage, sourceDetail, malformedStorage);
         return new(kind, index, family, roleLabel, semanticModel, resolved, WeaponModelSlotState.Resolved, IsEditable && !malformedStorage, sourceDetail, malformedStorage);
     }
-    private bool TryResolveModel(string name, out XModelAsset? resolved, out string? sourceDetail)
-    {
-        var pool = _session.Workspace.LoadedZone.Context.AssetPool;
-        resolved = null;
-        sourceDetail = null;
-        if (!pool.TryResolve(XAssetType.XModel, name, out XModelAsset? current) || current is null ||
-            current.RuntimeAddress?.AssetPoolAddress is not { } address ||
-            !pool.TryGetSlot(address, out var slot) || slot is null || slot.ActiveProvider.IsReferencePlaceholder)
-            return false;
-        resolved = current;
-        WorkspaceZone? provider = _session.Workspace.LoadedZones.FirstOrDefault(zone =>
-            zone.LoadResult.Context.ZoneOwner == slot.ActiveProvider.Owner);
-        sourceDetail = provider is null ? "Resolved workspace provider" : $"Provider zone: {provider.LogicalZoneName}";
-        return true;
-    }
-
     private bool TryResolveAnimation(
         string name,
         out XAnimPartsAsset? resolved)

@@ -3,9 +3,9 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-             xmlns:preview="using:IW4.Render.EditorPreview"
              xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
              xmlns:xanim="using:IW4.Studio.Desktop.Editors.XAnim"
+             xmlns:xmodel="using:IW4.Studio.Desktop.Editors.XModel"
              x:Class="IW4.Studio.Desktop.Editors.XAnim.XAnimEditorView"
              x:DataType="viewModels:XAnimPreviewViewModel"
              mc:Ignorable="d"
@@ -17,8 +17,7 @@
             Background="{DynamicResource StudioSurfaceBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="1">
-      <Grid ColumnDefinitions="*,Auto"
-            ColumnSpacing="16">
+      <Grid>
         <StackPanel Spacing="3">
           <TextBlock Text="{Binding Name}"
                      FontSize="17"
@@ -50,20 +49,6 @@
                        Foreground="{DynamicResource StudioTextMutedBrush}" />
           </StackPanel>
         </StackPanel>
-
-        <Border Grid.Column="1"
-                Padding="9,4"
-                VerticalAlignment="Center"
-                CornerRadius="4"
-                Background="{DynamicResource StudioSurfaceSunkenBrush}"
-                BorderBrush="{DynamicResource StudioBorderBrush}"
-                BorderThickness="1">
-          <TextBlock Text="PREVIEW ONLY"
-                     FontSize="9"
-                     FontWeight="SemiBold"
-                     LetterSpacing="0.5"
-                     Foreground="{DynamicResource StudioTextMutedBrush}" />
-        </Border>
       </Grid>
     </Border>
 
@@ -76,76 +61,113 @@
             BorderThickness="1">
       <Grid RowDefinitions="50,1,*,1,78">
         <Grid Margin="14,0"
-              ColumnDefinitions="Auto,12,260,14,*"
+              ColumnDefinitions="*,12,Auto"
               VerticalAlignment="Center">
           <StackPanel Orientation="Horizontal"
                       VerticalAlignment="Center"
-                      Spacing="7">
-            <materialIcons:MaterialIcon Kind="HumanMale"
-                                        Width="16"
-                                        Height="16"
-                                        Foreground="{DynamicResource StudioAccentBrush}" />
-            <TextBlock Text="XANIM PREVIEW"
+                      Spacing="8">
+            <StackPanel Orientation="Horizontal"
+                        IsVisible="{Binding HasWeaponReferences}"
+                        Spacing="8">
+              <TextBlock Text="WEAPON"
+                         VerticalAlignment="Center"
+                         FontSize="9"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+              <ComboBox MinWidth="180"
+                        MaxWidth="320"
+                        MinHeight="30"
+                        IsVisible="{Binding HasMultipleWeapons}"
+                        ItemsSource="{Binding Weapons}"
+                        SelectedItem="{Binding SelectedWeapon, Mode=TwoWay}"
+                        AutomationProperties.Name="Weapon animation reference"
+                        ToolTip.Tip="Select a weapon that references this animation">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="xanim:XAnimWeaponPreview">
+                    <TextBlock Text="{Binding Name}"
+                               TextTrimming="CharacterEllipsis" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock Text="{Binding SelectedWeapon.Name}"
+                         IsVisible="{Binding !HasMultipleWeapons}"
+                         MaxWidth="320"
+                         VerticalAlignment="Center"
+                         FontSize="11"
+                         TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource StudioTextBrush}" />
+            </StackPanel>
+
+            <TextBlock Text="Local bone motion"
+                       IsVisible="{Binding ShowBoneTracks}"
                        VerticalAlignment="Center"
-                       FontSize="9"
-                       FontWeight="Bold"
-                       LetterSpacing="0.8"
-                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource StudioTextBrush}" />
           </StackPanel>
 
-          <ComboBox Grid.Column="2"
-                    MinHeight="30"
+          <CheckBox Grid.Column="2"
+                    Content="Skeleton"
+                    VerticalAlignment="Center"
                     IsVisible="{Binding HasPreviewScene}"
-                    IsEnabled="{Binding HasMultipleScenes}"
-                    ItemsSource="{Binding Scenes}"
-                    SelectedItem="{Binding SelectedScene, Mode=TwoWay}"
-                    ToolTip.Tip="Select the loaded XModel skeleton used for this preview">
-            <ComboBox.ItemTemplate>
-              <DataTemplate x:DataType="preview:XAnimPreviewScene">
-                <TextBlock Text="{Binding ModelName}"
-                           TextTrimming="CharacterEllipsis" />
-              </DataTemplate>
-            </ComboBox.ItemTemplate>
-          </ComboBox>
-
-          <TextBlock Grid.Column="4"
-                     Text="{Binding SelectedSceneSummary}"
-                     VerticalAlignment="Center"
-                     HorizontalAlignment="Right"
-                     FontSize="9"
-                     TextTrimming="CharacterEllipsis"
-                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+                    IsChecked="{Binding ShowSkeleton, Mode=TwoWay}"
+                    ToolTip.Tip="Show the animated skeleton instead of the selected model" />
         </Grid>
 
         <Border Grid.Row="1"
                 Background="{DynamicResource StudioBorderBrush}" />
 
         <Grid Grid.Row="2">
-          <xanim:XAnimSkeletonPreviewControl Scene="{Binding SelectedScene}"
-                                                   Pose="{Binding Pose}" />
+          <xmodel:XModelPreviewControl x:Name="Preview"
+                                      Scene="{Binding ModelScene}"
+                                      AnimationPose="{Binding Pose}"
+                                      CameraPreset="Side"
+                                      IsVisible="{Binding ShowModelView}"
+                                      UseCheckerboard="False"
+                                      UseStudioEnvironment="True" />
 
-          <Border MaxWidth="560"
+          <Border x:Name="PreviewInputSurface"
+                  Background="Transparent"
+                  IsVisible="{Binding ShowModelView}"
+                  AutomationProperties.Name="Animation model viewport input surface"
+                  ToolTip.Tip="Left-drag to orbit; right- or middle-drag to pan; scroll to zoom" />
+
+          <xanim:XAnimSkeletonPreviewControl Scene="{Binding PoseScene}"
+                                             Pose="{Binding Pose}"
+                                             IsVisible="{Binding ShowSkeletonView}" />
+
+          <ScrollViewer x:Name="BoneTrackScroller"
+                        IsVisible="{Binding ShowBoneTracks}"
+                        HorizontalScrollBarVisibility="Disabled"
+                        VerticalScrollBarVisibility="Auto"
+                        AutomationProperties.Name="Animated bone tracks">
+            <xanim:XAnimBoneTracksControl AnimationClip="{Binding BoneTracksClip}"
+                                          MinHeight="{Binding #BoneTrackScroller.Viewport.Height}"
+                                          Frame="{Binding CurrentFrame}" />
+          </ScrollViewer>
+
+          <Border x:Name="PreviewUnavailableOverlay"
+                  MaxWidth="560"
                   Margin="24"
                   Padding="18,14"
                   HorizontalAlignment="Center"
                   VerticalAlignment="Center"
-                  IsVisible="{Binding !HasPreviewScene}"
+                  IsHitTestVisible="False"
                   CornerRadius="7"
                   Background="#E6262A31"
                   BorderBrush="#506D7683"
                   BorderThickness="1">
             <StackPanel Spacing="7">
-              <materialIcons:MaterialIcon Kind="HumanMale"
+              <materialIcons:MaterialIcon Kind="AnimationPlayOutline"
                                           Width="28"
                                           Height="28"
                                           HorizontalAlignment="Center"
                                           Foreground="{DynamicResource StudioTextSubtleBrush}" />
-              <TextBlock Text="{Binding PreviewUnavailableTitle}"
+              <TextBlock x:Name="PreviewUnavailableTitleText"
                          HorizontalAlignment="Center"
                          FontSize="11"
                          FontWeight="SemiBold"
                          Foreground="{DynamicResource StudioTextBrush}" />
-              <TextBlock Text="{Binding PreviewUnavailableReason}"
+              <TextBlock x:Name="PreviewUnavailableReasonText"
                          HorizontalAlignment="Center"
                          TextAlignment="Center"
                          TextWrapping="Wrap"
@@ -154,13 +176,32 @@
             </StackPanel>
           </Border>
 
+          <Button Margin="12"
+                  Padding="8,5"
+                  HorizontalAlignment="Left"
+                  VerticalAlignment="Top"
+                  Classes="ghost"
+                  IsVisible="{Binding ShowModelView}"
+                  Click="FitButton_Click"
+                  ToolTip.Tip="Fit the complete model in view">
+            <Grid Classes="iconTextRow"
+                  ColumnDefinitions="Auto,5,Auto">
+              <materialIcons:MaterialIcon Kind="FitToPageOutline"
+                                          Width="15"
+                                          Height="15" />
+              <TextBlock Grid.Column="2"
+                         Text="Fit"
+                         FontSize="9" />
+            </Grid>
+          </Button>
+
           <Border Margin="12"
                   Padding="8,4"
                   HorizontalAlignment="Right"
                   VerticalAlignment="Bottom"
-                  IsVisible="{Binding HasPreviewScene}"
-                  CornerRadius="4"
                   IsHitTestVisible="False"
+                  IsVisible="{Binding ShowSkeletonView}"
+                  CornerRadius="4"
                   Background="#C816191F"
                   BorderBrush="#506D7683"
                   BorderThickness="1">

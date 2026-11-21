@@ -2,7 +2,9 @@ using System.Diagnostics;
 using System.Globalization;
 using Avalonia.Threading;
 using IW4.Formats.SourceFormat.XAnim;
+using IW4.Render;
 using IW4.Render.EditorPreview;
+using IW4.Studio.Desktop.Editors.XAnim;
 
 namespace IW4.Studio.Desktop.ViewModels;
 
@@ -13,7 +15,8 @@ public sealed class XAnimPreviewViewModel : ObservableObject, IDisposable
 
     private readonly XAnimPlaybackClip? _clip;
     private readonly DispatcherTimer _playbackTimer;
-    private XAnimPreviewScene? _selectedScene;
+    private XAnimWeaponPreview? _selectedWeapon;
+    private bool _showSkeleton;
     private XAnimPreviewPose? _pose;
     private double _currentFrame;
     private double _playbackStartFrame;
@@ -24,43 +27,85 @@ public sealed class XAnimPreviewViewModel : ObservableObject, IDisposable
     public XAnimPreviewViewModel(
         string? animationName,
         XAnimPlaybackClip? clip,
-        IReadOnlyList<XAnimPreviewScene> scenes,
-        string? previewUnavailableReason = null)
+        XAnimPreviewScene? poseScene = null,
+        XModelRenderScene? modelScene = null,
+        string? previewUnavailableReason = null,
+        IReadOnlyList<XAnimWeaponPreview>? weapons = null)
     {
-        ArgumentNullException.ThrowIfNull(scenes);
-
         _clip = clip;
         Name = string.IsNullOrWhiteSpace(animationName)
             ? "<unnamed XAnim>"
             : animationName;
-        Scenes = Array.AsReadOnly(scenes
-            .OrderByDescending(scene => scene.MatchedTrackCount)
-            .ThenBy(scene => scene.UnmatchedTrackCount)
-            .ThenBy(scene => scene.BoneCount)
-            .ThenBy(scene => scene.ModelName, StringComparer.Ordinal)
-            .ToArray());
-        _selectedScene = Scenes.FirstOrDefault();
-        PreviewUnavailableReason = string.IsNullOrWhiteSpace(previewUnavailableReason)
-            ? "Load an XModel with matching bone names to display this animation."
-            : previewUnavailableReason;
+        Weapons = weapons ?? [];
+        if (Weapons.Count == 0 && poseScene is null &&
+            previewUnavailableReason is null && clip is { BoneCount: > 0 })
+            BoneTracksClip = clip;
 
+        PoseScene = poseScene;
+        ModelScene = modelScene;
+        PreviewUnavailableReason = previewUnavailableReason ?? (clip is { BoneCount: 0 }
+            ? "This animation contains no bone tracks." : string.Empty);
         _playbackTimer = new DispatcherTimer(DispatcherPriority.Render)
         {
             Interval = PlaybackTickInterval
         };
         _playbackTimer.Tick += PlaybackTimer_Tick;
-        RefreshPose();
+        if (Weapons.Count > 0)
+            SelectedWeapon = Weapons[0];
+        else
+            RefreshPose();
     }
 
     public string Name { get; }
+    public XAnimPlaybackClip? BoneTracksClip { get; }
+    public bool ShowBoneTracks => BoneTracksClip is not null;
 
-    public IReadOnlyList<XAnimPreviewScene> Scenes { get; }
+    public IReadOnlyList<XAnimWeaponPreview> Weapons { get; }
 
-    public string PreviewUnavailableReason { get; }
+    public bool HasWeaponReferences => Weapons.Count > 0;
+    public bool HasMultipleWeapons => Weapons.Count > 1;
+    public XModelRenderScene? ModelScene { get; private set; }
 
-    public string PreviewUnavailableTitle => _clip is null
-        ? "Animation preview unavailable"
-        : "A compatible XModel is required";
+    public XAnimWeaponPreview? SelectedWeapon
+    {
+        get => _selectedWeapon;
+        set
+        {
+            if (value is null || ReferenceEquals(value, _selectedWeapon) ||
+                !Weapons.Contains(value) || _clip is null)
+                return;
+
+            var (poseScene, modelScene, reason) = value.Build(_clip);
+            _selectedWeapon = value;
+            OnPropertyChanged();
+            SetPreview(poseScene, modelScene, reason);
+        }
+    }
+
+    public bool ShowSkeleton
+    {
+        get => _showSkeleton;
+        set
+        {
+            if (SetProperty(ref _showSkeleton, value))
+            {
+                OnPropertyChanged(nameof(ShowModelView));
+                OnPropertyChanged(nameof(ShowSkeletonView));
+                OnPropertyChanged(nameof(ShowUnavailable));
+                OnPropertyChanged(nameof(PlaybackStatus));
+            }
+        }
+    }
+
+    public bool ShowModelView => ModelScene is not null && !ShowSkeleton;
+    public bool ShowSkeletonView => HasPreviewScene && ShowSkeleton;
+    public bool ShowUnavailable => !ShowModelView && !ShowSkeletonView && !ShowBoneTracks;
+
+    public string PreviewUnavailableReason { get; private set; }
+
+    public string PreviewUnavailableTitle => HasWeaponReferences
+        ? "Weapon preview unavailable"
+        : "Animation preview unavailable";
 
     public int NumFrames => _clip?.NumFrames ?? 0;
 
@@ -84,33 +129,24 @@ public sealed class XAnimPreviewViewModel : ObservableObject, IDisposable
 
     public string LoopText => IsLooped ? "Looping" : "One shot";
 
-    public bool HasPreviewScene => SelectedScene is not null;
+    public bool HasPreviewScene => PoseScene is not null;
+    public XAnimPreviewScene? PoseScene { get; private set; }
 
-    public bool HasMultipleScenes => Scenes.Count > 1;
-
-    public XAnimPreviewScene? SelectedScene
+    private void SetPreview(XAnimPreviewScene? pose, XModelRenderScene? model, string? reason)
     {
-        get => _selectedScene;
-        set
-        {
-            if (ReferenceEquals(_selectedScene, value) ||
-                value is not null && !Scenes.Contains(value))
-            {
-                return;
-            }
-
-            _selectedScene = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(HasPreviewScene));
-            OnPropertyChanged(nameof(SelectedSceneSummary));
-            OnPropertyChanged(nameof(PlaybackStatus));
-            RefreshPose();
-        }
+        PoseScene = pose;
+        ModelScene = model;
+        PreviewUnavailableReason = reason ?? string.Empty;
+        RefreshPose();
+        OnPropertyChanged(nameof(ModelScene));
+        OnPropertyChanged(nameof(PreviewUnavailableReason));
+        OnPropertyChanged(nameof(PoseScene));
+        OnPropertyChanged(nameof(HasPreviewScene));
+        OnPropertyChanged(nameof(ShowModelView));
+        OnPropertyChanged(nameof(ShowSkeletonView));
+        OnPropertyChanged(nameof(ShowUnavailable));
+        OnPropertyChanged(nameof(PlaybackStatus));
     }
-
-    public string SelectedSceneSummary => SelectedScene is { } scene
-        ? $"{scene.MatchedTrackCount:N0} matched · {scene.UnmatchedTrackCount:N0} unmatched · {scene.BoneCount:N0} model bones"
-        : "No compatible XModel skeleton";
 
     public XAnimPreviewPose? Pose
     {
@@ -157,19 +193,19 @@ public sealed class XAnimPreviewViewModel : ObservableObject, IDisposable
                 return "The XAnim data could not be decoded for preview.";
             if (!CanPlay)
                 return "This XAnim has no playable frame range.";
+            if (ShowUnavailable)
+                return IsPlaying ? "Playing timeline only." : "Timeline only.";
             if (IsPlaying)
             {
-                return HasPreviewScene
-                    ? "Playing the animation on the selected XModel skeleton."
-                    : "Playing the timeline; a compatible XModel is required to draw the skeleton.";
+                if (HasWeaponReferences)
+                    return $"Playing on {SelectedWeapon?.Name}.";
+                return ShowBoneTracks ? "Playing bone motion." : "Playing animation.";
             }
             if (!IsLooped && CurrentFrame >= NumFrames)
                 return "Playback complete. Restart or press play to preview it again.";
             if (CurrentFrame > 0.0)
                 return "Playback paused.";
-            return HasPreviewScene
-                ? "Ready to preview the animation."
-                : PreviewUnavailableReason;
+            return "Ready to preview the animation.";
         }
     }
 
@@ -284,7 +320,7 @@ public sealed class XAnimPreviewViewModel : ObservableObject, IDisposable
     }
 
     private void RefreshPose() =>
-        Pose = SelectedScene?.Sample((float)CurrentFrame);
+        Pose = PoseScene?.Sample((float)CurrentFrame);
 
     private void NotifyPlaybackStateChanged()
     {
