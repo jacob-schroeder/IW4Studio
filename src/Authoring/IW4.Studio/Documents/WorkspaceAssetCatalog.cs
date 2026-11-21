@@ -1,6 +1,8 @@
 using IW4.Game.Assets.Physics;
+using IW4.Game.Assets.Sound;
 using IW4.Game.Assets.TechniqueSet;
 using IW4.Game.Assets.Tracer;
+using IW4.Game.Assets.XModel;
 using IW4.Formats.D3dbsp;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
@@ -171,7 +173,7 @@ public sealed class WorkspaceAssetCatalog
         ILookup<AssetKey, LinkAssetProvider> editableProviders =
             document.InitialLinkRequest.Assets.Providers
                 .Where(provider =>
-                    provider.SerializedType is (XAssetType.PhysPreset or XAssetType.Tracer
+                    provider.SerializedType is (XAssetType.PhysPreset or XAssetType.PhysCollmap or XAssetType.XModelSurfs or XAssetType.Tracer or XAssetType.SndCurve or XAssetType.LoadedSound
                         or XAssetType.VertexShader or XAssetType.PixelShader) &&
                     !provider.IsReferencePlaceholder)
                 .ToLookup(provider => provider.Key);
@@ -347,7 +349,7 @@ public sealed class WorkspaceAssetCatalog
         XAssetProviderContribution active = slot.ActiveProvider;
         if (!zone.IsTarget ||
             active.IsReferencePlaceholder ||
-            active.Asset is not (PhysPresetAsset or TracerDefAsset or MaterialShaderAsset) ||
+            active.Asset is not (PhysPresetAsset or PhysCollmapAsset or XModelSurfsAsset or TracerDefAsset or SndCurve or LoadedSound or MaterialShaderAsset) ||
             slot.Providers.Count(provider => !provider.IsReferencePlaceholder) != 1)
         {
             return null;

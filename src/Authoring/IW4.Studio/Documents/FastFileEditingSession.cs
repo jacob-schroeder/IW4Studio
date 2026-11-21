@@ -15,6 +15,7 @@ using IW4.Game.Database;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.D3dbsp;
+using IW4.Linker.Linking;
 using IW4.Linker.Packaging;
 using IW4.Loaders.Database;
 
@@ -693,7 +694,8 @@ public sealed partial class FastFileEditingSession : IDisposable
                     TargetZoneRowIdentity identity = entry.TargetRowIdentity!.Value;
                     return new AppliedAssetDefinition(
                         identity,
-                        _drafts[identity].CreateCurrentDefinition());
+                        DetachPublicAudioAsset(
+                            _drafts[identity].CreateCurrentDefinition()));
                 })
                 .ToArray();
             return new AppliedAssetDefinitionsCapture(_revision.Revision, definitions);
@@ -719,7 +721,8 @@ public sealed partial class FastFileEditingSession : IDisposable
                     TargetZoneRowIdentity identity = entry.TargetRowIdentity!.Value;
                     return new AppliedAssetDefinition(
                         identity,
-                        CurrentDefinitionForEntry(entry));
+                        DetachPublicAudioAsset(
+                            CurrentDefinitionForEntry(entry)));
                 })
                 .ToArray();
             return new AppliedAssetDefinitionsCapture(_revision.Revision, definitions);
@@ -819,15 +822,27 @@ public sealed partial class FastFileEditingSession : IDisposable
                     requested.Contains(entry.AssetType))
                 .Select(entry => entry.DependencyIdentity is { } identity &&
                     _providerDrafts.TryGetValue(identity, out DraftState? state) &&
-                    !ReferenceEquals(state.TargetProvider, entry.TargetProvider) &&
-                    IsCurrentProviderDraft(state)
-                        ? state.CreateCurrentDefinition()
+                    (entry.AssetType == XAssetType.LoadedSound ||
+                     !ReferenceEquals(state.TargetProvider, entry.TargetProvider) &&
+                     IsCurrentProviderDraft(state))
+                        ? entry.AssetType == XAssetType.LoadedSound
+                            ? CurrentLoadedSoundForState(state)
+                            : state.CreateCurrentDefinition()
                         : entry.Definition)
                 .OfType<BaseAsset>();
-            BaseAsset[] providers = resolvedReferences.Concat(targetProviders).ToArray();
+            BaseAsset[] providers = resolvedReferences.Concat(targetProviders)
+                .Select(DetachPublicAudioAsset).ToArray();
             return Array.AsReadOnly(providers);
         }
     }
+
+    private static BaseAsset DetachPublicAudioAsset(BaseAsset definition) =>
+        definition switch
+        {
+            SoundAliasListAsset sound => SoundDraft.CopyDetached(sound),
+            LoadedSound loaded => SoundDraft.Copy(loaded),
+            _ => definition
+        };
 
     private static Dictionary<XAssetType, BaseAsset> RequireD3dbspDefinitions(
         D3dbspLinkResult linked)
@@ -1058,7 +1073,18 @@ public sealed partial class FastFileEditingSession : IDisposable
         {
             ThrowIfDisposedCore();
             Workspace.ThrowIfDisposed();
-            return _revision;
+            HashSet<AssetKey> authoredImpactFx = _authoredAssets.Providers
+                .Where(provider => provider.SerializedType == XAssetType.ImpactFx &&
+                    !provider.IsReferencePlaceholder)
+                .Select(provider => provider.Key)
+                .ToHashSet();
+            if (authoredImpactFx.Count == 0)
+                return _revision;
+            ZoneLinkRequest projected = ZoneLinker.ProjectImpactFxRootOrder(
+                _revision.LinkRequest, authoredImpactFx);
+            if (ReferenceEquals(projected, _revision.LinkRequest))
+                return _revision;
+            return _revision with { LinkRequest = projected };
         }
     }
 
@@ -1101,7 +1127,8 @@ public sealed partial class FastFileEditingSession : IDisposable
             IReadOnlyList<IW4.Game.Assets.BaseAsset> Providers)> publications,
         IEnumerable<AssetKey> withdrawnProviderKeys,
         bool raiseAppliedAssetsChanged = true,
-        bool restoreTargetProvidersOnWithdrawal = false)
+        bool restoreTargetProvidersOnWithdrawal = false,
+        AssetKey? allowedChangedLoadedSoundProviderKey = null)
     {
         ArgumentNullException.ThrowIfNull(publications);
         ArgumentNullException.ThrowIfNull(withdrawnProviderKeys);
@@ -1124,6 +1151,21 @@ public sealed partial class FastFileEditingSession : IDisposable
         lock (_gate)
         {
             ThrowIfDisposedCore();
+            if (requestedWithdrawnKeys.Any(_surfaceGeometryOverlays.ContainsKey) ||
+                requested.SelectMany(publication => publication.Providers)
+                    .Any(provider => _surfaceGeometryOverlays.ContainsKey(AssetKey.FromDefinition(provider))))
+                throw new InvalidOperationException(
+                    "Finish or revert the edited XModelSurfs collection before replacing its provider.");
+            var expandedModelBases = new List<(TargetZoneRowIdentity Identity, XModelDraft Baseline)>();
+            for (int index = 0; index < requested.Length; index++)
+            {
+                if (requested[index].Definition is not XModelAsset model) continue;
+                DraftState owner = RequireDraft(requested[index].Identity);
+                XModelAsset expanded = PreserveActiveSurfaceBounds(owner, model, out XModelDraft? baseline);
+                if (baseline is null) continue;
+                requested[index] = (requested[index].Identity, expanded, requested[index].Providers);
+                expandedModelBases.Add((owner.Identity, baseline));
+            }
             AssetKey[] withdrawnKeys = requestedWithdrawnKeys
                 .Where(key => !IsD3dbspProviderRequired(key))
                 .ToArray();
@@ -1193,9 +1235,25 @@ public sealed partial class FastFileEditingSession : IDisposable
                         provider => provider.Key == key))
                     : withdrawnKeys,
                 publishedProviderKeys: providers
-                    .Select(provider => AssetKey.FromDefinition(provider.Definition)));
+                    .Select(provider => AssetKey.FromDefinition(provider.Definition)),
+                allowedChangedLoadedSoundProviderKey: allowedChangedLoadedSoundProviderKey);
             foreach ((DraftState state, object candidate) in pending)
                 state.SetCurrent(candidate, _revision.Revision);
+            foreach ((TargetZoneRowIdentity identity, XModelDraft baseline) in expandedModelBases)
+            {
+                _surfaceRootOwnerBases[identity] = baseline;
+                _surfaceRootOwnerCurrent[identity] = (XModelDraft)RequireDraft(identity).CloneCurrent();
+            }
+            foreach (var entry in pending.Where(value =>
+                         value.Candidate is XModelDraft &&
+                         _surfaceRootOwnerBases.ContainsKey(value.State.Identity) &&
+                         expandedModelBases.All(expanded => expanded.Identity != value.State.Identity)))
+            {
+                DraftState state = entry.State;
+                XModelDraft currentModel = (XModelDraft)state.CloneCurrent();
+                _surfaceRootOwnerBases[state.Identity] = currentModel;
+                _surfaceRootOwnerCurrent[state.Identity] = currentModel;
+            }
             _d3dbspAuthoredProviderKeys.UnionWith(transferredD3dbspKeys);
             RebuildChangeSet();
         }
@@ -1244,9 +1302,11 @@ public sealed partial class FastFileEditingSession : IDisposable
         TargetZoneRowIdentity identity,
         int aliasIndex,
         int fileIndex,
+        LoadedSound expectedCurrent,
         LoadedSound replacement,
         out IReadOnlyList<AssetValidationIssue> issues)
     {
+        ArgumentNullException.ThrowIfNull(expectedCurrent);
         ArgumentNullException.ThrowIfNull(replacement);
         bool changed;
         AssetValidationIssue[] validation;
@@ -1260,7 +1320,7 @@ public sealed partial class FastFileEditingSession : IDisposable
                     aliasIndex,
                     fileIndex,
                     out SoundAliasListAsset? current,
-                    out _,
+                    out LoadedSound? selected,
                     out AssetKey loadedSoundKey,
                     out bool referencedByAnotherTargetSound,
                     out string reason))
@@ -1268,6 +1328,16 @@ public sealed partial class FastFileEditingSession : IDisposable
                 validation = [new AssetValidationIssue(
                     fieldPath,
                     reason,
+                    AssetValidationSeverity.Error)];
+                issues = Array.AsReadOnly(validation);
+                return false;
+            }
+
+            if (!SoundDraft.LoadedSoundEquals(selected, expectedCurrent))
+            {
+                validation = [new AssetValidationIssue(
+                    fieldPath,
+                    "The LoadedSound changed after this import was prepared. Import the current payload again.",
                     AssetValidationSeverity.Error)];
                 issues = Array.AsReadOnly(validation);
                 return false;
@@ -1345,20 +1415,22 @@ public sealed partial class FastFileEditingSession : IDisposable
                 return false;
             }
 
+            LoadedSound authoredReplacement =
+                SoundDraft.CopyForImportedPayload(replacement);
             var candidate = new SoundDraft(current!);
-            candidate.ReplaceLoadedSound(loadedSoundKey, replacement);
+            candidate.ReplaceLoadedSound(loadedSoundKey, authoredReplacement);
             if (candidate.SemanticallyEquals(new SoundDraft(current!)))
                 return false;
 
             LoadedSound detachedReplacement =
                 referencedByAnotherTargetSound
                     ? SoundDraft.CopyWithName(
-                        replacement,
+                        authoredReplacement,
                         CreateCopyOnWriteLoadedSoundName(
                             identity,
                             aliasIndex,
                             fileIndex))
-                    : SoundDraft.Copy(replacement);
+                    : SoundDraft.Copy(authoredReplacement);
             if (referencedByAnotherTargetSound)
             {
                 candidate = new SoundDraft(current!);
@@ -1485,7 +1557,8 @@ public sealed partial class FastFileEditingSession : IDisposable
             [(identity, definition, suppliedProviders)],
             withdrawn,
             raiseAppliedAssetsChanged: false,
-            restoreTargetProvidersOnWithdrawal: true);
+            restoreTargetProvidersOnWithdrawal: true,
+            allowedChangedLoadedSoundProviderKey: allowedTargetProviderCollision);
         if (changed)
         {
             Dictionary<AssetKey, IW4.Game.Assets.BaseAsset> next = prior
@@ -1717,7 +1790,8 @@ public sealed partial class FastFileEditingSession : IDisposable
                 ReferenceEquals(entry, state.Entry) &&
                 state.Adapter.AssetType == adapter.AssetType &&
                 state.Adapter.DraftType == adapter.DraftType &&
-                IsCurrentProviderDraft(state);
+                (IsCurrentProviderDraft(state) ||
+                 IsParentAuthoredLoadedSoundProvider(state));
         }
     }
 
@@ -1727,7 +1801,10 @@ public sealed partial class FastFileEditingSession : IDisposable
         {
             ThrowIfDisposedCore();
             var state = _providerDrafts[identity];
-            return saved ? state.CloneSaved() : state.CloneCurrent();
+            return saved ? state.CloneSaved() :
+                state.Entry.AssetType == XAssetType.LoadedSound
+                    ? new LoadedSoundDraft(CurrentLoadedSoundForState(state))
+                    : state.CloneCurrent();
         }
     }
 
@@ -1736,7 +1813,12 @@ public sealed partial class FastFileEditingSession : IDisposable
         lock (_gate)
         {
             ThrowIfDisposedCore();
-            return _providerDrafts[identity].IsChanged;
+            DraftState state = _providerDrafts[identity];
+            return state.Entry.AssetType == XAssetType.LoadedSound
+                ? !SoundDraft.LoadedSoundEquals(
+                    CurrentLoadedSoundForState(state),
+                    (LoadedSound)state.CreateSavedDefinition())
+                : state.IsChanged;
         }
     }
 
@@ -1886,6 +1968,8 @@ public sealed partial class FastFileEditingSession : IDisposable
             return false;
 
         object draft = state.Adapter.CloneDraft(candidate);
+        if (draft is XModelSurfsDraft surfaceDraft)
+            surfaceDraft.ValidateDependentBounds(this);
         BaseAsset definition = draft is PhysPresetDraft preset && imported is PhysPresetAsset original
             ? preset.ToAsset(original)
             : state.Adapter.CreateDefinition(draft);
@@ -1897,7 +1981,26 @@ public sealed partial class FastFileEditingSession : IDisposable
             LinkAssetProviderSourceDisposition.AuthoredDetached);
         LinkAssetPool assets = _targetBaseAssets.WithReplacedProvider(
             provider, source, out LinkAssetProvider current);
-        Publish(_authoredAssets, _revision.LinkRequest.Roots, targetProviderAssets: assets);
+        Dictionary<AssetKey, XModelSurfsDraft>? nextOverlays = null;
+        Dictionary<AssetKey, XModelAsset>? nextOwners = null;
+        Dictionary<AssetKey, XModelAsset>? nextBases = null;
+        IReadOnlyList<SurfaceOverlayCapture>? captures = null;
+        List<(DraftState State, XModelDraft Draft)>? rootUpdates = null;
+        Dictionary<TargetZoneRowIdentity, XModelDraft>? rootBases = null;
+        Dictionary<TargetZoneRowIdentity, XModelDraft>? rootCurrent = null;
+        LinkAssetPool authored = _authoredAssets;
+        if (draft is XModelSurfsDraft modelSurfs)
+        {
+            assets = ExpandEmbeddedSurfaceOwners(modelSurfs, assets,
+                out nextOverlays, out nextOwners, out nextBases, out captures);
+            authored = ExpandRootSurfaceOwners(captures, authored,
+                out rootUpdates, out rootBases, out rootCurrent);
+        }
+        Publish(authored, _revision.LinkRequest.Roots, targetProviderAssets: assets);
+        if (nextOverlays is not null)
+            CommitSurfaceOwnerBounds(nextOverlays, nextOwners!, nextBases!);
+        if (rootUpdates is not null)
+            CommitSurfaceRootOwnerBounds(rootUpdates, rootBases!, rootCurrent!);
         state.TargetProvider = current;
         state.SetCurrent(draft, _revision.Revision);
         RebuildChangeSet();
@@ -2008,6 +2111,16 @@ public sealed partial class FastFileEditingSession : IDisposable
         IReadOnlyDictionary<AssetKey, IW4.Game.Assets.BaseAsset> owned)
     {
         object detachedCandidate = state.Adapter.CloneDraft(candidate);
+        if (detachedCandidate is XModelSurfsDraft surfaceDraft)
+            surfaceDraft.ValidateDependentBounds(this);
+        XModelDraft? unexpandedModel = null;
+        if (detachedCandidate is XModelDraft modelDraft)
+        {
+            XModelAsset expanded = PreserveActiveSurfaceBounds(
+                state, modelDraft.ToAsset(), out unexpandedModel);
+            if (unexpandedModel is not null)
+                detachedCandidate = new XModelDraft(expanded);
+        }
         IW4.Game.Assets.BaseAsset definition = state.Adapter.CreateDefinition(
             detachedCandidate);
         AssetKey[] retainedKeys = ReferencedAuxiliaryKeys(definition, owned)
@@ -2026,6 +2139,12 @@ public sealed partial class FastFileEditingSession : IDisposable
             withdrawnKeys,
             raiseAppliedAssetsChanged: false,
             restoreTargetProvidersOnWithdrawal: true);
+        if (unexpandedModel is not null ||
+            detachedCandidate is XModelDraft && _surfaceRootOwnerBases.ContainsKey(identity))
+        {
+            _surfaceRootOwnerBases[identity] = unexpandedModel ?? (XModelDraft)detachedCandidate;
+            _surfaceRootOwnerCurrent[identity] = (XModelDraft)detachedCandidate;
+        }
         _compiledAuxiliaryProviders[identity] = retainedKeys
             .ToDictionary(key => key, key => owned[key]);
     }
@@ -2086,6 +2205,19 @@ public sealed partial class FastFileEditingSession : IDisposable
         SoundAliasListAsset saved = state.CreateSavedDefinition()
             as SoundAliasListAsset ?? throw new InvalidDataException(
                 "A Sound editor's saved draft is not a Sound definition.");
+        var reverted = new SoundDraft(saved);
+        foreach (AssetKey key in _independentlyEditedLoadedSounds)
+        {
+            DraftState? loadedState = _providerDrafts.Values.FirstOrDefault(
+                candidate => candidate.Entry.AssetType == XAssetType.LoadedSound &&
+                    candidate.Entry.Definition is LoadedSound loaded &&
+                    AssetKey.FromDefinition(loaded) == key);
+            if (loadedState is not null && SoundDraft.LoadedSounds(saved).Any(
+                    candidate => AssetKey.FromDefinition(candidate) == key))
+                reverted.ReplaceLoadedSound(key,
+                    (LoadedSound)loadedState.CreateCurrentDefinition());
+        }
+        saved = reverted.ToAsset();
         Dictionary<AssetKey, IW4.Game.Assets.BaseAsset> owned =
             _compiledAuxiliaryProviders.TryGetValue(
                 identity,
@@ -2099,7 +2231,8 @@ public sealed partial class FastFileEditingSession : IDisposable
                 group => group.Key,
                 group => SoundDraft.Copy(group.First()));
         Dictionary<AssetKey, IW4.Game.Assets.BaseAsset> restored = owned.Keys
-            .Where(savedLoadedSounds.ContainsKey)
+            .Where(key => savedLoadedSounds.ContainsKey(key) &&
+                !_independentlyEditedLoadedSounds.Contains(key))
             .ToDictionary(
                 key => key,
                 key => (IW4.Game.Assets.BaseAsset)savedLoadedSounds[key]);
@@ -2243,8 +2376,17 @@ public sealed partial class FastFileEditingSession : IDisposable
             commit();
             foreach (DraftState state in _drafts.Values)
                 state.AcknowledgeSaved();
+            foreach (DraftState state in _providerDrafts.Values.Where(state =>
+                         state.Entry.AssetType == XAssetType.LoadedSound))
+                state.SetCurrent(new LoadedSoundDraft(
+                    CurrentLoadedSoundForState(state)), _revision.Revision);
             foreach (DraftState state in _providerDrafts.Values)
                 state.AcknowledgeSaved();
+            foreach ((AssetKey key, XModelAsset current) in _surfaceProviderOwnerCurrent)
+                _surfaceProviderOwnerBases[key] = current;
+            _surfaceGeometryOverlays.Clear();
+            _surfaceRootOwnerBases.Clear();
+            _surfaceRootOwnerCurrent.Clear();
             WithdrawSavedAuxiliaries();
             _addedRows.Clear();
             _savedHeaderMetadata = _revision.HeaderMetadata;
@@ -2334,7 +2476,8 @@ public sealed partial class FastFileEditingSession : IDisposable
         IEnumerable<LinkRoot> roots,
         IEnumerable<AssetKey>? withdrawnTargetProviderKeys = null,
         IEnumerable<AssetKey>? publishedProviderKeys = null,
-        LinkAssetPool? targetProviderAssets = null)
+        LinkAssetPool? targetProviderAssets = null,
+        AssetKey? allowedChangedLoadedSoundProviderKey = null)
     {
         ArgumentNullException.ThrowIfNull(authoredAssets);
         var maskedTargetBaseProviderKeys = new HashSet<AssetKey>(
@@ -2352,6 +2495,7 @@ public sealed partial class FastFileEditingSession : IDisposable
         foreach (DraftState state in _providerDrafts.Values.Where(state => state.IsChanged))
         {
             if (state.TargetProvider is { } provider &&
+                provider.Key != allowedChangedLoadedSoundProviderKey &&
                 (maskedTargetBaseProviderKeys.Contains(provider.Key) ||
                  effectiveAuthoredAssets.Providers.Any(authored =>
                      authored.Key == provider.Key && !authored.IsReferencePlaceholder)))
@@ -2383,6 +2527,16 @@ public sealed partial class FastFileEditingSession : IDisposable
     private void PublishDefinitionCore(DraftState state, object candidate)
     {
         object detachedCandidate = state.Adapter.CloneDraft(candidate);
+        if (detachedCandidate is XModelSurfsDraft surfaceDraft)
+            surfaceDraft.ValidateDependentBounds(this);
+        XModelDraft? unexpandedModel = null;
+        if (detachedCandidate is XModelDraft modelDraft)
+        {
+            XModelAsset expanded = PreserveActiveSurfaceBounds(
+                state, modelDraft.ToAsset(), out unexpandedModel);
+            if (unexpandedModel is not null)
+                detachedCandidate = new XModelDraft(expanded);
+        }
         IW4.Game.Assets.BaseAsset definition = state.Adapter.CreateDefinition(
             detachedCandidate);
         AssetKey currentKey = GetEditedDefinitionKey(state.CreateCurrentDefinition());
@@ -2396,6 +2550,18 @@ public sealed partial class FastFileEditingSession : IDisposable
         LinkAssetProviderSource provider = detachedCandidate switch
         {
             ImageDraft image => CreateEditedImageProviderSource(state, image, definition),
+            XModelSurfsDraft when !Workspace.IsBlank &&
+                state.Identity.SerializedIndex < Workspace.InitialLinkRequest.Roots.Count &&
+                state.Entry.Definition is XModelSurfsAsset imported =>
+                LoadedZoneLinkExtensions.CreateCapturedProviderSource(
+                    Workspace.LoadedZone, definition, imported, state.Entry.OriginalName,
+                    LinkAssetProviderSourceDisposition.AuthoredDetached),
+            PhysCollmapDraft when !Workspace.IsBlank &&
+                state.Identity.SerializedIndex < Workspace.InitialLinkRequest.Roots.Count &&
+                state.Entry.Definition is PhysCollmapAsset imported =>
+                LoadedZoneLinkExtensions.CreateCapturedProviderSource(
+                    Workspace.LoadedZone, definition, imported, state.Entry.OriginalName,
+                    LinkAssetProviderSourceDisposition.AuthoredDetached),
             VehicleDraft when !Workspace.IsBlank &&
                 state.Identity.SerializedIndex < Workspace.InitialLinkRequest.Roots.Count &&
                 state.Entry.Definition is VehicleDefAsset imported =>
@@ -2407,11 +2573,37 @@ public sealed partial class FastFileEditingSession : IDisposable
         LinkAssetPool authoredAssets = _authoredAssets
             .WithoutProviders([candidateKey])
             .WithHighestPrecedenceProviders([provider]);
+        LinkAssetPool targetAssets = _targetBaseAssets;
+        Dictionary<AssetKey, XModelSurfsDraft>? nextOverlays = null;
+        Dictionary<AssetKey, XModelAsset>? nextOwners = null;
+        Dictionary<AssetKey, XModelAsset>? nextBases = null;
+        IReadOnlyList<SurfaceOverlayCapture>? captures = null;
+        List<(DraftState State, XModelDraft Draft)>? rootUpdates = null;
+        Dictionary<TargetZoneRowIdentity, XModelDraft>? rootBases = null;
+        Dictionary<TargetZoneRowIdentity, XModelDraft>? rootCurrent = null;
+        if (detachedCandidate is XModelSurfsDraft modelSurfs)
+        {
+            targetAssets = ExpandEmbeddedSurfaceOwners(modelSurfs, targetAssets,
+                out nextOverlays, out nextOwners, out nextBases, out captures);
+            authoredAssets = ExpandRootSurfaceOwners(captures,
+                authoredAssets, out rootUpdates, out rootBases, out rootCurrent);
+        }
         Publish(
             authoredAssets,
             _revision.LinkRequest.Roots,
-            publishedProviderKeys: [candidateKey]);
+            publishedProviderKeys: [candidateKey],
+            targetProviderAssets: targetAssets);
+        if (nextOverlays is not null)
+            CommitSurfaceOwnerBounds(nextOverlays, nextOwners!, nextBases!);
+        if (rootUpdates is not null)
+            CommitSurfaceRootOwnerBounds(rootUpdates, rootBases!, rootCurrent!);
         state.SetCurrent(detachedCandidate, _revision.Revision);
+        if (unexpandedModel is not null ||
+            detachedCandidate is XModelDraft && _surfaceRootOwnerBases.ContainsKey(state.Identity))
+        {
+            _surfaceRootOwnerBases[state.Identity] = unexpandedModel ?? (XModelDraft)detachedCandidate;
+            _surfaceRootOwnerCurrent[state.Identity] = (XModelDraft)detachedCandidate;
+        }
         RebuildChangeSet();
     }
 
@@ -2542,6 +2734,8 @@ public sealed partial class FastFileEditingSession : IDisposable
             !Adapter.SemanticallyEquals(_saved, _current);
 
         public object CloneCurrent() => Adapter.CloneDraft(_current);
+        public SoundDraft CurrentSoundDraft => _current as SoundDraft ??
+            throw new InvalidOperationException("This state does not host a Sound draft.");
         public object CloneSaved() => Adapter.CloneDraft(_saved);
         public bool SemanticallyEqualsCurrent(object value) =>
             Adapter.SemanticallyEquals(_current, value);

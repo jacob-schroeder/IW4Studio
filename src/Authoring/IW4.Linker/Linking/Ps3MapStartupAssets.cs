@@ -3,7 +3,7 @@ namespace IW4.Linker.Linking;
 /// <summary>Native PS3 map startup assets for the us_army/opforce_airborne factions.</summary>
 public static class Ps3MapStartupAssets
 {
-    public static IReadOnlyList<string> XModelNames { get; } =
+    private static readonly string[] Rangers =
     [
         "mp_body_army_sniper",
         "head_allies_us_army_sniper",
@@ -27,7 +27,11 @@ public static class Ps3MapStartupAssets
         "mp_body_us_army_smg_b",
         "mp_body_us_army_smg_c",
         "mp_body_us_army_riot",
-        "head_us_army_e",
+        "head_us_army_e"
+    ];
+
+    private static readonly string[] Airborne =
+    [
         "mp_body_airborne_assault_a",
         "head_airborne_a",
         "head_airborne_b",
@@ -50,15 +54,33 @@ public static class Ps3MapStartupAssets
         "head_op_airborne_sniper",
         "viewhands_sniper_op_airborne",
         "mp_body_riot_op_airborne",
-        "head_riot_op_airborne",
+        "head_riot_op_airborne"
+    ];
+
+    private static readonly string[] AlliesGhillie =
+    [
         "mp_body_ally_sniper_ghillie_urban",
         "head_allies_sniper_ghillie_urban",
-        "viewhands_ghillie_urban",
+        "viewhands_ghillie_urban"
+    ];
+
+    private static readonly string[] AxisGhillie =
+    [
         "mp_body_op_sniper_ghillie_urban",
-        "head_op_sniper_ghillie_urban",
+        "head_op_sniper_ghillie_urban"
+    ];
+
+    private static readonly string[] CarePackages =
+    [
         "com_plasticcase_rangers",
         "com_plasticcase_ussr"
     ];
+
+    public static IReadOnlyList<string> XModelNames { get; } =
+        [.. Rangers, .. Airborne, .. AlliesGhillie, .. AxisGhillie, .. CarePackages];
+
+    public static bool IsAirbornePrecacheModel(string name) =>
+        Airborne.Contains(name, StringComparer.Ordinal) || AxisGhillie.Contains(name, StringComparer.Ordinal);
 
     public static IReadOnlyList<string> FactionMaterialNames { get; } =
         ["faction_128_rangers", "faction_128_rangers_fade", "faction_128_ussr", "faction_128_ussr_fade"];

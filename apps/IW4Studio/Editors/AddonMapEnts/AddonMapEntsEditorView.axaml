@@ -1,0 +1,110 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:scene="using:IW4.Studio.Desktop.Editors.AddonMapEnts"
+             x:Class="IW4.Studio.Desktop.Editors.AddonMapEnts.AddonMapEntsEditorView">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.caption">
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="FontSize" Value="15"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="Border.panel">
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="ClipToBounds" Value="True"/>
+    </Style>
+    <Style Selector="Button.tool"><Setter Property="MinHeight" Value="30"/><Setter Property="Margin" Value="0,0,5,4"/></Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="Auto,*,Auto" MinHeight="265">
+    <Grid ColumnDefinitions="*,Auto" Margin="12,7" ColumnSpacing="8">
+      <StackPanel VerticalAlignment="Center">
+        <TextBlock Text="Mission scene" Classes="section"/>
+        <TextBlock x:Name="AssetName" Classes="caption" TextTrimming="CharacterEllipsis" MaxLines="1"/>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <Button x:Name="UndoButton" Content="Undo" ToolTip.Tip="Undo the last scene edit"/>
+        <Button x:Name="ApplyButton" Content="Apply" Classes="primary" ToolTip.Tip="Apply edits to the workspace for Save As"/>
+      </StackPanel>
+    </Grid>
+    <Grid x:Name="BodyGrid" Grid.Row="1" ColumnDefinitions="*,285" Margin="6,0" ColumnSpacing="6">
+      <Border x:Name="StagePane" Classes="panel">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <WrapPanel Margin="7,7,2,2">
+            <Button x:Name="BrowseButton" Classes="tool" Content="Objects"/>
+            <Button x:Name="AddButton" Classes="tool" Content="+ Add object"/>
+            <ComboBox x:Name="PlanePicker" MinWidth="76" Margin="0,0,5,4" AutomationProperties.Name="View plane">
+              <ComboBoxItem Content="Top"/><ComboBoxItem Content="Side"/>
+            </ComboBox>
+            <Button x:Name="FitButton" Classes="tool" Content="Fit all" ToolTip.Tip="Show the entire mission"/>
+            <Button x:Name="ZoomOutButton" Classes="tool" Content="−" AutomationProperties.Name="Zoom out"/>
+            <Button x:Name="ZoomInButton" Classes="tool" Content="+" AutomationProperties.Name="Zoom in"/>
+          </WrapPanel>
+          <scene:AddonEntityScene x:Name="Scene" Grid.Row="1" ClipToBounds="True" AutomationProperties.Name="Interactive mission scene"/>
+          <Border x:Name="Drawer" Grid.Row="1" Classes="panel" IsVisible="False" Width="290" HorizontalAlignment="Left"
+                  VerticalAlignment="Stretch" Margin="7,0,7,5" Padding="10">
+            <Grid RowDefinitions="Auto,Auto,*">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock x:Name="DrawerTitle" Classes="section" VerticalAlignment="Center"/>
+                <Button x:Name="CloseDrawerButton" Grid.Column="1" Content="×" AutomationProperties.Name="Close object browser"/>
+              </Grid>
+              <TextBox x:Name="SearchBox" Grid.Row="1" PlaceholderText="Search names, classes or properties" Margin="0,7" AutomationProperties.Name="Search mission objects"/>
+              <ScrollViewer Grid.Row="2"><StackPanel x:Name="DrawerItems" Spacing="3"/></ScrollViewer>
+            </Grid>
+          </Border>
+          <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="9,6">
+            <TextBlock x:Name="Hint" Classes="caption" VerticalAlignment="Center"/>
+            <Button x:Name="CancelToolButton" Grid.Column="1" Content="Cancel" IsVisible="False"/>
+          </Grid>
+        </Grid>
+      </Border>
+      <Border x:Name="InspectorPane" Classes="panel" Grid.Column="1">
+        <ScrollViewer x:Name="InspectorScroll" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="12,10" Spacing="8">
+            <TextBlock x:Name="SelectedGroup" Classes="caption"/>
+            <TextBlock x:Name="SelectedTitle" FontSize="19" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <TextBlock x:Name="SelectedDetail" Classes="caption"/>
+            <WrapPanel>
+              <Button x:Name="FrameButton" Classes="tool" Content="Frame object"/>
+              <Button x:Name="DuplicateButton" Classes="tool" Content="Duplicate"/>
+            </WrapPanel>
+            <TextBlock x:Name="ShapeText" Classes="caption"/>
+            <StackPanel x:Name="MainFields" Spacing="5"/>
+            <Expander x:Name="PositionSection" Header="Exact position" HorizontalContentAlignment="Stretch">
+              <StackPanel x:Name="PositionFields" Spacing="5"/>
+            </Expander>
+            <StackPanel x:Name="LinksSection" Spacing="5">
+              <TextBlock Text="Connections" Classes="section"/>
+              <TextBlock x:Name="LinkSummary" Classes="caption"/>
+              <ComboBox x:Name="LinkChoices" HorizontalAlignment="Stretch" AutomationProperties.Name="Go to connected object" PlaceholderText="Go to connected object…"/>
+              <Button x:Name="ChooseTargetButton" Content="Choose target…"/>
+            </StackPanel>
+            <Border x:Name="ConfirmPane" Classes="panel" Padding="8" IsVisible="False">
+              <StackPanel Spacing="6">
+                <TextBlock x:Name="ConfirmText" TextWrapping="Wrap"/>
+                <WrapPanel><Button x:Name="ConfirmButton" Classes="tool primary" Content="Confirm"/><Button x:Name="KeepButton" Classes="tool" Content="Cancel"/></WrapPanel>
+              </StackPanel>
+            </Border>
+            <Expander x:Name="AdvancedSection" Header="All properties" HorizontalContentAlignment="Stretch">
+              <StackPanel Spacing="6">
+                <StackPanel x:Name="RawFields" Spacing="6"/>
+                <TextBox x:Name="NewKey" PlaceholderText="New property name" AutomationProperties.Name="New property name"/>
+                <Button x:Name="AddFieldButton" Content="Add property"/>
+                <Button x:Name="DeleteButton" Content="Remove object…"/>
+              </StackPanel>
+            </Expander>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+    <Grid Grid.Row="2" Margin="13,5" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+      <TextBlock x:Name="StatusText" Classes="caption" VerticalAlignment="Center"/>
+      <Button x:Name="BaseButton" Grid.Column="1" Classes="ghost" Content="Base map" FontSize="11" IsVisible="False"/>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -1,0 +1,83 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:IW4.Studio.Desktop.Editors.LoadedSounds"
+             xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="IW4.Studio.Desktop.Editors.LoadedSounds.LoadedSoundEditorView" DragDrop.AllowDrop="True">
+  <UserControl.Styles>
+    <Style Selector="Border.panel">
+      <Setter Property="CornerRadius" Value="8"/><Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.heading"><Setter Property="FontSize" Value="16"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+    <Style Selector="TextBlock.note">
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}"/><Setter Property="FontSize" Value="12"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="Border.track">
+      <Setter Property="CornerRadius" Value="5"/><Setter Property="Padding" Value="8,5"/>
+      <Setter Property="Background" Value="{DynamicResource StudioBackgroundBrush}"/>
+    </Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+    <Border Classes="panel" Padding="14,9">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+        <StackPanel><TextBlock Classes="note" Text="Loaded sound"/><TextBlock x:Name="Heading" FontSize="18" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/></StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Button x:Name="UndoButton" Classes="ghost" Click="Undo" ToolTip.Tip="Undo replacement" AutomationProperties.Name="Undo replacement">
+            <icons:MaterialIcon Kind="Undo" Width="18" Height="18"/></Button>
+          <Button x:Name="ApplyButton" Classes="primary" Content="Apply under same name" Click="Apply"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Grid Grid.Row="1" x:Name="Panes" ColumnDefinitions="*,258" ColumnSpacing="8">
+      <Border Classes="panel" Padding="16" ClipToBounds="True">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="heading" Text="Compare sounds"/>
+            <TextBlock Classes="note" Text="Click or drag a waveform to choose where playback starts."/>
+            <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+              <StackPanel><TextBlock Text="Original" FontWeight="SemiBold"/><TextBlock Classes="note" x:Name="OriginalDetails"/></StackPanel>
+              <Button Grid.Column="1" x:Name="OriginalPlay" Content="Play" AutomationProperties.Name="Play or pause original" Click="PlayOriginal"/>
+            </Grid>
+            <Border Classes="track">
+              <local:LoadedSoundWaveformControl x:Name="OriginalWave" Height="93"/>
+            </Border>
+            <Separator Margin="0,4"/>
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel><TextBlock Text="Replacement" FontWeight="SemiBold"/><TextBlock Classes="note" x:Name="ReplacementDetails"/></StackPanel>
+              <Button Grid.Column="1" x:Name="ReplacementPlay" Content="Play" AutomationProperties.Name="Play or pause replacement" Click="PlayReplacement"/>
+            </Grid>
+            <Border Classes="track" MinHeight="102">
+              <Grid>
+                <local:LoadedSoundWaveformControl x:Name="ReplacementWave" Height="93"/>
+                <TextBlock x:Name="EmptyMessage" Classes="note" HorizontalAlignment="Center" VerticalAlignment="Center" Text="Drop an MP3 here to compare it."/>
+              </Grid>
+            </Border>
+            <TextBlock x:Name="PlaybackNote" Classes="note"/>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+      <Border Grid.Column="1" x:Name="Inspector" Classes="panel">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="16" Spacing="10">
+            <TextBlock Classes="heading" Text="Replace audio"/>
+            <Button x:Name="ChooseButton" Content="Choose MP3…" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="Choose"/>
+            <TextBlock x:Name="FileName" Classes="note" TextWrapping="Wrap"/>
+            <Separator Margin="0,5"/>
+            <TextBlock Classes="heading" Text="Aliases using this sound"/>
+            <TextBlock x:Name="AliasCount" Classes="note"/>
+            <ItemsControl x:Name="Aliases" AutomationProperties.Name="Sound aliases">
+              <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
+                <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,3"/>
+              </DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+    <Grid Grid.Row="2" ColumnDefinitions="*,2*" ColumnSpacing="8" Margin="5,0">
+      <TextBlock x:Name="AssetName" Classes="note" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+      <TextBlock x:Name="Status" Grid.Column="1" Classes="note" HorizontalAlignment="Right" AutomationProperties.LiveSetting="Polite"/>
+    </Grid>
+  </Grid>
+</UserControl>

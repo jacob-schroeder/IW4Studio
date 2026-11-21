@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using System.Diagnostics;
 using Avalonia.Threading;
 using IW4.Game.Assets.Sound;
@@ -39,6 +38,7 @@ public sealed class SoundPreviewViewModel
     private bool _isPlaying;
     private bool _isLoadingPreview;
     private bool _playbackFailed;
+    private bool _workspaceAudioMayHaveChanged;
     private bool _disposed;
     private string? _playbackError;
     private string _statusMessage = string.Empty;
@@ -114,6 +114,8 @@ public sealed class SoundPreviewViewModel
             Interval = PlaybackTickInterval
         };
         _playbackTimer.Tick += PlaybackTimer_Tick;
+        if (_editorSession?.CanEdit == true)
+            _editorSession.WorkspaceAssetsChanged += WorkspaceAssetsChanged;
         BeginSelectedVariantLoad();
     }
 
@@ -404,6 +406,7 @@ public sealed class SoundPreviewViewModel
             applied = _editorSession.ApplyCompiledSound(
                 candidate.AliasIndex,
                 candidate.FileIndex,
+                candidate.ExpectedCurrent,
                 candidate.Replacement,
                 out issues);
         }
@@ -563,6 +566,8 @@ public sealed class SoundPreviewViewModel
             return;
 
         _disposed = true;
+        if (_editorSession?.CanEdit == true)
+            _editorSession.WorkspaceAssetsChanged -= WorkspaceAssetsChanged;
         CancelSelectedVariantLoad();
         _playbackTimer.Stop();
         _playbackTimer.Tick -= PlaybackTimer_Tick;
@@ -700,6 +705,7 @@ public sealed class SoundPreviewViewModel
 
     private void RefreshSelectedEditingState()
     {
+        _workspaceAudioMayHaveChanged = false;
         _editableSelectedPayload = null;
         string reason;
         if (_editorSession is null)
@@ -723,6 +729,21 @@ public sealed class SoundPreviewViewModel
 
         StatusMessage = reason;
         NotifyEditingStateChanged();
+    }
+
+    private void WorkspaceAssetsChanged(object? sender, EventArgs args) =>
+        _workspaceAudioMayHaveChanged = true;
+
+    internal void RefreshReturningPreview()
+    {
+        if (_disposed || !_workspaceAudioMayHaveChanged || _stagedImport is not null ||
+            _editableSelectedPayload is not { } previous)
+            return;
+
+        RefreshSelectedEditingState();
+        if (_editableSelectedPayload is not { } current || current.Name != previous.Name ||
+            !current.PhysicalData.AsSpan().SequenceEqual(previous.PhysicalData))
+            ReloadSelectedPreview();
     }
 
     private void ReloadSelectedPreview()
@@ -1202,6 +1223,7 @@ internal sealed record SoundImportTarget(
 internal sealed record SoundImportCandidate(
     int AliasIndex,
     int FileIndex,
+    LoadedSound ExpectedCurrent,
     LoadedSound Replacement,
     SoundPreviewMaterialization Preview)
 {
@@ -1210,69 +1232,9 @@ internal sealed record SoundImportCandidate(
         ReadOnlyMemory<byte> sourceBytes)
     {
         ArgumentNullException.ThrowIfNull(target);
-        if (!MpegAudioPreview.TryAnalyze(
-                sourceBytes.Span,
-                SoundPreviewViewModel.VisualizationBarCount,
-                out MpegAudioPreviewInfo? analysis) ||
-            analysis is null)
-        {
-            throw new InvalidDataException(
-                "The file is not a supported contiguous MPEG Layer III stream.");
-        }
-
-        if (analysis.AudioByteCount <= 0 || analysis.FrameOffsets.Count == 0)
-            throw new InvalidDataException("The MP3 contains no MPEG audio frames.");
-        if (analysis.FrameOffsets.Count > ushort.MaxValue)
-        {
-            throw new InvalidDataException(
-                "The MP3 contains too many MPEG frames for an IW4 LoadedSound.");
-        }
-
-        long durationMilliseconds = checked(
-            analysis.TotalSamples * 1000L / analysis.SampleRate);
-        if (durationMilliseconds is <= 0 or > ushort.MaxValue)
-        {
-            throw new InvalidDataException(
-                "Embedded IW4 sounds must be between 1 ms and 65.535 seconds long.");
-        }
-        if (analysis.SampleRate > ushort.MaxValue ||
-            analysis.ChannelCount > ushort.MaxValue)
-        {
-            throw new InvalidDataException(
-                "The MP3 sample layout cannot be represented by an IW4 LoadedSound.");
-        }
-
-        byte[] physicalData = sourceBytes.Slice(
-            analysis.AudioStartOffset,
-            analysis.AudioByteCount).ToArray();
-        byte[] seekTable = new byte[checked(
-            analysis.FrameOffsets.Count * sizeof(uint))];
-        for (int index = 0; index < analysis.FrameOffsets.Count; index++)
-        {
-            BinaryPrimitives.WriteUInt32BigEndian(
-                seekTable.AsSpan(index * sizeof(uint), sizeof(uint)),
-                checked((uint)analysis.FrameOffsets[index]));
-        }
-
-        LoadedSound template = target.Template;
-        var replacement = new LoadedSound
-        {
-            Offset = template.Offset,
-            RuntimeAddress = template.RuntimeAddress,
-            NamePointer = template.NamePointer,
-            Name = template.Name,
-            PhysicalDataByteCount = physicalData.Length,
-            FrameCount = checked((ushort)durationMilliseconds),
-            ChannelCount = checked((ushort)analysis.ChannelCount),
-            SampleRate = checked((ushort)analysis.SampleRate),
-            Pad0E = template.Pad0E,
-            Pad10 = template.Pad10,
-            SeekTableCount = checked((ushort)analysis.FrameOffsets.Count),
-            SeekTablePointer = template.SeekTablePointer,
-            SeekTable = seekTable,
-            PhysicalDataPointer = template.PhysicalDataPointer,
-            PhysicalData = physicalData
-        };
+        var import = LoadedSoundImport.Compile(target.Template, sourceBytes, SoundPreviewViewModel.VisualizationBarCount);
+        var analysis = import.Analysis;
+        byte[] physicalData = import.Replacement.PhysicalData!;
         SoundPreviewMaterialization preview = SoundPreviewMaterialization.Playable(
             analysis.FormatName,
             analysis.SampleRate,
@@ -1285,7 +1247,8 @@ internal sealed record SoundImportCandidate(
         return new SoundImportCandidate(
             target.AliasIndex,
             target.FileIndex,
-            replacement,
+            target.Template,
+            import.Replacement,
             preview);
     }
 }

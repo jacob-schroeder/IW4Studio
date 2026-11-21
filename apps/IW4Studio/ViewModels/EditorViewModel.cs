@@ -191,6 +191,20 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
                 image.RefreshSessionState();
             if (editorHost.HostedViewModel is VehicleEditorViewModel vehicle)
                 vehicle.RefreshSavedValues();
+            if (editorHost.HostedViewModel is PhysCollmapEditorViewModel collision)
+                collision.RefreshSessionState();
+            if (editorHost.HostedViewModel is XModelSurfsEditorViewModel surfaces)
+                surfaces.RefreshSessionState();
+            if (editorHost.HostedViewModel is SndCurveEditorViewModel curve)
+                curve.RefreshSessionState();
+            if (editorHost.HostedViewModel is LoadedSoundEditorViewModel sound)
+                sound.RefreshWorkspace();
+            if (editorHost.HostedViewModel is ImpactFxEditorViewModel impacts)
+                impacts.RefreshWorkspace();
+            if (editorHost.HostedViewModel is LeaderboardEditorViewModel leaderboard)
+                leaderboard.RefreshWorkspace();
+            if (editorHost.HostedViewModel is AddonMapEntsEditorViewModel mission)
+                mission.RefreshWorkspace();
         }
     }
 

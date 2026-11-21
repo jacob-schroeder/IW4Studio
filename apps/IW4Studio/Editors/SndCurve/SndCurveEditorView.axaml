@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:IW4.Studio.Desktop.Editors.SndCurve"
+             xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="IW4.Studio.Desktop.Editors.SndCurve.SndCurveEditorView">
+  <UserControl.Styles>
+    <Style Selector="Border.panel">
+      <Setter Property="CornerRadius" Value="8"/><Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.h"><Setter Property="FontSize" Value="15"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+    <Style Selector="TextBlock.note">
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}"/><Setter Property="FontSize" Value="12"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+    <Border Classes="panel" Padding="14,9">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+        <StackPanel><TextBlock Classes="note" Text="Sound falloff"/><TextBlock x:Name="Heading" FontSize="18" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/></StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+          <Button x:Name="UndoButton" Classes="ghost" Click="Undo" AutomationProperties.Name="Undo edit" ToolTip.Tip="Undo">
+            <icons:MaterialIcon Kind="Undo" Width="17" Height="17"/></Button>
+          <Button x:Name="RedoButton" Classes="ghost" Click="Redo" AutomationProperties.Name="Redo edit" ToolTip.Tip="Redo">
+            <icons:MaterialIcon Kind="Redo" Width="17" Height="17"/></Button>
+          <Button x:Name="ApplyButton" Classes="primary" Content="Apply to workspace" Click="Apply"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Grid x:Name="Panes" Grid.Row="1" ColumnDefinitions="*,258" ColumnSpacing="8">
+      <Border Classes="panel" Padding="14" ClipToBounds="True">
+        <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
+          <StackPanel Spacing="3"><TextBlock Classes="h" Text="Volume over distance"/>
+            <TextBlock x:Name="Hint" Classes="note" Text="Drag a point to shape how quickly the sound fades."/></StackPanel>
+          <WrapPanel Grid.Row="1">
+            <Button x:Name="AddButton" Content="Add point" Click="Add" Margin="0,0,6,0"/>
+            <Button x:Name="RemoveButton" Classes="ghost" Content="Remove point" Click="Remove"/>
+            <Button x:Name="RecoverButton" Content="Start with a linear fade" Click="Recover" IsVisible="False"/>
+          </WrapPanel>
+          <local:SndCurveGraph Grid.Row="2" x:Name="Graph" MinHeight="120"/>
+          <Grid Grid.Row="3" ColumnDefinitions="Auto,*" ColumnSpacing="12"><TextBlock x:Name="Count" Classes="note"/>
+            <TextBlock Grid.Column="1" Classes="note" HorizontalAlignment="Right" Text="Arrow keys fine-tune the selected point."/></Grid>
+        </Grid>
+      </Border>
+      <Border Classes="panel" Grid.Column="1" x:Name="Inspector">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="16" Spacing="10">
+            <TextBlock Classes="h" Text="Listen at a distance"/>
+            <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="note" Text="Listener distance"/><TextBlock x:Name="DistanceReadout" Grid.Column="1"/></Grid>
+            <Slider x:Name="Listener" Minimum="0" Maximum="100" SmallChange="1" LargeChange="10" Value="35" AutomationProperties.Name="Listener distance in percent"/>
+            <Grid ColumnDefinitions="*,Auto" Margin="0,-7,0,1"><TextBlock Classes="note" Text="At source"/><TextBlock Grid.Column="1" Classes="note" Text="Farthest"/></Grid>
+            <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="note" Text="Volume here"/><TextBlock x:Name="VolumeReadout" Grid.Column="1" FontWeight="SemiBold"/></Grid>
+            <ProgressBar x:Name="Meter" Minimum="0" Maximum="100" Height="6" AutomationProperties.Name="Volume at listener"/>
+            <Button x:Name="ToneButton" Content="Hear gentle tone" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ToggleTone"/>
+            <TextBlock x:Name="AudioNote" Classes="note"/>
+            <Separator Margin="0,5"/>
+            <TextBlock Classes="h" Text="Selected point"/>
+            <ComboBox x:Name="PointPicker" HorizontalAlignment="Stretch" AutomationProperties.Name="Selected curve point" SelectionChanged="SelectionChanged"/>
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+              <StackPanel Spacing="3"><TextBlock Classes="note" Text="Distance (%)"/><TextBox x:Name="PointX" AutomationProperties.Name="Point distance in percent"/></StackPanel>
+              <StackPanel Grid.Column="1" Spacing="3"><TextBlock Classes="note" Text="Volume (%)"/><TextBox x:Name="PointY" AutomationProperties.Name="Point volume in percent"/></StackPanel>
+            </Grid>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+    <Grid Grid.Row="2" ColumnDefinitions="*,2*" ColumnSpacing="8" Margin="5,0">
+      <TextBlock x:Name="AssetName" Classes="note" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+      <TextBlock x:Name="Status" Grid.Column="1" Classes="note" HorizontalAlignment="Right" AutomationProperties.LiveSetting="Polite"/>
+    </Grid>
+  </Grid>
+</UserControl>

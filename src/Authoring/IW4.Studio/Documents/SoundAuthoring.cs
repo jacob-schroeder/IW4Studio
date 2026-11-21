@@ -5,8 +5,8 @@ using IW4.Linker.Contracts;
 namespace IW4.Studio.Documents;
 
 /// <summary>
-/// Detached Sound graph used by the editor. LoadedSound payloads are copied so
-/// importing audio never mutates the loader-owned runtime definition.
+/// Detached Sound graph used by the editor. Unchanged LoadedSound byte arrays
+/// are shared; imported payloads are copied before publication.
 /// </summary>
 internal sealed class SoundDraft
 {
@@ -24,6 +24,47 @@ internal sealed class SoundDraft
 
     internal SoundAliasListAsset ToAsset() => Copy(_sound);
 
+    internal bool ReferencesLoadedSound(AssetKey key) =>
+        LoadedSounds(_sound).Any(candidate =>
+            AssetKey.FromDefinition(candidate) == key);
+
+    internal void AppendLoadedSoundUsages(
+        AssetKey key,
+        string soundName,
+        TargetZoneRowIdentity? rowIdentity,
+        List<LoadedSoundUsage> usages) =>
+        AppendLoadedSoundUsages(_sound, key, soundName, rowIdentity, usages);
+
+    internal static void AppendLoadedSoundUsages(
+        SoundAliasListAsset sound,
+        AssetKey key,
+        string soundName,
+        TargetZoneRowIdentity? rowIdentity,
+        List<LoadedSoundUsage> usages)
+    {
+        for (int aliasIndex = 0; aliasIndex < sound.Aliases.Count; aliasIndex++)
+        {
+            SndAlias alias = sound.Aliases[aliasIndex];
+            for (int fileIndex = 0; fileIndex < alias.SoundFiles.Count; fileIndex++)
+            {
+                SoundFile file = alias.SoundFiles[fileIndex];
+                if (file.Type != SndAliasType.Loaded ||
+                    file.Loaded?.LoadedSound is not { } candidate ||
+                    AssetKey.FromDefinition(candidate) != key)
+                    continue;
+                usages.Add(new LoadedSoundUsage(
+                    soundName,
+                    alias.AliasName ?? "Alias",
+                    aliasIndex,
+                    fileIndex,
+                    rowIdentity));
+            }
+        }
+    }
+
+    internal static SoundAliasListAsset CopyDetached(
+        SoundAliasListAsset source) => Copy(source, cloneLoadedBytes: true);
+
     internal bool SemanticallyEquals(SoundDraft other)
     {
         ArgumentNullException.ThrowIfNull(other);
@@ -40,7 +81,8 @@ internal sealed class SoundDraft
     private static SoundAliasListAsset Copy(
         SoundAliasListAsset source,
         AssetKey? replacedLoadedSoundKey = null,
-        LoadedSound? replacement = null) => new()
+        LoadedSound? replacement = null,
+        bool cloneLoadedBytes = false) => new()
     {
         Offset = source.Offset,
         RuntimeAddress = source.RuntimeAddress,
@@ -51,13 +93,15 @@ internal sealed class SoundDraft
         Aliases = source.Aliases.Select(alias => Copy(
             alias,
             replacedLoadedSoundKey,
-            replacement)).ToArray()
+            replacement,
+            cloneLoadedBytes)).ToArray()
     };
 
     private static SndAlias Copy(
         SndAlias source,
         AssetKey? replacedLoadedSoundKey,
-        LoadedSound? replacement) => new()
+        LoadedSound? replacement,
+        bool cloneLoadedBytes) => new()
     {
         Offset = source.Offset,
         AliasNamePointer = source.AliasNamePointer,
@@ -75,7 +119,8 @@ internal sealed class SoundDraft
         SoundFiles = source.SoundFiles.Select(file => Copy(
             file,
             replacedLoadedSoundKey,
-            replacement)).ToArray(),
+            replacement,
+            cloneLoadedBytes)).ToArray(),
         Sequence = source.Sequence,
         VolumeMin = source.VolumeMin,
         VolumeMax = source.VolumeMax,
@@ -106,7 +151,8 @@ internal sealed class SoundDraft
     private static SoundFile Copy(
         SoundFile source,
         AssetKey? replacedLoadedSoundKey,
-        LoadedSound? replacement) => new()
+        LoadedSound? replacement,
+        bool cloneLoadedBytes) => new()
     {
         Offset = source.Offset,
         Type = source.Type,
@@ -117,7 +163,8 @@ internal sealed class SoundDraft
             LoadedSoundFile loaded => Copy(
                 loaded,
                 replacedLoadedSoundKey,
-                replacement),
+                replacement,
+                cloneLoadedBytes),
             StreamedSound streamed => Copy(streamed),
             null => null,
             _ => throw new InvalidDataException(
@@ -128,7 +175,8 @@ internal sealed class SoundDraft
     private static LoadedSoundFile Copy(
         LoadedSoundFile source,
         AssetKey? replacedLoadedSoundKey,
-        LoadedSound? replacement)
+        LoadedSound? replacement,
+        bool cloneLoadedBytes)
     {
         LoadedSound? loadedSound = source.LoadedSound;
         if (loadedSound is not null &&
@@ -142,12 +190,23 @@ internal sealed class SoundDraft
         return new LoadedSoundFile
         {
             LoadedSoundPointer = source.LoadedSoundPointer,
-            LoadedSound = loadedSound is null ? null : Copy(loadedSound)
+            LoadedSound = loadedSound is null
+                ? null
+                : cloneLoadedBytes ? Copy(loadedSound) : CopyMetadata(loadedSound)
         };
     }
 
     internal static LoadedSound Copy(LoadedSound source) =>
-        Copy(source, source.Name, clearNamePointer: false);
+        Copy(source, source.Name, clearNamePointer: false,
+            clearPayloadPointers: false, cloneBytes: true);
+
+    internal static LoadedSound CopyMetadata(LoadedSound source) =>
+        Copy(source, source.Name, clearNamePointer: false,
+            clearPayloadPointers: false, cloneBytes: false);
+
+    internal static LoadedSound CopyForImportedPayload(LoadedSound source) =>
+        Copy(source, source.Name, clearNamePointer: false,
+            clearPayloadPointers: true, cloneBytes: true);
 
     internal static LoadedSound CopyWithName(
         LoadedSound source,
@@ -162,13 +221,16 @@ internal sealed class SoundDraft
                 nameof(name));
         }
 
-        return Copy(source, name, clearNamePointer: true);
+        return Copy(source, name, clearNamePointer: true,
+            clearPayloadPointers: true, cloneBytes: true);
     }
 
     private static LoadedSound Copy(
         LoadedSound source,
         string? name,
-        bool clearNamePointer) => new()
+        bool clearNamePointer,
+        bool clearPayloadPointers,
+        bool cloneBytes) => new()
     {
         Offset = source.Offset,
         RuntimeAddress = source.RuntimeAddress,
@@ -181,10 +243,10 @@ internal sealed class SoundDraft
         Pad0E = source.Pad0E,
         Pad10 = source.Pad10,
         SeekTableCount = source.SeekTableCount,
-        SeekTablePointer = source.SeekTablePointer,
-        SeekTable = source.SeekTable?.ToArray(),
-        PhysicalDataPointer = source.PhysicalDataPointer,
-        PhysicalData = source.PhysicalData?.ToArray()
+        SeekTablePointer = clearPayloadPointers ? default : source.SeekTablePointer,
+        SeekTable = cloneBytes ? source.SeekTable?.ToArray() : source.SeekTable,
+        PhysicalDataPointer = clearPayloadPointers ? default : source.PhysicalDataPointer,
+        PhysicalData = cloneBytes ? source.PhysicalData?.ToArray() : source.PhysicalData
     };
 
     private static StreamedSound Copy(StreamedSound source) => new()
@@ -303,7 +365,7 @@ internal sealed class SoundDraft
         _ => false
     };
 
-    private static bool LoadedSoundEquals(LoadedSound? left, LoadedSound? right) =>
+    internal static bool LoadedSoundEquals(LoadedSound? left, LoadedSound? right) =>
         ReferenceEquals(left, right) ||
         left is not null &&
         right is not null &&

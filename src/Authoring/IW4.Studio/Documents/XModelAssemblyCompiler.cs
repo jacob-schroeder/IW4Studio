@@ -348,7 +348,7 @@ public static class XModelAssemblyCompiler
             .SelectMany(lod => lod.ImportedDocument!.Vertices)
             .Max(vertex => ToBoneLocal(vertex.Position, bindPose).LengthSquared()));
 
-    private static Vector3 ToBoneLocal(Vector3 position, DObjAnimMat? bindPose)
+    internal static Vector3 ToBoneLocal(Vector3 position, DObjAnimMat? bindPose)
     {
         if (bindPose is null)
             return position;

@@ -8,8 +8,8 @@ using IW4.Linker.Contracts;
 namespace IW4.Linker.Plans;
 
 /// <summary>
-/// Frozen fixed-size ImpactFx matrix. Every non-null slot is a logical Fx
-/// provider dependency; the matrix itself is unique presence storage.
+/// Frozen ImpactFx matrix. A null table has no rows; otherwise the matrix has
+/// fifteen rows. Every non-null slot is a logical Fx provider dependency.
 /// </summary>
 internal sealed class FxImpactTableLinkPlan : AssetLinkPlan
 {
@@ -24,19 +24,30 @@ internal sealed class FxImpactTableLinkPlan : AssetLinkPlan
             originalSerializedName,
             freeze.FreezeProviderName(originalSerializedName, 0, "Asset.Name"))
     {
-        LinkStorageTarget table = FreezeEntryTable(entries, entriesPointer, freeze);
         var writer = new LinkTemplateWriter(FxImpactTableAsset.SerializedSize);
         writer.Skip(sizeof(int));
         writer.Skip(sizeof(int));
-        Root = LinkStorageSymbol.SourceBytes(
-            XFileBlockType.TEMP,
-            writer.Complete(),
-            alignment: 4,
-            root =>
-            [
-                NameOperation(root, 0),
-                DirectOperation(root, 0x04, table, "ImpactFx.Entries")
-            ]);
+        if (entries.Count == 0)
+        {
+            Root = LinkStorageSymbol.SourceBytes(
+                XFileBlockType.TEMP,
+                writer.Complete(),
+                alignment: 4,
+                root => [NameOperation(root, 0)]);
+        }
+        else
+        {
+            LinkStorageTarget table = FreezeEntryTable(entries, entriesPointer, freeze);
+            Root = LinkStorageSymbol.SourceBytes(
+                XFileBlockType.TEMP,
+                writer.Complete(),
+                alignment: 4,
+                root =>
+                [
+                    NameOperation(root, 0),
+                    DirectOperation(root, 0x04, table, "ImpactFx.Entries")
+                ]);
+        }
     }
 
     internal override LinkStorageSymbol Root { get; }
@@ -64,7 +75,8 @@ internal sealed class FxImpactTableLinkPlan : AssetLinkPlan
                 originalSerializedName,
                 freeze);
         }
-        if (entries.Count != FxImpactTableAsset.EntryCount)
+        if (entries.Count != FxImpactTableAsset.EntryCount &&
+            (entries.Count != 0 || definition.EntriesPointer.Raw != 0))
         {
             throw new InvalidDataException(
                 $"ImpactFx requires exactly {FxImpactTableAsset.EntryCount} entry rows.");

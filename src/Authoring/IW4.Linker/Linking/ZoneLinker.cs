@@ -78,6 +78,95 @@ public sealed class ZoneLinker
     private const int XAssetRowSize = 0x08;
     private const int DecodedPageSize = 0x10000;
 
+    /// <summary>
+    /// Projects authored ImpactFx roots after their explicit native provider
+    /// dependencies. Other roots retain their relative order.
+    /// </summary>
+    public static ZoneLinkRequest ProjectImpactFxRootOrder(
+        ZoneLinkRequest request,
+        IReadOnlySet<AssetKey> authoredImpactFx)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(authoredImpactFx);
+        if (authoredImpactFx.Count == 0)
+            return request;
+
+        (LinkRoot Root, int Index)[] selected = request.Roots
+            .Select((root, index) => (Root: root, Index: index))
+            .Where(item => item.Root.SerializedType == XAssetType.ImpactFx &&
+                item.Root.Intent == LinkRootIntent.Owned &&
+                item.Root.Asset is { } key && authoredImpactFx.Contains(key))
+            .ToArray();
+        if (selected.Length == 0)
+            return request;
+
+        ProviderSelection providers = SelectProviders(request.Assets.Providers);
+        var externalProviders = new Dictionary<AssetKey, ProviderBinding>();
+        ResolvedRoot[] resolved = ResolveRoots(request, providers, externalProviders);
+        IReadOnlyDictionary<AssetKey, ProviderBinding> authorities =
+            BindRootAuthorities(resolved);
+        var rootEntryByProvider = new Dictionary<ProviderSymbol, string>();
+        for (int index = 0; index < resolved.Length; index++)
+            if (resolved[index].Provider is { } provider)
+                rootEntryByProvider.TryAdd(provider.Symbol, request.Roots[index].EntryId);
+
+        List<LinkRoot> roots = request.Roots.ToList();
+        foreach ((LinkRoot table, int originalIndex) in selected)
+        {
+            ProviderBinding tableProvider = resolved[originalIndex].Provider ??
+                throw new InvalidDataException(
+                    $"ImpactFx root '{table.EntryId}' has no provider.");
+            var reached = new HashSet<ProviderSymbol>();
+            var visitedStorage = new HashSet<LinkStorageSymbol>(
+                ReferenceEqualityComparer.Instance);
+            var dependencyRootIds = new HashSet<string>(StringComparer.Ordinal);
+            Visit(tableProvider);
+            int tableIndex = roots.FindIndex(root => root.EntryId == table.EntryId);
+            int latestDependencyIndex = roots.FindLastIndex(root =>
+                dependencyRootIds.Contains(root.EntryId));
+            if (latestDependencyIndex > tableIndex)
+            {
+                roots.RemoveAt(tableIndex);
+                roots.Insert(latestDependencyIndex, table);
+            }
+
+            void Visit(ProviderBinding provider)
+            {
+                if (!reached.Add(provider.Symbol))
+                    return;
+                provider.Plan.VisitReferences(
+                    dependency =>
+                    {
+                        ProviderBinding target = ResolveDependency(
+                            provider,
+                            dependency,
+                            providers,
+                            authorities,
+                            externalProviders,
+                            request.Assets.Providers.Count);
+                        if (target.Symbol == tableProvider.Symbol)
+                            return;
+                        if (rootEntryByProvider.TryGetValue(
+                                target.Symbol, out string? entryId))
+                            dependencyRootIds.Add(entryId);
+                        Visit(target);
+                    },
+                    _ => { },
+                    _ => { },
+                    visitedStorage);
+            }
+        }
+
+        return roots.SequenceEqual(request.Roots)
+            ? request
+            : new ZoneLinkRequest(
+                request.Assets,
+                roots,
+                request.LanguageMask,
+                request.SelectedLanguageMask,
+                request.ScriptStrings);
+    }
+
     public ZoneLinkResult Link(ZoneLinkRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);

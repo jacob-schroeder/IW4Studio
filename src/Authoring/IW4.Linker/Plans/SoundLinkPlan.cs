@@ -294,7 +294,7 @@ internal sealed class SoundLinkPlan : AssetLinkPlan
             }
         }
 
-        return freeze.FreezeStorage(
+        LinkStorageTarget target = freeze.FreezeStorage(
             pointer,
             writer.Complete(),
             XFileBlockType.LARGE,
@@ -303,6 +303,7 @@ internal sealed class SoundLinkPlan : AssetLinkPlan
                 ? []
                 : [XStringOperation(storage, checked(addend + 0x04), name, $"{fieldPath}.Name")],
             fieldPath);
+        return freeze.ShareAuthoredSpeakerMap(pointer, speakerMap.Name, target);
     }
 
     private static LinkStorageSymbol? FreezeOptionalXString(

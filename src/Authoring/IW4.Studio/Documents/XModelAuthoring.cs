@@ -6,7 +6,7 @@ using IW4.Game.Zone;
 
 namespace IW4.Studio.Documents;
 
-public sealed class XModelDraft
+public sealed partial class XModelDraft
 {
     private readonly List<XModelLodDraft> _lodAssembly;
     private readonly List<XModelCollSurf> _collisionSurfaces;
@@ -286,9 +286,14 @@ public sealed class XModelDraft
         PhysPresetAsset? physPreset = null,
         PhysCollmapAsset? physCollmap = null,
         bool useAuthoredPhysicsReferences = false,
-        string? authoredName = null)
+        string? authoredName = null,
+        Bounds? boundsOverride = null,
+        float? radiusOverride = null,
+        IReadOnlyList<XBoneInfo>? boneInfoOverride = null)
     {
         ArgumentNullException.ThrowIfNull(value);
+        var surfaces = collisionSurfaces ?? value.CollSurfs;
+        bool collisionChanged = collisionSurfaces is not null && !CollSurfsEqual(value.CollSurfs, surfaces);
         return new XModelAsset
         {
             Offset = value.Offset,
@@ -323,13 +328,13 @@ public sealed class XModelDraft
             CollLod = value.CollLod,
             Flags = value.Flags,
             CollSurfsPointer = value.CollSurfsPointer,
-            NumCollSurfs = checked((byte)(collisionSurfaces ?? value.CollSurfs).Count),
-            Contents = (collisionSurfaces ?? value.CollSurfs).Aggregate(0, (contents, row) => contents | row.Contents),
-            CollSurfs = CopyCollSurfs(collisionSurfaces ?? value.CollSurfs),
+            NumCollSurfs = collisionChanged ? checked((byte)surfaces.Count) : value.NumCollSurfs,
+            Contents = collisionChanged ? surfaces.Aggregate(0, (contents, row) => contents | row.Contents) : value.Contents,
+            CollSurfs = CopyCollSurfs(surfaces),
             BoneInfoPointer = value.BoneInfoPointer,
-            BoneInfo = CopyBoneInfo(value.BoneInfo),
-            Radius = value.Radius,
-            Bounds = CopyBounds(value.Bounds),
+            BoneInfo = CopyBoneInfo(boneInfoOverride ?? value.BoneInfo),
+            Radius = radiusOverride ?? value.Radius,
+            Bounds = CopyBounds(boundsOverride ?? value.Bounds),
             InvHighMipRadiusPointer = value.InvHighMipRadiusPointer,
             InvHighMipRadius = Copy(value.InvHighMipRadius),
             MemUsage = value.MemUsage,

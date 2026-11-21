@@ -1,0 +1,192 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:local="using:IW4.Studio.Desktop.Editors.Leaderboard"
+             x:Class="IW4.Studio.Desktop.Editors.Leaderboard.LeaderboardEditorView"
+             SizeChanged="Editor_SizeChanged">
+  <UserControl.Styles>
+    <Style Selector="Border.lbPanel">
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style Selector="TextBlock.lbMuted">
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBox.lbInput, ComboBox.lbInput">
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Border.lbHeader">
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceRaisedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="0,0,1,1" />
+    </Style>
+    <Style Selector="Border.lbHeader:pointerover">
+      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+    </Style>
+    <Style Selector="Border.lbHeader.selected">
+      <Setter Property="Background" Value="{DynamicResource StudioAccentSurfaceBrush}" />
+    </Style>
+    <Style Selector="Border.lbHeader.dragSource">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+    </Style>
+    <Style Selector="Border.lbHeader.dropBefore, Border.lbCell.dropBefore">
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentBrush}" />
+      <Setter Property="BorderThickness" Value="3,0,1,1" />
+    </Style>
+    <Style Selector="Border.lbHeader.dropAfter, Border.lbCell.dropAfter">
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentBrush}" />
+      <Setter Property="BorderThickness" Value="0,0,3,1" />
+    </Style>
+    <Style Selector="Border.lbHeader:focus-visible">
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioFocusBrush}" />
+    </Style>
+    <Style Selector="Border.lbCell">
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+    </Style>
+    <Style Selector="icons|MaterialIcon.lbGrip">
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Classes="lbPanel" MinHeight="390">
+    <Grid RowDefinitions="Auto,1,*,Auto">
+      <Grid x:Name="HeaderGrid" Margin="20,15" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+        <StackPanel Spacing="3" MinWidth="0">
+          <TextBlock x:Name="HeadingText" FontSize="21" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel x:Name="HeaderActions" Grid.Column="1" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+          <Button x:Name="UndoButton" Classes="ghost" Click="Undo_Click" ToolTip.Tip="Undo layout edit" AutomationProperties.Name="Undo layout edit">
+            <icons:MaterialIcon Kind="Undo" Width="17" Height="17" />
+          </Button>
+          <Button x:Name="ApplyButton" Classes="primary" Content="Apply" Click="Apply_Click" ToolTip.Tip="Apply changes to the working fastfile" />
+        </StackPanel>
+      </Grid>
+      <Border Grid.Row="1" Background="{DynamicResource StudioBorderBrush}" />
+
+      <Grid x:Name="BodyGrid" Grid.Row="2" ColumnDefinitions="*,1,300" RowDefinitions="*" MinHeight="0">
+        <Grid x:Name="PreviewPane" RowDefinitions="Auto,Auto,Auto,Auto" MinWidth="0" Margin="18,16" Background="{DynamicResource StudioSurfaceSunkenBrush}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+            <StackPanel Spacing="3" MinWidth="0">
+              <TextBlock Text="Scoreboard preview" FontSize="15" FontWeight="Medium" />
+              <TextBlock Text="Drag a column header to move it. Select a header to edit it. Alt + Left/Right also moves a focused header." Classes="lbMuted" />
+            </StackPanel>
+            <Button x:Name="AddButton" Grid.Column="1" Content="Add column" Click="Add_Click" VerticalAlignment="Center" />
+          </Grid>
+
+          <Grid Grid.Row="1" x:Name="PreviewArea" MinHeight="180" Margin="0,14,0,0">
+            <Border Classes="lbPanel" CornerRadius="6" ClipToBounds="True" VerticalAlignment="Top">
+              <ScrollViewer x:Name="PreviewScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <StackPanel MinWidth="520">
+                  <StackPanel x:Name="PreviewHeaderPanel" Orientation="Horizontal" />
+                  <StackPanel x:Name="PreviewRowsPanel" />
+                </StackPanel>
+              </ScrollViewer>
+            </Border>
+            <Canvas IsHitTestVisible="False">
+              <Border x:Name="DragChip" IsVisible="False" Padding="10,5" CornerRadius="5"
+                      Background="{DynamicResource StudioAccentStrongBrush}">
+                <TextBlock x:Name="DragChipText" Foreground="{DynamicResource StudioOnAccentBrush}" FontSize="11" />
+              </Border>
+            </Canvas>
+          </Grid>
+
+          <TextBlock Grid.Row="2" Text="Sample players and results." Classes="lbMuted" Margin="1,8,0,0" />
+          <StackPanel Grid.Row="3" Margin="0,17,0,0" Spacing="5">
+            <TextBlock Text="Hidden columns" Classes="lbMuted" />
+            <WrapPanel x:Name="HiddenColumnsPanel" />
+          </StackPanel>
+        </Grid>
+
+        <Border x:Name="BodyDivider" Grid.Column="1" Background="{DynamicResource StudioBorderBrush}" />
+        <Border x:Name="InspectorPane" Grid.Column="2" Background="{DynamicResource StudioSurfaceBrush}">
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="17,16" Spacing="10">
+              <TextBlock x:Name="SelectedTitle" FontSize="15" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="Selected column" Classes="lbMuted" Margin="0,-7,0,0" />
+              <StackPanel Spacing="4">
+                <TextBlock Text="Column name" Classes="lbMuted" />
+                <TextBox x:Name="TitleInput" Classes="lbInput" AutomationProperties.Name="Column name" />
+              </StackPanel>
+              <StackPanel Spacing="4">
+                <TextBlock Text="Source stat" Classes="lbMuted" />
+                <ComboBox x:Name="SourcePicker" Classes="lbInput" AutomationProperties.Name="Source stat">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="local:LeaderboardStatChoice">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="{Binding Label}" />
+                        <TextBlock Text="{Binding Group}" Classes="lbMuted" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock x:Name="SourceKey" Classes="lbMuted" FontFamily="Consolas" TextWrapping="Wrap" />
+              </StackPanel>
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="Display as" Classes="lbMuted" />
+                  <ComboBox x:Name="TypePicker" Classes="lbInput" AutomationProperties.Name="Display as" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="4">
+                  <TextBlock Text="Combine results" Classes="lbMuted" />
+                  <ComboBox x:Name="AggregationPicker" Classes="lbInput" AutomationProperties.Name="Combine results" />
+                </StackPanel>
+              </Grid>
+              <Border Margin="0,4,0,0" Padding="0,10,0,0" BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="0,1,0,0">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="Atlas · four successive sample results" Classes="lbMuted" />
+                  <TextBlock x:Name="SampleHistoryText" FontWeight="Medium" TextWrapping="Wrap" />
+                  <TextBlock x:Name="SampleResultText" Classes="lbMuted" />
+                </StackPanel>
+              </Border>
+              <StackPanel x:Name="PrecisionPanel" Spacing="4">
+                <TextBlock Text="Decimal places" Classes="lbMuted" />
+                <TextBox x:Name="PrecisionInput" Classes="lbInput" AutomationProperties.Name="Decimal places" />
+              </StackPanel>
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="6" Margin="0,2,0,0">
+                <Button x:Name="LeftButton" Content="← Move left" Click="MoveLeft_Click" />
+                <Button x:Name="RightButton" Grid.Column="1" Content="Move right →" Click="MoveRight_Click" />
+              </Grid>
+              <CheckBox x:Name="VisibleCheck" Content="Show column" Margin="0,2,0,0" />
+
+              <Expander Header="Advanced identifiers" Margin="0,5,0,0">
+                <StackPanel Spacing="10" Margin="1,10,1,0">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="Board ID" Classes="lbMuted" />
+                    <TextBox x:Name="BoardIdInput" Classes="lbInput" AutomationProperties.Name="Board ID" />
+                  </StackPanel>
+                  <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                    <StackPanel Spacing="4">
+                      <TextBlock Text="Column ID" Classes="lbMuted" />
+                      <TextBox x:Name="ColumnIdInput" Classes="lbInput" AutomationProperties.Name="Column ID" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                      <TextBlock Text="Property ID" Classes="lbMuted" />
+                      <TextBox x:Name="PropertyIdInput" Classes="lbInput" AutomationProperties.Name="Property ID" />
+                    </StackPanel>
+                  </Grid>
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="XP role column" Classes="lbMuted" />
+                    <ComboBox x:Name="XpRolePicker" Classes="lbInput" AutomationProperties.Name="XP role column" />
+                  </StackPanel>
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="Prestige role column" Classes="lbMuted" />
+                    <ComboBox x:Name="PrestigeRolePicker" Classes="lbInput" AutomationProperties.Name="Prestige role column" />
+                  </StackPanel>
+                </StackPanel>
+              </Expander>
+            </StackPanel>
+          </ScrollViewer>
+        </Border>
+      </Grid>
+
+      <TextBlock x:Name="StatusText" Grid.Row="3" Margin="18,10" Classes="lbMuted"
+                 HorizontalAlignment="Right" AutomationProperties.LiveSetting="Polite" />
+    </Grid>
+  </Border>
+</UserControl>

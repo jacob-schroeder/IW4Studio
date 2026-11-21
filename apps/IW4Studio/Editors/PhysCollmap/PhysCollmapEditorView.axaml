@@ -1,0 +1,104 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:local="using:IW4.Studio.Desktop.Editors.PhysCollmap"
+             x:Class="IW4.Studio.Desktop.Editors.PhysCollmap.PhysCollmapEditorView">
+  <UserControl.Styles>
+    <Style Selector="ToggleButton.tool">
+      <Setter Property="Padding" Value="9,4" />
+      <Setter Property="Margin" Value="0,0,3,3" />
+      <Setter Property="MinHeight" Value="29" />
+    </Style>
+    <Style Selector="ToggleButton.layer">
+      <Setter Property="Padding" Value="7,4" />
+      <Setter Property="MinHeight" Value="29" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="TextBlock.secondary">
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="Expander">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+    <Border Background="{DynamicResource StudioSurfaceBrush}" BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,8">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="Collision editor" Classes="secondary" />
+          <TextBlock x:Name="AssetName" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+        <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+          <Button x:Name="UndoButton" Classes="ghost" AutomationProperties.Name="Undo" Click="UndoClicked" ToolTip.Tip="Undo"><icons:MaterialIcon Kind="Undo" Width="17" Height="17"/></Button>
+          <Button x:Name="RedoButton" Classes="ghost" AutomationProperties.Name="Redo" Click="RedoClicked" ToolTip.Tip="Redo"><icons:MaterialIcon Kind="Redo" Width="17" Height="17"/></Button>
+          <Button x:Name="ApplyButton" Margin="6,0,0,0" Classes="primary" Content="Apply to workspace" Click="ApplyClicked" ToolTip.Tip="Apply these edits to the workspace"/>
+        </WrapPanel>
+      </Grid>
+    </Border>
+    <Grid x:Name="Panes" Grid.Row="1" ColumnDefinitions="*,250" ColumnSpacing="8">
+      <Border x:Name="PreviewPane" Background="{DynamicResource StudioSurfaceBrush}" CornerRadius="8" ClipToBounds="True" BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <WrapPanel Margin="8,7,5,4" VerticalAlignment="Center">
+            <ToggleButton x:Name="MoveButton" Classes="tool" Content="Move" Tag="Move" Click="ToolClicked" ToolTip.Tip="Move (W)" />
+            <ToggleButton x:Name="ResizeButton" Classes="tool" Content="Resize" Tag="Resize" Click="ToolClicked" ToolTip.Tip="Resize (R)" />
+            <ToggleButton x:Name="RotateButton" Classes="tool" Content="Rotate" Tag="Rotate" Click="ToolClicked" ToolTip.Tip="Rotate (E)" />
+            <StackPanel Orientation="Horizontal" Margin="7,0,0,0" Spacing="1">
+              <ToggleButton x:Name="OverlayLayer" Classes="layer" Content="Overlay" Tag="Overlay" Click="LayerClicked" ToolTip.Tip="Model with collision outlines"/>
+              <ToggleButton x:Name="ModelLayer" Classes="layer" Content="Model" Tag="Model" Click="LayerClicked" ToolTip.Tip="Show the model alone"/>
+              <ToggleButton x:Name="ShapeLayer" Classes="layer" Content="Shapes" Tag="Shape" Click="LayerClicked" ToolTip.Tip="Show collision shapes alone"/>
+            </StackPanel>
+          </WrapPanel>
+          <local:PhysCollmapViewport x:Name="Viewport" Grid.Row="1" MinHeight="170" AutomationProperties.Name="Collision shape preview"/>
+          <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="4" Margin="9,6">
+            <TextBlock x:Name="HintText" Classes="secondary" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3">
+              <Button AutomationProperties.Name="Orbit left" ToolTip.Tip="Orbit left" Click="OrbitLeft"><icons:MaterialIcon Kind="RotateLeft" Width="16" Height="16"/></Button>
+              <Button AutomationProperties.Name="Orbit right" ToolTip.Tip="Orbit right" Click="OrbitRight"><icons:MaterialIcon Kind="RotateRight" Width="16" Height="16"/></Button>
+              <Button Content="Frame" ToolTip.Tip="Frame the model and all shapes" Click="FrameClicked"/>
+            </StackPanel>
+          </Grid>
+        </Grid>
+      </Border>
+      <Border x:Name="InspectorPane" Grid.Column="1" Background="{DynamicResource StudioSurfaceBrush}" BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1" CornerRadius="8">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="12" Spacing="9">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="Collision shapes" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              <Button x:Name="AddButton" Grid.Column="1" Content="+ Add">
+                <Button.Flyout><MenuFlyout>
+                  <MenuItem Header="Box" Tag="Box" Click="AddClicked"/>
+                  <MenuItem Header="Cylinder" Tag="Cylinder" Click="AddClicked"/>
+                </MenuFlyout></Button.Flyout>
+              </Button>
+            </Grid>
+            <TextBlock Classes="secondary" Text="These outlines are what other objects touch."/>
+            <ListBox x:Name="ShapeList" MaxHeight="170" AutomationProperties.Name="Collision shapes" SelectionChanged="ShapeChanged"/>
+            <TextBlock x:Name="EmptyMessage" Classes="secondary" Text="Add a box or cylinder to get started."/>
+            <WrapPanel>
+              <Button x:Name="FitButton" Content="Fit to model" Click="FitClicked" ToolTip.Tip="Fit the selected shape to the preview model"/>
+              <Button x:Name="RemoveButton" Margin="4,0,0,0" Classes="ghost" Content="Remove" Click="RemoveClicked"/>
+            </WrapPanel>
+            <TextBlock x:Name="BrushHint" Classes="secondary" Text="Stock brush hulls can move and resize along their axes."/>
+            <Expander x:Name="FineTune" Header="Fine-tune">
+              <StackPanel x:Name="ShapeFields" Spacing="5"/>
+            </Expander>
+            <Expander Header="Balance point" Collapsed="BalanceCollapsed">
+              <StackPanel Spacing="6">
+                <ToggleButton x:Name="BalanceButton" Content="Move balance point" Click="BalanceClicked"/>
+                <Expander Header="Exact position"><StackPanel x:Name="BalanceFields"/></Expander>
+              </StackPanel>
+            </Expander>
+            <Separator />
+            <TextBlock Text="Preview model" FontWeight="SemiBold"/>
+            <TextBlock x:Name="ModelLabel" Classes="secondary"/>
+            <Button x:Name="ChooseModelButton" Content="Choose model…" Classes="ghost" Click="ChooseModelClicked"/>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+    <TextBlock Grid.Row="2" x:Name="StatusText" Margin="4,0" Classes="secondary" AutomationProperties.LiveSetting="Polite"/>
+  </Grid>
+</UserControl>

@@ -1,0 +1,97 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:IW4.Studio.Desktop.Editors.XModelSurfs"
+             xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="IW4.Studio.Desktop.Editors.XModelSurfs.XModelSurfsEditorView">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.note">
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="ToggleButton.tool">
+      <Setter Property="Padding" Value="10,5"/>
+      <Setter Property="MinHeight" Value="30"/>
+    </Style>
+    <Style Selector="Expander">
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    </Style>
+    <Style Selector="Border.panel">
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+    <Border Classes="panel" Padding="12,8">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock x:Name="ContextText" Classes="note"/>
+          <TextBlock x:Name="Heading" FontWeight="SemiBold" FontSize="17" TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+          <Button x:Name="UndoButton" Classes="ghost" AutomationProperties.Name="Undo edit" ToolTip.Tip="Undo edit" Click="Undo">
+            <icons:MaterialIcon Kind="Undo" Width="17" Height="17"/>
+          </Button>
+          <Button x:Name="RedoButton" Classes="ghost" AutomationProperties.Name="Redo edit" ToolTip.Tip="Redo edit" Click="Redo">
+            <icons:MaterialIcon Kind="Redo" Width="17" Height="17"/>
+          </Button>
+          <Button x:Name="ApplyButton" Classes="primary" Content="Apply to workspace" Click="Apply"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Grid x:Name="Panes" Grid.Row="1" ColumnDefinitions="*,256" ColumnSpacing="8">
+      <Border Classes="panel" ClipToBounds="True">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <WrapPanel Margin="8,7">
+            <ToggleButton x:Name="MoveButton" Classes="tool" Tag="Move" Click="ToolClicked" ToolTip.Tip="Move (W)">
+              <StackPanel Orientation="Horizontal" Spacing="5"><icons:MaterialIcon Kind="CursorMove" Width="15" Height="15"/><TextBlock Text="Move"/></StackPanel>
+            </ToggleButton>
+            <ToggleButton x:Name="SizeButton" Classes="tool" Margin="4,0,12,0" Tag="Size" Click="ToolClicked" ToolTip.Tip="Size (R)">
+              <StackPanel Orientation="Horizontal" Spacing="5"><icons:MaterialIcon Kind="Resize" Width="15" Height="15"/><TextBlock Text="Size"/></StackPanel>
+            </ToggleButton>
+            <CheckBox x:Name="WireButton" Content="Wireframe" Click="WireClicked" VerticalAlignment="Center"/>
+          </WrapPanel>
+          <local:XModelSurfsViewport Grid.Row="1" x:Name="Viewport" MinHeight="150" Focusable="True" AutomationProperties.Name="Interactive model surfaces"/>
+          <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="10,5" ColumnSpacing="6">
+            <TextBlock x:Name="Hint" Classes="note" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3">
+              <Button Classes="ghost" AutomationProperties.Name="Orbit left" ToolTip.Tip="Orbit left" Click="OrbitLeft"><icons:MaterialIcon Kind="RotateLeft" Width="16" Height="16"/></Button>
+              <Button Classes="ghost" AutomationProperties.Name="Orbit right" ToolTip.Tip="Orbit right" Click="OrbitRight"><icons:MaterialIcon Kind="RotateRight" Width="16" Height="16"/></Button>
+              <Button Content="Frame" ToolTip.Tip="Frame all surfaces (F)" Click="Frame"/>
+            </StackPanel>
+          </Grid>
+        </Grid>
+      </Border>
+      <Border x:Name="Inspector" Classes="panel" Grid.Column="1">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="10" Margin="12">
+            <TextBlock Text="Surfaces" FontSize="15" FontWeight="SemiBold"/>
+            <TextBlock Text="Click a part on the model or select it here." Classes="note"/>
+            <ListBox x:Name="SurfaceList" MaxHeight="205" AutomationProperties.Name="Model surfaces" SelectionChanged="SurfaceChanged"/>
+            <TextBlock x:Name="Counts" Classes="note"/>
+            <Expander x:Name="Geometry" Header="Replace geometry" Expanded="GeometryOpened">
+              <StackPanel Spacing="6">
+                <TextBlock Text="Source collection" Classes="note"/>
+                <ComboBox x:Name="SourcePicker" HorizontalAlignment="Stretch" AutomationProperties.Name="Source collection" SelectionChanged="SourceChanged"/>
+                <Button x:Name="BrowseButton" Classes="ghost" Content="Browse workspace…" Click="Browse"/>
+                <TextBlock x:Name="DonorLabel" Text="Source surface" Classes="note"/>
+                <ComboBox x:Name="DonorPicker" HorizontalAlignment="Stretch" AutomationProperties.Name="Source surface" SelectionChanged="DonorChanged"/>
+                <Button x:Name="PreviewButton" Content="Preview replacement" Click="Preview"/>
+              </StackPanel>
+            </Expander>
+            <Expander x:Name="Precise" Header="Fine-tune">
+              <StackPanel x:Name="ExactFields" Spacing="6"/>
+            </Expander>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+    <Grid Grid.Row="2" ColumnDefinitions="*,2*" ColumnSpacing="8" Margin="5,0">
+      <TextBlock x:Name="FileName" Classes="note" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+      <TextBlock x:Name="Status" Grid.Column="1" HorizontalAlignment="Right" Classes="note" AutomationProperties.LiveSetting="Polite"/>
+    </Grid>
+  </Grid>
+</UserControl>

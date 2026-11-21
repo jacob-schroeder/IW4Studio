@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text;
 using IW4.Formats.SourceFormat.Gsc;
 using IW4.Formats.SourceFormat.Character;
@@ -12,6 +13,7 @@ using IW4.Game.Assets.ComWorld;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Assets.Image;
 using IW4.Game.Assets.LightDef;
+using IW4.Game.Assets.Localize;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.Physics;
 using IW4.Game.Assets.RawFile;
@@ -200,9 +202,9 @@ internal static partial class FastFileConverter
         string[] turretFxNames = [];
         string[] turretSoundNames = [];
         if (request.TurretWeaponNames.Count != 0)
-            LoadDiskTurretWeapons(request.TurretWeaponNames.Distinct(StringComparer.Ordinal).ToArray(),
-                request.AssetLibraryDirectory, request.BootstrapDirectory, materials,
-                out _, out turretFxNames, out turretSoundNames);
+            LoadDiskWeapons(request.TurretWeaponNames.Distinct(StringComparer.Ordinal).ToArray(),
+                request.AssetLibraryDirectory, request.BootstrapDirectory, materials, models,
+                out _, out turretFxNames, out turretSoundNames, out _);
         cancellationToken.ThrowIfCancellationRequested();
         var soundPackager = new SoundFilePackager();
         BaseAsset[] emitterAssets = LoadRawEmitterAssets(request.AssetLibraryDirectory,
@@ -301,7 +303,15 @@ internal static partial class FastFileConverter
         string? characterAssetsDirectory = null,
         FastFilePreparedSources? preparedSources = null,
         CancellationToken cancellationToken = default,
-        IProgress<string>? progress = null)
+        IProgress<string>? progress = null,
+        IReadOnlyList<string>? extraConfigStringModes = null,
+        bool useStaticModelCollisionTree = false,
+        IReadOnlySet<string>? residentSoundNames = null,
+        bool includeStockCallsigns = false,
+        bool compressRawFiles = false,
+        bool compactAirbornePrecache = false,
+        IReadOnlyCollection<string>? additionalWeaponNames = null,
+        IReadOnlyDictionary<string, string>? localizedText = null)
     {
         ArgumentNullException.ThrowIfNull(dependencyFastFiles);
         ArgumentNullException.ThrowIfNull(providerFastFiles);
@@ -334,7 +344,7 @@ internal static partial class FastFileConverter
         string templatePath = Path.GetFullPath(templateFastFile);
         string outputPath = Path.GetFullPath(output);
         RawFileAsset[] rawFileOverrides = rawFilePaths
-            .Select(mapping => CreateRawFile(mapping.Key, mapping.Value))
+            .Select(mapping => CreateRawFile(mapping.Key, mapping.Value, compressRawFiles))
             .ToArray();
         RequireDifferentPath(inputPath, outputPath, "d3dbsp input");
         RequireDifferentPath(templatePath, outputPath, "template fastfile");
@@ -404,7 +414,9 @@ internal static partial class FastFileConverter
         var materialSources = preparedSources?.Materials ?? (assetLibraryDirectory is null ? null : new MaterialSourceCompiler(assetLibraryDirectory, bootstrapDirectory));
         var modelSources = preparedSources?.Models ?? (materialSources is null ? null : new ModelSourceCompiler(assetLibraryDirectory ?? "", materialSources, bootstrapDirectory));
         var bootstrapMaterials = preparedSources?.BootstrapMaterials ?? (bootstrapDirectory is null ? null : new MaterialSourceCompiler(bootstrapDirectory));
-        var bootstrapModels = preparedSources?.BootstrapModels ?? (bootstrapMaterials is null ? null : new ModelSourceCompiler(bootstrapDirectory ?? "", bootstrapMaterials));
+        var bootstrapModels = preparedSources?.BootstrapModels ?? (bootstrapMaterials is null ? null :
+            new ModelSourceCompiler(bootstrapDirectory ?? "", bootstrapMaterials,
+                coarsestLodOnly: compactAirbornePrecache ? Ps3MapStartupAssets.IsAirbornePrecacheModel : null));
         var availableMaterials = new Dictionary<AssetKey, MaterialAsset>();
         var availableLightingImages = new Dictionary<AssetKey, GfxImageAsset>();
         if (useSourceMaterials && materialSources is null)
@@ -569,6 +581,7 @@ internal static partial class FastFileConverter
                 UseSourceMaterials = useSourceMaterials,
                 UseCompiledLighting = useCompiledLighting,
                 StaticScriptModelNames = staticScriptModelNames,
+                UseStaticModelCollisionTree = useStaticModelCollisionTree,
                 AvailableMaterials = availableMaterials.Values.ToArray(),
                 MaterialDisplacements = waterDefinitions.Values.Where(definition => definition.Ocean is not null)
                     .ToDictionary(definition => definition.Name, definition => definition.Ocean?.Height ?? 0, StringComparer.Ordinal),
@@ -705,18 +718,20 @@ internal static partial class FastFileConverter
             .Select(AssetKey.FromDefinition)
             .ToHashSet();
         cancellationToken.ThrowIfCancellationRequested();
+        var startupModels = Ps3MapStartupAssets.XModelNames;
         var bootstrapXModelGraph = bootstrapModels is not null
-            ? ResolveDiskModelGraph(bootstrapModels, Ps3MapStartupAssets.XModelNames) : ResolveXModelGraph(
+            ? ResolveDiskModelGraph(bootstrapModels, startupModels) : ResolveXModelGraph(
             RequireTemplate(),
             templatePath,
-            Ps3MapStartupAssets.XModelNames,
+            startupModels,
             mapMaterialKeys,
             "required PS3 FFA bootstrap",
             externalizeOnlyDependencyProvidedReferences: false);
         ValidateBootstrapXModelGraph(
             templatePath,
             bootstrapXModelGraph.XModelSurfsCount,
-            bootstrapXModelGraph.PhysPresetReferenceCount);
+            bootstrapXModelGraph.PhysPresetReferenceCount,
+            expectedModelSurfs: compactAirbornePrecache ? 72 : 105);
         cancellationToken.ThrowIfCancellationRequested();
         string[] staticXModelNames = graph.DependencyReferences
             .Where(asset => asset.SerializedAssetType == XAssetType.XModel)
@@ -757,29 +772,31 @@ internal static partial class FastFileConverter
             additionalMaterialNames,
             XAssetType.Material,
             "requested Material");
-        string[] turretWeaponNames = worldOnly ? [] : D3dbspFile.Read(inputPath).GetEntities()
+        string[] weaponNames = worldOnly ? [] : D3dbspFile.Read(inputPath).GetEntities()
             .Where(entity => entity.GetValueOrDefault("classname") == "misc_turret")
             .Select(entity => entity.TryGetValue("weaponinfo", out string? name) && !string.IsNullOrWhiteSpace(name)
                 ? name : throw new InvalidDataException("A misc_turret requires a weaponinfo asset name."))
-            .Distinct(StringComparer.Ordinal).ToArray();
-        BaseAsset[] turretDependencies = [];
-        string[] turretFxNames = [];
-        string[] turretSoundNames = [];
-        WeaponAsset[] turretWeapons = turretWeaponNames.Length == 0 ? [] : bootstrap is not null
-            ? LoadDiskTurretWeapons(turretWeaponNames,
-                assetLibraryDirectory ?? throw new InvalidOperationException("Disk turret builds require an asset library."),
-                bootstrapDirectory ?? throw new InvalidOperationException("Disk turret builds require bootstrap sources."),
-                materialSources ?? throw new InvalidOperationException("Disk turret builds require material sources."),
-                out turretDependencies, out turretFxNames, out turretSoundNames)
+            .Concat(additionalWeaponNames ?? []).Distinct(StringComparer.Ordinal).ToArray();
+        BaseAsset[] weaponDependencies = [];
+        string[] weaponFxNames = [];
+        string[] weaponSoundNames = [];
+        string[] weaponAnimations = [];
+        WeaponAsset[] weapons = weaponNames.Length == 0 ? [] : bootstrap is not null
+            ? LoadDiskWeapons(weaponNames,
+                assetLibraryDirectory ?? throw new InvalidOperationException("Disk weapon builds require an asset library."),
+                bootstrapDirectory ?? throw new InvalidOperationException("Disk weapon builds require bootstrap sources."),
+                materialSources ?? throw new InvalidOperationException("Disk weapon builds require material sources."),
+                modelSources ?? throw new InvalidOperationException("Disk weapon builds require model sources."),
+                out weaponDependencies, out weaponFxNames, out weaponSoundNames, out weaponAnimations)
             : ResolveOwnedAssetsAcrossFastFiles<WeaponAsset>(RequireTemplate(), templatePath,
-                [.. dependencyPaths, .. providerPaths], turretWeaponNames, XAssetType.Weapon, "turret Weapon");
-        string[] sourceFxNames = additionalFxNames.Concat(turretFxNames).Distinct(StringComparer.Ordinal).ToArray();
-        string[] sourceSoundNames = additionalSoundNames.Concat(turretSoundNames).Distinct(StringComparer.Ordinal).ToArray();
+                [.. dependencyPaths, .. providerPaths], weaponNames, XAssetType.Weapon, "requested Weapon");
+        string[] sourceFxNames = additionalFxNames.Concat(weaponFxNames).Distinct(StringComparer.Ordinal).ToArray();
+        string[] sourceSoundNames = additionalSoundNames.Concat(weaponSoundNames).Distinct(StringComparer.Ordinal).ToArray();
         cancellationToken.ThrowIfCancellationRequested();
         var soundPackager = preparedSources?.SoundPackager ?? new SoundFilePackager();
         BaseAsset[] rawEmitterAssets = preparedSources?.EmitterAssets ?? (assetLibraryDirectory is null ? [] :
             LoadRawEmitterAssets(assetLibraryDirectory, sourceFxNames, sourceSoundNames, soundDefinitionPaths, soundPackager,
-                bootstrapDirectory));
+                bootstrapDirectory, residentSoundNames));
         if (modelSources is not null)
             foreach (string name in rawEmitterAssets.OfType<FxEffectDefAsset>().SelectMany(effect => effect.ElemDefs)
                          .SelectMany(element => element.VisualArray.Prepend(element.Visuals))
@@ -811,11 +828,12 @@ internal static partial class FastFileConverter
             rawEmitterAssets.OfType<FxEffectDefAsset>()
                 .Where(effect => !requestedFxKeys.Contains(AssetKey.FromDefinition(effect)))
                 .ToArray();
+        var animationNames = additionalXAnimNames.Concat(weaponAnimations).Distinct(StringComparer.Ordinal).ToArray();
         XAnimPartsAsset[] additionalXAnim = assetLibraryDirectory is null
             ? ResolveOwnedAssetsAcrossFastFiles<XAnimPartsAsset>(
                 RequireTemplate(), templatePath, [.. dependencyPaths, .. providerPaths],
-                additionalXAnimNames, XAssetType.XAnim, "requested XAnim")
-            : additionalXAnimNames.Select(LoadDiskAnimation).ToArray();
+                animationNames, XAssetType.XAnim, "requested XAnim")
+            : animationNames.Select(LoadDiskAnimation).ToArray();
         XAnimPartsAsset LoadDiskAnimation(string name)
         {
             if (preparedSources is not null && preparedSources.Animations.TryGetValue(name, out XAnimPartsAsset? animation))
@@ -840,6 +858,9 @@ internal static partial class FastFileConverter
             D3dbspAssetLinker.CreatePs3DmConfigStringBaseline(
                 assetName,
                 graph.Checksum);
+        StringTableAsset[] extraConfigStrings = (extraConfigStringModes ?? [])
+            .Select(mode => D3dbspAssetLinker.CreatePs3ConfigStringBaseline(assetName, graph.Checksum, mode))
+            .ToArray();
         string signedChecksum = bootstrapStringTable.Cells[3].String
             ?? throw new InvalidDataException(
                 "The generated PS3 deathmatch configstring baseline has no mapcrc value.");
@@ -1019,7 +1040,8 @@ internal static partial class FastFileConverter
             additionalFx,
             sourceSoundNames,
             fxAndSoundDefinitions,
-            existingFullProviderKeys);
+            existingFullProviderKeys,
+            residentSoundNames);
         var newSources = new List<LinkAssetProviderSource>(
             fastFileMapRoots.Length + graph.NestedAssets.Count +
             xModelGraphProviders.Length + 1 +
@@ -1041,6 +1063,8 @@ internal static partial class FastFileConverter
         }
         newSources.Add(
             new LinkAssetProviderSource(bootstrapStringTable).AsAuthoredDetached());
+        foreach (var table in extraConfigStrings)
+            newSources.Add(new LinkAssetProviderSource(table).AsAuthoredDetached());
         foreach (BaseAsset provider in modelSources is null ? xModelGraphProviders : bootstrapModels is null ? bootstrapXModelGraph.Providers : [])
         {
             newSources.Add(
@@ -1051,9 +1075,13 @@ internal static partial class FastFileConverter
             newSources.Add(
                 new LinkAssetProviderSource(material).AsAuthoredDetached());
         }
-        foreach (WeaponAsset weapon in turretWeapons)
+        LocalizeAsset[] labels = localizedText?.Select(pair =>
+            new LocalizeAsset { Name = pair.Key, Value = pair.Value }).ToArray() ?? [];
+        foreach (LocalizeAsset label in labels)
+            newSources.Add(new LinkAssetProviderSource(label).AsAuthoredDetached());
+        foreach (WeaponAsset weapon in weapons)
             newSources.Add(new LinkAssetProviderSource(weapon).AsAuthoredDetached());
-        foreach (BaseAsset dependency in turretDependencies)
+        foreach (BaseAsset dependency in weaponDependencies)
             newSources.Add(new LinkAssetProviderSource(dependency).AsAuthoredDetached());
         foreach (XAnimPartsAsset animation in additionalXAnim)
             newSources.Add(new LinkAssetProviderSource(animation).AsAuthoredDetached());
@@ -1094,11 +1122,13 @@ internal static partial class FastFileConverter
         if (bootstrapMaterials is not null)
             foreach (string name in Ps3MapStartupAssets.FactionMaterialNames)
                 roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:bootstrap:material:{name}", bootstrapMaterials.LoadMaterial(name)));
-        foreach (RawFileAsset rawFile in turretDependencies.OfType<RawFileAsset>())
+        foreach (RawFileAsset rawFile in weaponDependencies.OfType<RawFileAsset>())
             roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:turret:rawfile:{rawFile.Name}", rawFile));
         roots.Add(CreateNamedOwnedRoot(
             "d3dbsplinker:bootstrap:stringtable:dm",
             bootstrapStringTable));
+        foreach (var table in extraConfigStrings)
+            roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:configstrings:{table.Name}", table));
         for (int index = 0; index < additionalMaterials.Length; index++)
         {
             roots.Add(CreateNamedOwnedRoot(
@@ -1108,7 +1138,7 @@ internal static partial class FastFileConverter
         for (int index = 0; index < bootstrapXModelGraph.Models.Count; index++)
         {
             roots.Add(CreateNamedOwnedRoot(
-                $"d3dbsplinker:bootstrap:xmodel:{index}:{Ps3MapStartupAssets.XModelNames[index]}",
+                $"d3dbsplinker:bootstrap:xmodel:{index}:{startupModels[index]}",
                 bootstrapXModelGraph.Models[index]));
         }
         for (int index = 0; index < additionalXModelGraph.Models.Count; index++)
@@ -1125,7 +1155,7 @@ internal static partial class FastFileConverter
         }
         for (int index = 0; index < additionalXAnim.Length; index++)
             roots.Add(CreateNamedOwnedRoot(
-                $"d3dbsplinker:additional:xanim:{index}:{additionalXAnimNames[index]}",
+                $"d3dbsplinker:additional:xanim:{index}:{animationNames[index]}",
                 additionalXAnim[index]));
         for (int index = 0; index < nestedDiskFx.Length; index++)
         {
@@ -1142,10 +1172,33 @@ internal static partial class FastFileConverter
                 $"d3dbsplinker:additional:sound:{index}:{sound.AliasName}",
                 sound));
         }
+        foreach (LocalizeAsset label in labels)
+            roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:localize:{label.Name}", label));
         // The weapon references independently rooted FX/material providers. Their
         // top-level rows must be written before the weapon can reference them.
-        foreach (WeaponAsset weapon in turretWeapons)
-            roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:turret:weapon:{weapon.SerializedAssetName}", weapon));
+        foreach (WeaponAsset weapon in weapons)
+            roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:weapon:{weapon.SerializedAssetName}", weapon));
+        if (includeStockCallsigns)
+        {
+            using var callsigns = new FastFileDocumentService().Open(new FastFileDocumentOpenRequest(
+                Path.Combine(bootstrapDirectory ?? throw new ArgumentException("Stock callsigns require the PS3 bootstrap directory."),
+                    "callsigns.ff"), Isolated.Instance));
+            // The two lookup tables live in code_post_gfx_mp. common_mp supplies
+            // the external materials and the resident desert image used by retail maps.
+            var desert = new GfxImageAsset { Name = ",cardtitle_camo_desert" };
+            var donor = callsigns.InitialLinkRequest;
+            var stockArtwork = donor.Assets.WithoutProviders([AssetKey.FromDefinition(desert)]);
+            assets = stockArtwork.WithHighestPrecedenceProviders(
+                [new LinkAssetProviderSource(desert).AsAuthoredDetached()]).WithHighestPrecedencePool(assets);
+            var rooted = roots.Select(root => root.Asset).ToHashSet();
+            foreach (LinkRoot root in donor.Roots)
+            {
+                if (root.SerializedType == XAssetType.Material && root.Intent == LinkRootIntent.Owned &&
+                    root.Asset is { } key && rooted.Add(key))
+                    roots.Add(new LinkRoot($"d3dbsplinker:callsign:{key.NormalizedName}", XAssetType.Material,
+                        root.Intent, key, root.OriginalSerializedName, root.OpaqueHeader));
+            }
+        }
         var request = new ZoneLinkRequest(
             assets,
             roots,
@@ -1312,13 +1365,7 @@ internal static partial class FastFileConverter
         string script = MapStartupScript.Create(scriptName, hasMapFxScript, hasMapMovingLightsScript,
             hasMapFogScript, factions, destructiblePrecacheScripts, waterScriptName);
         byte[] content = Encoding.ASCII.GetBytes(script);
-        return new RawFileAsset
-        {
-            Name = scriptName,
-            CompressedLen = 0,
-            Len = content.Length,
-            Buffer = [.. content, 0]
-        };
+        return EncodeRawFile(scriptName, content, compress: false);
     }
 
     private static RawFileAsset CreateMapMarker(string assetName) => new()
@@ -1329,7 +1376,7 @@ internal static partial class FastFileConverter
         Buffer = [0]
     };
 
-    private static RawFileAsset CreateRawFile(string name, string sourcePath)
+    private static RawFileAsset CreateRawFile(string name, string sourcePath, bool compress = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         if (name[0] == ',')
@@ -1343,6 +1390,20 @@ internal static partial class FastFileConverter
         {
             throw new InvalidDataException(
                 $"RawFile source '{path}' contains an embedded null byte.");
+        }
+        return EncodeRawFile(name, content, compress);
+    }
+
+    private static RawFileAsset EncodeRawFile(string name, byte[] content, bool compress)
+    {
+        if (compress)
+        {
+            using var buffer = new MemoryStream();
+            using (var compressor = new ZLibStream(buffer, CompressionLevel.SmallestSize, leaveOpen: true))
+                compressor.Write(content);
+            if (buffer.Length < content.Length + 1L)
+                return new RawFileAsset { Name = name, Len = content.Length,
+                    CompressedLen = checked((int)buffer.Length), Buffer = buffer.ToArray() };
         }
         return new RawFileAsset
         {
@@ -1693,7 +1754,8 @@ internal static partial class FastFileConverter
         IReadOnlyList<string> requestedSounds,
         IReadOnlyDictionary<string, string> soundDefinitionPaths,
         SoundFilePackager soundPackager,
-        string? bootstrapDirectory)
+        string? bootstrapDirectory,
+        IReadOnlySet<string>? residentSoundNames = null)
     {
         string root = Path.GetFullPath(sourceDirectory);
         if (!Directory.Exists(root))
@@ -1742,8 +1804,8 @@ internal static partial class FastFileConverter
             {
                 foreach (SndAlias alias in sound.Aliases)
                 {
-                    Enqueue(XAssetType.Sound, alias.SecondaryAliasName);
-                    Enqueue(XAssetType.Sound, alias.ChainAliasName);
+                    foreach (string name in OwnedSoundAliasDependencies(alias, residentSoundNames))
+                        Enqueue(XAssetType.Sound, name);
                     if (alias.VolumeFalloffCurve is { } curve)
                         assets.TryAdd(AssetKey.FromDefinition(curve), curve);
                     foreach (LoadedSound loaded in alias.SoundFiles
@@ -1795,7 +1857,8 @@ internal static partial class FastFileConverter
         IReadOnlyList<FxEffectDefAsset> requestedEffects,
         IReadOnlyList<string> requestedSoundNames,
         IReadOnlyDictionary<AssetKey, BaseAsset> definitions,
-        IReadOnlySet<AssetKey> fullProviderKeys)
+        IReadOnlySet<AssetKey> fullProviderKeys,
+        IReadOnlySet<string>? residentSoundNames)
     {
         var sounds = new List<SoundAliasListAsset>();
         var visited = requestedEffects.Select(AssetKey.FromDefinition).ToHashSet();
@@ -1825,10 +1888,8 @@ internal static partial class FastFileConverter
             {
                 string owner = $"Sound '{sound.AliasName}'";
                 foreach (SndAlias alias in sound.Aliases)
-                {
-                    Include(alias.SecondaryAliasName, XAssetType.Sound, owner);
-                    Include(alias.ChainAliasName, XAssetType.Sound, owner);
-                }
+                    foreach (string name in OwnedSoundAliasDependencies(alias, residentSoundNames))
+                        Include(name, XAssetType.Sound, owner);
             }
         }
         return sounds.ToArray();
@@ -1855,17 +1916,26 @@ internal static partial class FastFileConverter
         }
     }
 
+    private static IEnumerable<string> OwnedSoundAliasDependencies(SndAlias alias, IReadOnlySet<string>? residentSoundNames)
+    {
+        if (alias.SecondaryAliasName is { } secondary && residentSoundNames?.Contains(secondary) != true)
+            yield return secondary;
+        if (alias.ChainAliasName is { } chain && residentSoundNames?.Contains(chain) != true)
+            yield return chain;
+    }
+
     private static void ValidateBootstrapXModelGraph(
         string templatePath,
         int modelSurfsCount,
-        int physPresetReferenceCount)
+        int physPresetReferenceCount,
+        int expectedModelSurfs)
     {
-        if (modelSurfsCount != 105)
+        if (modelSurfsCount != expectedModelSurfs)
         {
             throw new InvalidDataException(
                 $"Template fastfile '{templatePath}' PS3 FFA bootstrap graph contains " +
                 $"{modelSurfsCount} unique full XModelSurfs provider key(s); " +
-                "the hardware-proven closure requires exactly 105.");
+                $"the selected stock model set requires exactly {expectedModelSurfs}.");
         }
         if (physPresetReferenceCount != 1)
         {

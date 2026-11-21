@@ -1,0 +1,81 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:IW4.Studio.Desktop.Editors.ImpactFx"
+             xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="IW4.Studio.Desktop.Editors.ImpactFx.ImpactFxEditorView">
+  <UserControl.Styles>
+    <Style Selector="Border.panel">
+      <Setter Property="CornerRadius" Value="8"/><Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.heading"><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="FontSize" Value="16"/></Style>
+    <Style Selector="TextBlock.note">
+      <Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="Button.swatch">
+      <Setter Property="Padding" Value="5,3"/><Setter Property="MinHeight" Value="34"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    </Style>
+    <Style Selector="Button.swatch.current">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.dot"><Setter Property="Foreground" Value="{DynamicResource StudioAccentBrush}"/></Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="7">
+    <Border Classes="panel" Padding="12,8">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+        <StackPanel><TextBlock Classes="note" Text="Impact effects"/><TextBlock x:Name="Heading" Classes="heading" TextTrimming="CharacterEllipsis"/></StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
+          <Button x:Name="UndoButton" Classes="ghost" Click="Undo" ToolTip.Tip="Undo assignment" AutomationProperties.Name="Undo assignment"><icons:MaterialIcon Kind="Undo" Width="18" Height="18"/></Button>
+          <Button x:Name="ApplyButton" Classes="primary" Content="Apply" Click="Apply" AutomationProperties.Name="Apply impact assignments"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <WrapPanel Grid.Row="1">
+      <StackPanel Orientation="Horizontal" Spacing="8" Margin="4,0,12,3">
+        <TextBlock Text="Impact entry" VerticalAlignment="Center"/>
+        <ComboBox x:Name="EntryPicker" MinWidth="116" AutomationProperties.Name="Impact entry" SelectionChanged="EntryPicked"/>
+      </StackPanel>
+      <ComboBox x:Name="CompactMaterialPicker" MinWidth="130" Margin="0,0,10,3" IsVisible="False" AutomationProperties.Name="Material or flesh variant" SelectionChanged="MaterialPicked"/>
+      <TextBlock x:Name="AssignmentCount" Classes="note" VerticalAlignment="Center"/>
+    </WrapPanel>
+    <Grid x:Name="Body" Grid.Row="2" ColumnDefinitions="284,*,216" ColumnSpacing="7" RowSpacing="7">
+      <Border x:Name="Library" Classes="panel">
+        <Grid RowDefinitions="Auto,*" Margin="10">
+          <StackPanel Margin="1,0,0,6"><TextBlock Classes="heading" Text="Materials"/><TextBlock Classes="note" Text="A dot marks an assigned effect."/></StackPanel>
+          <ScrollViewer x:Name="LibraryScroll" Grid.Row="1" HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="Families" Spacing="9"/></ScrollViewer>
+        </Grid>
+      </Border>
+      <Border x:Name="PreviewPanel" Grid.Column="1" Classes="panel" Padding="12">
+        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+          <StackPanel><TextBlock x:Name="MaterialTitle" Classes="heading"/><TextBlock Text="Illustrative preview" Classes="note"/></StackPanel>
+          <Border Grid.Row="1" CornerRadius="6" ClipToBounds="True" Background="{DynamicResource StudioBackgroundBrush}">
+            <local:ImpactMaterialPreviewControl x:Name="Sample" MinHeight="50"/>
+          </Border>
+          <TextBlock Grid.Row="2" x:Name="SampleHint" Classes="note"/>
+        </Grid>
+      </Border>
+      <Border x:Name="Inspector" Grid.Column="2" Classes="panel">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="13" Spacing="7">
+            <TextBlock Classes="heading" Text="Assigned effect"/>
+            <TextBlock x:Name="SlotInfo" Classes="note"/>
+            <TextBlock x:Name="EffectName" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,4"/>
+            <WrapPanel>
+              <Button x:Name="ChooseButton" Content="Choose effect…" Click="Choose" Margin="0,0,5,4"/>
+              <Button x:Name="ClearButton" Classes="ghost" Content="Clear" Click="Clear" Margin="0,0,0,4" AutomationProperties.Name="Clear effect assignment"/>
+            </WrapPanel>
+            <StackPanel x:Name="FleshGuide" IsVisible="False" Spacing="6">
+              <Separator/>
+              <TextBlock Classes="note" Text="Standard character hits use four dedicated flesh variants."/>
+              <Button Content="View flesh variants" Click="ShowFlesh"/>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+    <TextBlock x:Name="Status" Grid.Row="3" Classes="note" AutomationProperties.LiveSetting="Polite" Margin="4,0"/>
+  </Grid>
+</UserControl>

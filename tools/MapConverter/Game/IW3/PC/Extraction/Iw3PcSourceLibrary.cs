@@ -1,3 +1,4 @@
+using IW4.Linker.Packaging;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -348,8 +349,8 @@ internal sealed class Iw3PcSourceLibrary
             // These standalone load roots are authored by the IW4 load-zone
             // builder. References reached through retained assets still resolve below.
             if (root.Role == "load" && asset.Type == "material" &&
-                asset.Key is Iw4LoadZoneBuilder.VictoryBackdropMaterialName or
-                    Iw4LoadZoneBuilder.DefeatBackdropMaterialName)
+                asset.Key is Ps3LoadZoneBuilder.VictoryBackdropMaterialName or
+                    Ps3LoadZoneBuilder.DefeatBackdropMaterialName)
                 continue;
             string chain = $"'{root.Path}' -> {asset.Type}:{asset.Name} (reference)";
             Node? provider = await ResolveNamedAsync(root, asset.Type, asset.Key, chain, errors, cancellationToken)

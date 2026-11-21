@@ -149,11 +149,7 @@ internal static class NewAssetDefinitionFactory
                     .ToArray()
             },
             XAssetType.Sound => new SoundAliasListAsset { AliasName = name },
-            XAssetType.SndCurve => new SndCurve
-            {
-                Filename = name,
-                Knots = new SndCurveKnot[SndCurve.MaxKnotCount]
-            },
+            XAssetType.SndCurve => CreateSoundCurve(name),
             XAssetType.LoadedSound => new LoadedSound { Name = name },
             XAssetType.ColMapSp => CreateClipMap(XAssetType.ColMapSp, name),
             XAssetType.ColMapMp => CreateClipMap(XAssetType.ColMapMp, name),
@@ -208,7 +204,12 @@ internal static class NewAssetDefinitionFactory
                 ColumnCount = 0,
                 Cells = []
             },
-            XAssetType.LeaderboardDef => new LeaderboardDefAsset { Name = name },
+            XAssetType.LeaderboardDef => new LeaderboardDefAsset
+            {
+                Name = name,
+                XpColumnId = -1,
+                PrestigeColumnId = -1
+            },
             XAssetType.StructuredDataDef => new StructuredDataDefSetAsset
             {
                 Name = name
@@ -250,6 +251,14 @@ internal static class NewAssetDefinitionFactory
             MaxLoadedLod = byte.MaxValue,
             CollLod = byte.MaxValue
         };
+
+    private static SndCurve CreateSoundCurve(string name)
+    {
+        var knots = new SndCurveKnot[SndCurve.MaxKnotCount];
+        knots[0] = new(0, 1);
+        knots[1] = new(1, 0);
+        return new SndCurve { Filename = name, KnotCount = 2, Knots = knots };
+    }
 
     private static ClipMapAsset CreateClipMap(
         XAssetType assetType,

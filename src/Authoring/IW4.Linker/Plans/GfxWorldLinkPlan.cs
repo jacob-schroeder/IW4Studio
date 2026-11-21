@@ -780,16 +780,35 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
             var indexes = new LinkStorageTarget?[values.Count];
             var writer = new LinkTemplateWriter(
                 checked(values.Count * GfxAabbTree.SerializedSize));
+            ArraySegment<ushort> rootIndexes = default;
             for (int index = 0; index < values.Count; index++)
             {
                 GfxAabbTree value = values[index] ?? throw NullRow(fieldPath, index);
                 string path = $"{fieldPath}[{index}]";
-                indexes[index] = FreezeUInt16View(
-                    value.SModelIndexesPointer.Untyped,
-                    value.SModelIndexes,
-                    2,
-                    XFileBlockType.LARGE,
-                    $"{path}.SModelIndexes");
+                if (index == 0 && value.SModelIndexes is ArraySegment<ushort> root)
+                    rootIndexes = root;
+                if (index > 0 && value.SModelIndexesPointer.Raw == 0 &&
+                    value.SModelIndexes is ArraySegment<ushort> child && child.Count > 0 &&
+                    ReferenceEquals(rootIndexes.Array, child.Array) && indexes[0] is { } rootTarget)
+                {
+                    // The PS3 sorter rewrites model IDs through the cell root.
+                    // Every authored child slice must see those same writes.
+                    int offset = checked((child.Offset - rootIndexes.Offset) * sizeof(ushort));
+                    int length = checked(child.Count * sizeof(ushort));
+                    if (offset < 0 || offset > rootTarget.View.Length - length)
+                        throw new InvalidDataException($"{path}.SModelIndexes are outside the cell root's model list.");
+                    indexes[index] = new LinkStorageTarget(new LinkStorageView(rootTarget.View.Storage,
+                        checked(rootTarget.View.Addend + offset), length), CanMaterializeRoot: false);
+                }
+                else
+                {
+                    indexes[index] = FreezeUInt16View(
+                        value.SModelIndexesPointer.Untyped,
+                        value.SModelIndexes,
+                        2,
+                        XFileBlockType.LARGE,
+                        $"{path}.SModelIndexes");
+                }
                 WriteBounds(writer, value.Bounds, $"{path}.Bounds");
                 writer.WriteUInt16(value.ChildCount);
                 writer.WriteUInt16(value.SurfaceCount);

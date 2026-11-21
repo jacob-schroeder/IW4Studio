@@ -25,6 +25,9 @@ internal sealed record D3dbspStaticModelEntity(
     bool HasGroundLighting,
     GfxColor GroundLighting,
     byte PrimaryLightIndex,
+    byte? ReflectionProbeIndex,
+    Vec3? LightingOrigin,
+    ushort? CullDistance,
     bool IsScriptModel);
 
 internal sealed record D3dbspSyntheticBrushModel(
@@ -1205,6 +1208,15 @@ internal static class D3dbspMapEntsCodec
             (GfxColor groundLighting, byte primaryLightIndex) = hasGroundLighting
                 ? ParseGroundLighting(groundLightingText, (byte)defaultSunPrimaryLightIndex)
                 : (new GfxColor(0), (byte)defaultSunPrimaryLightIndex);
+            byte? reflectionProbeIndex = entity.TryGetValue("reflectionProbeIndex", out string authoredReflectionProbe)
+                ? ParseByte(authoredReflectionProbe, "static-model reflection probe")
+                : null;
+            Vec3? lightingOrigin = entity.TryGetValue("lightingOrigin", out string authoredLightingOrigin)
+                ? ParseVec3(authoredLightingOrigin, "static-model lighting origin")
+                : null;
+            ushort? cullDistance = entity.TryGetValue("cullDist", out string authoredCullDistance)
+                ? ParseUInt16(authoredCullDistance, "static-model cull distance")
+                : null;
             GfxStaticModelDrawInstFlags flags =
                 (spawnFlags & 2) != 0
                     ? GfxStaticModelDrawInstFlags.NoCastShadow
@@ -1224,6 +1236,9 @@ internal static class D3dbspMapEntsCodec
                 hasGroundLighting,
                 groundLighting,
                 primaryLightIndex,
+                reflectionProbeIndex,
+                lightingOrigin,
+                cullDistance,
                 isScriptModel));
         }
 
@@ -1408,6 +1423,12 @@ internal static class D3dbspMapEntsCodec
                     $"Static model {index} primary-light index {draw.PrimaryLightIndex} is outside " +
                     $"the GfxWorld primary-light count {gfxWorld.PrimaryLightCount}.");
             }
+            if (draw.ReflectionProbeIndex >= gfxWorld.WorldDraw.ReflectionProbeCount)
+            {
+                throw new InvalidDataException(
+                    $"Static model {index} reflection-probe index {draw.ReflectionProbeIndex} is outside " +
+                    $"the GfxWorld reflection-probe count {gfxWorld.WorldDraw.ReflectionProbeCount}.");
+            }
 
             int spawnFlags =
                 (draw.Flags & GfxStaticModelDrawInstFlags.NoCastShadow) != 0 ? 2 : 0;
@@ -1423,6 +1444,9 @@ internal static class D3dbspMapEntsCodec
                 true,
                 draw.GroundLighting,
                 draw.PrimaryLightIndex,
+                draw.ReflectionProbeIndex,
+                gfxWorld.Dpvs.SModelInsts[index].LightingOrigin,
+                draw.CullDist,
                 IsScriptModel: false);
         }
 
@@ -1598,6 +1622,18 @@ internal static class D3dbspMapEntsCodec
             "gndLt",
             FormatGroundLighting(staticModel.GroundLighting, staticModel.PrimaryLightIndex),
             "static-model ground lighting");
+        if (staticModel.ReflectionProbeIndex is byte reflectionProbeIndex)
+        {
+            WriteEntityKeyValue(
+                output,
+                "reflectionProbeIndex",
+                reflectionProbeIndex.ToString(CultureInfo.InvariantCulture),
+                "static-model reflection probe");
+        }
+        if (staticModel.LightingOrigin is Vec3 lightingOrigin)
+            WriteEntityKeyValue(output, "lightingOrigin", FormatVec3(lightingOrigin), "static-model lighting origin");
+        if (staticModel.CullDistance is ushort cullDistance)
+            WriteEntityKeyValue(output, "cullDist", cullDistance.ToString(CultureInfo.InvariantCulture), "static-model cull distance");
         WriteLatin1(output, "}\n");
     }
 
@@ -2163,127 +2199,35 @@ internal static class D3dbspMapEntsCodec
 
     private ref struct EntityParser
     {
-        private readonly ReadOnlySpan<byte> _data;
-        private int _position;
-        private int _tokenBegin;
-        private int _tokenEnd;
+        private EntityTokenReader _reader;
 
-        public EntityParser(ReadOnlySpan<byte> data)
-        {
-            _data = data;
-            _position = 0;
-        }
+        public EntityParser(ReadOnlySpan<byte> data) => _reader = new EntityTokenReader(data);
 
         public ParsedEntity? ParseEntity()
         {
-            int begin = _position;
-            string? token = ReadToken();
-            if (token is null)
+            int begin = _reader.Position;
+            EntityToken? opening = _reader.ReadToken();
+            if (opening is null)
                 return null;
-            if (token != "{")
-                throw new InvalidDataException($"Expected '{{' at entity byte {_position}, found '{token}'.");
+            if (opening.Value.Text != "{")
+                throw new InvalidDataException($"Expected '{{' at entity byte {_reader.Position}, found '{opening.Value.Text}'.");
 
             var entity = new ParsedEntity(begin);
             while (true)
             {
-                string key = ReadToken() ??
+                EntityToken key = _reader.ReadToken() ??
                     throw new InvalidDataException("The entity lump ended before a closing brace.");
-                int keyBegin = _tokenBegin;
-                if (key == "}")
+                if (key.Text == "}")
                 {
-                    entity.End = _position;
+                    entity.End = _reader.Position;
                     return entity;
                 }
 
-                string value = ReadToken() ??
-                    throw new InvalidDataException($"The entity key '{key}' has no value.");
-                if (value == "}")
-                    throw new InvalidDataException($"The entity key '{key}' has no value.");
-                entity.Add(key, value, keyBegin, _tokenBegin, _tokenEnd);
-            }
-        }
-
-        private string? ReadToken()
-        {
-            SkipTrivia();
-            if (_position >= _data.Length)
-                return null;
-
-            _tokenBegin = _position;
-            byte first = _data[_position++];
-            if (first is (byte)'{' or (byte)'}')
-            {
-                _tokenEnd = _position;
-                return ((char)first).ToString();
-            }
-            if (first == (byte)'"')
-            {
-                string quoted = ReadQuotedToken();
-                _tokenEnd = _position;
-                return quoted;
-            }
-
-            int begin = _position - 1;
-            while (_position < _data.Length &&
-                   _data[_position] > 32 &&
-                   _data[_position] is not (byte)'{' and not (byte)'}')
-            {
-                _position++;
-            }
-
-            _tokenEnd = _position;
-            return Encoding.Latin1.GetString(_data[begin.._position]);
-        }
-
-        private string ReadQuotedToken()
-        {
-            var token = new StringBuilder();
-            while (_position < _data.Length)
-            {
-                byte value = _data[_position++];
-                if (value == (byte)'"')
-                    return token.ToString();
-                if (value == (byte)'\\' &&
-                    _position < _data.Length &&
-                    _data[_position] is (byte)'"' or (byte)'\\')
-                {
-                    value = _data[_position++];
-                }
-
-                token.Append((char)value);
-            }
-
-            throw new InvalidDataException("The entity lump ended inside a quoted token.");
-        }
-
-        private void SkipTrivia()
-        {
-            while (true)
-            {
-                while (_position < _data.Length && _data[_position] <= 32)
-                    _position++;
-                if (_position + 1 >= _data.Length || _data[_position] != (byte)'/')
-                    return;
-
-                if (_data[_position + 1] == (byte)'/')
-                {
-                    _position += 2;
-                    while (_position < _data.Length && _data[_position] != (byte)'\n')
-                        _position++;
-                    continue;
-                }
-                if (_data[_position + 1] != (byte)'*')
-                    return;
-
-                _position += 2;
-                while (_position + 1 < _data.Length &&
-                       (_data[_position] != (byte)'*' || _data[_position + 1] != (byte)'/'))
-                {
-                    _position++;
-                }
-                if (_position + 1 >= _data.Length)
-                    throw new InvalidDataException("The entity lump ended inside a block comment.");
-                _position += 2;
+                EntityToken value = _reader.ReadToken() ??
+                    throw new InvalidDataException($"The entity key '{key.Text}' has no value.");
+                if (value.Text == "}")
+                    throw new InvalidDataException($"The entity key '{key.Text}' has no value.");
+                entity.Add(key.Text, value.Text, key.Begin, value.Begin, value.End);
             }
         }
     }

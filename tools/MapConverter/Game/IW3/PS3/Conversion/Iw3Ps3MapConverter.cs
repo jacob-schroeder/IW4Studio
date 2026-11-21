@@ -102,7 +102,7 @@ internal static class Iw3Ps3MapConverter
             GfxImageAsset compassImage = images.ResolveAt(mapPath, imageRoot, compassName);
             if (compassImage.TextureSemantic != TextureSemantic.TwoDimensional || compassImage.IsCubemap)
                 throw new InvalidDataException($"Source minimap '{compassName}' requires a two-dimensional image.");
-            definitions.Add(Iw4LoadZoneBuilder.CreateCompassMaterial(prefix + compassName, compassImage));
+            definitions.Add(Ps3LoadZoneBuilder.CreateCompassMaterial(prefix + compassName, compassImage));
         }
         string bootstrapDirectory = Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3");
         RawFileAsset globalFx = Iw3Ps3FastFileCatalog.FindInlineRawFile(
@@ -217,7 +217,7 @@ internal static class Iw3Ps3MapConverter
             callsignProviders, callsigns.RootKeys);
         var loadingReferences = references.TryGetValue(AssetKey.FromDefinition(loadingImage), out var loadReference)
             ? new[] { loadReference } : [];
-        byte[] load = Iw4LoadZoneBuilder.Build(mapName + "_load", loadingImage, loadingReferences,
+        byte[] load = Ps3LoadZoneBuilder.Build(mapName + "_load", loadingImage, loadingReferences,
             CreateRawFile(mapName + "_load", ""));
         string stage = Path.Combine(Path.GetTempPath(), "iw3ps3-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(stage);

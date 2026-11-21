@@ -11,7 +11,8 @@ using IW4.Linker.Contracts;
 namespace IW4.Linker.Linking;
 
 /// <summary>Loads native model geometry and physics from the same library as its materials.</summary>
-public sealed class ModelSourceCompiler(string sourceDirectory, MaterialSourceCompiler materials, string? bootstrapDirectory = null)
+public sealed class ModelSourceCompiler(string sourceDirectory, MaterialSourceCompiler materials,
+    string? bootstrapDirectory = null, Func<string, bool>? coarsestLodOnly = null)
 {
     private readonly string _sourceDirectory = Path.GetFullPath(sourceDirectory);
     private readonly string? _bootstrapDirectory = bootstrapDirectory is null ? null : Path.GetFullPath(bootstrapDirectory);
@@ -22,7 +23,8 @@ public sealed class ModelSourceCompiler(string sourceDirectory, MaterialSourceCo
     public XModelAsset LoadModel(string name) => Load(XAssetType.XModel, name, normalized =>
     {
         XModelNativeImport imported = new XModelNativeExchange().Link(
-            SourceRoot($"xmodel_native/{normalized}.json"), normalized, materials.LoadMaterial, LoadPhysPreset, LoadCollmap);
+            SourceRoot($"xmodel_native/{normalized}.json"), normalized, materials.LoadMaterial, LoadPhysPreset,
+            LoadCollmap, coarsestLodOnly?.Invoke(normalized) == true);
         foreach (XModelSurfsAsset surfaces in imported.ModelSurfs)
             _assets.TryAdd(AssetKey.FromDefinition(surfaces), surfaces);
         return imported.Model;

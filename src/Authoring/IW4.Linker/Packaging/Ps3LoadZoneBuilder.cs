@@ -8,24 +8,23 @@ using IW4.Game.Database.Streaming;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.Linking;
-using IW4.Linker.Packaging;
 
-namespace MapConverter.Game.IW3.PC.Conversion;
+namespace IW4.Linker.Packaging;
 
 /// <summary>
 /// Authors the fixed IW4 PS3 loading-screen graph. The globally loaded IW4
 /// zones supply the native 2d technique set and default image.
 /// </summary>
-internal static class Iw4LoadZoneBuilder
+public static class Ps3LoadZoneBuilder
 {
     private const uint LanguageMask = 1;
     private const string TechniqueSetName = ",2d";
     private const string DefaultImageName = ",default";
-    internal const int OwnedMaterialCount = 3;
-    internal const string VictoryBackdropMaterialName = "$victorybackdrop";
-    internal const string DefeatBackdropMaterialName = "$defeatbackdrop";
+    public const int OwnedMaterialCount = 3;
+    public const string VictoryBackdropMaterialName = "$victorybackdrop";
+    public const string DefeatBackdropMaterialName = "$defeatbackdrop";
 
-    internal static byte[] Build(
+    public static byte[] Build(
         string targetZoneName,
         GfxImageAsset sourceImage,
         IReadOnlyList<ImageFileStreamLanguageReferences> imageStreamReferences,
@@ -190,13 +189,13 @@ internal static class Iw4LoadZoneBuilder
         return bytes.ToArray();
     }
 
-    internal static MaterialAsset CreateCompassMaterial(string name, GfxImageAsset image) =>
+    public static MaterialAsset CreateCompassMaterial(string name, GfxImageAsset image) =>
         CreateBackdropMaterial(name, 0xbc00180000000000, image,
             MaterialSamplerState.FilterLinear | MaterialSamplerState.MipMapNearest | MaterialSamplerState.ClampMask,
             TextureSemantic.TwoDimensional, 0x19655165,
             new MaterialTechniqueSetAsset { Name = ",2d" }, (MaterialSortKey)47);
 
-    internal static MaterialAsset CreateBackdropMaterial(
+    public static MaterialAsset CreateBackdropMaterial(
         string name,
         ulong drawSurf,
         GfxImageAsset image,
@@ -266,7 +265,7 @@ internal static class Iw4LoadZoneBuilder
         };
     }
 
-    internal static GfxImageAsset CloneImage(
+    public static GfxImageAsset CloneImage(
         GfxImageAsset source,
         string targetName) => new()
     {

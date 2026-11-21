@@ -1,3 +1,4 @@
+using IW4.Linker.Packaging;
 using System.Text;
 using IW4.Game.Assets;
 using IW4.Game.Assets.Image;
@@ -38,7 +39,7 @@ internal static class Iw3Ps3MapUiCompiler
         var techniques = new MaterialTechniqueSetAsset { Name = ",2d" };
         // Same opaque, linear-clamped native UI material as the existing
         // Havana/Shipment previews; no COD4 shader or map PAK dependency.
-        MaterialAsset material = Iw4LoadZoneBuilder.CreateBackdropMaterial(
+        MaterialAsset material = Ps3LoadZoneBuilder.CreateBackdropMaterial(
             MapUiRules.PreviewName(mapName), 0x8800180000000000, image,
             MaterialSamplerState.FilterLinear | MaterialSamplerState.ClampMask,
             TextureSemantic.TwoDimensional, 0x18128812, techniques, (MaterialSortKey)34);

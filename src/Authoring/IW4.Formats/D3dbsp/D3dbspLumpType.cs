@@ -58,5 +58,6 @@ public enum D3dbspLumpType : uint
     LightRegionHulls = 0x35,
     LightRegionAxes = 0x36,
     // IW4Studio authoring extension; known stock v22 lump IDs run through 0x36.
-    Glass = 0x40
+    Glass = 0x40,
+    RenderSpatial = 0x41
 }

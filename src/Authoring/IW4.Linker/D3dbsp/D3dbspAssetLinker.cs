@@ -30,6 +30,7 @@ public sealed record D3dbspLinkRequest(
     public bool WorldOnly { get; init; }
     public bool UseSourceMaterials { get; init; }
     public bool UseCompiledLighting { get; init; }
+    public bool UseStaticModelCollisionTree { get; init; }
     public IReadOnlySet<string> StaticScriptModelNames { get; init; } = new HashSet<string>(StringComparer.Ordinal);
     public IReadOnlyList<MaterialAsset> AvailableMaterials { get; init; } = [];
     // Conservative displacement on each axis, weighted by the render vertex red channel.
@@ -218,13 +219,14 @@ public static class D3dbspAssetLinker
             IReadOnlyList<GfxStaticModelInst> gfxStaticModelInstances,
             IReadOnlyList<GfxStaticModelDrawInst> gfxStaticModelDrawInstances,
             IReadOnlyList<ClipStaticModel> clipStaticModels,
-            SModelAabbNode clipStaticModelRoot,
+            IReadOnlyList<SModelAabbNode> clipStaticModelNodes,
             IReadOnlyList<XModelAsset> xmodelReferences) =
                 BuildStaticModels(
                     staticModelEntities,
                     request.AvailableXModels,
                     reflectionProbeOrigins,
-                    comWorld.PrimaryLightCount);
+                    comWorld.PrimaryLightCount,
+                    request.UseStaticModelCollisionTree);
 
         IReadOnlyList<CPlane> planes = D3dbspCollisionCodec.DecodePlanes(
             file.GetRequiredData(D3dbspLumpType.Planes));
@@ -379,8 +381,8 @@ public static class D3dbspAssetLinker
             MapEnts = mapEnts,
             // IW4's point-trace path always starts at static-model tree node zero,
             // even when the map has no static models.
-            SModelNodeCount = 1,
-            SModelNodes = [clipStaticModelRoot],
+            SModelNodeCount = checked((ushort)clipStaticModelNodes.Count),
+            SModelNodes = clipStaticModelNodes,
             DynEntCount = dynamicEntityCounts,
             DynEntDefListPointers = new XPointer<DynEntityDef[]>[(int)DynEntityDrawType.Count],
             DynEntDefList = dynamicEntityDefinitions,
@@ -495,9 +497,14 @@ public static class D3dbspAssetLinker
     /// </summary>
     public static StringTableAsset CreatePs3DmConfigStringBaseline(
         string assetName,
-        uint checksum)
+        uint checksum) => CreatePs3ConfigStringBaseline(assetName, checksum, "dm");
+
+    public static StringTableAsset CreatePs3ConfigStringBaseline(
+        string assetName, uint checksum, string gameType)
     {
         ValidateAssetName(assetName);
+        if (gameType is not ("dm" or "war" or "dom" or "sd"))
+            throw new ArgumentException($"Unsupported PS3 configstring game type '{gameType}'.", nameof(gameType));
         string mapName = Path.GetFileNameWithoutExtension(
             assetName.Replace('\\', '/'));
         if (mapName.Length == 0)
@@ -510,7 +517,7 @@ public static class D3dbspAssetLinker
             CultureInfo.InvariantCulture);
         return new StringTableAsset
         {
-            Name = $"mp/configstrings/configstrings_ps3_{mapName}_dm.csv",
+            Name = $"mp/configstrings/configstrings_ps3_{mapName}_{gameType}.csv",
             ColumnCount = 2,
             RowCount = 2,
             Cells =
@@ -694,12 +701,13 @@ public static class D3dbspAssetLinker
         IReadOnlyList<GfxStaticModelInst> GfxInstances,
         IReadOnlyList<GfxStaticModelDrawInst> GfxDrawInstances,
         IReadOnlyList<ClipStaticModel> ClipModels,
-        SModelAabbNode ClipRoot,
+        IReadOnlyList<SModelAabbNode> ClipNodes,
         IReadOnlyList<XModelAsset> XModelReferences) BuildStaticModels(
             IReadOnlyList<D3dbspStaticModelEntity> sourceModels,
             IReadOnlyList<XModelAsset> availableXModels,
             IReadOnlyList<GfxReflectionProbe> reflectionProbes,
-            int primaryLightCount)
+            int primaryLightCount,
+            bool useStaticModelCollisionTree)
     {
         ArgumentNullException.ThrowIfNull(sourceModels);
         ArgumentNullException.ThrowIfNull(availableXModels);
@@ -759,16 +767,17 @@ public static class D3dbspAssetLinker
                     GroundLighting = new GfxColor(0)
                 };
             }
-            ValidateStaticModel(source, xmodel, index, primaryLightCount);
+            ValidateStaticModel(source, xmodel, index, primaryLightCount, reflectionProbes.Count);
 
             Bounds renderBounds = TransformBounds(
                 xmodel.Bounds,
                 source,
                 $"Static model {index} render bounds");
+            Vec3 lightingOrigin = source.LightingOrigin ?? renderBounds.MidPoint;
             gfxInstances[index] = new GfxStaticModelInst
             {
                 Bounds = renderBounds,
-                LightingOrigin = renderBounds.MidPoint
+                LightingOrigin = lightingOrigin
             };
             gfxDrawInstances[index] = new GfxStaticModelDrawInst
             {
@@ -779,11 +788,11 @@ public static class D3dbspAssetLinker
                     Scale = source.Scale
                 },
                 Model = xmodel,
-                CullDist = CalculateCullDistance(xmodel, source.Scale, index),
+                CullDist = source.CullDistance ?? CalculateCullDistance(xmodel, source.Scale, index),
                 LightingHandle = 0,
-                ReflectionProbeIndex = SelectReflectionProbe(
+                ReflectionProbeIndex = source.ReflectionProbeIndex ?? SelectReflectionProbe(
                     reflectionProbes,
-                    renderBounds.MidPoint,
+                    lightingOrigin,
                     index),
                 PrimaryLightIndex = source.PrimaryLightIndex,
                 Flags = source.Flags,
@@ -810,20 +819,121 @@ public static class D3dbspAssetLinker
                 $"one-node tree supports at most {ushort.MaxValue}.");
         }
 
-        SModelAabbNode clipRoot = clipModels.Count == 0
-            ? new SModelAabbNode()
-            : new SModelAabbNode
-            {
-                Bounds = UnionClipBounds(clipModels),
-                FirstChild = 0,
-                ChildCount = checked((ushort)clipModels.Count)
-            };
+        IReadOnlyList<SModelAabbNode> clipNodes;
+        if (useStaticModelCollisionTree && clipModels.Count > 0)
+        {
+            clipNodes = BuildStaticModelCollisionTree(clipModels);
+        }
+        else
+        {
+            clipNodes = [clipModels.Count == 0
+                ? new SModelAabbNode()
+                : new SModelAabbNode
+                {
+                    Bounds = UnionClipBounds(clipModels),
+                    FirstChild = 0,
+                    ChildCount = checked((ushort)clipModels.Count)
+                }];
+        }
         return (
             Array.AsReadOnly(gfxInstances),
             Array.AsReadOnly(gfxDrawInstances),
             clipModels.AsReadOnly(),
-            clipRoot,
+            clipNodes,
             xmodelReferences.AsReadOnly());
+    }
+
+    private static IReadOnlyList<SModelAabbNode> BuildStaticModelCollisionTree(
+        List<ClipStaticModel> models)
+    {
+        const int leafSize = 8;
+        const int maximumChildren = 8;
+        // Native CM_PointTraceStaticModels_r (PS3 0x001D85AC) treats IDs
+        // below the placement count as model spans. Higher IDs address the
+        // node table after subtracting that count.
+        var nodes = new List<SModelAabbNode> { new() };
+        FillNode(0, 0, models.Count);
+        return nodes.AsReadOnly();
+
+        void FillNode(int nodeIndex, int start, int count)
+        {
+            Bounds bounds = TreeBounds(start, count);
+            if (count <= leafSize)
+            {
+                nodes[nodeIndex] = new SModelAabbNode
+                {
+                    Bounds = bounds,
+                    FirstChild = checked((ushort)start),
+                    ChildCount = checked((ushort)count)
+                };
+                return;
+            }
+
+            Vec3 half = bounds.HalfSize;
+            int axis = half.X >= half.Y && half.X >= half.Z ? 0 : half.Y >= half.Z ? 1 : 2;
+            models.Sort(start, count, Comparer<ClipStaticModel>.Create((left, right) =>
+                Component(left.Bounds.MidPoint, axis).CompareTo(Component(right.Bounds.MidPoint, axis))));
+            int firstChild = nodes.Count;
+            int childCount = System.Math.Min(maximumChildren, (count + leafSize - 1) / leafSize);
+            if (models.Count + firstChild + childCount > ushort.MaxValue + 1)
+                throw new InvalidDataException("The static-model collision tree exceeds IW4's child index range.");
+            nodes[nodeIndex] = new SModelAabbNode
+            {
+                Bounds = bounds,
+                FirstChild = checked((ushort)(models.Count + firstChild)),
+                ChildCount = checked((ushort)childCount)
+            };
+            for (int child = 0; child < childCount; child++)
+                nodes.Add(new SModelAabbNode());
+            for (int child = 0; child < childCount; child++)
+            {
+                int lower = start + child * count / childCount;
+                int upper = start + (child + 1) * count / childCount;
+                FillNode(firstChild + child, lower, upper - lower);
+            }
+        }
+
+        Bounds TreeBounds(int start, int count)
+        {
+            Span<double> minimum = stackalloc double[3];
+            Span<double> maximum = stackalloc double[3];
+            minimum.Fill(double.PositiveInfinity);
+            maximum.Fill(double.NegativeInfinity);
+            for (int index = start; index < start + count; index++)
+            {
+                Bounds bounds = models[index].Bounds;
+                for (int axis = 0; axis < 3; axis++)
+                {
+                    double midpoint = Component(bounds.MidPoint, axis);
+                    double halfSize = Component(bounds.HalfSize, axis);
+                    minimum[axis] = System.Math.Min(minimum[axis], midpoint - halfSize);
+                    maximum[axis] = System.Math.Max(maximum[axis], midpoint + halfSize);
+                }
+            }
+
+            Span<float> center = stackalloc float[3];
+            Span<float> radius = stackalloc float[3];
+            for (int axis = 0; axis < 3; axis++)
+            {
+                center[axis] = (float)((minimum[axis] + maximum[axis]) * 0.5);
+                double halfSize = System.Math.Max(center[axis] - minimum[axis], maximum[axis] - center[axis]);
+                radius[axis] = (float)halfSize;
+                if (radius[axis] < halfSize)
+                    radius[axis] = MathF.BitIncrement(radius[axis]);
+            }
+            return new Bounds
+            {
+                MidPoint = new Vec3 { X = center[0], Y = center[1], Z = center[2] },
+                HalfSize = new Vec3 { X = radius[0], Y = radius[1], Z = radius[2] }
+            };
+        }
+
+        static float Component(Vec3 value, int axis) => axis switch
+        {
+            0 => value.X,
+            1 => value.Y,
+            _ => value.Z
+        };
     }
 
     private static Dictionary<AssetKey, XModelAsset> IndexAvailableXModels(
@@ -872,7 +982,8 @@ public static class D3dbspAssetLinker
         D3dbspStaticModelEntity source,
         XModelAsset xmodel,
         int index,
-        int primaryLightCount)
+        int primaryLightCount,
+        int reflectionProbeCount)
     {
         if (source.Axis.Count != 3 || source.PackedAxis.Count != 3)
         {
@@ -894,6 +1005,12 @@ public static class D3dbspAssetLinker
             throw new InvalidDataException(
                 $"Static model {index} references primary light {source.PrimaryLightIndex}; " +
                 $"the table has {primaryLightCount} rows.");
+        }
+        if (source.ReflectionProbeIndex is byte reflectionProbeIndex && reflectionProbeIndex >= reflectionProbeCount)
+        {
+            throw new InvalidDataException(
+                $"Static model {index} references reflection probe {reflectionProbeIndex}; " +
+                $"the table has {reflectionProbeCount} rows.");
         }
 
         bool usesGroundLighting =
@@ -1339,7 +1456,8 @@ public static class D3dbspAssetLinker
         D3dbspFile file,
         bool forceFullbright)
     {
-        if (file.GetRequiredData(D3dbspLumpType.Cells).Length != 112)
+        if (!file.HasLump(D3dbspLumpType.RenderSpatial) &&
+            file.GetRequiredData(D3dbspLumpType.Cells).Length != 112)
         {
             throw new NotSupportedException(
                 "Strict fastfile conversion currently requires exactly one compiled render cell.");

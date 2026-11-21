@@ -1,4 +1,5 @@
 using IW4.Game.Assets.Fx;
+using IW4.Game.Assets.Material;
 using IW4.Game.Pointers;
 
 namespace IW4.Game.Assets.ImpactFx;
@@ -6,7 +7,7 @@ namespace IW4.Game.Assets.ImpactFx;
 public sealed class FxImpactEntry
 {
     public const int SerializedSize = 0x8C;
-    public const int SurfaceEffectCount = 31;
+    public const int SurfaceEffectCount = (int)MaterialSurfaceType.Count;
     public const int FleshEffectCount = (int)FxFleshType.Count;
 
     public int Offset { get; init; }

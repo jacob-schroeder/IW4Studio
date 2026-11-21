@@ -62,15 +62,15 @@ internal sealed class SoundPreviewPlayer : IDisposable
                 string errorDescription = GetErrorDescription(error);
                 throw new InvalidDataException(
                     string.IsNullOrWhiteSpace(errorDescription)
-                        ? "AVAudioPlayer could not decode the MPEG sound data."
-                        : $"AVAudioPlayer could not decode the MPEG sound data: {errorDescription}");
+                        ? "AVAudioPlayer could not decode the sound preview."
+                        : $"AVAudioPlayer could not decode the sound preview: {errorDescription}");
             }
 
             SendVoidWithByte(_player, Selectors.SetMeteringEnabled, 1);
             if (!SendBool(_player, Selectors.PrepareToPlay))
             {
                 throw new InvalidDataException(
-                    "AVAudioPlayer could not prepare the MPEG sound data for playback.");
+                    "AVAudioPlayer could not prepare the sound preview for playback.");
             }
         }
         catch
@@ -101,7 +101,7 @@ internal sealed class SoundPreviewPlayer : IDisposable
             if (!IsPlatformSupported)
                 return null;
 
-            return new SoundPreviewPlayer(CreateWarmupWaveData());
+            return new SoundPreviewPlayer(CreateMonoWave(8_000, 80));
         }
         catch
         {
@@ -152,6 +152,29 @@ internal sealed class SoundPreviewPlayer : IDisposable
 
             SendVoid(_player, Selectors.Pause);
             _isPaused = true;
+        }
+    }
+
+    internal TimeSpan Position
+    {
+        get
+        {
+            lock (_sync)
+            {
+                ThrowIfDisposed();
+                return TimeSpan.FromSeconds(SendDouble(_player, Selectors.CurrentTime));
+            }
+        }
+        set
+        {
+            lock (_sync)
+            {
+                ThrowIfDisposed();
+                double seconds = Math.Clamp(value.TotalSeconds, 0, SendDouble(_player, Selectors.Duration));
+                SendVoidWithDouble(_player, Selectors.SetCurrentTime, seconds);
+                _playStartedAtSeconds = seconds;
+                _playStartedTimestamp = Stopwatch.GetTimestamp();
+            }
         }
     }
 
@@ -279,15 +302,29 @@ internal sealed class SoundPreviewPlayer : IDisposable
         _player = IntPtr.Zero;
     }
 
-    private static byte[] CreateWarmupWaveData()
+    internal static SoundPreviewPlayer CreateFalloffTone()
+    {
+        const int sampleRate = 16_000;
+        const int sampleCount = 8 * sampleRate;
+        byte[] wave = CreateMonoWave(sampleRate, sampleCount);
+        Span<byte> samples = wave.AsSpan(44);
+        for (int i = 0; i < sampleCount; i++)
+        {
+            // Fade the ends of the quiet sine tone to avoid a click.
+            double envelope = Math.Min(1, Math.Min(i, sampleCount - 1 - i) / (sampleRate * .02));
+            short value = (short)(short.MaxValue * .035 * envelope * Math.Sin(i * (Math.Tau * 246.94 / sampleRate)));
+            BinaryPrimitives.WriteInt16LittleEndian(samples[(i * sizeof(short))..], value);
+        }
+        return new SoundPreviewPlayer(wave);
+    }
+
+    private static byte[] CreateMonoWave(int sampleRate, int sampleCount)
     {
         const int headerSize = 44;
         const short channelCount = 1;
         const short bitsPerSample = 16;
-        const int sampleRate = 8_000;
-        const int sampleCount = 80;
         const int bytesPerSample = bitsPerSample / 8;
-        const int dataLength = sampleCount * channelCount * bytesPerSample;
+        int dataLength = sampleCount * channelCount * bytesPerSample;
 
         byte[] waveData = new byte[headerSize + dataLength];
         "RIFF"u8.CopyTo(waveData);

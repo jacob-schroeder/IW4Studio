@@ -642,7 +642,7 @@ internal static class Iw3PcMapConverter
             GfxImageAsset compassImage = images.AssetsBySourceName[compassImageRequest.ImageName];
             if (IsExternal(compassImage) || images.FallbackImageNames.Contains(compassImageRequest.ImageName, StringComparer.OrdinalIgnoreCase))
                 throw new InvalidDataException($"The source minimap image '{compassImageRequest.ImageName}' has no source-owned pixels.");
-            materials.Add(Iw4LoadZoneBuilder.CreateCompassMaterial(compassMaterialName, compassImage));
+            materials.Add(Ps3LoadZoneBuilder.CreateCompassMaterial(compassMaterialName, compassImage));
         }
         if (compassMaterialName is not null || damageFx.EffectNames.Count != 0 || objectives is not null)
         {
@@ -1092,7 +1092,7 @@ internal static class Iw3PcMapConverter
                 images.AssetsBySourceName.Count - images.OwnedImageCount + 1,
                 techniques.OwnedTechniqueSets.Count,
                 techniques.Shaders.Count,
-                materials.OwnedMaterials.Count + Iw4LoadZoneBuilder.OwnedMaterialCount,
+                materials.OwnedMaterials.Count + Ps3LoadZoneBuilder.OwnedMaterialCount,
                 xmodels.Models.Count,
                 bootstrap?.Models.Count ?? 0,
                 externalEntityModels.Length,
@@ -1443,7 +1443,7 @@ internal static class Iw3PcMapConverter
         GfxImageAsset QualifyImage(GfxImageAsset image, string sourceName) =>
             ownedAssetNamePrefix.Length == 0 || sourceName.StartsWith('$')
                 ? image
-                : Iw4LoadZoneBuilder.CloneImage(image, ownedAssetNamePrefix + sourceName);
+                : Ps3LoadZoneBuilder.CloneImage(image, ownedAssetNamePrefix + sourceName);
 
         var assetsBySourceName = new Dictionary<string, GfxImageAsset>(
             StringComparer.OrdinalIgnoreCase);
@@ -2034,7 +2034,7 @@ internal static class Iw3PcMapConverter
         }
         if (loadRawFiles.Count != 1 || !string.Equals(loadRawFiles[0].Name, loadName, StringComparison.Ordinal))
             throw new InvalidDataException($"IW3 load zone '{loadName}' must contain exactly its matching marker rawfile.");
-        return Iw4LoadZoneBuilder.Build(loadName, loadScreenImage,
+        return Ps3LoadZoneBuilder.Build(loadName, loadScreenImage,
             loadScreenReferences is null ? [] : [loadScreenReferences], loadRawFiles[0]);
     }
 

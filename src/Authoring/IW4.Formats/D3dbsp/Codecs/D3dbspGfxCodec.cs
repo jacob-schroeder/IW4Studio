@@ -12,7 +12,7 @@ using System.Numerics;
 
 namespace IW4.Formats.Codecs.D3dbsp;
 
-internal static class D3dbspGfxCodec
+internal static partial class D3dbspGfxCodec
 {
     private const int DiskTriangleSoupSize = 24;
     private const int DiskVertexSize = 68;
@@ -191,14 +191,15 @@ internal static class D3dbspGfxCodec
         if (staticSurfaceCount > ushort.MaxValue)
             throw new InvalidDataException("The world-model surface count exceeds the IW4 ushort range.");
 
+        bool hasRenderSpatial = file.HasLump(D3dbspLumpType.RenderSpatial);
+        if ((useSourceMaterials || hasRenderSpatial) && staticSurfaceStart != 0)
+        {
+            throw new InvalidDataException("The world-model surfaces must be a prefix for native material or spatial data.");
+        }
+
         int[] sourceSurfaceIndices = Enumerable.Range(0, surfaceCount).ToArray();
         if (useSourceMaterials)
         {
-            if (staticSurfaceStart != 0)
-            {
-                throw new InvalidDataException(
-                    "Native source-material draw ranges require the world-model surfaces to be a prefix.");
-            }
             // Package opaque backing before alpha-blended water, before building
             // contiguous index ranges and all surface-indexed native tables.
             // Runtime material indices are assigned at registration; group by
@@ -217,7 +218,16 @@ internal static class D3dbspGfxCodec
 
         var positions = new Vec3[vertexCount];
         var packedPositions = new byte[checked(vertexCount * PositionStride)];
-        var packedLayers = new byte[checked(vertexCount * LayerStride)];
+        // The authoring payload contains native PS3 rows for surfaces whose
+        // additional UVs do not fit in DiskGfxVertex. Stock PC lump data uses
+        // a different representation and still follows the standard path.
+        ReadOnlySpan<byte> nativeLayers = file.GetOptionalData(D3dbspLumpType.VertexLayerData);
+        ReadOnlySpan<byte> nativeLayerHeader = "IW4PS3L\u0001"u8;
+        bool hasNativeLayers = nativeLayers.StartsWith(nativeLayerHeader);
+        nativeLayers = hasNativeLayers ? nativeLayers[nativeLayerHeader.Length..] : [];
+        int baseLayerSize = checked(vertexCount * LayerStride);
+        var packedLayers = new byte[checked(baseLayerSize + nativeLayers.Length)];
+        nativeLayers.CopyTo(packedLayers.AsSpan(baseLayerSize));
         for (int index = 0; index < vertexCount; index++)
         {
             ReadOnlySpan<byte> source = vertexBytes.Slice(index * DiskVertexSize, DiskVertexSize);
@@ -264,6 +274,19 @@ internal static class D3dbspGfxCodec
             }
             ValidateSlice(firstVertex, localVertexCount, vertexCount, $"Render surface {surfaceIndex} vertex");
             ValidateSlice(firstIndex, localIndexCount, sourceIndexCount, $"Render surface {surfaceIndex} index");
+
+            int vertexLayerOffset = checked(firstVertex * LayerStride);
+            int nativeOffset = hasNativeLayers ? BinaryPrimitives.ReadInt32LittleEndian(row[8..]) : -1;
+            if (nativeOffset != -1)
+            {
+                int stride = GetBackendLayerStride(materials[materialIndex]);
+                if (nativeOffset < 0 || (nativeOffset & 3) != 0 ||
+                    stride <= LayerStride || (long)nativeOffset + localVertexCount * stride > nativeLayers.Length)
+                {
+                    throw new InvalidDataException($"Render surface {surfaceIndex} has an invalid PS3 vertex-layer slice.");
+                }
+                vertexLayerOffset = checked(baseLayerSize + nativeOffset);
+            }
 
             int baseIndex = outputIndices.Count;
             BoundsAccumulator bounds = new();
@@ -333,7 +356,7 @@ internal static class D3dbspGfxCodec
             {
                 Triangles = new SrfTriangles
                 {
-                    VertexLayerData = checked(firstVertex * LayerStride),
+                    VertexLayerData = vertexLayerOffset,
                     BaseVertex = firstVertex,
                     MinVertexIndex = 0,
                     VertexCount = checked((ushort)localVertexCount),
@@ -368,7 +391,7 @@ internal static class D3dbspGfxCodec
             throw new InvalidDataException(
                 $"The render static-model count exceeds the IW4 ushort range of {ushort.MaxValue}.");
         }
-        if (staticModelCount > GfxAabbTree.MaxIndexCount)
+        if (!hasRenderSpatial && staticModelCount > GfxAabbTree.MaxIndexCount)
         {
             throw new InvalidDataException(
                 $"The canonical render AABB has {staticModelCount} static models; the PS3 SPU index scratch supports at most {GfxAabbTree.MaxIndexCount}.");
@@ -421,14 +444,9 @@ internal static class D3dbspGfxCodec
         }
 
         Bounds world = worldBounds.ToBounds("Render world");
-        GfxCell canonicalCell =
-            ValidateCanonicalSourceSpatialRows(
-                file,
-                surfaceWorld,
-                world,
-                surfaceCount,
-                reflectionProbeImages.Count);
-        if (staticSurfaceCount > GfxAabbTree.MaxIndexCount)
+        GfxCell? canonicalCell = hasRenderSpatial ? null : ValidateCanonicalSourceSpatialRows(
+            file, surfaceWorld, world, surfaceCount, reflectionProbeImages.Count);
+        if (!hasRenderSpatial && staticSurfaceCount > GfxAabbTree.MaxIndexCount)
         {
             CoalesceStaticWorldSurfaces(
                 staticSurfaceStart,
@@ -439,23 +457,44 @@ internal static class D3dbspGfxCodec
                 ref surfaceBounds,
                 ref outputIndices);
         }
-        if (staticSurfaceCount > GfxAabbTree.MaxIndexCount)
+        else if (hasNativeLayers && useSourceMaterials)
+        {
+            ShareStaticWorldDrawBases(
+                staticSurfaceStart, staticSurfaceCount, baseLayerSize, surfaces, outputIndices);
+        }
+        if (!hasRenderSpatial && staticSurfaceCount > GfxAabbTree.MaxIndexCount)
         {
             throw new InvalidDataException(
                 $"The canonical render AABB still has {staticSurfaceCount} world surfaces after compatible draw coalescing; the PS3 SPU index scratch supports at most {GfxAabbTree.MaxIndexCount}.");
         }
-        ushort[] sortedSurfaceIndices = Enumerable.Range(
-                staticSurfaceStart,
-                staticSurfaceCount)
+        ushort[] worldSurfaceIndices = Enumerable.Range(staticSurfaceStart, staticSurfaceCount)
             .Select(value => checked((ushort)value))
             .ToArray();
+        (GfxWorldDpvsPlanes dpvsPlanes, GfxCell[] cells, GfxCellTree[] cellTrees, ushort[] sortedSurfaceIndices) =
+            canonicalCell is null
+                ? DecodeRenderSpatial(file, sourceSurfaceIndices.AsSpan(0, staticSurfaceCount),
+                    surfaceBounds, reflectionProbeImages.Count, staticModelInstances)
+                : (new GfxWorldDpvsPlanes { CellCount = 1, Nodes = [1] },
+                    [canonicalCell],
+                    [new GfxCellTree
+                    {
+                        AabbTrees = [new GfxAabbTree
+                        {
+                            Bounds = world,
+                            SurfaceCount = checked((ushort)staticSurfaceCount),
+                            StartSurfIndex = checked((ushort)staticSurfaceStart),
+                            SModelIndexCount = checked((ushort)staticModelCount),
+                            SModelIndexes = Array.AsReadOnly(staticModelIndices)
+                        }]
+                    }],
+                    worldSurfaceIndices);
         uint litSurfaceEnd = checked((uint)staticSurfaceCount);
         uint emissiveSurfaceBegin = checked((uint)staticSurfaceCount);
         if (useSourceMaterials)
         {
             litSurfaceEnd = 0;
             emissiveSurfaceBegin = 0;
-            foreach (ushort surfaceIndex in sortedSurfaceIndices)
+            foreach (ushort surfaceIndex in worldSurfaceIndices)
             {
                 MaterialAsset material = surfaces[surfaceIndex].Material ??
                     throw new InvalidDataException($"Render surface {surfaceIndex} has no material.");
@@ -550,7 +589,7 @@ internal static class D3dbspGfxCodec
         var shadowSurfaceIndices = Enumerable.Range(0, primaryLightCount)
             .Select(_ => new List<ushort>())
             .ToArray();
-        foreach (ushort surfaceIndex in sortedSurfaceIndices)
+        foreach (ushort surfaceIndex in worldSurfaceIndices)
         {
             GfxSurface surface = surfaces[surfaceIndex];
             MaterialAsset material = surface.Material ??
@@ -582,8 +621,8 @@ internal static class D3dbspGfxCodec
         {
             Name = assetName,
             BaseName = Path.GetFileNameWithoutExtension(assetName),
-            PlaneCount = 0,
-            NodeCount = 1,
+            PlaneCount = dpvsPlanes.Planes.Count,
+            NodeCount = dpvsPlanes.Nodes.Count,
             SurfaceCount = surfaceCount,
             SkyCount = checked((uint)skies.Length),
             Skies = Array.AsReadOnly(skies),
@@ -593,35 +632,10 @@ internal static class D3dbspGfxCodec
             SortKeyEffectDecal = SortKeyEffectDecal,
             SortKeyEffectAuto = SortKeyEffectAuto,
             SortKeyDistortion = SortKeyDistortion,
-            DpvsPlanes = new GfxWorldDpvsPlanes
-            {
-                CellCount = 1,
-                // Packed DPVS leaves store cellIndex + 1. Native R_CellForPoint
-                // always dereferences the root, even for a single-cell world.
-                Nodes = [1]
-            },
-            CellTreeCounts = [new GfxCellTreeCount(1)],
-            CellTrees =
-            [
-                new GfxCellTree
-                {
-                    AabbTrees =
-                    [
-                        new GfxAabbTree
-                        {
-                            Bounds = world,
-                            SurfaceCount = checked((ushort)staticSurfaceCount),
-                            StartSurfIndex = checked((ushort)staticSurfaceStart),
-                            SModelIndexCount = checked((ushort)staticModelCount),
-                            SModelIndexes = Array.AsReadOnly(staticModelIndices)
-                        }
-                    ]
-                }
-            ],
-            Cells =
-            [
-                canonicalCell
-            ],
+            DpvsPlanes = dpvsPlanes,
+            CellTreeCounts = cellTrees.Select(tree => new GfxCellTreeCount((uint)tree.AabbTrees.Count)).ToArray(),
+            CellTrees = cellTrees,
+            Cells = cells,
             WorldDraw = new GfxWorldDraw
             {
                 ReflectionProbeCount = checked((uint)reflectionProbeImages.Count),
@@ -701,6 +715,94 @@ internal static class D3dbspGfxCodec
             FragmentProgramUploadCapacity = ps3FragmentProgramUploadCapacity
         };
     }
+
+    private static void ShareStaticWorldDrawBases(
+        int staticSurfaceStart,
+        int staticSurfaceCount,
+        int baseLayerSize,
+        GfxSurface[] surfaces,
+        List<ushort> indices)
+    {
+        int staticSurfaceEnd = staticSurfaceStart + staticSurfaceCount;
+        for (int first = staticSurfaceStart; first < staticSurfaceEnd;)
+        {
+            GfxSurface original = surfaces[first];
+            SrfTriangles originalTriangles = original.Triangles;
+            int baseVertex = originalTriangles.BaseVertex;
+            int layerBase = originalTriangles.VertexLayerData;
+            int vertexEnd = baseVertex + originalTriangles.VertexCount;
+            int stride = GetBackendLayerStride(original.Material);
+            bool hasPackedLayer = layerBase >= baseLayerSize;
+            int end = first + 1;
+            if (hasPackedLayer ? stride > LayerStride : stride == LayerStride)
+            {
+                while (end < staticSurfaceEnd)
+                {
+                    GfxSurface candidate = surfaces[end];
+                    SrfTriangles triangles = candidate.Triangles;
+                    int candidateVertex = triangles.BaseVertex;
+                    int mergedBase = Math.Min(baseVertex, candidateVertex);
+                    int mergedEnd = Math.Max(vertexEnd, candidateVertex + triangles.VertexCount);
+                    // One index shift must address the same vertex in both streams.
+                    if (!ReferenceEquals(candidate.Material, original.Material) ||
+                        candidate.PrimaryLightIndex != original.PrimaryLightIndex ||
+                        (triangles.VertexLayerData >= baseLayerSize) != hasPackedLayer ||
+                        (long)triangles.VertexLayerData - layerBase != (long)(candidateVertex - baseVertex) * stride ||
+                        mergedEnd - mergedBase > SrfTriangles.SoftwareTriangleCullVertexLimit)
+                    {
+                        break;
+                    }
+                    if (candidateVertex < baseVertex)
+                        layerBase = triangles.VertexLayerData;
+                    baseVertex = mergedBase;
+                    vertexEnd = mergedEnd;
+                    end++;
+                }
+            }
+
+            // The PS3 can combine adjacent draws with common stream bases while
+            // keeping each surface's own bounds, lights and triangle range.
+            for (int surfaceIndex = first; surfaceIndex < end; surfaceIndex++)
+            {
+                GfxSurface surface = surfaces[surfaceIndex];
+                SrfTriangles triangles = surface.Triangles;
+                int indexShift = triangles.BaseVertex - baseVertex;
+                if (indexShift == 0)
+                    continue;
+
+                int indexEnd = triangles.BaseIndex + triangles.TriCount * 3;
+                for (int index = triangles.BaseIndex; index < indexEnd; index++)
+                    indices[index] = checked((ushort)(indices[index] + indexShift));
+
+                surfaces[surfaceIndex] = new GfxSurface
+                {
+                    Triangles = new SrfTriangles
+                    {
+                        VertexLayerData = layerBase,
+                        BaseVertex = baseVertex,
+                        MinVertexIndex = (uint)indexShift,
+                        VertexCount = triangles.VertexCount,
+                        TriCount = triangles.TriCount,
+                        BaseIndex = triangles.BaseIndex
+                    },
+                    MaterialPointer = surface.MaterialPointer,
+                    Material = surface.Material,
+                    LightmapIndex = surface.LightmapIndex,
+                    ReflectionProbeIndex = surface.ReflectionProbeIndex,
+                    PrimaryLightIndex = surface.PrimaryLightIndex,
+                    Flags = surface.Flags
+                };
+            }
+            first = end;
+        }
+    }
+
+    private static int GetBackendLayerStride(MaterialAsset? material) =>
+        material?.TechniqueSet?.WorldVertexFormat is { } format &&
+        WorldVertexLayout.TryGetStreamStride(
+            WorldVertexLayout.ResolveGenericFallbackBackendRow(format), 1, out byte stride)
+            ? stride
+            : 0;
 
     private static void CoalesceStaticWorldSurfaces(
         int staticSurfaceStart,
@@ -1043,22 +1145,9 @@ internal static class D3dbspGfxCodec
         GfxSurface surface,
         int surfaceIndex)
     {
-        MaterialWorldVertexFormat? format = surface.Material?
-            .TechniqueSet?
-            .WorldVertexFormat;
-        if (format.HasValue && Enum.IsDefined(format.Value))
-        {
-            int backendRow = WorldVertexLayout.ResolveGenericFallbackBackendRow(
-                format.Value);
-            if (WorldVertexLayout.TryGetStreamStride(
-                    backendRow,
-                    streamIndex: 1,
-                    out byte stride) &&
-                stride >= LayerStride)
-            {
-                return stride;
-            }
-        }
+        int stride = GetBackendLayerStride(surface.Material);
+        if (stride >= LayerStride)
+            return stride;
 
         if (world.WorldDraw.VertexLayerDataSize ==
             checked(world.WorldDraw.VertexCount * LayerStride))
@@ -1542,23 +1631,10 @@ internal static class D3dbspGfxCodec
             throw new NotSupportedException(
                 "Strict fastfile conversion requires one render cell with no portal or auxiliary metadata.");
         }
-        int cellProbeCount = cell[44];
-        if (cellProbeCount > cell.Length - 45 ||
-            cell[(45 + cellProbeCount)..].IndexOfAnyExcept((byte)0) >= 0)
-        {
-            throw new InvalidDataException(
-                "The canonical render cell has an invalid reflection-probe list.");
-        }
-        // A compiler-produced map with no authored probes leaves the cell list
-        // empty. The fastfile graph still receives native probe zero.
-        byte[] cellProbes = cellProbeCount == 0
-            ? [0]
-            : cell.Slice(45, cellProbeCount).ToArray();
-        if (cellProbes.Any(index => index >= reflectionProbeCount))
-        {
-            throw new InvalidDataException(
-                "The canonical render cell references a reflection probe outside the world table.");
-        }
+        byte[] cellProbes = DecodeCellProbeIndices(cell, reflectionProbeCount);
+        // The canonical compiler profile uses native probe zero when no probe is authored.
+        if (cellProbes.Length == 0)
+            cellProbes = [0];
         Vec3 sourceMins = ReadVec3(cell, 0);
         Vec3 sourceMaxs = ReadVec3(cell, 12);
         ValidateBounds(sourceMins, sourceMaxs, "Render cell");
@@ -1589,6 +1665,24 @@ internal static class D3dbspGfxCodec
             Pad21 = [0, 0, 0],
             ReflectionProbes = Array.AsReadOnly(cellProbes)
         };
+    }
+
+    private static byte[] DecodeCellProbeIndices(ReadOnlySpan<byte> cell, int reflectionProbeCount)
+    {
+        int cellProbeCount = cell[44];
+        if (cellProbeCount > cell.Length - 45 ||
+            cell[(45 + cellProbeCount)..].IndexOfAnyExcept((byte)0) >= 0)
+        {
+            throw new InvalidDataException(
+                "The render cell has an invalid reflection-probe list.");
+        }
+        byte[] cellProbes = cell.Slice(45, cellProbeCount).ToArray();
+        if (cellProbes.Any(index => index >= reflectionProbeCount))
+        {
+            throw new InvalidDataException(
+                "The render cell references a reflection probe outside the world table.");
+        }
+        return cellProbes;
     }
 
     private static Bounds ReadWorldBounds(GfxWorldAsset world)

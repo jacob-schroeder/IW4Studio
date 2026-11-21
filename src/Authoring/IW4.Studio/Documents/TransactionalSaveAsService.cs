@@ -395,13 +395,12 @@ public sealed class TransactionalSaveAsService
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.DestinationPath);
         session.ThrowIfDisposed();
-        FastFileSaveRevision revision = session.CaptureRevision();
-
         var diagnostics = new List<string>();
         TransactionalSaveDirectory? temporaryDirectory = null;
         TransactionalSaveFile? temporaryFastFile = null;
         try
         {
+            FastFileSaveRevision revision = session.CaptureRevision();
             string requestedDestinationPath = _fileSystem.GetFullPath(request.DestinationPath);
             if (IsProtectedImageFilePackagePath(requestedDestinationPath))
             {

@@ -124,6 +124,7 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new StringTableAdapter());
         registry.Register(new LocalizeAdapter());
         registry.Register(new PhysPresetAdapter());
+        registry.Register(new PhysCollmapAdapter());
         registry.Register(new MenuAdapter());
         registry.Register(new MenuFileAdapter());
         registry.Register(new MaterialAdapter());
@@ -131,11 +132,17 @@ public sealed class AssetAuthoringAdapterRegistry
         registry.Register(new ShaderAdapter(XAssetType.PixelShader));
         registry.Register(new ImageAdapter());
         registry.Register(new XModelAdapter());
+        registry.Register(new XModelSurfsAdapter());
         registry.Register(new FontAdapter());
         registry.Register(new FxAdapter());
+        registry.Register(new ImpactFxAdapter());
         registry.Register(new WeaponAdapter());
         registry.Register(new StructuredDataAdapter());
         registry.Register(new SoundAdapter());
+        registry.Register(new LoadedSoundAdapter());
+        registry.Register(new SndCurveAdapter());
+        registry.Register(new LeaderboardAdapter());
+        registry.Register(new AddonMapEntsAdapter());
         registry.Register(new TracerAdapter());
         registry.Register(new VehicleAdapter());
         foreach (XAssetType assetType in D3dbspAssetTypeFacts.MultiplayerTypes)
@@ -206,6 +213,13 @@ public sealed class AssetAuthoringAdapterRegistry
         {
             mode = WorkspaceAssetAccess.ReadOnly;
         }
+
+        definition = definition switch
+        {
+            LoadedSound loadedSound => SoundDraft.Copy(loadedSound),
+            SoundAliasListAsset sound => SoundDraft.CopyDetached(sound),
+            _ => definition
+        };
 
         return new AssetEditorSession(
             session,
@@ -893,6 +907,7 @@ public sealed partial class AssetEditorSession : AssetEditorSurface
     public bool ApplyCompiledSound(
         int aliasIndex,
         int fileIndex,
+        LoadedSound expectedCurrent,
         LoadedSound replacement,
         out IReadOnlyList<AssetValidationIssue> issues)
     {
@@ -914,6 +929,7 @@ public sealed partial class AssetEditorSession : AssetEditorSurface
             identity,
             aliasIndex,
             fileIndex,
+            expectedCurrent,
             replacement,
             out issues);
         Validation = new AssetEditorValidationState(issues);
@@ -939,8 +955,12 @@ public sealed partial class AssetEditorSession : AssetEditorSurface
             return false;
 
         bool reverted = _rowIdentity is { } row
-            ? _session.RevertDraft(row, _adapter)
-            : _session.PublishProviderDraft(
+            ? _adapter.AssetType == XAssetType.LoadedSound
+                ? _session.RevertLoadedSound(Entry)
+                : _session.RevertDraft(row, _adapter)
+            : _adapter.AssetType == XAssetType.LoadedSound
+                ? _session.RevertLoadedSound(Entry)
+                : _session.PublishProviderDraft(
                 _providerIdentity ?? throw new InvalidOperationException("This editor has no writable provider."),
                 candidate: null);
         object baseline = CloneCurrentDraft();

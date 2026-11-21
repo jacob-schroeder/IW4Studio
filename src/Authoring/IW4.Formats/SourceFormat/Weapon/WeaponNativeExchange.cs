@@ -18,7 +18,7 @@ namespace IW4.Formats.SourceFormat.Weapon;
 
 /// <summary>
 /// Retains the modeled PS3 weapon values and storage presence for the stock
-/// minigun turret. Pointer addresses and provider bodies are supplied anew.
+/// minigun turret and equipped melee weapons. Pointer addresses and provider bodies are supplied anew.
 /// </summary>
 public sealed class WeaponNativeExchange
 {
@@ -43,7 +43,6 @@ public sealed class WeaponNativeExchange
     {
         ArgumentNullException.ThrowIfNull(resolve);
         string name = SourceOutput.NormalizeOwnedAssetName(weaponName, "Weapon");
-        RequireSupportedName(name);
         string path = NativeSourcePath.Resolve(sourceDirectory, "weapon_native", name, ".json");
         NativeWeapon document = JsonSerializer.Deserialize<NativeWeapon>(
             File.ReadAllText(path), Options(resolve)) ??
@@ -84,6 +83,10 @@ public sealed class WeaponNativeExchange
             dependencies.Add((XAssetType.RawFile, $"rumble/{rumble}"));
         }
 
+        foreach (var model in definition.GunModels.Concat(definition.WorldGunModels)) Add(model);
+        Add(definition.HandModel);
+        foreach (string? animation in variant.AnimationNames)
+            if (!string.IsNullOrEmpty(animation)) dependencies.Add((XAssetType.XAnim, animation));
         Add(variant.KillIcon);
         Add(variant.DpadIcon);
         Add(definition.FlashEffects.View);
@@ -218,12 +221,14 @@ public sealed class WeaponNativeExchange
 
     private static void Validate(WeaponAsset weapon, string name)
     {
-        RequireSupportedName(name);
         WeaponVariantDef variant = weapon.Variant;
         WeaponDef definition = variant.Definition ??
             throw new InvalidDataException($"Weapon '{name}' has no WeaponDef body.");
-        if (variant.InternalName != name || definition.WeaponClass != WeaponClass.Turret)
-            throw new InvalidDataException($"Weapon '{name}' is not the stock turret profile.");
+        bool turret = name == SupportedWeaponName && definition.WeaponClass == WeaponClass.Turret;
+        bool melee = definition.WeaponType == WeaponType.Bullet && definition.TailFlags?.DisableFiring == 1 &&
+            definition.Ammo?.MeleeDamage > 0 && definition.InventoryType == WeaponInventoryType.Primary;
+        if (variant.InternalName != name || !(turret || melee))
+            throw new InvalidDataException($"Weapon '{name}' requires a supported turret or handheld melee definition.");
         if (definition.NoteTrackMaps is null || definition.FlashEffects is null ||
             definition.PrimarySounds is null || definition.ShellEjectEffects is null ||
             definition.Reticle is null || definition.Icons is null ||
@@ -257,7 +262,7 @@ public sealed class WeaponNativeExchange
             WeaponDef.NoteTrackMapCount, "rumble notetrack map");
         if (definition.NoteTrackMaps.SoundMappings.Any(HasMapping) ||
             definition.NoteTrackMaps.RumbleMappings.Any(HasMapping))
-            throw new NotSupportedException($"Weapon '{name}' has notetrack mappings outside the stock turret source profile.");
+            throw new NotSupportedException($"Weapon '{name}' has notetrack mappings outside the native weapon source profile.");
         CheckArray(definition.BounceSounds, definition.BounceSoundPointer.Raw,
             (int)MaterialSurfaceType.Count, "bounce sounds");
         CheckArray(definition.LocationDamageMultipliers, definition.LocationDamageMultipliersPointer.Raw,
@@ -282,31 +287,30 @@ public sealed class WeaponNativeExchange
             definition.Turret.BarrelSpinDownSounds.Any(field => field is null))
             throw new InvalidDataException($"Weapon '{name}' has a null sound wrapper.");
 
-        // The stock profile has no model, animation, alternate-weapon, or physics provider.
-        if (definition.GunModels.Any(model => model is not null) ||
+        if (turret && (definition.GunModels.Any(model => model is not null) ||
             definition.GunModelPointers.Any(pointer => pointer.Raw != 0) ||
             definition.WorldGunModels.Any(model => model is not null) ||
             definition.WorldGunModelPointers.Any(pointer => pointer.Raw != 0) ||
-            definition.HandModel is not null || definition.WorldClipModel is not null ||
+            definition.HandModel is not null || definition.HandModelPointer.Raw != 0 ||
+            variant.AnimationNames.Any(value => !string.IsNullOrEmpty(value))))
+            throw new NotSupportedException($"Stock turret '{name}' has handheld fields.");
+        if (melee && (definition.GunModels.FirstOrDefault() is null ||
+            definition.WorldGunModels.FirstOrDefault() is null ||
+            string.IsNullOrEmpty(variant.AnimationNames.ElementAtOrDefault((int)WeaponAnimationSlot.Melee))))
+            throw new InvalidDataException($"Melee weapon '{name}' requires view and world models and a melee animation.");
+        if (definition.WorldClipModel is not null ||
             definition.RocketModel is not null || definition.KnifeModel is not null ||
             definition.WorldKnifeModel is not null || definition.Projectile.Model is not null ||
-            definition.HandModelPointer.Raw != 0 || definition.WorldClipModelPointer.Raw != 0 ||
+            definition.WorldClipModelPointer.Raw != 0 ||
             definition.RocketModelPointer.Raw != 0 || definition.KnifeModelPointer.Raw != 0 ||
             definition.WorldKnifeModelPointer.Raw != 0 || definition.Projectile.ModelPointer.Raw != 0 ||
             definition.PhysCollmap is not null ||
             definition.PhysCollmapPointer.Raw != 0 ||
             !string.IsNullOrEmpty(definition.PhysCollmapName) ||
             variant.AlternateWeaponName is not null && variant.AlternateWeaponName.Length != 0 ||
-            variant.AnimationNames.Any(value => !string.IsNullOrEmpty(value)) ||
             definition.RightHandAnimationNames.Any(value => !string.IsNullOrEmpty(value)) ||
             definition.LeftHandAnimationNames.Any(value => !string.IsNullOrEmpty(value)))
-            throw new NotSupportedException($"Weapon '{name}' exceeds the stock turret native-source profile.");
-    }
-
-    private static void RequireSupportedName(string name)
-    {
-        if (name != SupportedWeaponName)
-            throw new NotSupportedException($"Native weapon source supports only '{SupportedWeaponName}'.");
+            throw new NotSupportedException($"Weapon '{name}' uses unsupported weapon dependencies.");
     }
 
     private static void CheckArray<T>(IReadOnlyList<T> values, int pointerRaw, int expected, string field)
@@ -410,6 +414,7 @@ public sealed class WeaponNativeExchange
 
         private static XAssetType SupportedType()
         {
+            if (typeof(T) == typeof(XModelAsset)) return XAssetType.XModel;
             if (typeof(T) == typeof(MaterialAsset)) return XAssetType.Material;
             if (typeof(T) == typeof(FxEffectDefAsset)) return XAssetType.Fx;
             if (typeof(T) == typeof(TracerDefAsset)) return XAssetType.Tracer;

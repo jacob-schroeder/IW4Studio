@@ -82,7 +82,8 @@ public sealed class XModelNativeExchange
         string modelName,
         Func<string, MaterialAsset> loadMaterial,
         Func<string, PhysPresetAsset> loadPhysPreset,
-        Func<string, PhysCollmapAsset> loadPhysCollmap)
+        Func<string, PhysCollmapAsset> loadPhysCollmap,
+        bool coarsestLodOnly = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceDirectory);
         ArgumentNullException.ThrowIfNull(loadMaterial);
@@ -94,6 +95,8 @@ public sealed class XModelNativeExchange
             File.ReadAllText(path), XModelNativeSurfs.JsonOptions) ??
             throw new InvalidDataException($"XModel '{name}' has no native source body.");
         Validate(source, name);
+        if (coarsestLodOnly)
+            source = KeepCoarsestLod(source);
 
         var surfsByName = new Dictionary<string, XModelSurfsAsset>(StringComparer.Ordinal);
         XModelLodInfo[] lods = source.Lods.Select((lod, index) =>
@@ -166,6 +169,37 @@ public sealed class XModelNativeExchange
             PhysCollmap = collmap
         };
         return new XModelNativeImport(model, surfsByName.Values.ToArray());
+    }
+
+    private static NativeModel KeepCoarsestLod(NativeModel source)
+    {
+        if (source.NumLods == 0 || source.NumLods > source.Lods.Length)
+            throw new InvalidDataException($"XModel '{source.Name}' has an invalid native LOD count.");
+
+        int index = Array.FindLastIndex(source.Lods, source.NumLods - 1, source.NumLods,
+            lod => lod.ModelSurfs is not null && lod.NumSurfs > 0 &&
+                lod.SurfIndex + lod.NumSurfs <= source.NumSurfs &&
+                float.IsFinite(lod.Dist) && lod.Dist > 0);
+        if (index < 0)
+            throw new InvalidDataException($"XModel '{source.Name}' has no usable native LOD.");
+        if (source.NumLods == 1)
+            return source;
+        if (source.CollLod != byte.MaxValue && source.CollLod != index)
+            throw new InvalidDataException($"XModel '{source.Name}' would lose its collision LOD.");
+
+        NativeLod lod = source.Lods[index];
+        int end = lod.SurfIndex + lod.NumSurfs;
+        var empty = new NativeLod(lod.Dist, 0, 0, new uint[6], null);
+        return source with
+        {
+            NumSurfs = checked((byte)lod.NumSurfs),
+            Materials = source.Materials[lod.SurfIndex..end],
+            Lods = [lod with { SurfIndex = 0 }, empty, empty, empty],
+            MaxLoadedLod = 0,
+            NumLods = 1,
+            CollLod = source.CollLod == byte.MaxValue ? byte.MaxValue : (byte)0,
+            InvHighMipRadius = source.InvHighMipRadius[lod.SurfIndex..end]
+        };
     }
 
     private static NativeModel ToSource(

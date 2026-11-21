@@ -146,6 +146,7 @@ internal sealed class LinkAssetFreezeContext
         new(ImportSymbolKeyComparer.Instance);
     private readonly Dictionary<LinkStorageSymbol, List<LinkStorageSymbol>>
         _authoredTechniquePassTables = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<(string? Name, string Routing), LinkStorageTarget> _authoredSpeakerMaps = [];
     private readonly Dictionary<LinkStorageSymbol, LinkStorageView>
         _authoredStorageBaselines = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<ImportSymbolKey, LinkStorageSymbol>
@@ -202,10 +203,20 @@ internal sealed class LinkAssetFreezeContext
         _authoredXstrings.Clear();
         _authoredAliasCells.Clear();
         _authoredTechniquePassTables.Clear();
+        _authoredSpeakerMaps.Clear();
         _authoredStorageBaselines.Clear();
         _capturedStorageIdentities.Clear();
         _capturedAllocations.Clear();
         _importedStorageBySymbol.Clear();
+    }
+
+    internal LinkStorageTarget ShareAuthoredSpeakerMap(string? name, LinkStorageTarget target)
+    {
+        var key = (name, Convert.ToBase64String(target.View.Storage.Definition.SourceTemplate.Span));
+        if (_authoredSpeakerMaps.TryGetValue(key, out LinkStorageTarget existing))
+            return existing;
+        _authoredSpeakerMaps.Add(key, target);
+        return target;
     }
 
     internal LinkStorageSymbol FreezeTechniquePassTable(
@@ -1859,6 +1870,18 @@ internal sealed class LinkAssetFreezeScope
 
     internal bool IsAuthoredDetached =>
         _disposition == LinkAssetProviderSourceDisposition.AuthoredDetached;
+
+    public LinkStorageTarget ShareAuthoredSpeakerMap(
+        XPointerReference pointer, string? name, LinkStorageTarget target)
+    {
+        if (_resolver is not null || _importedDefinition.StagingAddress is not null ||
+            pointer.CellAddress is not null || pointer.Type != PointerType.Null)
+            return target;
+
+        // A disk-authored alias has no captured storage identity. Its direct
+        // pointer can reuse an identical speaker map anywhere in this pool.
+        return _context.ShareAuthoredSpeakerMap(name, target);
+    }
 
     public LinkStorageSymbol FreezeProviderName(
         string value,

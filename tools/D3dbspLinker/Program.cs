@@ -1,5 +1,8 @@
 using System.Globalization;
 using IW4.Formats.D3dbsp;
+using IW4.Formats.SourceFormat.Image;
+using IW4.Game.Assets.RawFile;
+using IW4.Linker.Packaging;
 using D3dbspLinker.Conversion;
 using D3dbspLinker.Inspection;
 
@@ -25,6 +28,10 @@ public static class Program
                     ToFastFile(d3dbsp, template, assetName, output, optionsAndDependencies),
                 ["build", string d3dbsp, string assetName, string output, .. string[] options] =>
                     ToFastFile(d3dbsp, Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3"), assetName, output, options, diskBuild: true),
+                ["build-load", string zoneName, string imageName, string library, string output] =>
+                    BuildLoadZone(zoneName, imageName, library, output),
+                ["build-map-ui", string mapName, string preview, string library, string metadata, string output] =>
+                    MapUiCommand.Build(mapName, preview, library, metadata, output),
                 ["export-bootstrap", string input, string library, string output] => ExportBootstrap(input, library, output),
                 ["export-assets", string input, string library, string output, .. string[] names] => ExportAssets(input, library, output, names),
                 ["import-character", string body, string hands, string bootstrap, string output, string prefix] =>
@@ -93,6 +100,16 @@ public static class Program
         return 0;
     }
 
+    static int BuildLoadZone(string zoneName, string imageName, string library, string output)
+    {
+        var image = new ImageExchange().Link(library, imageName);
+        var marker = new RawFileAsset { Name = zoneName, Buffer = [0] };
+        byte[] bytes = Ps3LoadZoneBuilder.Build(zoneName, image, [], marker);
+        using var stream = new FileStream(output, FileMode.CreateNew, FileAccess.Write);
+        stream.Write(bytes);
+        return 0;
+    }
+
     static int ToFastFile(
         string d3dbsp,
         string template,
@@ -118,17 +135,57 @@ public static class Program
         var distinctMaterialNames = new HashSet<string>(StringComparer.Ordinal);
         var additionalFxNames = new List<string>();
         var distinctFxNames = new HashSet<string>(StringComparer.Ordinal);
+        var weaponNames = new HashSet<string>(StringComparer.Ordinal);
+        var localizedText = new Dictionary<string, string>(StringComparer.Ordinal);
         var additionalXAnimNames = new List<string>();
         var distinctXAnimNames = new HashSet<string>(StringComparer.Ordinal);
         var additionalSoundNames = new List<string>();
         var distinctSoundNames = new HashSet<string>(StringComparer.Ordinal);
+        var residentSoundNames = new HashSet<string>(StringComparer.Ordinal);
         var soundDefinitionPaths = new Dictionary<string, string>(StringComparer.Ordinal);
         string? assetLibraryDirectory = null;
         string? characterAssetsDirectory = null;
         var rawFilePaths = new Dictionary<string, string>(StringComparer.Ordinal);
+        var extraConfigStringModes = new List<string>();
+        bool useStaticModelCollisionTree = false;
+        bool includeStockCallsigns = false;
+        bool compressRawFiles = false;
+        bool compactAirbornePrecache = false;
         for (int index = 0; index < optionsAndDependencies.Count; index++)
         {
             string value = optionsAndDependencies[index];
+            if (value == "--compact-airborne-precache")
+            {
+                if (!diskBuild || compactAirbornePrecache)
+                    throw new ArgumentException("--compact-airborne-precache can be used once with build.");
+                compactAirbornePrecache = true;
+                continue;
+            }
+            if (value == "--stock-callsigns")
+            {
+                if (!diskBuild)
+                    throw new ArgumentException("--stock-callsigns requires the build command.");
+                includeStockCallsigns = true;
+                continue;
+            }
+            if (value == "--compress-rawfiles")
+            {
+                compressRawFiles = true;
+                continue;
+            }
+            if (value == "--static-model-collision-tree")
+            {
+                useStaticModelCollisionTree = true;
+                continue;
+            }
+            if (value == "--configstrings-mode")
+            {
+                string mode = ReadRequiredOptionValue(optionsAndDependencies, ref index, value, "war, dom or sd");
+                if (mode is not ("war" or "dom" or "sd") || extraConfigStringModes.Contains(mode))
+                    throw new ArgumentException($"Invalid or duplicate additional configstring mode '{mode}'.");
+                extraConfigStringModes.Add(mode);
+                continue;
+            }
             if (string.Equals(value, "--fullbright", StringComparison.Ordinal))
             {
                 if (forceFullbright)
@@ -274,6 +331,21 @@ public static class Program
                 additionalFxNames.Add(name);
                 continue;
             }
+            if (value == "--localize" && diskBuild)
+            {
+                string key = ReadRequiredOptionValue(optionsAndDependencies, ref index, "--localize", "a localization key and display text");
+                string translation = ReadRequiredOptionValue(optionsAndDependencies, ref index, "--localize", "display text");
+                if (!localizedText.TryAdd(key, translation))
+                    throw new ArgumentException($"Duplicate localization key '{key}'.");
+                continue;
+            }
+            if (value == "--weapon" && diskBuild)
+            {
+                string name = ReadRequiredOptionValue(optionsAndDependencies, ref index, "--weapon", "an exact Weapon name");
+                if (!weaponNames.Add(name))
+                    throw new ArgumentException($"The --weapon option names Weapon '{name}' more than once.");
+                continue;
+            }
             if (string.Equals(value, "--xanim", StringComparison.Ordinal))
             {
                 string name = ReadRequiredOptionValue(optionsAndDependencies, ref index, "--xanim", "an exact XAnim name");
@@ -302,6 +374,13 @@ public static class Program
                 additionalSoundNames.Add(name);
                 if (assignment >= 0)
                     soundDefinitionPaths.Add(name, argument[(assignment + 1)..]);
+                continue;
+            }
+            if (value == "--resident-sound")
+            {
+                string name = ReadRequiredOptionValue(optionsAndDependencies, ref index, value, "an exact Sound alias name");
+                if (!diskBuild || string.IsNullOrWhiteSpace(name) || !residentSoundNames.Add(name))
+                    throw new ArgumentException($"Invalid or duplicate resident Sound alias '{name}' for build.");
                 continue;
             }
             if (string.Equals(value, "--asset-library", StringComparison.Ordinal))
@@ -339,6 +418,8 @@ public static class Program
 
         if (diskBuild && (assetLibraryDirectory is null || dependencies.Count != 0 || providerFastFiles.Count != 0 || stockBootstrap))
             throw new ArgumentException("build requires --asset-library and does not accept fastfile inputs or --stock-bootstrap.");
+        if (worldOnly && weaponNames.Count != 0)
+            throw new ArgumentException("--weapon requires a gameplay map build.");
         if (soundDefinitionPaths.Count != 0 && assetLibraryDirectory is null)
             throw new ArgumentException("A --sound source JSON requires --asset-library for its audio payloads.");
         if (assetLibraryDirectory is not null)
@@ -373,7 +454,14 @@ public static class Program
             outdoorLookupMatrix ?? [],
             staticScriptModelNames,
             bootstrapDirectory: diskBuild ? template : null,
-            characterAssetsDirectory: characterAssetsDirectory);
+            characterAssetsDirectory: characterAssetsDirectory,
+            extraConfigStringModes: extraConfigStringModes,
+            useStaticModelCollisionTree: useStaticModelCollisionTree,
+            residentSoundNames: residentSoundNames,
+            includeStockCallsigns: includeStockCallsigns,
+            compressRawFiles: compressRawFiles,
+            compactAirbornePrecache: compactAirbornePrecache,
+            additionalWeaponNames: weaponNames, localizedText: localizedText);
         return 0;
     }
 
@@ -462,7 +550,15 @@ public static class Program
     static int Usage()
     {
         Console.Error.WriteLine("usage:");
-        Console.Error.WriteLine("  D3dbspLinker build <input.d3dbsp> <map-asset-name> <output.ff> --asset-library <raw-root> [--xanim <exact-name>]... [--character-assets <map-characters-root>] [--compiled-lighting] [asset options]");
+        Console.Error.WriteLine("  D3dbspLinker build-load <zone-name> <resident-image-name> <raw-root> <output.ff>");
+        Console.Error.WriteLine("  D3dbspLinker build-map-ui <map-name> <preview-image-name> <raw-root> <metadata.json> <output.ff>");
+        Console.Error.WriteLine("  --configstrings-mode <war|dom|sd> adds a PS3 gametype baseline alongside deathmatch.");
+        Console.Error.WriteLine("  --static-model-collision-tree spatially partitions collision checks on maps with many props.");
+        Console.Error.WriteLine("  --stock-callsigns adds the native gameplay title and icon materials with their retail PS3 imagefile bindings.");
+        Console.Error.WriteLine("  --compact-airborne-precache keeps only the coarsest LOD for Spetsnaz startup models.");
+        Console.Error.WriteLine("  --compress-rawfiles uses zlib for rawfile overrides when it reduces their zone size.");
+        Console.Error.WriteLine("  --resident-sound <exact-name> lets build use the installed game's secondary or chained Sound alias.");
+        Console.Error.WriteLine("  D3dbspLinker build <input.d3dbsp> <map-asset-name> <output.ff> --asset-library <raw-root> [--weapon <exact-name>]... [--localize <key> <text>]... [--xanim <exact-name>]... [--character-assets <map-characters-root>] [--compiled-lighting] [asset options]");
         Console.Error.WriteLine("  D3dbspLinker import-character <body.glb> <hands.glb> <bootstrap-root> <new-output-root> <unique-model-prefix>");
         Console.Error.WriteLine("  D3dbspLinker export-assets <official.ff> <exported-raw-root> <new-output-directory> [--xmodel <name>] [--material <name>] [--fx <name>] [--weapon <name>] [--rawfile <name>] [--xanim <name>] [--xanim-native <name>] [--dependencies <official.ff>]  (offline extraction)");
         Console.Error.WriteLine("  D3dbspLinker export-bootstrap <official-map.ff> <exported-raw-root> <new-output-directory>  (offline extraction)");
