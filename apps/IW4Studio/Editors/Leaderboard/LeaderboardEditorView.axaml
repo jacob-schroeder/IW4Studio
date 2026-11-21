@@ -5,11 +5,11 @@
              x:Class="IW4.Studio.Desktop.Editors.Leaderboard.LeaderboardEditorView"
              SizeChanged="Editor_SizeChanged">
   <UserControl.Styles>
-    <Style Selector="Border.lbPanel">
+    <Style Selector="Border.lbTable">
       <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="CornerRadius" Value="5" />
       <Setter Property="ClipToBounds" Value="True" />
     </Style>
     <Style Selector="TextBlock.lbMuted">
@@ -18,11 +18,12 @@
       <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
     <Style Selector="TextBox.lbInput, ComboBox.lbInput">
-      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="MinHeight" Value="32" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}" />
     </Style>
     <Style Selector="Border.lbHeader">
-      <Setter Property="Background" Value="{DynamicResource StudioSurfaceRaisedBrush}" />
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
       <Setter Property="BorderThickness" Value="0,0,1,1" />
     </Style>
@@ -54,9 +55,9 @@
     </Style>
   </UserControl.Styles>
 
-  <Border Classes="lbPanel" MinHeight="390">
-    <Grid RowDefinitions="Auto,1,*,Auto">
-      <Grid x:Name="HeaderGrid" Margin="20,15" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+  <Border Background="{DynamicResource StudioSurfaceBrush}" MinHeight="0">
+    <Grid RowDefinitions="Auto,*,Auto">
+      <Grid x:Name="HeaderGrid" Margin="22,18,22,14" ColumnDefinitions="*,Auto" ColumnSpacing="12">
         <StackPanel Spacing="3" MinWidth="0">
           <TextBlock x:Name="HeadingText" FontSize="21" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
         </StackPanel>
@@ -67,22 +68,20 @@
           <Button x:Name="ApplyButton" Classes="primary" Content="Apply" Click="Apply_Click" ToolTip.Tip="Apply changes to the working fastfile" />
         </StackPanel>
       </Grid>
-      <Border Grid.Row="1" Background="{DynamicResource StudioBorderBrush}" />
-
-      <Grid x:Name="BodyGrid" Grid.Row="2" ColumnDefinitions="*,1,300" RowDefinitions="*" MinHeight="0">
-        <Grid x:Name="PreviewPane" RowDefinitions="Auto,Auto,Auto,Auto" MinWidth="0" Margin="18,16" Background="{DynamicResource StudioSurfaceSunkenBrush}">
+      <Grid x:Name="BodyGrid" Grid.Row="1" ColumnDefinitions="*,230" RowDefinitions="*" MinHeight="0">
+        <Grid x:Name="PreviewPane" RowDefinitions="Auto,Auto,Auto" MinWidth="0" Margin="18,14,14,12">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
             <StackPanel Spacing="3" MinWidth="0">
-              <TextBlock Text="Scoreboard preview" FontSize="15" FontWeight="Medium" />
-              <TextBlock Text="Drag a column header to move it. Select a header to edit it. Alt + Left/Right also moves a focused header." Classes="lbMuted" />
+              <TextBlock Text="Scoreboard" FontSize="15" FontWeight="Medium" />
+              <TextBlock Text="Drag headers to reorder" Classes="lbMuted" />
             </StackPanel>
             <Button x:Name="AddButton" Grid.Column="1" Content="Add column" Click="Add_Click" VerticalAlignment="Center" />
           </Grid>
 
-          <Grid Grid.Row="1" x:Name="PreviewArea" MinHeight="180" Margin="0,14,0,0">
-            <Border Classes="lbPanel" CornerRadius="6" ClipToBounds="True" VerticalAlignment="Top">
-              <ScrollViewer x:Name="PreviewScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                <StackPanel MinWidth="520">
+          <Grid Grid.Row="1" x:Name="PreviewArea" Height="230" Margin="0,12,0,0">
+            <Border Classes="lbTable">
+              <ScrollViewer x:Name="PreviewScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" AutomationProperties.HelpText="Select a column header to edit it. Drag to reorder, or focus it and press Alt plus Left or Right.">
+                <StackPanel>
                   <StackPanel x:Name="PreviewHeaderPanel" Orientation="Horizontal" />
                   <StackPanel x:Name="PreviewRowsPanel" />
                 </StackPanel>
@@ -96,19 +95,16 @@
             </Canvas>
           </Grid>
 
-          <TextBlock Grid.Row="2" Text="Sample players and results." Classes="lbMuted" Margin="1,8,0,0" />
-          <StackPanel Grid.Row="3" Margin="0,17,0,0" Spacing="5">
+          <StackPanel Grid.Row="2" Margin="0,10,0,0" Spacing="5">
             <TextBlock Text="Hidden columns" Classes="lbMuted" />
             <WrapPanel x:Name="HiddenColumnsPanel" />
           </StackPanel>
         </Grid>
 
-        <Border x:Name="BodyDivider" Grid.Column="1" Background="{DynamicResource StudioBorderBrush}" />
-        <Border x:Name="InspectorPane" Grid.Column="2" Background="{DynamicResource StudioSurfaceBrush}">
+        <Border x:Name="InspectorPane" Grid.Column="1">
           <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="17,16" Spacing="10">
+            <StackPanel Margin="8,14,14,12" Spacing="9">
               <TextBlock x:Name="SelectedTitle" FontSize="15" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
-              <TextBlock Text="Selected column" Classes="lbMuted" Margin="0,-7,0,0" />
               <StackPanel Spacing="4">
                 <TextBlock Text="Column name" Classes="lbMuted" />
                 <TextBox x:Name="TitleInput" Classes="lbInput" AutomationProperties.Name="Column name" />
@@ -116,6 +112,11 @@
               <StackPanel Spacing="4">
                 <TextBlock Text="Source stat" Classes="lbMuted" />
                 <ComboBox x:Name="SourcePicker" Classes="lbInput" AutomationProperties.Name="Source stat">
+                  <ComboBox.SelectionBoxItemTemplate>
+                    <DataTemplate x:DataType="local:LeaderboardStatChoice">
+                      <TextBlock Text="{Binding Label}" TextWrapping="Wrap" />
+                    </DataTemplate>
+                  </ComboBox.SelectionBoxItemTemplate>
                   <ComboBox.ItemTemplate>
                     <DataTemplate x:DataType="local:LeaderboardStatChoice">
                       <StackPanel Orientation="Horizontal" Spacing="6">
@@ -125,7 +126,6 @@
                     </DataTemplate>
                   </ComboBox.ItemTemplate>
                 </ComboBox>
-                <TextBlock x:Name="SourceKey" Classes="lbMuted" FontFamily="Consolas" TextWrapping="Wrap" />
               </StackPanel>
               <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                 <StackPanel Spacing="4">
@@ -139,7 +139,7 @@
               </Grid>
               <Border Margin="0,4,0,0" Padding="0,10,0,0" BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="0,1,0,0">
                 <StackPanel Spacing="4">
-                  <TextBlock Text="Atlas · four successive sample results" Classes="lbMuted" />
+                  <TextBlock Text="Atlas · four sample results" Classes="lbMuted" />
                   <TextBlock x:Name="SampleHistoryText" FontWeight="Medium" TextWrapping="Wrap" />
                   <TextBlock x:Name="SampleResultText" Classes="lbMuted" />
                 </StackPanel>
@@ -149,13 +149,17 @@
                 <TextBox x:Name="PrecisionInput" Classes="lbInput" AutomationProperties.Name="Decimal places" />
               </StackPanel>
               <Grid ColumnDefinitions="*,*" ColumnSpacing="6" Margin="0,2,0,0">
-                <Button x:Name="LeftButton" Content="← Move left" Click="MoveLeft_Click" />
-                <Button x:Name="RightButton" Grid.Column="1" Content="Move right →" Click="MoveRight_Click" />
+                <Button x:Name="LeftButton" Content="Move left" Click="MoveLeft_Click" Padding="8,5" HorizontalAlignment="Stretch" />
+                <Button x:Name="RightButton" Grid.Column="1" Content="Move right" Click="MoveRight_Click" Padding="8,5" HorizontalAlignment="Stretch" />
               </Grid>
               <CheckBox x:Name="VisibleCheck" Content="Show column" Margin="0,2,0,0" />
 
-              <Expander Header="Advanced identifiers" Margin="0,5,0,0">
+              <Expander Header="Identifiers" Margin="0,5,0,0">
                 <StackPanel Spacing="10" Margin="1,10,1,0">
+                  <StackPanel x:Name="SourceKeyPanel" Spacing="4">
+                    <TextBlock Text="Source stat key" Classes="lbMuted" />
+                    <TextBlock x:Name="SourceKey" TextWrapping="Wrap" />
+                  </StackPanel>
                   <StackPanel Spacing="4">
                     <TextBlock Text="Board ID" Classes="lbMuted" />
                     <TextBox x:Name="BoardIdInput" Classes="lbInput" AutomationProperties.Name="Board ID" />
@@ -185,7 +189,7 @@
         </Border>
       </Grid>
 
-      <TextBlock x:Name="StatusText" Grid.Row="3" Margin="18,10" Classes="lbMuted"
+      <TextBlock x:Name="StatusText" Grid.Row="2" Margin="18,10" Classes="lbMuted"
                  HorizontalAlignment="Right" AutomationProperties.LiveSetting="Polite" />
     </Grid>
   </Border>

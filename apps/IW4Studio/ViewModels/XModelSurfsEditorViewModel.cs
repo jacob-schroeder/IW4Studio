@@ -67,10 +67,10 @@ public sealed class XModelSurfsEditorViewModel : ObservableObject, IAssetEditorS
     public bool CanTransform => IsEditable && SelectedIndex >= 0 && _working.Surfaces[SelectedIndex].CanEdit;
     public string Status => _message ?? (!IsEditable ? "Read only" : HasUnappliedChanges ? "Unapplied changes" :
         _session.HasUnsavedChanges ? "Applied to workspace" : "Up to date");
-    public string Hint => SelectedIndex < 0 ? "Choose a collection to start with a mesh." :
+    public string Hint => SelectedIndex < 0 ? (_working.Surfaces.Count == 0 ? "Open Replace geometry to choose a mesh." : "Select a surface to edit.") :
         !IsEditable ? "Select a part to inspect it. Drag the background to orbit." :
         !CanTransform ? _working.Surfaces[SelectedIndex].EditBlocker ?? "This surface can be inspected." :
-        Tool == XModelSurfsViewportTool.Move ? "Drag an arrow to move the selected surface. Drag the background to orbit." :
+        Tool == XModelSurfsViewportTool.Move ? "Drag an arrow to move. Drag the background to orbit." :
         "Drag a square handle to resize the selected surface.";
     public IReadOnlyList<XModelSurfsViewportSurface> Scene { get; private set; } = [];
     public IReadOnlyList<string> Labels { get; private set; } = [];

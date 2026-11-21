@@ -19,7 +19,7 @@
       <Setter Property="CornerRadius" Value="7"/>
       <Setter Property="ClipToBounds" Value="True"/>
     </Style>
-    <Style Selector="Button.tool"><Setter Property="MinHeight" Value="30"/><Setter Property="Margin" Value="0,0,5,4"/></Style>
+    <Style Selector="Button.tool"><Setter Property="Padding" Value="9,4"/><Setter Property="MinHeight" Value="30"/><Setter Property="Margin" Value="0,0,5,4"/></Style>
   </UserControl.Styles>
   <Grid RowDefinitions="Auto,*,Auto" MinHeight="265">
     <Grid ColumnDefinitions="*,Auto" Margin="12,7" ColumnSpacing="8">

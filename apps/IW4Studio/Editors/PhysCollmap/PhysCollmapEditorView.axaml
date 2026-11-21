@@ -34,7 +34,7 @@
         <WrapPanel Grid.Column="1" VerticalAlignment="Center">
           <Button x:Name="UndoButton" Classes="ghost" AutomationProperties.Name="Undo" Click="UndoClicked" ToolTip.Tip="Undo"><icons:MaterialIcon Kind="Undo" Width="17" Height="17"/></Button>
           <Button x:Name="RedoButton" Classes="ghost" AutomationProperties.Name="Redo" Click="RedoClicked" ToolTip.Tip="Redo"><icons:MaterialIcon Kind="Redo" Width="17" Height="17"/></Button>
-          <Button x:Name="ApplyButton" Margin="6,0,0,0" Classes="primary" Content="Apply to workspace" Click="ApplyClicked" ToolTip.Tip="Apply these edits to the workspace"/>
+          <Button x:Name="ApplyButton" Margin="6,0,0,0" Classes="primary" Content="Apply" Click="ApplyClicked" ToolTip.Tip="Apply these edits to the workspace"/>
         </WrapPanel>
       </Grid>
     </Border>
@@ -74,8 +74,7 @@
                 </MenuFlyout></Button.Flyout>
               </Button>
             </Grid>
-            <TextBlock Classes="secondary" Text="These outlines are what other objects touch."/>
-            <ListBox x:Name="ShapeList" MaxHeight="170" AutomationProperties.Name="Collision shapes" SelectionChanged="ShapeChanged"/>
+            <ListBox x:Name="ShapeList" Classes="editorSelection" MaxHeight="170" AutomationProperties.Name="Collision shapes" SelectionChanged="ShapeChanged"/>
             <TextBlock x:Name="EmptyMessage" Classes="secondary" Text="Add a box or cylinder to get started."/>
             <WrapPanel>
               <Button x:Name="FitButton" Content="Fit to model" Click="FitClicked" ToolTip.Tip="Fit the selected shape to the preview model"/>

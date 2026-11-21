@@ -16,8 +16,6 @@ public sealed class DarkTheme : ITheme
 
     public FontFamily FontFamily { get; } = new("Inter");
 
-    public Uri BannerResource { get; } = new("avares://IW4%20Studio/Resources/banner_dark.png");
-
     public ThemePalette Palette { get; } = new(
         Accent: new ThemeAccentPalette(
             Default: Color.FromUInt32(0xFF8BD21C),
@@ -49,7 +47,7 @@ public sealed class DarkTheme : ITheme
             Pressed: Color.FromUInt32(0xFF43454A),
             Selected: Color.FromUInt32(0xFF354522),
             Disabled: Color.FromUInt32(0xFF25262A),
-            Input: Color.FromUInt32(0xFF18191C),
+            Input: Color.FromUInt32(0xFF303235),
             Selection: Color.FromUInt32(0xFF46621F),
             SelectionForeground: Color.FromUInt32(0xFFF2F4F7)),
         Borders: new ThemeBorderPalette(

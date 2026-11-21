@@ -189,9 +189,10 @@ public sealed partial class SndCurveEditorView : UserControl
     private void RefreshAudio()
     {
         ToneButton.IsEnabled = SoundPreviewPlayer.IsPlatformSupported && _editor?.HasPreview == true;
-        ToneButton.Content = _tone is null ? "Hear gentle tone" : "Stop tone";
+        ToneButton.Content = _tone is null ? "Play test tone" : "Stop tone";
         AudioNote.Text = _audioError ?? (!SoundPreviewPlayer.IsPlatformSupported ? SoundPreviewPlayer.UnavailableReason :
-            _tone is null ? "The tone plays for eight seconds." : "Move the listener to hear the falloff.");
+            _tone is null ? null : "Move the listener to hear the falloff.");
+        AudioNote.IsVisible = !string.IsNullOrEmpty(AudioNote.Text);
     }
 
     protected override void OnKeyDown(KeyEventArgs e)

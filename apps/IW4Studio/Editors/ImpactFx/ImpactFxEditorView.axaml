@@ -52,7 +52,7 @@
         <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
           <StackPanel><TextBlock x:Name="MaterialTitle" Classes="heading"/><TextBlock Text="Illustrative preview" Classes="note"/></StackPanel>
           <Border Grid.Row="1" CornerRadius="6" ClipToBounds="True" Background="{DynamicResource StudioBackgroundBrush}">
-            <local:ImpactMaterialPreviewControl x:Name="Sample" MinHeight="50"/>
+            <local:ImpactMaterialPreviewControl x:Name="Sample" MinHeight="50" AutomationProperties.HelpText="Click the material or press Space to preview its effect."/>
           </Border>
           <TextBlock Grid.Row="2" x:Name="SampleHint" Classes="note"/>
         </Grid>

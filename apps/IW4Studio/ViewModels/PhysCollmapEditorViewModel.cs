@@ -58,7 +58,7 @@ public sealed class PhysCollmapEditorViewModel : ObservableObject, IAssetEditorS
         EditingBalance ? "Drag an arrow to move the balance point." :
         SelectedIndex < 0 ? "Add a shape to start editing." :
         !IsEditable ? "Select a shape to inspect it. Drag the background to orbit." :
-        !CanTransform ? "This hull has incomplete geometry. You can inspect or replace it." :
+        !CanTransform ? "This hull has incomplete geometry. To replace it, add a shape and remove this one." :
         Tool switch
         {
             PhysCollmapViewportTool.Move => "Drag an arrow, or slide the shape along the floor.",

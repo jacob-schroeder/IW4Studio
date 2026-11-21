@@ -25,7 +25,7 @@
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
           <Button x:Name="UndoButton" Classes="ghost" Click="Undo" ToolTip.Tip="Undo replacement" AutomationProperties.Name="Undo replacement">
             <icons:MaterialIcon Kind="Undo" Width="18" Height="18"/></Button>
-          <Button x:Name="ApplyButton" Classes="primary" Content="Apply under same name" Click="Apply"/>
+          <Button x:Name="ApplyButton" Classes="primary" Content="Apply" ToolTip.Tip="Replace this sound in the workspace and keep its asset name" Click="Apply"/>
         </StackPanel>
       </Grid>
     </Border>
@@ -34,13 +34,12 @@
         <ScrollViewer HorizontalScrollBarVisibility="Disabled">
           <StackPanel Spacing="10">
             <TextBlock Classes="heading" Text="Compare sounds"/>
-            <TextBlock Classes="note" Text="Click or drag a waveform to choose where playback starts."/>
             <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
               <StackPanel><TextBlock Text="Original" FontWeight="SemiBold"/><TextBlock Classes="note" x:Name="OriginalDetails"/></StackPanel>
               <Button Grid.Column="1" x:Name="OriginalPlay" Content="Play" AutomationProperties.Name="Play or pause original" Click="PlayOriginal"/>
             </Grid>
             <Border Classes="track">
-              <local:LoadedSoundWaveformControl x:Name="OriginalWave" Height="93"/>
+              <local:LoadedSoundWaveformControl x:Name="OriginalWave" ToolTip.Tip="Click or drag to seek" Height="93"/>
             </Border>
             <Separator Margin="0,4"/>
             <Grid ColumnDefinitions="*,Auto">

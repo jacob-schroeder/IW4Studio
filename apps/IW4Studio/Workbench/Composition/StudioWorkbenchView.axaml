@@ -171,7 +171,7 @@
             Margin="0,4"
             CornerRadius="8"
             ClipToBounds="True"
-            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+            Background="{DynamicResource StudioSidebarBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="1">
       <Grid RowDefinitions="38,*">

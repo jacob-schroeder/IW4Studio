@@ -100,7 +100,7 @@ public sealed partial class ImpactFxEditorView : UserControl
         {
             if (index % 2 == 0) grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
             var label = new TextBlock { Text = SlotName(slot), VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 12 };
+                TextWrapping = TextWrapping.Wrap, FontSize = 12 };
             var dot = new TextBlock { Text = "•", VerticalAlignment = VerticalAlignment.Center };
             dot.Classes.Add("dot");
             var texture = new ImpactMaterialPreviewControl { IsSwatch = true, Slot = slot, Width = 22, Height = 22 };
@@ -152,10 +152,11 @@ public sealed partial class ImpactFxEditorView : UserControl
             EffectName.Text = vm.EffectName ?? (hasReference ? "Unresolved effect" : "No effect assigned");
             Sample.Slot = vm.Slot;
             Sample.AssignedEffect = vm.PreviewEffect;
-            SampleHint.Text = !hasReference ? (vm.IsEditable ? "Choose an effect to preview it on this material." : "This material has no assigned effect.") :
+            SampleHint.IsVisible = hasReference;
+            SampleHint.Text = !hasReference ? null :
                 vm.PreviewEffect is null ? "Load the referenced effect’s provider to preview it." :
                 !Sample.CanPreview ? "This effect has no visual elements that the sample can preview." :
-                "Click the material to preview its effect, or focus the sample and press Space.";
+                "Click the material to preview the effect.";
             ChooseButton.IsEnabled = vm.IsEditable && _picker is not null && !_choosing;
             ClearButton.IsEnabled = vm.IsEditable && hasReference;
             ApplyButton.IsEnabled = vm.CanApply;

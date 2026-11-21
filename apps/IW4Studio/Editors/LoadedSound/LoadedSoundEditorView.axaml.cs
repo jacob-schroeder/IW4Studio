@@ -64,7 +64,8 @@ public sealed partial class LoadedSoundEditorView : UserControl
         EmptyMessage.Text = vm.IsEditable ? "Drop an MP3 here to compare it." : "This sound is read only.";
         PlaybackNote.Text = SoundPreviewPlayer.UnavailableReason;
         PlaybackNote.IsVisible = !SoundPreviewPlayer.IsPlatformSupported;
-        FileName.Text = vm.Replacement?.Label ?? (vm.IsEditable ? "Choose a clip to preview before applying." : "This sound belongs to a read-only provider.");
+        FileName.Text = vm.Replacement?.Label;
+        FileName.IsVisible = vm.Replacement is not null;
         AliasCount.Text = vm.AliasNames.Count switch
         {
             0 => "No referring aliases found in this workspace.",

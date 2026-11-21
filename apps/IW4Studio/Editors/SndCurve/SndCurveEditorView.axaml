@@ -23,7 +23,7 @@
             <icons:MaterialIcon Kind="Undo" Width="17" Height="17"/></Button>
           <Button x:Name="RedoButton" Classes="ghost" Click="Redo" AutomationProperties.Name="Redo edit" ToolTip.Tip="Redo">
             <icons:MaterialIcon Kind="Redo" Width="17" Height="17"/></Button>
-          <Button x:Name="ApplyButton" Classes="primary" Content="Apply to workspace" Click="Apply"/>
+          <Button x:Name="ApplyButton" Classes="primary" Content="Apply" ToolTip.Tip="Apply these edits to the workspace" Click="Apply"/>
         </StackPanel>
       </Grid>
     </Border>
@@ -37,9 +37,8 @@
             <Button x:Name="RemoveButton" Classes="ghost" Content="Remove point" Click="Remove"/>
             <Button x:Name="RecoverButton" Content="Start with a linear fade" Click="Recover" IsVisible="False"/>
           </WrapPanel>
-          <local:SndCurveGraph Grid.Row="2" x:Name="Graph" MinHeight="120"/>
-          <Grid Grid.Row="3" ColumnDefinitions="Auto,*" ColumnSpacing="12"><TextBlock x:Name="Count" Classes="note"/>
-            <TextBlock Grid.Column="1" Classes="note" HorizontalAlignment="Right" Text="Arrow keys fine-tune the selected point."/></Grid>
+          <local:SndCurveGraph Grid.Row="2" x:Name="Graph" MinHeight="120" AutomationProperties.HelpText="Drag a point to change the curve. Arrow keys fine-tune the selected point." ToolTip.Tip="Arrow keys fine-tune the selected point"/>
+          <TextBlock Grid.Row="3" x:Name="Count" Classes="note"/>
         </Grid>
       </Border>
       <Border Classes="panel" Grid.Column="1" x:Name="Inspector">
@@ -51,7 +50,7 @@
             <Grid ColumnDefinitions="*,Auto" Margin="0,-7,0,1"><TextBlock Classes="note" Text="At source"/><TextBlock Grid.Column="1" Classes="note" Text="Farthest"/></Grid>
             <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="note" Text="Volume here"/><TextBlock x:Name="VolumeReadout" Grid.Column="1" FontWeight="SemiBold"/></Grid>
             <ProgressBar x:Name="Meter" Minimum="0" Maximum="100" Height="6" AutomationProperties.Name="Volume at listener"/>
-            <Button x:Name="ToneButton" Content="Hear gentle tone" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ToggleTone"/>
+            <Button x:Name="ToneButton" Content="Play test tone" ToolTip.Tip="Play an eight-second tone at the listener distance" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ToggleTone"/>
             <TextBlock x:Name="AudioNote" Classes="note"/>
             <Separator Margin="0,5"/>
             <TextBlock Classes="h" Text="Selected point"/>

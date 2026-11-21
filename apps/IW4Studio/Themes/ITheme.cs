@@ -29,11 +29,6 @@ public interface ITheme
     FontFamily FontFamily { get; }
 
     /// <summary>
-    /// Gets the application banner resource used by the theme.
-    /// </summary>
-    Uri BannerResource { get; }
-
-    /// <summary>
     /// Gets the semantic colors used to style the application.
     /// </summary>
     ThemePalette Palette { get; }

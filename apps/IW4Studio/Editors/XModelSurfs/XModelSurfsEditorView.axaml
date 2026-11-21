@@ -38,7 +38,7 @@
           <Button x:Name="RedoButton" Classes="ghost" AutomationProperties.Name="Redo edit" ToolTip.Tip="Redo edit" Click="Redo">
             <icons:MaterialIcon Kind="Redo" Width="17" Height="17"/>
           </Button>
-          <Button x:Name="ApplyButton" Classes="primary" Content="Apply to workspace" Click="Apply"/>
+          <Button x:Name="ApplyButton" Classes="primary" Content="Apply" ToolTip.Tip="Apply these edits to the workspace" Click="Apply"/>
         </StackPanel>
       </Grid>
     </Border>
@@ -49,8 +49,8 @@
             <ToggleButton x:Name="MoveButton" Classes="tool" Tag="Move" Click="ToolClicked" ToolTip.Tip="Move (W)">
               <StackPanel Orientation="Horizontal" Spacing="5"><icons:MaterialIcon Kind="CursorMove" Width="15" Height="15"/><TextBlock Text="Move"/></StackPanel>
             </ToggleButton>
-            <ToggleButton x:Name="SizeButton" Classes="tool" Margin="4,0,12,0" Tag="Size" Click="ToolClicked" ToolTip.Tip="Size (R)">
-              <StackPanel Orientation="Horizontal" Spacing="5"><icons:MaterialIcon Kind="Resize" Width="15" Height="15"/><TextBlock Text="Size"/></StackPanel>
+            <ToggleButton x:Name="SizeButton" Classes="tool" Margin="4,0,12,0" Tag="Size" Click="ToolClicked" ToolTip.Tip="Resize (R)">
+              <StackPanel Orientation="Horizontal" Spacing="5"><icons:MaterialIcon Kind="Resize" Width="15" Height="15"/><TextBlock Text="Resize"/></StackPanel>
             </ToggleButton>
             <CheckBox x:Name="WireButton" Content="Wireframe" Click="WireClicked" VerticalAlignment="Center"/>
           </WrapPanel>
@@ -69,8 +69,7 @@
         <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
           <StackPanel Spacing="10" Margin="12">
             <TextBlock Text="Surfaces" FontSize="15" FontWeight="SemiBold"/>
-            <TextBlock Text="Click a part on the model or select it here." Classes="note"/>
-            <ListBox x:Name="SurfaceList" MaxHeight="205" AutomationProperties.Name="Model surfaces" SelectionChanged="SurfaceChanged"/>
+            <ListBox x:Name="SurfaceList" Classes="editorSelection" MaxHeight="205" AutomationProperties.Name="Model surfaces" SelectionChanged="SurfaceChanged"/>
             <TextBlock x:Name="Counts" Classes="note"/>
             <Expander x:Name="Geometry" Header="Replace geometry" Expanded="GeometryOpened">
               <StackPanel Spacing="6">

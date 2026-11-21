@@ -15,9 +15,8 @@ namespace IW4.Studio.Desktop.Editors.Leaderboard;
 
 public sealed partial class LeaderboardEditorView : UserControl
 {
-    private const double PlayerWidth = 150;
-    private const double ColumnWidth = 140;
-    private const double CompactWidth = 700;
+    private const double PlayerWidth = 110;
+    private const double CompactWidth = 650;
     private LeaderboardEditorViewModel _editor =>
         DataContext as LeaderboardEditorViewModel ?? throw new InvalidOperationException("A leaderboard editor is required.");
     private readonly List<(int Index, Border Header)> _headers = [];
@@ -39,6 +38,7 @@ public sealed partial class LeaderboardEditorView : UserControl
         InitializeComponent();
         IsEnabled = false;
         _scrollTimer.Tick += (_, _) => AutoScroll();
+        PreviewScrollViewer.SizeChanged += (_, _) => FitPreviewColumns();
 
         WireText(TitleInput, () => _editor.SelectedColumn?.Name ?? string.Empty,
             text => _editor.SetTitle(text));
@@ -147,7 +147,7 @@ public sealed partial class LeaderboardEditorView : UserControl
             int capturedIndex = index;
             var header = new Border
             {
-                Width = ColumnWidth,
+                MinWidth = 68,
                 MinHeight = 48,
                 Focusable = true,
                 Cursor = new Cursor(StandardCursorType.Hand)
@@ -156,23 +156,21 @@ public sealed partial class LeaderboardEditorView : UserControl
             header.Classes.Set("selected", index == _editor.SelectedIndex);
             header.SetValue(AutomationProperties.NameProperty,
                 $"Move {ColumnTitle(column)}; select or drag to reorder. Alt + Left or Right moves by one column.");
-            var grip = new MaterialIcon { Kind = MaterialIconKind.DragVertical, Width = 17, Height = 17 };
+            var grip = new MaterialIcon { Kind = MaterialIconKind.DragVertical, Width = 12, Height = 15 };
             grip.Classes.Add("lbGrip");
             header.Child = new StackPanel
             {
                 Orientation = Avalonia.Layout.Orientation.Horizontal,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                Margin = new Thickness(9, 5),
-                Spacing = 7,
+                Margin = new Thickness(5, 5),
+                Spacing = 3,
                 Children =
                 {
                     grip,
                     new TextBlock
                     {
                         Text = ColumnTitle(column),
-                        FontWeight = FontWeight.Medium,
-                        TextTrimming = TextTrimming.CharacterEllipsis,
-                        MaxWidth = ColumnWidth - 39
+                        FontWeight = FontWeight.Medium
                     }
                 }
             };
@@ -196,7 +194,7 @@ public sealed partial class LeaderboardEditorView : UserControl
             }
             foreach ((int index, _) in _headers)
             {
-                Border cell = ValueCell(_editor.SampleValue(index, player), ColumnWidth, false);
+                Border cell = ValueCell(_editor.SampleValue(index, player), double.NaN, LeaderboardSamples.IsPlayerName(_editor.Columns[index]));
                 cell.Classes.Add("lbCell");
                 if (!_cells.TryGetValue(index, out List<Border>? cells))
                     _cells[index] = cells = [];
@@ -206,9 +204,40 @@ public sealed partial class LeaderboardEditorView : UserControl
             PreviewRowsPanel.Children.Add(row);
         }
 
+        foreach ((int index, Border header) in _headers)
+        {
+            header.Measure(Size.Infinity);
+            double width = header.DesiredSize.Width;
+            foreach (Border cell in _cells[index])
+            {
+                cell.Measure(Size.Infinity);
+                width = Math.Max(width, cell.DesiredSize.Width);
+            }
+            header.MinWidth = Math.Ceiling(width) + 4;
+        }
+        FitPreviewColumns();
+
         Dispatcher.UIThread.Post(() =>
             PreviewScrollViewer.Offset = new Vector(offset, PreviewScrollViewer.Offset.Y),
             DispatcherPriority.Loaded);
+    }
+
+    private void FitPreviewColumns()
+    {
+        if (_headers.Count == 0 || DataContext is not LeaderboardEditorViewModel editor)
+            return;
+
+        double available = PreviewScrollViewer.Bounds.Width - (editor.ShowPlayerLabels ? PlayerWidth : 0);
+        double remaining = Math.Max(0, Math.Floor(available - _headers.Sum(column => column.Header.MinWidth)));
+        for (int i = 0; i < _headers.Count; i++)
+        {
+            var (index, header) = _headers[i];
+            double extra = Math.Floor(remaining / (_headers.Count - i));
+            remaining -= extra;
+            header.Width = header.MinWidth + extra;
+            foreach (Border cell in _cells[index])
+                cell.Width = header.Width;
+        }
     }
 
     private void RenderHidden()
@@ -258,7 +287,8 @@ public sealed partial class LeaderboardEditorView : UserControl
         SourcePicker.SelectedItem = _editor.SourceChoices.FirstOrDefault(choice =>
             string.Equals(choice.Key ?? string.Empty, column?.StatName ?? string.Empty, StringComparison.Ordinal));
         SourcePicker.IsEnabled = editable;
-        SourceKey.Text = string.IsNullOrEmpty(column?.StatName) ? string.Empty : $"Raw key: {column.StatName}";
+        SourceKey.Text = column?.StatName;
+        SourceKeyPanel.IsVisible = !string.IsNullOrEmpty(column?.StatName);
 
         TypePicker.ItemsSource = TypeChoices(column?.Type);
         TypePicker.SelectedItem = ((IEnumerable<Choice<LbColType>>)TypePicker.ItemsSource!)
@@ -585,32 +615,11 @@ public sealed partial class LeaderboardEditorView : UserControl
         if (compact == _compact)
             return;
         _compact = compact;
-        BodyGrid.ColumnDefinitions = new ColumnDefinitions(compact ? "*" : "*,1,300");
-        BodyGrid.RowDefinitions = new RowDefinitions(compact ? "310,1,*" : "*");
-        Grid.SetColumn(BodyDivider, compact ? 0 : 1);
-        Grid.SetRow(BodyDivider, compact ? 1 : 0);
-        Grid.SetColumn(InspectorPane, compact ? 0 : 2);
-        Grid.SetRow(InspectorPane, compact ? 2 : 0);
-        if (compact)
-        {
-            PreviewPane.MinHeight = 310;
-            BodyGrid.MinHeight = 640;
-            HeaderGrid.ColumnDefinitions = new ColumnDefinitions("*");
-            HeaderGrid.RowDefinitions = new RowDefinitions("Auto,Auto");
-            Grid.SetColumn(HeaderActions, 0);
-            Grid.SetRow(HeaderActions, 1);
-            HeaderActions.Margin = new Thickness(0, 10, 0, 0);
-        }
-        else
-        {
-            PreviewPane.MinHeight = 0;
-            BodyGrid.MinHeight = 0;
-            HeaderGrid.ColumnDefinitions = new ColumnDefinitions("*,Auto");
-            HeaderGrid.RowDefinitions = new RowDefinitions("Auto");
-            Grid.SetColumn(HeaderActions, 1);
-            Grid.SetRow(HeaderActions, 0);
-            HeaderActions.Margin = default;
-        }
+        BodyGrid.ColumnDefinitions = new ColumnDefinitions(compact ? "*" : "*,230");
+        BodyGrid.RowDefinitions = new RowDefinitions(compact ? "2*,*" : "*");
+        Grid.SetColumn(InspectorPane, compact ? 0 : 1);
+        Grid.SetRow(InspectorPane, compact ? 1 : 0);
+        PreviewArea.Height = compact ? 150 : 230;
     }
 
     private void Undo_Click(object? sender, RoutedEventArgs e) => _editor.Undo();

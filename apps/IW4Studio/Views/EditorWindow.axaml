@@ -20,25 +20,14 @@
 
     <Menu x:Name="WindowMenu" Grid.Row="0" Height="30" />
   
-    <!-- Background="{DynamicResource StudioSurfaceBrush}" -->
     <Border Grid.Row="1"
             Padding="14,7"
+            Background="{DynamicResource StudioSurfaceBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="0,0,0,1">
-      
-      <Border.Background>
-        <ImageBrush
-          Source="{DynamicResource StudioBannerImage}"
-          Stretch="Fill"
-          TileMode="Tile" 
-          AlignmentX="Left"
-          AlignmentY="Top"
-          Opacity="1" />
-      </Border.Background>
-            
+
       <Grid ColumnDefinitions="Auto,12,*,Auto" VerticalAlignment="Center">
-        
-        <!-- Background="{DynamicResource StudioAccentStrongBrush}" -->
+
         <Border Grid.Column="0"
                 Width="48"
                 Height="48"
