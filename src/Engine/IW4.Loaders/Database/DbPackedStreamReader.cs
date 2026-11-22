@@ -31,6 +31,7 @@ public sealed class DbPackedStreamReader
         {
             if (cursor.Offset > availableEnd - sizeof(ushort))
                 throw new InvalidDataException("Packed stream ends in a truncated block-size word.");
+            int frameOffset = cursor.Offset;
             ushort blockSize = cursor.ReadUInt16();
 
             if (blockSize == ZoneBlockTerminator)
@@ -45,10 +46,22 @@ public sealed class DbPackedStreamReader
             }
 
             int compressedSize = blockSize == 0 ? FullBlockSize : blockSize;
-            if (compressedSize > availableEnd - cursor.Offset)
+            if (compressedSize > cursor.Remaining)
             {
+                if (blockSize == 0 && output.WrittenCount > 0 &&
+                    HasPaddedTerminator(cursor.ReadMemory(cursor.Remaining)))
+                {
+                    // The zone loader still validates that the decoded blocks contain all declared assets.
+                    diagnostics.Warn(
+                        $"Packed block at 0x{frameOffset:X} declares a 0x{FullBlockSize:X}-byte raw page, " +
+                        $"but the file ends at 0x{availableEnd:X} after padding and a packed-stream terminator. " +
+                        "Continuing with the complete packed blocks.");
+                    sawTerminator = true;
+                    break;
+                }
+
                 throw new InvalidDataException(
-                    $"Packed block at 0x{cursor.Offset - sizeof(ushort):X} declares 0x{compressedSize:X} " +
+                    $"Packed block at 0x{frameOffset:X} declares 0x{compressedSize:X} " +
                     $"payload byte(s) past the actual file end 0x{availableEnd:X}.");
             }
             ReadOnlyMemory<byte> compressed = cursor.ReadMemory(compressedSize);
@@ -60,7 +73,6 @@ public sealed class DbPackedStreamReader
                 continue;
             }
 
-            int frameOffset = cursor.Offset - compressedSize - sizeof(ushort);
             try
             {
                 int decompressedSize = Deflate.DecompressPs3HeaderlessZlib(
@@ -93,6 +105,21 @@ public sealed class DbPackedStreamReader
                 "continuing with all complete packed blocks.");
         }
         return output.WrittenSpan.ToArray();
+    }
+
+    private static bool HasPaddedTerminator(ReadOnlyMemory<byte> tail)
+    {
+        // The first nonzero byte must be the low byte of a big-endian terminator word.
+        int terminatorOffset = tail.Span.IndexOfAnyExcept((byte)0) - 1;
+        if (terminatorOffset < 0 || terminatorOffset % sizeof(ushort) != 0)
+            return false;
+
+        var cursor = new FastFileCursor(tail[terminatorOffset..]);
+        if (cursor.ReadUInt16() != ZoneBlockTerminator)
+            return false;
+
+        TryConsumeTrailingTerminatorWord(cursor);
+        return cursor.ReadMemory(cursor.Remaining).Span.IndexOfAnyExcept((byte)0) < 0;
     }
 
     private static void TryConsumeTrailingTerminatorWord(FastFileCursor cursor)
