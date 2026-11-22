@@ -1,3 +1,4 @@
+using IW4.Game.Assets;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Zone;
 using IW4.Studio.Desktop.ViewModels;
@@ -16,6 +17,7 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
     private readonly EditorViewModel _editor;
     private readonly Func<XAssetType, string?, bool>
         _hasDesktopEditor;
+    private readonly Func<BaseAsset, TargetZoneRowIdentity?, WorkspaceAssetCatalogEntry> _applyImportedAsset;
     private IReadOnlyList<FastFileAssetNavigatorRow> _allRows;
     private string _searchText = string.Empty;
     private IReadOnlyList<FastFileAssetNavigatorRow> _visibleRows;
@@ -29,13 +31,16 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
     public FastFileAssetsNavigatorViewModel(
         EditorViewModel editor,
         IWorkbenchSelectionContext selectionContext,
-        Func<XAssetType, string?, bool> hasDesktopEditor)
+        Func<XAssetType, string?, bool> hasDesktopEditor,
+        Func<BaseAsset, TargetZoneRowIdentity?, WorkspaceAssetCatalogEntry> applyImportedAsset)
     {
         _editor = editor ?? throw new ArgumentNullException(nameof(editor));
         _selectionContext = selectionContext
             ?? throw new ArgumentNullException(nameof(selectionContext));
         _hasDesktopEditor = hasDesktopEditor
             ?? throw new ArgumentNullException(nameof(hasDesktopEditor));
+        _applyImportedAsset = applyImportedAsset
+            ?? throw new ArgumentNullException(nameof(applyImportedAsset));
         FastFileAssetsNavigatorSnapshot snapshot =
             FastFileAssetsNavigatorSnapshot.Capture(
                 _editor.EditingSession.Document,
@@ -150,17 +155,62 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
         XAssetType assetType,
         string name)
     {
-        WorkspaceAssetCatalogEntry entry =
-            _editor.AddAsset(assetType, name);
+        SelectTargetRow(_editor.AddAsset(assetType, name));
+    }
+
+    internal BaseAsset CaptureAssetSourceDefinition(TargetZoneRowIdentity identity) =>
+        _editor.EditingSession.CaptureAssetSourceDefinition(identity);
+
+    internal string? ValidateAssetSourceImportName(
+        XAssetType type,
+        string name,
+        out WorkspaceAssetCatalogEntry? replacement)
+    {
+        replacement = null;
+        if (_disposed)
+            return "The fastfile is closed.";
+
+        string? error = ValidateNewAssetName(type, name);
+        if (error is not null)
+            replacement = _editor.EditingSession.FindAssetSourceReplacement(type, name);
+        return replacement is null ? error : null;
+    }
+
+    internal async Task ImportAssetSourceAsync(
+        Stream source,
+        XAssetType type,
+        string name,
+        TargetZoneRowIdentity? replaceRow,
+        string? sourcePath)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        CancellationToken cancellationToken = _editor.EditingSession.CancellationToken;
+        BaseAsset definition = await Task.Run(
+            () => AssetSourceTransfer.Read(source, type, name, sourcePath), cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        WorkspaceAssetCatalogEntry entry = _applyImportedAsset(definition, replaceRow);
+        SelectTargetRow(entry);
+        ImportStatusMessage = replaceRow is null
+            ? $"Imported {entry.OriginalName}."
+            : $"Replaced {entry.OriginalName} from source.";
+    }
+
+    internal void ReportAssetSourceExport(string message)
+    {
+        if (!_disposed)
+            ImportStatusMessage = message;
+    }
+
+    private void SelectTargetRow(WorkspaceAssetCatalogEntry entry)
+    {
         TargetZoneRowIdentity identity = entry.TargetRowIdentity
             ?? throw new InvalidDataException(
-                "A newly added asset has no stable target-row identity.");
-        FastFileAssetNavigatorRow addedRow = _allRows
+                "The asset has no stable target-row identity.");
+        SelectedRow = _allRows
             .SingleOrDefault(row => row.Identity == identity)
             ?? throw new InvalidDataException(
-                "The fastfile asset navigator did not project the newly added row.");
-
-        SelectedRow = addedRow;
+                "The fastfile asset navigator did not project the target row.");
     }
 
     public int? SuggestedD3dbspFragmentProgramUploadCapacity

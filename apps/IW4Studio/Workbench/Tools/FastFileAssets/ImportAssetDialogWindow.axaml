@@ -1,0 +1,53 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="IW4.Studio.Desktop.Workbench.Tools.FastFileAssets.ImportAssetDialogWindow"
+        Title="Import Asset"
+        Width="460"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+  <Border Padding="28,24"
+          Background="{DynamicResource StudioBackgroundBrush}">
+    <StackPanel Spacing="14">
+      <StackPanel Spacing="5">
+        <TextBlock Text="Asset type" />
+        <ComboBox x:Name="AssetTypeBox"
+                  HorizontalAlignment="Stretch"
+                  SelectionChanged="AssetTypeBox_SelectionChanged" />
+      </StackPanel>
+
+      <StackPanel Spacing="5">
+        <TextBlock Text="Source file" />
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <TextBlock x:Name="SourceFileText"
+                     VerticalAlignment="Center"
+                     Text="Choose a source file"
+                     TextTrimming="CharacterEllipsis" />
+          <Button x:Name="BrowseButton" Grid.Column="1"
+                  Content="Browse…" Click="BrowseButton_Click" />
+        </Grid>
+      </StackPanel>
+
+      <StackPanel Spacing="5">
+        <TextBlock Text="In-game asset name" />
+        <TextBox x:Name="NameTextBox"
+                 PlaceholderText="Include the asset path, if any"
+                 TextChanged="NameTextBox_TextChanged" />
+        <TextBlock x:Name="ReplacementText"
+                   Foreground="{DynamicResource StudioTextMutedBrush}"
+                   TextWrapping="Wrap" IsVisible="False" />
+        <TextBlock x:Name="ValidationText"
+                   Foreground="{DynamicResource StudioErrorBrush}"
+                   TextWrapping="Wrap" IsVisible="False" />
+      </StackPanel>
+
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+        <Button x:Name="CancelButton" MinWidth="92" Content="Cancel"
+                IsCancel="True" Click="CancelButton_Click" />
+        <Button x:Name="ImportButton" MinWidth="92" Classes="primary" Content="Import"
+                IsDefault="True" IsEnabled="False" Click="ImportButton_Click" />
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>

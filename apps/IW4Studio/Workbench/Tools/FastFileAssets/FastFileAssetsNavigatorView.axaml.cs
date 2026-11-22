@@ -3,8 +3,11 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
+using IW4.Game.Assets;
 using IW4.Game.Zone;
+using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.D3dbsp;
+using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;
 
@@ -12,8 +15,10 @@ public sealed partial class FastFileAssetsNavigatorView : UserControl
 {
     private bool _isD3dbspImportInProgress;
     private bool _isRawFileImportInProgress;
+    private bool _isAssetExportInProgress;
     private bool _contextIsRawFileGroup;
     private XAssetType? _contextAssetType;
+    private FastFileAssetNavigatorRow? _contextRow;
 
     public FastFileAssetsNavigatorView() => InitializeComponent();
 
@@ -52,11 +57,75 @@ public sealed partial class FastFileAssetsNavigatorView : UserControl
                 ? viewModel.SelectedNode
                 : null;
         _contextAssetType = node?.AssetType;
+        _contextRow = node?.Row;
+        ExportAssetMenuItem.IsVisible = CanExportAsset(_contextRow);
+        ExportAssetMenuItem.IsEnabled = !_isAssetExportInProgress;
+        ImportAssetMenuItem.IsVisible = node is not { IsAsset: true } || _contextAssetType is not { } assetType ||
+            AssetSourceTransfer.CanImport(assetType);
         _contextIsRawFileGroup = node is
             { IsGroup: true, AssetType: XAssetType.RawFile };
         ImportRawFileFolderMenuItem.IsVisible = _contextIsRawFileGroup;
         ImportRawFileFolderMenuItem.IsEnabled = !_isRawFileImportInProgress;
     }
+
+    private async void ExportAssetMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_isAssetExportInProgress || _contextRow is not { } row || !CanExportAsset(row) ||
+            DataContext is not FastFileAssetsNavigatorViewModel viewModel ||
+            TopLevel.GetTopLevel(this) is not Window owner)
+            return;
+
+        e.Handled = true;
+        _isAssetExportInProgress = true;
+        try
+        {
+            BaseAsset definition = viewModel.CaptureAssetSourceDefinition(row.Identity);
+            string fileName = AssetSourceTransfer.SuggestExportFileName(definition);
+            byte[] content = await Task.Run(() => AssetSourceTransfer.Write(definition));
+            IStorageFile? destination = await AssetSourceFilePicker.PickDestinationAsync(
+                owner.StorageProvider, row.AssetType, fileName);
+            if (destination is null)
+                return;
+
+            await AssetExportFile.WriteAsync(destination, content);
+            viewModel.ReportAssetSourceExport($"Exported {row.DisplayName} to {destination.Name}.");
+        }
+        catch (OperationCanceledException)
+        {
+            // The picker was dismissed or its owner closed.
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+            InvalidDataException or InvalidOperationException or NotSupportedException or
+            ArgumentException or OverflowException)
+        {
+            viewModel.ReportAssetSourceExport($"Asset export failed. {exception.Message}");
+        }
+        finally
+        {
+            _isAssetExportInProgress = false;
+        }
+    }
+
+    private async void ImportAssetMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not FastFileAssetsNavigatorViewModel viewModel ||
+            TopLevel.GetTopLevel(this) is not Window owner)
+            return;
+
+        e.Handled = true;
+        XAssetType? preferredType = _contextAssetType is { } type && AssetSourceTransfer.CanImport(type)
+            ? type
+            : null;
+        string? preferredName = preferredType is not null && _contextRow is
+            { Origin: WorkspaceAssetOrigin.TargetOwnedDefinition, Access: WorkspaceAssetAccess.Editable } row
+                ? row.DisplayName : null;
+        var dialog = new ImportAssetDialogWindow(viewModel, preferredType, preferredName);
+        _ = await dialog.ShowDialog<bool>(owner);
+    }
+
+    private static bool CanExportAsset(FastFileAssetNavigatorRow? row) => row is
+        { Origin: WorkspaceAssetOrigin.TargetOwnedDefinition, Access: WorkspaceAssetAccess.Editable } &&
+        AssetSourceTransfer.Supports(row.AssetType);
 
     private async void ImportRawFileFolderMenuItem_Click(
         object? sender,

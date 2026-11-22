@@ -1,13 +1,17 @@
+using System.Text;
+using IW4.Game.Assets;
 using IW4.Game.Assets.Menu;
+using IW4.Game.Zone;
 
 namespace IW4.Formats.SourceFormat.Menu;
 
 /// <summary>
-/// Writes loaded IW4 MenuFile and Menu assets in the developer-facing menu
-/// source format used by OpenAssetTools.
+/// Exchanges IW4 MenuFile and Menu assets in the developer-facing menu source format.
 /// </summary>
 public sealed class MenuExchange
 {
+    internal static readonly UTF8Encoding SourceEncoding = new(false, true);
+
     private static readonly StringComparer SourcePathComparer =
         OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
             ? StringComparer.OrdinalIgnoreCase
@@ -42,6 +46,16 @@ public sealed class MenuExchange
             ArgumentNullException.ThrowIfNull(menuFile);
             RegisterMenuFile(menuFile);
         }
+    }
+
+    public static BaseAsset ReadSource(TextReader source, XAssetType type, string assetName, string? sourcePath = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (type is not (XAssetType.Menu or XAssetType.MenuFile))
+            throw new ArgumentOutOfRangeException(nameof(type));
+        _ = SourceOutput.NormalizeOwnedAssetName(assetName, "Menu");
+        return new MenuSourceReader().Read(
+            source, type, assetName, sourcePath is null ? null : Path.GetFullPath(sourcePath));
     }
 
     /// <summary>
@@ -460,15 +474,18 @@ public sealed class MenuExchange
         new(
             MenuAssetKey(menuIdentity),
             menuPath,
-            textWriter => WriteMenuSource(textWriter, menu),
+            textWriter => WriteMenuSource(textWriter, menu, includeFunctionDefinitions: !isAggregateMenu),
             isAggregateMenu);
 
     private static void WriteMenuSource(
         TextWriter textWriter,
-        MenuDefAsset menu)
+        MenuDefAsset menu,
+        bool includeFunctionDefinitions)
     {
         var writer = new MenuSourceWriter(textWriter);
         writer.Start();
+        if (includeFunctionDefinitions)
+            writer.WriteSharedFunctionDefinitions([menu]);
         writer.WriteMenu(menu);
         writer.End();
     }

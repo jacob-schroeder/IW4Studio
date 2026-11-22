@@ -12,8 +12,9 @@ public sealed class StringTableExchange
     /// <summary>
     /// Imports CSV values, treating every record as data. CSV has no stored
     /// hashes, so each imported cell's hash is calculated from its value.
+    /// Asset transfers may read an empty file as a table with zero rows and columns.
     /// </summary>
-    public StringTableAsset ReadCsv(TextReader reader, string? assetName)
+    public StringTableAsset ReadCsv(TextReader reader, string? assetName, bool allowEmpty = false)
     {
         ArgumentNullException.ThrowIfNull(reader);
 
@@ -116,7 +117,7 @@ public sealed class StringTableExchange
             throw new InvalidDataException($"CSV record {record}, line {line} has an unterminated quoted field.");
         if (fields.Count != 0 || fieldStarted)
             CompleteRecord();
-        if (rows.Count == 0)
+        if (rows.Count == 0 && !allowEmpty)
             throw new InvalidDataException("CSV file contains no rows.");
 
         int cellCount = checked(rows.Count * columnCount);
@@ -155,7 +156,7 @@ public sealed class StringTableExchange
         Validate(asset, assetName);
 
         return new SourceOutput(sourceDirectory).WriteTextBatch([
-            (assetName, writer => WriteCsv(writer, asset))
+            (assetName, writer => WriteCsvCore(writer, asset))
         ]);
     }
 
@@ -201,9 +202,20 @@ public sealed class StringTableExchange
         }
     }
 
-    private static void WriteCsv(
+    public void WriteCsv(
         TextWriter writer,
         StringTableAsset asset)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(asset);
+        string assetName = SourceOutput.NormalizeOwnedAssetName(asset.Name, "StringTable");
+        Validate(asset, assetName);
+        if ((asset.RowCount == 0) != (asset.ColumnCount == 0))
+            throw new InvalidDataException($"StringTable '{assetName}' has dimensions that CSV cannot represent.");
+        WriteCsvCore(writer, asset);
+    }
+
+    private static void WriteCsvCore(TextWriter writer, StringTableAsset asset)
     {
         for (int row = 0; row < asset.RowCount; row++)
         {

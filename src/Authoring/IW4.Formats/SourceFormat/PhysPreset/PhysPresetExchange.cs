@@ -23,29 +23,7 @@ public sealed class PhysPresetExchange
         string assetName = SourceOutput.NormalizeOwnedAssetName(
             asset.Name,
             "PhysPreset");
-        if (asset.SndAliasPrefix is null && asset.SndAliasPrefixPointer.Type != IW4.Game.Pointers.PointerType.Null)
-            throw new InvalidDataException($"PhysPreset '{assetName}' sound-alias prefix was not materialized.");
-
-        var native = new NativeDocument
-        {
-            Format = NativeFormat,
-            Version = 1,
-            Name = assetName,
-            Type = asset.Type,
-            FloatBits = [
-                BitConverter.SingleToUInt32Bits(asset.Mass),
-                BitConverter.SingleToUInt32Bits(asset.Bounce),
-                BitConverter.SingleToUInt32Bits(asset.Friction),
-                BitConverter.SingleToUInt32Bits(asset.BulletForceScale),
-                BitConverter.SingleToUInt32Bits(asset.ExplosiveForceScale),
-                BitConverter.SingleToUInt32Bits(asset.PiecesSpreadFraction),
-                BitConverter.SingleToUInt32Bits(asset.PiecesUpwardVelocity)
-            ],
-            SndAliasPrefix = asset.SndAliasPrefix,
-            TempDefaultToCylinder = asset.TempDefaultToCylinder,
-            PerSurfaceSndAlias = asset.PerSurfaceSndAlias,
-            Pad2A = asset.Pad2A
-        };
+        NativeDocument native = CreateNativeDocument(asset, assetName);
         string json = JsonSerializer.Serialize(native, JsonOptions);
         var files = new List<(string RelativePath, Action<TextWriter> Write)>();
         if (CanWriteLegacy(asset))
@@ -62,18 +40,43 @@ public sealed class PhysPresetExchange
         string name = SourceOutput.NormalizeOwnedAssetName(assetName, "PhysPreset");
         string path = NativeSourcePath.Resolve(sourceDirectory, "physic", name, ".physic.json");
         using FileStream stream = File.OpenRead(path);
-        NativeDocument native = JsonSerializer.Deserialize<NativeDocument>(stream, JsonOptions)
-            ?? throw new InvalidDataException($"PhysPreset '{name}' has an empty native source document.");
-        if (native.Format != NativeFormat || native.Version != 1 || native.Name != name ||
+        return ReadNativeCore(stream, name, requireMatchingName: true);
+    }
+
+    public void WriteNative(Stream destination, PhysPresetAsset asset)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentNullException.ThrowIfNull(asset);
+        string name = SourceOutput.NormalizeOwnedAssetName(asset.Name, "PhysPreset");
+        JsonSerializer.Serialize(destination, CreateNativeDocument(asset, name), JsonOptions);
+    }
+
+    public PhysPresetAsset ReadNative(Stream source, string assetName)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        _ = SourceOutput.NormalizeOwnedAssetName(assetName, "PhysPreset");
+        return ReadNativeCore(source, assetName, requireMatchingName: false);
+    }
+
+    private static PhysPresetAsset ReadNativeCore(
+        Stream source,
+        string assetName,
+        bool requireMatchingName)
+    {
+        NativeDocument native = JsonSerializer.Deserialize<NativeDocument>(source, JsonOptions)
+            ?? throw new InvalidDataException($"PhysPreset '{assetName}' has an empty native source document.");
+        if (native.Format != NativeFormat || native.Version != 1 ||
+            native.Name is null || (requireMatchingName && native.Name != assetName) ||
             native.FloatBits is not { Length: 7 })
         {
-            throw new InvalidDataException($"PhysPreset '{name}' has invalid native source fields.");
+            throw new InvalidDataException($"PhysPreset '{assetName}' has invalid native source fields.");
         }
+        _ = SourceOutput.NormalizeOwnedAssetName(native.Name, "PhysPreset");
 
         float[] values = native.FloatBits.Select(BitConverter.UInt32BitsToSingle).ToArray();
         return new PhysPresetAsset
         {
-            Name = name,
+            Name = assetName,
             Type = native.Type,
             Mass = values[0],
             Bounce = values[1],
@@ -86,6 +89,33 @@ public sealed class PhysPresetExchange
             TempDefaultToCylinder = native.TempDefaultToCylinder,
             PerSurfaceSndAlias = native.PerSurfaceSndAlias,
             Pad2A = native.Pad2A
+        };
+    }
+
+    private static NativeDocument CreateNativeDocument(PhysPresetAsset asset, string name)
+    {
+        if (asset.SndAliasPrefix is null && asset.SndAliasPrefixPointer.Type != IW4.Game.Pointers.PointerType.Null)
+            throw new InvalidDataException($"PhysPreset '{name}' sound-alias prefix was not materialized.");
+
+        return new NativeDocument
+        {
+            Format = NativeFormat,
+            Version = 1,
+            Name = name,
+            Type = asset.Type,
+            FloatBits = [
+                BitConverter.SingleToUInt32Bits(asset.Mass),
+                BitConverter.SingleToUInt32Bits(asset.Bounce),
+                BitConverter.SingleToUInt32Bits(asset.Friction),
+                BitConverter.SingleToUInt32Bits(asset.BulletForceScale),
+                BitConverter.SingleToUInt32Bits(asset.ExplosiveForceScale),
+                BitConverter.SingleToUInt32Bits(asset.PiecesSpreadFraction),
+                BitConverter.SingleToUInt32Bits(asset.PiecesUpwardVelocity)
+            ],
+            SndAliasPrefix = asset.SndAliasPrefix,
+            TempDefaultToCylinder = asset.TempDefaultToCylinder,
+            PerSurfaceSndAlias = asset.PerSurfaceSndAlias,
+            Pad2A = asset.Pad2A
         };
     }
 

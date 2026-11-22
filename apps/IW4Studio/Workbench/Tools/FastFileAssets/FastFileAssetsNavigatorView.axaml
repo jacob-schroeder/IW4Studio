@@ -42,6 +42,13 @@
           ContextRequested="AssetsGrid_ContextRequested">
       <Grid.ContextFlyout>
         <MenuFlyout>
+          <MenuItem x:Name="ExportAssetMenuItem"
+                    Header="Export Asset…"
+                    IsVisible="False"
+                    Click="ExportAssetMenuItem_Click" />
+          <MenuItem x:Name="ImportAssetMenuItem"
+                    Header="Import Asset…"
+                    Click="ImportAssetMenuItem_Click" />
           <MenuItem x:Name="ImportRawFileFolderMenuItem"
                     Header="Import folder..."
                     IsVisible="False"

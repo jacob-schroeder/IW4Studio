@@ -153,7 +153,8 @@ public sealed partial class FastFileEditingSession : IDisposable
             entry = Document.AppendDefinition(detachedDefinition);
             _drafts.Add(entry.TargetRowIdentity!.Value, new DraftState(entry, adapter));
             _addedRows.Add(entry.TargetRowIdentity.Value, _revision.Revision);
-            if (auxiliary.Count != 0)
+            // MenuEditingCoordinator owns the lifetime of MenuFile's inline providers.
+            if (auxiliary.Count != 0 && detachedDefinition.SerializedAssetType != XAssetType.MenuFile)
                 _compiledAuxiliaryProviders.Add(entry.TargetRowIdentity.Value, auxiliary);
             RebuildChangeSet();
         }

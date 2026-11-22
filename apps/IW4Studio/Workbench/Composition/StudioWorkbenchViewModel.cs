@@ -146,7 +146,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             FastFileAssets = new FastFileAssetsNavigatorViewModel(
                 Editor,
                 _selectionContext,
-                hasDesktopEditor);
+                hasDesktopEditor,
+                ApplyImportedAsset);
             constructionResources.Add(FastFileAssets);
             AssetPool = new AssetPoolNavigatorViewModel(
                 workspace,
@@ -514,6 +515,31 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     {
         Editor.RefreshAfterSave();
         FastFileDetails.RefreshAfterSave();
+    }
+
+    private WorkspaceAssetCatalogEntry ApplyImportedAsset(
+        BaseAsset definition,
+        TargetZoneRowIdentity? replaceRow)
+    {
+        WorkbenchEditorTabViewModel[] affectedTabs = replaceRow is { } identity
+            ? _openEditorTabs.Where(tab =>
+                tab.CatalogEditor?.Entry.Identity.TargetRowIdentity == identity).ToArray()
+            : [];
+        if (affectedTabs.Any(tab => tab.IsDirty))
+        {
+            throw new InvalidOperationException(
+                "Apply or revert the asset's unapplied editor changes before replacing it.");
+        }
+
+        (WorkspaceAssetCatalogEntry entry, bool changed) = definition.SerializedAssetType is XAssetType.Menu or XAssetType.MenuFile
+            ? _menuEditingCoordinator.ImportAssetSource(definition, replaceRow)
+            : Editor.EditingSession.ImportAssetSource(definition, replaceRow);
+        if (changed)
+        {
+            foreach (WorkbenchEditorTabViewModel tab in affectedTabs)
+                CloseEditorTab(tab);
+        }
+        return entry;
     }
 
     public void RequestCloseEditorTab(WorkbenchEditorTabViewModel tab)
