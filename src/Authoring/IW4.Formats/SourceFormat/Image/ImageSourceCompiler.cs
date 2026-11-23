@@ -1,4 +1,5 @@
 using IW4.Game.Assets.Image;
+using IW4.Game.Codecs.Image;
 
 namespace IW4.Formats.SourceFormat.Image;
 
@@ -62,8 +63,23 @@ public static class ImageSourceCompiler
                 $"contains {levels.Length:N0} mips.");
         }
 
+        // RSX linear textures keep the base row pitch at every mip. IW4 stores
+        // compact mip chains, so narrower levels normally require swizzled storage.
+        bool swizzled = (levels.Length > 1 || source.Shape == ImageFileShape.Cube) &&
+            GfxImagePixelLayout.IsPowerOfTwo(topLevel.Width) &&
+            GfxImagePixelLayout.IsPowerOfTwo(topLevel.Height) &&
+            GfxImagePixelLayout.IsPowerOfTwo(topLevel.Depth);
+        // A linear one-column chain has the same pitch throughout. With only
+        // two levels the final 1x1 texel also lands correctly in a non-cube image.
+        if (!swizzled && levels.Length > 1 && topLevel.Width > 1 &&
+            (levels.Length > 2 || source.Shape == ImageFileShape.Cube))
+        {
+            throw new InvalidDataException(
+                $"Image '{imageName}' cannot store this non-power-of-two mip chain in IW4's PS3 image layout. " +
+                "Resize to power-of-two dimensions or supply a single mip level.");
+        }
+
         long decodedByteCount = 0;
-        long cubeFaceChainByteCount = 0;
         int expectedWidth = topLevel.Width;
         int expectedHeight = topLevel.Height;
         int expectedDepth = topLevel.Depth;
@@ -102,12 +118,6 @@ public static class ImageSourceCompiler
                 throw new InvalidDataException(
                     $"The decoded image exceeds the {MaximumDecodedByteCount / (1024 * 1024):N0} MiB image import limit.");
             }
-            if (source.Shape == ImageFileShape.Cube)
-            {
-                cubeFaceChainByteCount = checked(
-                    cubeFaceChainByteCount + expectedBytes / faceCount);
-            }
-
             expectedWidth = Math.Max(1, expectedWidth / 2);
             expectedHeight = Math.Max(1, expectedHeight / 2);
             expectedDepth = source.Shape == ImageFileShape.Volume
@@ -115,45 +125,22 @@ public static class ImageSourceCompiler
                 : 1;
         }
 
-        int payloadByteCount = source.Shape == ImageFileShape.Cube
-            ? checked(AlignTo128(cubeFaceChainByteCount) * faceCount)
-            : AlignTo128(decodedByteCount);
-        var payload = new byte[payloadByteCount];
-        if (source.Shape == ImageFileShape.Cube)
+        int faceStride = AlignTo128(decodedByteCount / faceCount);
+        var payload = new byte[checked(faceStride * faceCount)];
+        for (int face = 0; face < faceCount; face++)
         {
-            int faceStride = AlignTo128(cubeFaceChainByteCount);
-            for (int faceOrdinal = 0;
-                 faceOrdinal < faceCount;
-                 faceOrdinal++)
-            {
-                int destinationOffset = checked(faceOrdinal * faceStride);
-                foreach (ImageSourceMipLevel level in levels)
-                {
-                    int faceByteCount = checked(
-                        level.Width * level.Height * 4);
-                    ReadOnlySpan<byte> sourceFace = level.RgbaBytes.Span.Slice(
-                        checked(faceOrdinal * faceByteCount),
-                        faceByteCount);
-                    WriteA8R8G8B8(
-                        sourceFace,
-                        payload.AsSpan(destinationOffset, faceByteCount));
-                    destinationOffset = checked(
-                        destinationOffset + faceByteCount);
-                }
-            }
-        }
-        else
-        {
-            int destinationOffset = 0;
+            int offset = face * faceStride;
             foreach (ImageSourceMipLevel level in levels)
             {
-                WriteA8R8G8B8(
-                    level.RgbaBytes.Span,
-                    payload.AsSpan(
-                        destinationOffset,
-                        level.RgbaBytes.Length));
-                destinationOffset = checked(
-                    destinationOffset + level.RgbaBytes.Length);
+                int size = level.RgbaBytes.Length / faceCount;
+                ReadOnlySpan<byte> pixels = level.RgbaBytes.Span.Slice(face * size, size);
+                Span<byte> destination = payload.AsSpan(offset, size);
+                if (swizzled)
+                    GfxImagePixelLayout.SwizzleMorton(pixels, destination, level.Width, level.Height, level.Depth, 4);
+                else
+                    pixels.CopyTo(destination);
+                GfxImageChannelCodec.RgbaToArgb(destination);
+                offset += size;
             }
         }
 
@@ -164,8 +151,8 @@ public static class ImageSourceCompiler
                 : 1));
         var image = new GfxImageAsset
         {
-            Format = (byte)((byte)GfxImageBaseFormat.A8R8G8B8 |
-                (byte)GfxImageFormatFlags.Linear),
+            Format = swizzled ? (byte)GfxImageBaseFormat.A8R8G8B8 :
+                (byte)((byte)GfxImageBaseFormat.A8R8G8B8 | (byte)GfxImageFormatFlags.Linear),
             LevelCount = levelCount,
             DimensionCount = source.Shape == ImageFileShape.Volume
                 ? GfxImageDimension.ThreeDimensional
@@ -178,7 +165,7 @@ public static class ImageSourceCompiler
             Height = checked((ushort)topLevel.Height),
             Depth = imageDepth,
             MemoryLocation = GfxImageMemoryLocation.Local,
-            RenderTargetPitch = checked((uint)topLevel.Width * 4u),
+            RenderTargetPitch = swizzled ? 0u : checked((uint)topLevel.Width * 4u),
             MapType = source.Shape switch
             {
                 ImageFileShape.TwoDimensional => MapType.TwoDimensional,
@@ -245,25 +232,5 @@ public static class ImageSourceCompiler
 
     private static int AlignTo128(long byteCount) => checked((int)(
         (byteCount + 0x7f) & ~0x7fL));
-
-    private static void WriteA8R8G8B8(
-        ReadOnlySpan<byte> rgba,
-        Span<byte> destination)
-    {
-        if (rgba.Length != destination.Length || rgba.Length % 4 != 0)
-        {
-            throw new ArgumentException(
-                "RGBA source and A8R8G8B8 destination lengths must match.",
-                nameof(destination));
-        }
-
-        for (int offset = 0; offset < rgba.Length; offset += 4)
-        {
-            destination[offset] = rgba[offset + 3];
-            destination[offset + 1] = rgba[offset];
-            destination[offset + 2] = rgba[offset + 1];
-            destination[offset + 3] = rgba[offset + 2];
-        }
-    }
 
 }

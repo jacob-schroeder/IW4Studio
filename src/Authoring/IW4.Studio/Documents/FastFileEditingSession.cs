@@ -132,7 +132,8 @@ public sealed partial class FastFileEditingSession : IDisposable
             var auxiliary = (generatedProviders ?? []).ToDictionary(AssetKey.FromDefinition);
             foreach (BaseAsset provider in auxiliary.Values)
             {
-                string? error = ValidateNewAssetName(provider.SerializedAssetType, provider.SerializedAssetName);
+                string? error = ValidateNewAssetName(
+                    provider.SerializedAssetType, provider.SerializedAssetName, allowDependencyOverride);
                 if (error is not null)
                     throw new InvalidDataException(error);
             }
@@ -667,12 +668,14 @@ public sealed partial class FastFileEditingSession : IDisposable
                     provider.Key.NormalizedName,
                     normalized,
                     StringComparison.Ordinal));
+            if (targetCollision || poolCollision)
+                return $"A {assetType} named '{name}' already exists in the active fastfile.";
             bool dependencyCollision = !allowDependencyOverride && Workspace.AssetCatalog.DependencyEntries
                 .Any(entry =>
                     entry.ProviderZone?.IsTarget != true &&
                     CanonicalAssetFamily.FromSerializedType(entry.AssetType) == family &&
                     string.Equals(entry.NormalizedName, normalized, StringComparison.Ordinal));
-            return targetCollision || poolCollision || dependencyCollision
+            return dependencyCollision
                 ? $"An asset named '{name}' already exists in the workspace."
                 : null;
         }

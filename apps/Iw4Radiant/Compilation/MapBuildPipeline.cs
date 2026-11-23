@@ -1,5 +1,6 @@
 using D3dbspLinker.Conversion;
 using IW4.Formats.SourceFormat.Character;
+using IW4.Formats.SourceFormat.Gsc;
 using IW4.Formats.SourceFormat.Material;
 using IW4.Formats.SourceFormat.Physics;
 using Iw4Radiant.Editing;
@@ -176,10 +177,13 @@ internal static class MapBuildPipeline
         CancellationToken cancellationToken)
     {
         MapBrush[] glass = document.Brushes.Where(BrushGlass.IsGlass).ToArray();
+        string? compassMaterial = MapStartupScript.FindCompassMaterial(Path.GetFileNameWithoutExtension(sourcePath),
+            assetDirectory, document.Entities.Select(entity => entity.Properties));
         string[] materialNames = document.Brushes.Where(brush => !BrushGlass.IsGlass(brush))
             .SelectMany(brush => brush.Faces).Select(face => face.Material)
             .Concat(document.Terrains.Select(terrain => terrain.Material))
             .Concat(glass.SelectMany(BrushGlassCompiler.RequiredMaterialNames))
+            .Concat(compassMaterial is null ? [] : new[] { compassMaterial })
             .Where(name => !CaulkMaterial.IsCaulk(name) && !ClipBrushMaterial.IsCollisionOnly(name))
             .Distinct(StringComparer.Ordinal).ToArray();
         MapFactionSettings factions = MapFactionAuthoring.Read(document.World.Properties);

@@ -157,7 +157,7 @@ internal static class MaterialCatalog
     private static (MaterialSource? Normal, MaterialSource? Specular, MaterialSource? Detail, Vector2 DetailScale)
         ReadPreviewMaps(string materialPath, string materialName, string imageRoot, string techniqueSet)
     {
-        if (techniqueSet is not ("wc_l_sm_r0c0n0sf0" or "wc_l_sm_r0c0q0n0s0p0" or
+        if (Path.GetFileName(techniqueSet) is not ("wc_l_sm_r0c0n0sf0" or "wc_l_sm_r0c0q0n0s0p0" or
             "wc_l_sm_r0c0n0s0" or "wc_l_sm_b0c0n0s0"))
             return (null, null, null, Vector2.One);
         using var document = JsonDocument.Parse(File.ReadAllText(materialPath));

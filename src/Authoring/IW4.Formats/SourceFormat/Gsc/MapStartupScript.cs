@@ -5,9 +5,19 @@ namespace IW4.Formats.SourceFormat.Gsc;
 
 public static class MapStartupScript
 {
+    public static string? FindCompassMaterial(string mapName, string? assetLibrary,
+        IEnumerable<IReadOnlyDictionary<string, string>> entities)
+    {
+        if (string.IsNullOrWhiteSpace(assetLibrary) ||
+            entities.Count(entity => entity.GetValueOrDefault("targetname") == "minimap_corner") != 2)
+            return null;
+        string material = $"compass_map_{mapName}";
+        return File.Exists(Path.Combine(assetLibrary, "materials", material + ".json")) ? material : null;
+    }
+
     public static string Create(string scriptName, bool hasMapFxScript, bool hasMapMovingLightsScript,
         bool hasMapFogScript, MapFactionSettings factions, IReadOnlyList<string> destructiblePrecacheScripts,
-        string? waterScriptName = null)
+        string? waterScriptName = null, string? compassMaterial = null)
     {
         string scriptPrefix = scriptName[..^".gsc".Length];
         bool authoredAssault = factions.AlliesAssaultA is not null || factions.AxisAssaultA is not null;
@@ -25,6 +35,9 @@ public static class MapStartupScript
             (hasMapFxScript ? "\t" + ScriptStartup(scriptPrefix + "_fx.gsc") + "\r\n" : "") +
             (hasMapMovingLightsScript ? "\t" + ScriptStartup(scriptPrefix + "_lights.gsc") + "\r\n" : "") +
             "\tmaps\\mp\\_load::main();\r\n" +
+            (compassMaterial is null ? "" :
+                "\tsetNorthYaw(90);\r\n" +
+                $"\tmaps\\mp\\_compass::setupMiniMap(\"{compassMaterial}\");\r\n") +
             (hasMapFogScript ? "\t" + ScriptStartup(scriptPrefix + "_fog.gsc") + "\r\n" : "") +
             $"\tgame[\"allies\"] = \"{factions.Allies}\";\r\n" +
             $"\tgame[\"axis\"] = \"{factions.Axis}\";\r\n" +

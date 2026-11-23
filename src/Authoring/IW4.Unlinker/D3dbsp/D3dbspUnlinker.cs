@@ -91,6 +91,9 @@ public static class D3dbspUnlinker
                 gfx,
                 clip,
                 lightmapTiles);
+        (byte[]? renderCells, byte[]? renderSpatial) = gfx.DpvsPlanes.CellCount > 1
+            ? D3dbspGfxCodec.EncodeRenderSpatial(gfx)
+            : (null, null);
 
         var lumps = new List<(D3dbspLumpType Type, byte[] Data)>
         {
@@ -114,7 +117,8 @@ public static class D3dbspUnlinker
         lumps.Add((
             D3dbspLumpType.UnlayeredAabbTrees,
             D3dbspGfxCodec.EncodeCanonicalUnlayeredAabbTree(gfx)));
-        lumps.Add((D3dbspLumpType.Cells, D3dbspGfxCodec.EncodeCanonicalCell(gfx)));
+        lumps.Add((D3dbspLumpType.Cells, renderCells ?? D3dbspGfxCodec.EncodeCanonicalCell(gfx)));
+        AddIfNotEmpty(lumps, D3dbspLumpType.RenderSpatial, renderSpatial ?? []);
         lumps.Add((D3dbspLumpType.Nodes, D3dbspCollisionCodec.EncodeNodes(clip.Nodes, collisionExport.Planes)));
         lumps.Add((D3dbspLumpType.Leafs, leafs));
         lumps.Add((

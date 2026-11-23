@@ -170,7 +170,7 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
         if (_disposed)
             return "The fastfile is closed.";
 
-        string? error = ValidateNewAssetName(type, name);
+        string? error = _editor.EditingSession.ValidateNewAssetSourceName(type, name);
         if (error is not null)
             replacement = _editor.EditingSession.FindAssetSourceReplacement(type, name);
         return replacement is null ? error : null;

@@ -50,10 +50,12 @@ internal sealed record MapScriptsSnapshot(string MapName, IReadOnlyList<MapScrip
                 .Any(face => WaterMaterialAuthoring.IsAuthoredMaterialName(face.Material));
         string mainName = $"maps/mp/{mapName}.gsc";
         MapFactionSettings factions = MapFactionAuthoring.Read(expanded.World.Properties);
+        string? compassMaterial = MapStartupScript.FindCompassMaterial(mapName, assetLibrary,
+            expanded.Entities.Select(entity => entity.Properties));
         List<MapScriptSource> generated =
         [
             new("Main", mainName, MapStartupScript.Create(mainName, emitters is not null,
-                movingLights is not null, fog is not null, factions, precacheScripts))
+                movingLights is not null, fog is not null, factions, precacheScripts, compassMaterial: compassMaterial))
         ];
         if (emitters is not null)
         {

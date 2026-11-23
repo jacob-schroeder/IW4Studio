@@ -20,7 +20,8 @@ internal sealed record MaterialSource(
     internal MaterialSource? SpecularMap { get; init; }
     internal MaterialSource? DetailMap { get; init; }
     internal Vector2 DetailScale { get; init; } = Vector2.One;
-    internal bool UsesVertexColor => TechniqueSet.StartsWith("wc_", StringComparison.Ordinal);
+    internal string TechniqueSetBasename => Path.GetFileName(TechniqueSet);
+    internal bool UsesVertexColor => TechniqueSetBasename.StartsWith("wc_", StringComparison.Ordinal);
     internal MaterialWater? Water { get; init; }
     internal OceanWaveSettings? Ocean { get; init; }
     internal string OceanFoamImagePath { get; init; } = "";

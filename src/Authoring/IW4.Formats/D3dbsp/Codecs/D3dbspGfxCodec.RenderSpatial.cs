@@ -11,6 +11,132 @@ internal static partial class D3dbspGfxCodec
     private const int DiskSpatialTreeSize = 40;
     private const int DiskSpatialPortalSize = 44;
 
+    public static (byte[] Cells, byte[] RenderSpatial) EncodeRenderSpatial(GfxWorldAsset world)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        int cellCount = world.DpvsPlanes.CellCount;
+        if (cellCount <= 1 || cellCount >= ushort.MaxValue ||
+            world.Cells.Count != cellCount || world.CellTrees.Count != cellCount)
+            throw new InvalidDataException("Multi-cell render spatial rows must agree with DpvsPlanes.CellCount.");
+        if (world.Dpvs.SModelCount != 0)
+            throw new NotSupportedException("Multi-cell d3dbsp encoding currently supports no authored static models.");
+        int staticCount = checked((int)world.Dpvs.StaticSurfaceCount);
+        if (world.Models[0].StartSurfIndex != 0 || world.Models[0].SurfaceCount != staticCount ||
+            world.Dpvs.SortedSurfIndex.Count != staticCount ||
+            world.Dpvs.SortedSurfIndex.Any(index => index >= staticCount) ||
+            world.Dpvs.SortedSurfIndex.Distinct().Count() != world.Dpvs.SortedSurfIndex.Count)
+            throw new InvalidDataException("Multi-cell d3dbsp encoding requires a complete permutation of world surface indices.");
+        if (world.DpvsPlanes.Nodes.Count == 0)
+            throw new InvalidDataException("The multi-cell render camera partition has no root node.");
+        ValidateRenderPartition(world.DpvsPlanes.Nodes.ToArray(), cellCount, world.DpvsPlanes.Planes.Count);
+
+        var cellData = new byte[checked(cellCount * DiskCellSize)];
+        using var spatialStream = new MemoryStream();
+        using var writer = new BinaryWriter(spatialStream);
+        writer.Write("IW4PS3S\u0001"u8);
+        writer.Write(checked((uint)world.DpvsPlanes.Planes.Count));
+        writer.Write(checked((uint)world.DpvsPlanes.Nodes.Count));
+        writer.Write(0u); // Authored static-model prefix; MapModelCompiler appends models later.
+        foreach (DpvsPlane plane in world.DpvsPlanes.Planes)
+        {
+            WriteFinite(writer, plane.NormalX, "Render plane normal");
+            WriteFinite(writer, plane.NormalY, "Render plane normal");
+            WriteFinite(writer, plane.NormalZ, "Render plane normal");
+            WriteFinite(writer, plane.Distance, "Render plane distance");
+            writer.Write(plane.Type);
+            writer.Write(plane.SignBits);
+            writer.Write(plane.Pad12);
+        }
+        foreach (ushort node in world.DpvsPlanes.Nodes)
+            writer.Write(node);
+        var authoredIndices = world.Dpvs.AuthoredSurfaceIndexByRuntimeSlot;
+        foreach (ushort surface in world.Dpvs.SortedSurfIndex)
+            writer.Write(authoredIndices.Count == 0 ? surface : checked((ushort)authoredIndices[surface]));
+
+        for (int index = 0; index < cellCount; index++)
+        {
+            GfxCell cell = world.Cells[index] ?? throw new InvalidDataException($"Render cell {index} is null.");
+            if (cell.PortalCount != cell.Portals.Count || cell.ReflectionProbeCount != cell.ReflectionProbes.Count ||
+                cell.Pad21.Count is not (0 or 3) || cell.Pad21.Any(value => value != 0) || cell.ReflectionProbes.Count > DiskCellSize - 45)
+                throw new InvalidDataException($"Render cell {index} has inconsistent or unsupported metadata.");
+            Vec3 mins = BoundsEndpoint(cell.Bounds, maximum: false, $"Render cell {index}");
+            Vec3 maxs = BoundsEndpoint(cell.Bounds, maximum: true, $"Render cell {index}");
+            Span<byte> row = cellData.AsSpan(index * DiskCellSize, DiskCellSize);
+            WriteVec3LittleEndian(row, 0, mins);
+            WriteVec3LittleEndian(row, 12, maxs);
+            row[44] = cell.ReflectionProbeCount;
+            for (int probe = 0; probe < cell.ReflectionProbes.Count; probe++)
+                row[45 + probe] = cell.ReflectionProbes[probe];
+
+            IReadOnlyList<GfxAabbTree> trees = world.CellTrees[index].AabbTrees;
+            if (trees.Count != 1)
+                throw new NotSupportedException($"Render cell {index} must contain exactly one terminal AABB tree.");
+            GfxAabbTree tree = trees[0];
+            if (tree.ChildCount != 0 || tree.ChildrenOffset != 0 || tree.SModelIndexCount != 0 || tree.SModelIndexes.Count != 0)
+                throw new NotSupportedException($"Render cell {index} AABB must be a terminal tree with no static models.");
+            if (tree.SurfaceCount > GfxAabbTree.MaxIndexCount)
+                throw new InvalidDataException($"Render cell {index} exceeds the PS3 AABB surface-list limit.");
+            ValidateSlice(tree.StartSurfIndex, tree.SurfaceCount, world.Dpvs.SortedSurfIndex.Count,
+                $"Render cell {index} AABB surface");
+            writer.Write(1u); // tree count
+            writer.Write(checked((uint)cell.Portals.Count));
+            writer.Write(0u); // root model-index count
+            WriteBounds(writer, tree.Bounds, $"Render cell {index} AABB");
+            writer.Write((ushort)0);
+            writer.Write(tree.SurfaceCount);
+            writer.Write(tree.StartSurfIndex);
+            writer.Write((ushort)0);
+            writer.Write(0u); // model-list offset
+            writer.Write(0u); // child offset
+            foreach (GfxPortal portal in cell.Portals)
+                WriteSpatialPortal(writer, portal, index, cellCount);
+        }
+        return (cellData, spatialStream.ToArray());
+    }
+
+    private static void WriteSpatialPortal(BinaryWriter writer, GfxPortal portal, int cellIndex, int cellCount)
+    {
+        if (portal.CellIndex >= cellCount || portal.CellIndex == cellIndex || portal.VertexCount != portal.Vertices.Count ||
+            portal.VertexCount < 3 || portal.HullAxis.Count != 6 || portal.Pad23 != 0)
+            throw new InvalidDataException($"Render cell {cellIndex} has an invalid portal.");
+        WriteFinite(writer, portal.Plane.NormalX, "Render portal plane");
+        WriteFinite(writer, portal.Plane.NormalY, "Render portal plane");
+        WriteFinite(writer, portal.Plane.NormalZ, "Render portal plane");
+        WriteFinite(writer, portal.Plane.Distance, "Render portal plane");
+        writer.Write(portal.CellIndex);
+        writer.Write(portal.VertexCount);
+        writer.Write((byte)0);
+        foreach (float axis in portal.HullAxis)
+            WriteFinite(writer, axis, "Render portal hull axis");
+        foreach (GfxPortalVertex vertex in portal.Vertices)
+        {
+            WriteFinite(writer, vertex.X, "Render portal vertex");
+            WriteFinite(writer, vertex.Y, "Render portal vertex");
+            WriteFinite(writer, vertex.Z, "Render portal vertex");
+        }
+    }
+
+    private static void WriteBounds(BinaryWriter writer, Bounds bounds, string description)
+    {
+        Vec3 midpoint = bounds.MidPoint;
+        Vec3 halfSize = bounds.HalfSize;
+        if (halfSize.X < 0 || halfSize.Y < 0 || halfSize.Z < 0)
+            throw new InvalidDataException($"{description} has a negative half-size.");
+        WriteFinite(writer, midpoint.X, description);
+        WriteFinite(writer, midpoint.Y, description);
+        WriteFinite(writer, midpoint.Z, description);
+        WriteFinite(writer, halfSize.X, description);
+        WriteFinite(writer, halfSize.Y, description);
+        WriteFinite(writer, halfSize.Z, description);
+    }
+
+    private static void WriteFinite(BinaryWriter writer, float value, string description)
+    {
+        if (!float.IsFinite(value))
+            throw new InvalidDataException($"{description} contains a non-finite value.");
+        writer.Write(value == 0f ? 0f : value);
+    }
+
     private static (GfxWorldDpvsPlanes Planes, GfxCell[] Cells, GfxCellTree[] CellTrees, ushort[] SortedSurfaceIndices)
         DecodeRenderSpatial(
             D3dbspFile file,

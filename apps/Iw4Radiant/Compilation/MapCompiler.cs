@@ -123,7 +123,7 @@ internal static class MapCompiler
                     material.GameFlags != (MaterialGameFlags.NoMarks | MaterialGameFlags.HasReflection)))
                     throw new NotSupportedException($"Water material '{name}' is outside the proven stock PS3 w_water/wc_water profile.");
                 if (!material.IsSky && (state.TechniqueType != MaterialTechniqueType.Lit ||
-                    !(material.TechniqueSet.StartsWith("w_", StringComparison.Ordinal) || material.TechniqueSet.StartsWith("wc_", StringComparison.Ordinal) ||
+                    !(material.TechniqueSetBasename.StartsWith("w_", StringComparison.Ordinal) || material.UsesVertexColor ||
                         !staticMaterialNames.Contains(name) && material.TechniqueSet.StartsWith("m_", StringComparison.Ordinal)) ||
                     state.IsBlended && !state.SupportsAlpha || !state.IsBlended && !state.DepthWrite ||
                     state.DepthTest is not (GfxDepthTest.Less or GfxDepthTest.LessThanOrEqual) || state.SortKey is < 0 or >= 39))
@@ -154,8 +154,6 @@ internal static class MapCompiler
                 Contents = item.Contents,
                 SurfaceFlags = baseMaterialsByName[item.Material].SurfaceFlags
             }).ToArray();
-        progress?.Report("Compiling breakable glass…");
-        FxGlassSystem glass = BrushGlassCompiler.Compile(document, materials, renderCellCount: 1);
         progress?.Report("Compiling entities and brush collision…");
         MapEntsAsset entities = CompileEntities(document, assetName);
         ClipMapAsset collision = BrushCollisionCompiler.Compile(document, assetName, clipMaterials,
@@ -165,6 +163,8 @@ internal static class MapCompiler
             document.World.Terrains.Where(terrain => !TerrainContents.ReadNonColliding(terrain)).ToArray());
         var primaryLights = BrushRenderCompiler.CompilePrimaryLights(document, assetName, stages);
         var graphics = BrushRenderCompiler.Compile(document, assetName, collision, primaryLights, materials, models, probeOrigins, stages, cancellationToken, progress);
+        progress?.Report("Compiling breakable glass…");
+        FxGlassSystem glass = BrushGlassCompiler.Compile(document, materials, graphics.DpvsPlanes.CellCount);
         progress?.Report("Assembling compiled map and model placements…");
         return stages.AppendStageMetadata(MapModelCompiler.Append(document, D3dbspUnlinker.Unlink([
             collision, primaryLights, graphics, entities,

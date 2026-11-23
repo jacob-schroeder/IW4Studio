@@ -155,17 +155,18 @@ internal static class BrushRenderCompiler
                     BaseIndex = firstIndex
                 }
             };
-            surfaceBounds[faceIndex] = new GfxSurfaceBounds { Bounds = GetBounds(polygon.Vertices.Select(point => Vector3.Transform(point, local))) };
+            surfaceBounds[faceIndex] = new GfxSurfaceBounds { Bounds = GetBounds(RenderBoundsVertices(polygon, local)) };
             firstVertex = checked(firstVertex + localVertexCount);
         }
 
+        int unbatchedWorldSurfaces = polygons.Count(polygon => polygon.ModelIndex == 0);
         int[] surfaceModels = polygons.Select(polygon => polygon.ModelIndex).ToArray();
-        MergeOceanDraws(polygons, vertexCount, ref surfaces, ref surfaceBounds, ref indices, ref surfaceModels);
+        MergeCompatibleDraws(polygons, vertexCount, ref surfaces, ref surfaceBounds, ref indices, ref surfaceModels);
         if (surfaces.Length > ushort.MaxValue)
-            throw new InvalidDataException("Compilation supports at most 65535 native render surfaces after ocean patches are merged.");
+            throw new InvalidDataException("Compilation supports at most 65535 native render surfaces after compatible draws are merged.");
         int worldSurfaceCount = surfaceModels.Count(model => model == 0);
 
-        // The canonical BSP cell must enclose both the authored placements and
+        // The render world must enclose both the authored placements and
         // every stored surface (inline brush-model vertices are entity-local).
         Bounds bounds = GetBounds(document.Brushes.SelectMany(brush => brush.GetVertices())
             .Concat(document.Terrains.SelectMany(terrain => terrain.Vertices))
@@ -177,24 +178,20 @@ internal static class BrushRenderCompiler
             (surfaces[index].Flags & GfxSurfaceFlags.CastsSunShadow) != 0).ToArray();
         byte[] cellProbes = Enumerable.Range(probes.Count > 1 ? 1 : 0, probes.Count > 1 ? probes.Count - 1 : 1)
             .Select(index => checked((byte)index)).ToArray();
+        var partition = RenderCellCompiler.Compile(bounds, surfaceBounds, surfaceIndices, cellProbes, unbatchedWorldSurfaces);
         return new GfxWorldAsset
         {
             Name = assetName,
             BaseName = Path.GetFileNameWithoutExtension(assetName),
-            NodeCount = 1,
+            PlaneCount = partition.Planes.Planes.Count,
+            NodeCount = partition.Planes.Nodes.Count,
             SurfaceCount = surfaces.Length,
             SunPrimaryLightIndex = stages.SunCount,
             PrimaryLightCount = com.PrimaryLightCount,
-            DpvsPlanes = new GfxWorldDpvsPlanes { CellCount = 1, Nodes = [1] },
-            CellTreeCounts = [new GfxCellTreeCount(1)],
-            CellTrees =
-            [
-                new GfxCellTree
-                {
-                    AabbTrees = [new GfxAabbTree { Bounds = bounds, SurfaceCount = checked((ushort)worldSurfaceCount) }]
-                }
-            ],
-            Cells = [new GfxCell { Bounds = bounds, ReflectionProbeCount = checked((byte)cellProbes.Length), ReflectionProbes = cellProbes }],
+            DpvsPlanes = partition.Planes,
+            CellTreeCounts = partition.Trees.Select(tree => new GfxCellTreeCount((uint)tree.AabbTrees.Count)).ToArray(),
+            CellTrees = partition.Trees,
+            Cells = partition.Cells,
             WorldDraw = new GfxWorldDraw
             {
                 ReflectionProbeCount = checked((uint)probes.Count),
@@ -244,14 +241,14 @@ internal static class BrushRenderCompiler
                 StaticSurfaceCount = surfaceCount,
                 LitSurfsEnd = surfaceCount,
                 VisibilityCounts = [surfaceCount, surfaceCount, surfaceCount, surfaceCount, surfaceCount, surfaceCount, 0, surfaceWords],
-                SortedSurfIndex = surfaceIndices,
+                SortedSurfIndex = partition.SortedSurfaces,
                 Surfaces = surfaces,
                 SurfaceBounds = surfaceBounds
             }
         };
     }
 
-    private static void MergeOceanDraws(MapRenderSurface[] polygons, int vertexCount,
+    private static void MergeCompatibleDraws(MapRenderSurface[] polygons, int vertexCount,
         ref GfxSurface[] surfaces, ref GfxSurfaceBounds[] bounds, ref List<ushort> indices, ref int[] models)
     {
         var merged = new List<GfxSurface>();
@@ -263,12 +260,18 @@ internal static class BrushRenderCompiler
             GfxSurface original = surfaces[first];
             bool displaced = polygons[first].Displacement > 0;
             int end = first + 1, vertices = original.Triangles.VertexCount, triangles = original.Triangles.TriCount;
-            while (displaced && end < surfaces.Length && polygons[end].Displacement > 0 &&
+            // Each distinct vertex base consumes a group in the bounded PS3 camera
+            // list. Batch adjacent opaque world faces after their lighting is baked.
+            bool opaqueWorld = models[first] == 0 && original.Material?.Info.SortKey is
+                MaterialSortKey.OpaqueAmbient or MaterialSortKey.Opaque;
+            int vertexLimit = displaced ? ushort.MaxValue : SrfTriangles.SoftwareTriangleCullVertexLimit;
+            while ((displaced || opaqueWorld) && end < surfaces.Length &&
+                   (polygons[end].Displacement > 0) == displaced &&
                    models[end] == models[first] && surfaces[end].Material == original.Material &&
                    surfaces[end].LightmapIndex == original.LightmapIndex && surfaces[end].ReflectionProbeIndex == original.ReflectionProbeIndex &&
                    surfaces[end].PrimaryLightIndex == original.PrimaryLightIndex && surfaces[end].Flags == original.Flags &&
                    surfaces[end].Triangles.BaseVertex == original.Triangles.BaseVertex + vertices &&
-                   vertices + surfaces[end].Triangles.VertexCount <= ushort.MaxValue &&
+                   vertices + surfaces[end].Triangles.VertexCount <= vertexLimit &&
                    (triangles + surfaces[end].Triangles.TriCount) * 3 <= ushort.MaxValue)
             {
                 vertices += surfaces[end].Triangles.VertexCount;

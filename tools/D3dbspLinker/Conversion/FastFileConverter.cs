@@ -447,7 +447,8 @@ internal static partial class FastFileConverter
         }
         D3dbspFile sourceBsp = D3dbspFile.Read(inputPath);
         cancellationToken.ThrowIfCancellationRequested();
-        IReadOnlyDictionary<string, string>[] dynamicEntities = sourceBsp.GetEntities()
+        var mapEntities = sourceBsp.GetEntities();
+        IReadOnlyDictionary<string, string>[] dynamicEntities = mapEntities
             .Where(entity => entity.GetValueOrDefault("classname") == RuntimePhysicsAuthoring.ClassName)
             .ToArray();
         DynEntityDef[] modelDefinitions = [];
@@ -471,7 +472,7 @@ internal static partial class FastFileConverter
             foreach (string name in glassDependencies.PhysPresets)
                 modelSources.LoadPhysPreset(name);
         }
-        IReadOnlyDictionary<string, string>? worldProperties = sourceBsp.GetEntities().FirstOrDefault(entity =>
+        IReadOnlyDictionary<string, string>? worldProperties = mapEntities.FirstOrDefault(entity =>
             entity.GetValueOrDefault("classname") == "worldspawn");
         MapFactionSettings factions = MapFactionAuthoring.Read(worldProperties ??
             new Dictionary<string, string>(StringComparer.Ordinal));
@@ -655,6 +656,10 @@ internal static partial class FastFileConverter
         static AssetKey LightingImageKey(string name) =>
             new(CanonicalAssetFamily.FromSerializedType(XAssetType.Image), name);
         string mapScriptName = assetName[..^".d3dbsp".Length] + ".gsc";
+        string? compassMaterial = worldOnly ? null : MapStartupScript.FindCompassMaterial(
+            Path.GetFileNameWithoutExtension(mapScriptName), assetLibraryDirectory, mapEntities);
+        if (compassMaterial is not null && !additionalMaterialNames.Contains(compassMaterial, StringComparer.Ordinal))
+            additionalMaterialNames = [.. additionalMaterialNames, compassMaterial];
         string mapFxScriptName = assetName[..^".d3dbsp".Length] + "_fx.gsc";
         string mapMovingLightsScriptName = assetName[..^".d3dbsp".Length] + "_lights.gsc";
         string mapFogScriptName = assetName[..^".d3dbsp".Length] + "_fog.gsc";
@@ -689,7 +694,7 @@ internal static partial class FastFileConverter
         RawFileAsset mapScript = rawFileOverrides.FirstOrDefault(rawFile =>
                 string.Equals(rawFile.Name, mapScriptName, StringComparison.Ordinal)) ??
             CreateMapScript(mapScriptName, waterScript, hasMapFxScript, hasMapMovingLightsScript,
-                hasMapFogScript, factions, destructiblePrecacheScripts);
+                hasMapFogScript, factions, destructiblePrecacheScripts, compassMaterial);
         if (destructiblePrecacheScripts.Length != 0 && rawFileOverrides.Contains(mapScript))
             Report("Destructible animations: the custom map script must call " +
                 string.Join(", ", destructiblePrecacheScripts.Select(name =>
@@ -1358,12 +1363,12 @@ internal static partial class FastFileConverter
 
     private static RawFileAsset CreateMapScript(string scriptName, RawFileAsset? waterScript,
         bool hasMapFxScript, bool hasMapMovingLightsScript, bool hasMapFogScript, MapFactionSettings factions,
-        IReadOnlyList<string> destructiblePrecacheScripts)
+        IReadOnlyList<string> destructiblePrecacheScripts, string? compassMaterial)
     {
         string? waterScriptName = waterScript is null ? null : waterScript.Name ??
             throw new InvalidDataException("Missing water script name.");
         string script = MapStartupScript.Create(scriptName, hasMapFxScript, hasMapMovingLightsScript,
-            hasMapFogScript, factions, destructiblePrecacheScripts, waterScriptName);
+            hasMapFogScript, factions, destructiblePrecacheScripts, waterScriptName, compassMaterial);
         byte[] content = Encoding.ASCII.GetBytes(script);
         return EncodeRawFile(scriptName, content, compress: false);
     }

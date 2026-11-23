@@ -17,6 +17,10 @@ public sealed partial class FastFileEditingSession
         }
     }
 
+    /// <summary>Menu sources may define target overrides for menus supplied by dependency fastfiles.</summary>
+    public string? ValidateNewAssetSourceName(XAssetType type, string? name) =>
+        ValidateNewAssetName(type, name, allowDependencyOverride: type is XAssetType.Menu or XAssetType.MenuFile);
+
     /// <summary>Finds the one editable owned row that may be explicitly replaced.</summary>
     public WorkspaceAssetCatalogEntry? FindAssetSourceReplacement(
         XAssetType type,

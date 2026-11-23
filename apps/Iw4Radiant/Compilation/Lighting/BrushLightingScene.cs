@@ -19,14 +19,19 @@ namespace Iw4Radiant.Compilation.Lighting;
 /// <summary>CPU sampling of authored world surfaces and sky images for the lighting bake.</summary>
 internal sealed class BrushLightingScene
 {
-    // Twelve hemisphere rays at each of four diffuse samples, plus sixteen
-    // sun visibility rays, give a 64-ray base direct-light budget per luxel.
+    // Twelve direct-sky hemisphere rays at each of four diffuse samples, plus
+    // sixteen sun visibility rays, give a 64-ray base direct-light budget per luxel.
     private const int SkySampleCount = 24;
+    // One-bounce color varies sharply with direction around large receivers.
+    // Keep direct sky and light-grid sampling at 24, but integrate bounce with
+    // 32 antipodal hemisphere pairs' worth of coverage (32 rays per normal).
+    private const int IndirectSampleCount = 64;
     private const int BounceLuxelStep = 4;
     private const float RayOffset = 0.0625f;
     private readonly MaterialSource[] _materials;
     private readonly ImageSourceMipLevel[] _images;
     private readonly Vector3[] _skyDirections;
+    private readonly Vector3[] _indirectDirections;
     private readonly (Vector3 Normal, Vector3 Anchor)[][] _solidBrushes;
     private readonly Vector3[] _lightGridNormals;
     private readonly float[] _lightGridSkyWeights;
@@ -254,19 +259,8 @@ internal sealed class BrushLightingScene
         _worldRays = new LightingRayHierarchy(polygons, cancellationToken);
         Minimum = minimum;
         Maximum = maximum;
-        _skyDirections = new Vector3[SkySampleCount];
-        int hemisphereCount = _skyDirections.Length / 2;
-        for (int index = 0; index < hemisphereCount; index++)
-        {
-            float z = 1 - (index + 0.5f) / hemisphereCount;
-            float angle = index * 2.39996323f;
-            float radius = MathF.Sqrt(1 - z * z);
-            Vector3 direction = new(MathF.Cos(angle) * radius, MathF.Sin(angle) * radius, z);
-            // Antipodal pairs limit every surface normal to twelve
-            // positive-cosine directions, including slopes and vertical walls.
-            _skyDirections[index * 2] = direction;
-            _skyDirections[index * 2 + 1] = -direction;
-        }
+        _skyDirections = CreateAntipodalDirections(SkySampleCount);
+        _indirectDirections = CreateAntipodalDirections(IndirectSampleCount);
         int lightGridSampleCount = GfxLightGridCodec.SampleDirections.Count;
         _lightGridNormals = new Vector3[lightGridSampleCount];
         _lightGridSkyWeights = new float[checked(_skyDirections.Length * lightGridSampleCount)];
@@ -298,6 +292,23 @@ internal sealed class BrushLightingScene
     internal bool IsSky(int face) => _materials[face].IsSky;
     internal bool IsWater(int face) => _materials[face].IsWater;
     internal bool HasPrimaryLocalLights => _localLights.Any(light => light.PrimaryIndex != 0);
+
+    private static Vector3[] CreateAntipodalDirections(int sampleCount)
+    {
+        var directions = new Vector3[sampleCount];
+        int hemisphereCount = directions.Length / 2;
+        for (int index = 0; index < hemisphereCount; index++)
+        {
+            float z = 1 - (index + 0.5f) / hemisphereCount;
+            float angle = index * 2.39996323f;
+            float radius = MathF.Sqrt(1 - z * z);
+            Vector3 direction = new(MathF.Cos(angle) * radius, MathF.Sin(angle) * radius, z);
+            // Antipodal pairs give every normal an equal-sized positive-cosine set.
+            directions[index * 2] = direction;
+            directions[index * 2 + 1] = -direction;
+        }
+        return directions;
+    }
 
     internal byte PrimaryLightForFace(int face)
     {
@@ -601,6 +612,7 @@ internal sealed class BrushLightingScene
             traversal is MetalRayTraversal metal &&
             TryBakeDirectSkySamples(points, normals, irradiance, count, sunIndex, metal, parallelOptions))
             return;
+        Vector3[] directions = indirectOnly ? _indirectDirections : _skyDirections;
         var offsets = ArrayPool<int>.Shared.Rent(count + 1);
         var masks = ArrayPool<ulong>.Shared.Rent(count);
         var rays = ArrayPool<GpuRayTraversal.Ray>.Shared.Rent(GpuRayTraversal.MaximumRayCount);
@@ -614,9 +626,9 @@ internal sealed class BrushLightingScene
                 if ((sample & 255) == 0) CancellationToken.ThrowIfCancellationRequested();
                 ulong mask = 0;
                 int activeCount = 0;
-                for (int direction = 0; direction < SkySampleCount; direction++)
+                for (int direction = 0; direction < directions.Length; direction++)
                 {
-                    float cosine = MathF.Max(0, Vector3.Dot(normals[sample], _skyDirections[direction]));
+                    float cosine = MathF.Max(0, Vector3.Dot(normals[sample], directions[direction]));
                     if (cosine > 0)
                     {
                         mask |= 1UL << direction;
@@ -675,9 +687,9 @@ internal sealed class BrushLightingScene
                 for (int sample = batchFirst; sample < batchLast; sample++)
                 {
                     Vector3 origin = points[sample] + normals[sample] * RayOffset;
-                    for (int direction = 0; direction < SkySampleCount; direction++)
+                    for (int direction = 0; direction < directions.Length; direction++)
                         if ((masks[sample] & (1UL << direction)) != 0)
-                            rays[ray++] = new(origin, _skyDirections[direction]);
+                            rays[ray++] = new(origin, directions[direction]);
                 }
                 return traversal.TrySubmit(rays.AsSpan(0, ray), shadow: false, CancellationToken);
             }
@@ -772,6 +784,7 @@ internal sealed class BrushLightingScene
     private Vector3 SampleDiffuseIrradiance(Vector3 point, Vector3 normal, ReadOnlySpan<RayHit> skyCandidates,
         bool indirectOnly, byte sunIndex)
     {
+        Vector3[] directions = indirectOnly ? _indirectDirections : _skyDirections;
         Vector3 sum = Vector3.Zero;
         float totalWeight = 0;
         float ambientScale = _stages.AmbientScale(sunIndex);
@@ -780,9 +793,9 @@ internal sealed class BrushLightingScene
         // that solid must not see sky through its culled exit faces.
         bool insideSolid = IsInsideSolid(origin, 0);
         int activeDirection = 0;
-        for (int directionIndex = 0; directionIndex < _skyDirections.Length; directionIndex++)
+        for (int directionIndex = 0; directionIndex < directions.Length; directionIndex++)
         {
-            Vector3 direction = _skyDirections[directionIndex];
+            Vector3 direction = directions[directionIndex];
             float cosine = MathF.Max(0, Vector3.Dot(normal, direction));
             if (cosine > 0)
             {

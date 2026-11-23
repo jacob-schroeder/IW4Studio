@@ -50,15 +50,14 @@ public sealed partial class MenuEditingCoordinator
 
         if (replaceRow is null)
         {
-            foreach (MenuDefAsset inlineMenu in materializedMenus)
-                RequireNewMenuName(inlineMenu);
             IAssetAuthoringAdapter adapter = definition is MenuDefAsset
                 ? new MenuAdapter()
                 : new MenuFileAdapter();
             WorkspaceAssetCatalogEntry added = _session.AddAsset(
                 definition,
                 adapter,
-                materializedMenus);
+                materializedMenus,
+                allowDependencyOverride: true);
             return (added, true);
         }
 
@@ -95,7 +94,10 @@ public sealed partial class MenuEditingCoordinator
             .Select(AssetKey.FromDefinition).Distinct().ToArray();
         foreach (MenuDefAsset inlineMenu in materializedMenus.Where(menu =>
                      !oldKeys.Contains(AssetKey.FromDefinition(menu))))
-            RequireNewMenuName(inlineMenu);
+        {
+            if (_session.ValidateNewAssetSourceName(XAssetType.Menu, inlineMenu.Window.Name) is { } error)
+                throw new InvalidDataException(error);
+        }
 
         AssetKey[] affectedKeys = oldKeys
             .Concat(materializedMenus.Select(AssetKey.FromDefinition))
@@ -117,12 +119,6 @@ public sealed partial class MenuEditingCoordinator
         RaiseChanged(MenuEditingCoordinatorChangeKind.MenuFileEdited,
             identity, normalizedMenuName: null, resolution: null);
         return (entry, true);
-    }
-
-    private void RequireNewMenuName(MenuDefAsset menu)
-    {
-        if (_session.ValidateNewAssetName(XAssetType.Menu, menu.Window.Name) is { } error)
-            throw new InvalidDataException(error);
     }
 
     private void RequireEquivalentExternalDefinitions(

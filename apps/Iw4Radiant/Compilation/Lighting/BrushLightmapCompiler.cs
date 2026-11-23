@@ -29,7 +29,7 @@ internal static class BrushLightmapCompiler
         var faceLayouts = new List<FaceLayout>();
         var faceUvs = new Vector2[scene.Polygons.Count][];
         var faceIndices = new byte[scene.Polygons.Count];
-        float[] luxelSizes = ChooseLuxelSizes(scene, out long totalLuxels);
+        float[] luxelSizes = ChooseLuxelSizes(scene, out AtlasPlacement?[] placements, out long totalLuxels);
         progress?.Report($"Direct lighting: 0/{totalLuxels} luxels completed.");
         long directLuxels = 0;
         int directBucket = 0;
@@ -42,8 +42,7 @@ internal static class BrushLightmapCompiler
             MaxDegreeOfParallelism = Environment.ProcessorCount > 2
                 ? Environment.ProcessorCount - 1 : Environment.ProcessorCount
         };
-        int reservedRows = scene.HasPrimaryLocalLights ? 1 : 0;
-        int cursorX = 0, cursorY = reservedRows, rowHeight = 0;
+        int cursorX, cursorY;
         for (int faceIndex = 0; faceIndex < scene.Polygons.Count; faceIndex++)
         {
             scene.CancellationToken.ThrowIfCancellationRequested();
@@ -63,24 +62,20 @@ internal static class BrushLightmapCompiler
             Vector3 vAxis = Vector3.Normalize(Vector3.Cross(normal, uAxis));
             var (coordinates, minimum, maximum) = Project(polygon);
             float luxelSize = luxelSizes[faceIndex];
-            int width = TileLength(maximum.X - minimum.X, luxelSize);
-            int height = TileLength(maximum.Y - minimum.Y, luxelSize);
-            if (cursorX + width > GfxLightmapCodec.SecondaryWidth)
-            {
-                cursorX = 0;
-                cursorY += rowHeight;
-                rowHeight = 0;
-            }
-            if (cursorY + height > GfxLightmapCodec.SecondaryPlaneHeight)
+            AtlasPlacement placement = placements[faceIndex] ??
+                throw new InvalidOperationException($"Lightmap layout missing for face {faceIndex}.");
+            int width = placement.Width;
+            int height = placement.Height;
+            if (placement.Page != rawPages.Count)
             {
                 Flush();
                 primary = new byte[primary.Length];
                 secondary = new byte[secondary.Length];
-                cursorX = rowHeight = 0;
-                cursorY = reservedRows;
             }
-            faceIndices[faceIndex] = checked((byte)rawPages.Count);
-            var layout = new FaceLayout(rawPages.Count, cursorX, cursorY, width, height,
+            cursorX = placement.X;
+            cursorY = placement.Y + (scene.HasPrimaryLocalLights ? 1 : 0);
+            faceIndices[faceIndex] = checked((byte)placement.Page);
+            var layout = new FaceLayout(placement.Page, cursorX, cursorY, width, height,
                 polygon, anchor, uAxis, vAxis, minimum, luxelSize);
             faceLayouts.Add(layout);
             // The cache starts at the padded tile origin, using this compiler's border width.
@@ -155,9 +150,6 @@ internal static class BrushLightmapCompiler
                     ArrayPool<Vector3>.Shared.Return(points);
                 }
             }
-            cursorX += width;
-            rowHeight = Math.Max(rowHeight, height);
-
             void BakeRow(int y, Vector3[]? baked, float[]? bakedSun, int firstRow)
             {
                 scene.CancellationToken.ThrowIfCancellationRequested();
@@ -336,7 +328,10 @@ internal static class BrushLightmapCompiler
         }
     }
 
-    private static float[] ChooseLuxelSizes(BrushLightingScene scene, out long totalLuxels)
+    private readonly record struct AtlasPlacement(int Page, int X, int Y, int Width, int Height);
+
+    private static float[] ChooseLuxelSizes(BrushLightingScene scene, out AtlasPlacement?[] placements,
+        out long totalLuxels)
     {
         // Keep authored terrain density and the automatic 4-unit brush baseline where possible.
         // Oversized individual faces are locally coarsened by AtlasCount; only then do automatic
@@ -393,7 +388,9 @@ internal static class BrushLightmapCompiler
         }
 
         var result = new float[scene.Polygons.Count];
-        _ = AtlasCount(scene, spans, brushUpper, authoredScale, result);
+        placements = PlanAtlas(scene, spans, brushUpper, authoredScale, result);
+        if (CountPages(placements) > LightmapLimit)
+            throw new NotSupportedException("The baked world exceeds the 31-lightmap v22 limit after atlas placement.");
         totalLuxels = 0;
         for (int faceIndex = 0; faceIndex < result.Length; faceIndex++)
         {
@@ -431,9 +428,14 @@ internal static class BrushLightmapCompiler
     private static int AtlasCount(BrushLightingScene scene, Vector2[] spans, float brushScale, float authoredScale,
         float[]? luxelSizes)
     {
-        int reservedRows = scene.HasPrimaryLocalLights ? 1 : 0;
-        int usableHeight = GfxLightmapCodec.SecondaryPlaneHeight - reservedRows;
-        int count = 1, cursorX = 0, cursorY = reservedRows, rowHeight = 0;
+        return CountPages(PlanAtlas(scene, spans, brushScale, authoredScale, luxelSizes));
+    }
+
+    private static AtlasPlacement?[] PlanAtlas(BrushLightingScene scene, Vector2[] spans,
+        float brushScale, float authoredScale, float[]? luxelSizes)
+    {
+        var tiles = new AtlasPlacement?[scene.Polygons.Count];
+        int usableHeight = GfxLightmapCodec.SecondaryPlaneHeight - (scene.HasPrimaryLocalLights ? 1 : 0);
         for (int faceIndex = 0; faceIndex < scene.Polygons.Count; faceIndex++)
         {
             if (scene.IsSky(faceIndex) || scene.IsWater(faceIndex)) continue;
@@ -448,24 +450,97 @@ internal static class BrushLightmapCompiler
                    TileLength(spans[faceIndex].Y, luxelSize) > usableHeight)
                 luxelSize = MathF.BitIncrement(luxelSize);
             if (luxelSizes is not null) luxelSizes[faceIndex] = luxelSize;
-            int width = TileLength(spans[faceIndex].X, luxelSize);
-            int height = TileLength(spans[faceIndex].Y, luxelSize);
+            tiles[faceIndex] = new AtlasPlacement(0, 0, 0, TileLength(spans[faceIndex].X, luxelSize),
+                TileLength(spans[faceIndex].Y, luxelSize));
+        }
+
+        return PackTiles(tiles, usableHeight);
+    }
+
+    private static AtlasPlacement?[] PackTiles(AtlasPlacement?[] tiles, int usableHeight)
+    {
+        AtlasPlacement?[] shelf = PackShelf(tiles, usableHeight);
+        if (CountPages(shelf) <= LightmapLimit) return shelf;
+        return PackSkyline(tiles, usableHeight);
+    }
+
+    private static AtlasPlacement?[] PackShelf(AtlasPlacement?[] tiles, int usableHeight)
+    {
+        var result = new AtlasPlacement?[tiles.Length];
+        int page = 0, cursorX = 0, cursorY = 0, rowHeight = 0;
+        for (int i = 0; i < tiles.Length; i++)
+        {
+            if (tiles[i] is not { } tile) continue;
+            int width = tile.Width, height = tile.Height;
             if (cursorX + width > GfxLightmapCodec.SecondaryWidth)
             {
                 cursorX = 0;
                 cursorY += rowHeight;
                 rowHeight = 0;
             }
-            if (cursorY + height > GfxLightmapCodec.SecondaryPlaneHeight)
+            if (cursorY + height > usableHeight)
             {
-                count++;
-                cursorX = rowHeight = 0;
-                cursorY = reservedRows;
+                page++;
+                cursorX = cursorY = rowHeight = 0;
             }
+            result[i] = new AtlasPlacement(page, cursorX, cursorY, width, height);
             cursorX += width;
             rowHeight = Math.Max(rowHeight, height);
         }
-        return count;
+        return result;
+    }
+
+    private static AtlasPlacement?[] PackSkyline(AtlasPlacement?[] tiles, int usableHeight)
+    {
+        var result = new AtlasPlacement?[tiles.Length];
+        int page = 0;
+        var heights = new int[GfxLightmapCodec.SecondaryWidth];
+        var deque = new int[GfxLightmapCodec.SecondaryWidth];
+        for (int i = 0; i < tiles.Length; i++)
+        {
+            if (tiles[i] is not { } tile) continue;
+            int bestX = -1, bestY = int.MaxValue;
+            int head = 0, tail = 0;
+            for (int column = 0; column < tile.Width; column++)
+            {
+                while (tail > head && heights[deque[tail - 1]] <= heights[column]) tail--;
+                deque[tail++] = column;
+            }
+            for (int x = 0; x <= GfxLightmapCodec.SecondaryWidth - tile.Width; x++)
+            {
+                while (head < tail && deque[head] < x) head++;
+                int y = heights[deque[head]];
+                if (y + tile.Height <= usableHeight && y < bestY)
+                {
+                    bestX = x;
+                    bestY = y;
+                    if (y == 0) break;
+                }
+                int next = x + tile.Width;
+                if (next < GfxLightmapCodec.SecondaryWidth)
+                {
+                    while (tail > head && heights[deque[tail - 1]] <= heights[next]) tail--;
+                    deque[tail++] = next;
+                }
+            }
+            if (bestX < 0)
+            {
+                page++;
+                Array.Clear(heights);
+                bestX = bestY = 0;
+            }
+            result[i] = new AtlasPlacement(page, bestX, bestY, tile.Width, tile.Height);
+            for (int column = bestX; column < bestX + tile.Width; column++) heights[column] = bestY + tile.Height;
+        }
+        return result;
+    }
+
+    private static int CountPages(AtlasPlacement?[] placements)
+    {
+        int count = 0;
+        foreach (AtlasPlacement? placement in placements)
+            if (placement is { } tile) count = Math.Max(count, tile.Page + 1);
+        return Math.Max(count, 1);
     }
 
     private static int TileLength(float span, float luxelSize) =>

@@ -1,6 +1,25 @@
 using MapConverter.CommandLine;
 using MapConverter.Game.IW3.PC.Conversion;
 using MapConverter.Game.IW3.PS3.Conversion;
+using MapConverter.Game.IW4.Xbox.Conversion;
+
+if (args is ["to-xbox360", string source, string imageTable, string destination])
+{
+    try
+    {
+        return XboxMapConverter.Convert(source, imageTable, destination);
+    }
+    catch (Exception exception) when (exception is
+        ArgumentException or
+        InvalidDataException or
+        NotSupportedException or
+        IOException or
+        UnauthorizedAccessException)
+    {
+        Console.Error.WriteLine($"error: {exception.Message}");
+        return 1;
+    }
+}
 
 CommandLineParseResult parse = CommandLineParser.Parse(args);
 if (parse.HelpRequested)

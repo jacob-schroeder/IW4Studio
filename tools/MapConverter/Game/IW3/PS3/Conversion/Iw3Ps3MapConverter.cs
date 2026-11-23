@@ -10,6 +10,7 @@ using IW4.Game.Assets.FxMap;
 using IW4.Game.Assets.Fx;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Assets.Image;
+using IW4.Game.Assets.Material;
 using IW4.Game.Assets.RawFile;
 using IW4.Game.Assets.MapEnts;
 using IW4.Game.Assets.Sound;
@@ -163,7 +164,7 @@ internal static class Iw3Ps3MapConverter
         RawFileAsset[] scripts = Iw3Ps3RawFileCompiler.Compile(definitions.OfType<RawFileAsset>().ToArray(), prefix,
             definitions.OfType<FxEffectDefAsset>().Select(Name).ToHashSet(StringComparer.Ordinal),
             definitions.OfType<XModelAsset>().Select(Name).ToHashSet(StringComparer.Ordinal),
-            definitions.OfType<IW4.Game.Assets.Material.MaterialAsset>().Select(Name).ToHashSet(StringComparer.Ordinal),
+            definitions.OfType<MaterialAsset>().Select(Name).ToHashSet(StringComparer.Ordinal),
             definitions.OfType<SoundAliasListAsset>().Select(Name).ToHashSet(StringComparer.Ordinal),
             splitStaticModelNames, options.Factions);
         definitions.RemoveAll(asset => asset is RawFileAsset);

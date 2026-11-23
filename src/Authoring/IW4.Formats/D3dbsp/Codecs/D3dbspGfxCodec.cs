@@ -457,8 +457,10 @@ internal static partial class D3dbspGfxCodec
                 ref surfaceBounds,
                 ref outputIndices);
         }
-        else if (hasNativeLayers && useSourceMaterials)
+        else if (useSourceMaterials && (!hasRenderSpatial || hasNativeLayers))
         {
+            // Canonical brush maps use the standard layer stream. Their adjacent
+            // compatible surfaces can share a base just like extended-layer draws.
             ShareStaticWorldDrawBases(
                 staticSurfaceStart, staticSurfaceCount, baseLayerSize, surfaces, outputIndices);
         }

@@ -107,7 +107,7 @@ public static class GfxImagePixelLayout
         int height,
         int bytesPerPixel)
     {
-        ValidatePixelBuffer(source, width, height, bytesPerPixel);
+        ValidatePixelBuffer(source, width, height, 1, bytesPerPixel);
         var result = new byte[source.Length];
         int log2Width = System.Numerics.BitOperations.Log2((uint)width);
         int log2Height = System.Numerics.BitOperations.Log2((uint)height);
@@ -115,7 +115,7 @@ public static class GfxImagePixelLayout
         {
             for (int x = 0; x < width; x++)
             {
-                int sourcePixel = MortonIndex2D(x, y, log2Width, log2Height);
+                int sourcePixel = MortonIndex(x, y, 0, log2Width, log2Height, 0);
                 int destinationPixel = checked(y * width + x);
                 source.Slice(
                         checked(sourcePixel * bytesPerPixel),
@@ -134,37 +134,42 @@ public static class GfxImagePixelLayout
         int height,
         int bytesPerPixel)
     {
-        ValidatePixelBuffer(source, width, height, bytesPerPixel);
         var result = new byte[source.Length];
+        SwizzleMorton(source, result, width, height, 1, bytesPerPixel);
+        return result;
+    }
+
+    internal static void SwizzleMorton(ReadOnlySpan<byte> source, Span<byte> destination,
+        int width, int height, int depth, int bytesPerPixel)
+    {
+        ValidatePixelBuffer(source, width, height, depth, bytesPerPixel);
+        if (destination.Length != source.Length)
+            throw new ArgumentException("Morton source and destination sizes must match.", nameof(destination));
         int log2Width = System.Numerics.BitOperations.Log2((uint)width);
         int log2Height = System.Numerics.BitOperations.Log2((uint)height);
+        int log2Depth = System.Numerics.BitOperations.Log2((uint)depth);
+        for (int z = 0; z < depth; z++)
         for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
         {
-            for (int x = 0; x < width; x++)
-            {
-                int sourcePixel = checked(y * width + x);
-                int destinationPixel = MortonIndex2D(x, y, log2Width, log2Height);
-                source.Slice(
-                        checked(sourcePixel * bytesPerPixel),
-                        bytesPerPixel)
-                    .CopyTo(result.AsSpan(
-                        checked(destinationPixel * bytesPerPixel),
-                        bytesPerPixel));
-            }
+            int sourcePixel = (z * height + y) * width + x;
+            int destinationPixel = MortonIndex(x, y, z, log2Width, log2Height, log2Depth);
+            source.Slice(sourcePixel * bytesPerPixel, bytesPerPixel)
+                .CopyTo(destination.Slice(destinationPixel * bytesPerPixel, bytesPerPixel));
         }
-        return result;
     }
 
     private static void ValidatePixelBuffer(
         ReadOnlySpan<byte> source,
         int width,
         int height,
+        int depth,
         int bytesPerPixel)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bytesPerPixel);
-        if (!IsPowerOfTwo(width) || !IsPowerOfTwo(height))
+        if (!IsPowerOfTwo(width) || !IsPowerOfTwo(height) || !IsPowerOfTwo(depth))
             throw new NotSupportedException("Morton image conversion requires power-of-two dimensions.");
-        int required = checked(width * height * bytesPerPixel);
+        int required = checked(width * height * depth * bytesPerPixel);
         if (source.Length != required)
         {
             throw new InvalidDataException(
@@ -172,15 +177,13 @@ public static class GfxImagePixelLayout
         }
     }
 
-    private static int MortonIndex2D(
-        int x,
-        int y,
-        int log2Width,
-        int log2Height)
+    private static int MortonIndex(
+        int x, int y, int z,
+        int log2Width, int log2Height, int log2Depth)
     {
         int index = 0;
         int outputBit = 0;
-        while (log2Width > 0 || log2Height > 0)
+        while (log2Width > 0 || log2Height > 0 || log2Depth > 0)
         {
             if (log2Width > 0)
             {
@@ -193,6 +196,12 @@ public static class GfxImagePixelLayout
                 index |= (y & 1) << outputBit++;
                 y >>= 1;
                 log2Height--;
+            }
+            if (log2Depth > 0)
+            {
+                index |= (z & 1) << outputBit++;
+                z >>= 1;
+                log2Depth--;
             }
         }
         return index;

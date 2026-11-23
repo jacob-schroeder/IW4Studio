@@ -9,6 +9,7 @@ internal static class CommandLineParser
     internal const string HelpText =
         """
         Usage:
+          mapconverter to-xbox360 <ps3-map.ff> <imagefile7.tsv> <xbox-map.ff>
           mapconverter --game iw3 --platform ps3 --map <path> --load <path> --source-fastfiles <directory> --imagefile-index -1 --output <directory>
           mapconverter --game iw3 --platform pc --map <path> --load <path> [--iwd <path>] [--source-fastfiles <directory>] [--source-library <directory>] [--allow-missing-sounds] [--imagefile-index <-1|1-20>] --output <directory>
           mapconverter --game iw3 --platform pc --map <path> --world-template <iw4.ff> [--bootstrap-fastfile <iw4.ff>] --output <directory>

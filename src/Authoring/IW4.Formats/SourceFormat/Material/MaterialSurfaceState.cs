@@ -53,7 +53,7 @@ public sealed record MaterialSurfaceState(GfxBlendOperation BlendOperation, GfxB
             state.GetProperty("depthWrite").GetBoolean() && Field("depthTest") != "disabled", material.GetProperty("sortKey").GetInt32())
         {
             TechniqueType = technique,
-            IgnoresVertexColor = material.GetProperty("techniqueSet").GetString()?.StartsWith("w_", StringComparison.Ordinal) == true,
+            IgnoresVertexColor = Path.GetFileName(material.GetProperty("techniqueSet").GetString())?.StartsWith("w_", StringComparison.Ordinal) == true,
             HasShadowMapTechnique = shadow.HasValue,
             ShadowCullFace = shadow is { } shadowState ? ReadCullFace(shadowState.GetProperty("cullFace").GetString() ?? "") : GfxCullFace.None,
             ShadowAlphaTest = shadow is { } alphaState ? ReadAlphaTest(alphaState.GetProperty("alphaTest").GetString() ?? "") : null,

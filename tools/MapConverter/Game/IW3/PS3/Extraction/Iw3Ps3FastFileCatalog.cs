@@ -3,6 +3,8 @@ using System.Text;
 using MapConverter.Game.IW3.PS3.Rules;
 using System.Text.Json;
 using IW4.Game.Assets;
+using IW4.Game.Assets.ColMap;
+using IW4.Game.Assets.MapEnts;
 using IW4.Game.Assets.Physics;
 using IW4.Game.Assets.RawFile;
 using IW4.Game.Assets.Image;
@@ -391,7 +393,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                     // After collision, traverse later roots to reach native FX
                     // and sound, but only FX and rawfile roots create definitions.
                     bool stopAtSourceOnlyRoot = selectedMapAssets &&
-                        _definitions.Any(asset => asset is IW4.Game.Assets.ColMap.ClipMapAsset);
+                        _definitions.Any(asset => asset is ClipMapAsset);
                     bool previousConversion = _converting;
                     try
                     {
@@ -461,7 +463,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                 return new Catalog { Assets = _assets.ToArray(), SkippedAssetTypes = [] };
             if (selectedMapAssets)
             {
-                if (!_definitions.Any(asset => asset is IW4.Game.Assets.ColMap.ClipMapAsset))
+                if (!_definitions.Any(asset => asset is ClipMapAsset))
                     throw Invalid("source map has no collision world");
                 return new Catalog { Assets = _assets.ToArray(), SkippedAssetTypes = [] };
             }
@@ -536,7 +538,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                 Dependencies = edges, References = [], StreamedSounds = []
             };
             _assets.Add(asset);
-            if (_converting && value is BaseAsset definition && definition is not IW4.Game.Assets.MapEnts.MapEntsAsset)
+            if (_converting && value is BaseAsset definition && definition is not MapEntsAsset)
                 _definitions.Add(definition);
             return new Pointer(type, region, [asset.Id], value);
         }
