@@ -51,7 +51,7 @@ public sealed class XAnimNativeExchangeTests
         Assert.Equal(Enumerable.Range(1, 10).Select(i => (byte)i), asset.BoneCounts);
         Assert.Equal((byte)2, asset.BoneNameCount);
         Assert.Equal((byte)1, asset.NotifyCount);
-        Assert.Equal((byte)3, asset.AssetType);
+        Assert.Equal((XAnimAssetType)3, asset.AssetType);
         Assert.Equal((byte)171, asset.Pad1F);
         Assert.Equal(30f, asset.Framerate);
         Assert.Equal(0.5f, asset.Frequency);
