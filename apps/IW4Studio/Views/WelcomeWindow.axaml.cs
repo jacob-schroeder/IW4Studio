@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -18,6 +19,7 @@ public sealed partial class WelcomeWindow : Window
     private readonly DispatcherTimer _progressTimer;
     private readonly object _progressSync = new();
     private XAssetLoadProgress? _pendingProgress;
+    private Button? _modeSource;
     private bool _isClosing;
 
     public WelcomeWindow()
@@ -36,6 +38,8 @@ public sealed partial class WelcomeWindow : Window
         Icon = AppIcon.Create();
         DataContext = _viewModel;
         _viewModel.SetRecentFiles(_settingsStore.LoadRecentFastFiles());
+        Height = (_viewModel.HasRecentFiles ? 510 : 354) +
+                 (OperatingSystem.IsMacOS() ? 0 : 30);
         _progressTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(80)
@@ -53,18 +57,24 @@ public sealed partial class WelcomeWindow : Window
     internal void SetThemeMode(ThemeMode mode)
         => ThemeMenuSelection.Set(this, WindowMenu, mode);
 
-    private async void BrowseButton_Click(object? sender, RoutedEventArgs e)
+    private async void OpenFastFileButton_Click(object? sender, RoutedEventArgs e)
     {
-        string? selectedPath = await SelectFastFileAsync();
+        if (_isClosing || !_viewModel.TryBeginPicker())
+            return;
+
+        string? selectedPath;
+        try
+        {
+            selectedPath = await SelectFastFileAsync();
+        }
+        finally
+        {
+            _viewModel.EndPicker();
+        }
+
         if (!_isClosing && selectedPath is not null)
-            _viewModel.SelectedPath = selectedPath;
+            ShowModeChoice(selectedPath, sender as Button);
     }
-
-    private async void LoadSingleButton_Click(object? sender, RoutedEventArgs e) =>
-        await OpenWorkspaceAsync(withDependencies: false);
-
-    private async void LoadDependenciesButton_Click(object? sender, RoutedEventArgs e) =>
-        await OpenWorkspaceAsync(withDependencies: true);
 
     private async void CreateNewButton_Click(object? sender, RoutedEventArgs e) =>
         await CreateNewFastFileAsync();
@@ -72,11 +82,61 @@ public sealed partial class WelcomeWindow : Window
     private void RecentFileButton_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: string path })
-            _viewModel.SelectedPath = path;
+            ShowModeChoice(path, (Button)sender);
+    }
+
+    private void ShowModeChoice(string path, Button? source)
+    {
+        if (_isClosing || !_viewModel.TryChooseMode(path))
+            return;
+
+        _modeSource = source;
+        DependencyModeRadio.IsChecked = true;
+        DependencyModeRadio.Focus();
+    }
+
+    private async void ConfirmOpenButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_isClosing || !_viewModel.IsChoosingMode)
+            return;
+
+        string path = _viewModel.SelectedPath;
+        bool withDependencies = DependencyModeRadio.IsChecked == true;
+        _modeSource = null;
+        _viewModel.EndChoosingMode();
+        await OpenWorkspaceAsync(path, withDependencies);
+    }
+
+    private void CancelOpenButton_Click(object? sender, RoutedEventArgs e)
+        => CancelModeChoice();
+
+    private void CancelModeChoice()
+    {
+        if (!_viewModel.IsChoosingMode)
+            return;
+
+        _viewModel.EndChoosingMode();
+        _modeSource?.Focus();
+        _modeSource = null;
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (_viewModel.IsChoosingMode && e.Key == Key.Escape)
+        {
+            CancelModeChoice();
+            e.Handled = true;
+            return;
+        }
+
+        base.OnKeyDown(e);
     }
 
     private void ExecuteMenuAction(StudioMenuAction action)
     {
+        if (_isClosing || !_viewModel.CanInteract)
+            return;
+
         switch (action)
         {
             case StudioMenuAction.ShowAbout:
@@ -190,15 +250,22 @@ public sealed partial class WelcomeWindow : Window
 
     private async Task CreateNewFastFileAsync()
     {
-        if (_viewModel.IsBusy)
+        if (_isClosing || !_viewModel.TryBeginPicker())
             return;
 
-        string? destination = await SelectNewFastFileDestinationAsync();
+        string? destination;
+        try
+        {
+            destination = await SelectNewFastFileDestinationAsync();
+        }
+        finally
+        {
+            _viewModel.EndPicker();
+        }
         if (_isClosing || destination is null)
             return;
 
         destination = Path.GetFullPath(destination);
-        _viewModel.SelectedPath = destination;
         _viewModel.BeginCreate();
         lock (_progressSync)
             _pendingProgress = null;
@@ -267,33 +334,21 @@ public sealed partial class WelcomeWindow : Window
         }
     }
 
-    private async Task OpenWorkspaceAsync(bool withDependencies)
+    private async Task OpenWorkspaceAsync(string selectedPath, bool withDependencies)
     {
-        if (_viewModel.IsBusy)
+        if (_isClosing || _viewModel.IsBusy)
             return;
-
-        string selectedPath = _viewModel.SelectedPath.Trim();
-        if (string.IsNullOrWhiteSpace(selectedPath))
-        {
-            string? pickedPath = await SelectFastFileAsync();
-            if (_isClosing || pickedPath is null)
-                return;
-
-            selectedPath = pickedPath;
-            _viewModel.SelectedPath = pickedPath;
-        }
 
         if (!File.Exists(selectedPath))
         {
             _viewModel.FailLoad(
                 new FileNotFoundException(
-                    "Select an existing fastfile before loading.",
+                    $"The selected fastfile was not found: {selectedPath}",
                     selectedPath));
             return;
         }
 
         selectedPath = Path.GetFullPath(selectedPath);
-        _viewModel.SelectedPath = selectedPath;
         _viewModel.BeginLoad(withDependencies);
         lock (_progressSync)
             _pendingProgress = null;

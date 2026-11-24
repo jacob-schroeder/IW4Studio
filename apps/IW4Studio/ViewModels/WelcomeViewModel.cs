@@ -6,9 +6,10 @@ namespace IW4.Studio.Desktop.ViewModels;
 public sealed class WelcomeViewModel : ObservableObject
 {
     private string _selectedPath = string.Empty;
-    private string _statusText = "Choose an IW4 fastfile to begin.";
+    private string _statusText = string.Empty;
     private string _errorMessage = string.Empty;
     private bool _isBusy;
+    private bool _isPickingFile;
     private bool _hasError;
 
     public string DesktopVersionLabel => AssemblyConst.AssemblyVersion;
@@ -21,22 +22,15 @@ public sealed class WelcomeViewModel : ObservableObject
     public string SelectedPath
     {
         get => _selectedPath;
-        set
+        private set
         {
             if (!SetProperty(ref _selectedPath, value))
                 return;
 
             OnPropertyChanged(nameof(SelectedFileName));
             OnPropertyChanged(nameof(SelectedDirectory));
-            OnPropertyChanged(nameof(HasSelection));
-            OnPropertyChanged(nameof(CanLoad));
-            ClearError();
-            if (!IsBusy)
-            {
-                StatusText = HasSelection
-                    ? $"{SelectedFileName} is ready to open."
-                    : "Choose an IW4 fastfile to begin.";
-            }
+            OnPropertyChanged(nameof(IsChoosingMode));
+            OnPropertyChanged(nameof(CanInteract));
         }
     }
 
@@ -48,8 +42,6 @@ public sealed class WelcomeViewModel : ObservableObject
         ? "Select a fastfile"
         : Path.GetDirectoryName(SelectedPath) ?? SelectedPath;
 
-    public bool HasSelection => !string.IsNullOrWhiteSpace(SelectedPath);
-
     public bool IsBusy
     {
         get => _isBusy;
@@ -58,17 +50,13 @@ public sealed class WelcomeViewModel : ObservableObject
             if (!SetProperty(ref _isBusy, value))
                 return;
 
-            OnPropertyChanged(nameof(CanLoad));
-            OnPropertyChanged(nameof(CanBrowse));
-            OnPropertyChanged(nameof(CanCreate));
+            OnPropertyChanged(nameof(CanInteract));
         }
     }
 
-    public bool CanLoad => HasSelection && !IsBusy;
+    public bool IsChoosingMode => !string.IsNullOrEmpty(SelectedPath);
 
-    public bool CanBrowse => !IsBusy;
-
-    public bool CanCreate => !IsBusy;
+    public bool CanInteract => !IsBusy && !_isPickingFile && !IsChoosingMode;
 
     public bool HasError
     {
@@ -87,6 +75,36 @@ public sealed class WelcomeViewModel : ObservableObject
         get => _statusText;
         private set => SetProperty(ref _statusText, value);
     }
+
+    public bool TryBeginPicker()
+    {
+        if (!CanInteract)
+            return false;
+
+        _isPickingFile = true;
+        OnPropertyChanged(nameof(CanInteract));
+        ClearError();
+        return true;
+    }
+
+    public void EndPicker()
+    {
+        _isPickingFile = false;
+        OnPropertyChanged(nameof(CanInteract));
+    }
+
+    public bool TryChooseMode(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (!CanInteract)
+            return false;
+
+        ClearError();
+        SelectedPath = path;
+        return true;
+    }
+
+    public void EndChoosingMode() => SelectedPath = string.Empty;
 
     public void BeginLoad(bool withDependencies)
     {

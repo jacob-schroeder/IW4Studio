@@ -25,16 +25,24 @@ public sealed class FastFileDetailsToolViewModel : ObservableObject
     ];
 
     private readonly FastFileEditingSession _editingSession;
+    private readonly Action _showStreamedImages;
     private HeaderDraft? _baseline;
     private bool _allowOnlineUpdate;
     private string _fileCreationTimeUtc = string.Empty;
+    private DateTimeOffset? _pickerDateUtc;
+    private TimeSpan? _pickerTimeUtc;
+    private bool _updatingPickers;
     private string _errorMessage = string.Empty;
     private string _statusMessage = string.Empty;
 
-    public FastFileDetailsToolViewModel(FastFileEditingSession editingSession)
+    public FastFileDetailsToolViewModel(
+        FastFileEditingSession editingSession,
+        Action showStreamedImages)
     {
         _editingSession = editingSession ??
             throw new ArgumentNullException(nameof(editingSession));
+        _showStreamedImages = showStreamedImages ??
+            throw new ArgumentNullException(nameof(showStreamedImages));
         FastFileWorkspace workspace = editingSession.Workspace;
         FileName = Path.GetFileName(workspace.SourcePath);
         StreamedImageCount = workspace.LoadedZone.Header.EntryCount.ToString(
@@ -49,6 +57,7 @@ public sealed class FastFileDetailsToolViewModel : ObservableObject
             .ToArray();
         ApplyCommand = new ViewModelCommand(Apply, () => HasDraftChanges);
         RevertCommand = new ViewModelCommand(Revert, () => HasDraftChanges);
+        ShowStreamedImagesCommand = new ViewModelCommand(_showStreamedImages);
         LoadDraftFromSession();
     }
 
@@ -81,7 +90,31 @@ public sealed class FastFileDetailsToolViewModel : ObservableObject
         set
         {
             if (SetProperty(ref _fileCreationTimeUtc, value ?? string.Empty))
+            {
+                if (!_updatingPickers)
+                    SyncPickersFromText();
                 DraftChanged();
+            }
+        }
+    }
+
+    public DateTimeOffset? PickerDateUtc
+    {
+        get => _pickerDateUtc;
+        set
+        {
+            if (SetProperty(ref _pickerDateUtc, value) && !_updatingPickers)
+                UpdateFileTimeFromPickers();
+        }
+    }
+
+    public TimeSpan? PickerTimeUtc
+    {
+        get => _pickerTimeUtc;
+        set
+        {
+            if (SetProperty(ref _pickerTimeUtc, value) && !_updatingPickers)
+                UpdateFileTimeFromPickers();
         }
     }
 
@@ -119,6 +152,8 @@ public sealed class FastFileDetailsToolViewModel : ObservableObject
     public ViewModelCommand ApplyCommand { get; }
 
     public ViewModelCommand RevertCommand { get; }
+
+    public ViewModelCommand ShowStreamedImagesCommand { get; }
 
     internal void RefreshAfterSave()
     {
@@ -251,11 +286,71 @@ public sealed class FastFileDetailsToolViewModel : ObservableObject
         StatusMessage = string.Empty;
     }
 
+    private void SyncPickersFromText()
+    {
+        _updatingPickers = true;
+        try
+        {
+            if (TryParseFileCreationTime(FileCreationTimeUtc, out ulong raw) &&
+                TryGetFileCreationDate(raw, out DateTime utc))
+            {
+                PickerDateUtc = new DateTimeOffset(utc);
+                PickerTimeUtc = utc.TimeOfDay;
+            }
+            else
+            {
+                PickerDateUtc = null;
+                PickerTimeUtc = null;
+            }
+        }
+        finally
+        {
+            _updatingPickers = false;
+        }
+    }
+
+    private void UpdateFileTimeFromPickers()
+    {
+        if (PickerDateUtc is not { } date)
+            return;
+
+        TimeSpan time = PickerTimeUtc ?? TimeSpan.Zero;
+        long subMinuteTicks = 0;
+        if (TryParseFileCreationTime(FileCreationTimeUtc, out ulong raw) &&
+            TryGetFileCreationDate(raw, out DateTime current))
+        {
+            subMinuteTicks = current.TimeOfDay.Ticks % TimeSpan.TicksPerMinute;
+        }
+
+        DateTime utc = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc)
+            .AddHours(time.Hours)
+            .AddMinutes(time.Minutes)
+            .AddTicks(subMinuteTicks);
+        _updatingPickers = true;
+        try
+        {
+            FileCreationTimeUtc = utc.ToString(FileTimeFormat, CultureInfo.InvariantCulture);
+        }
+        finally
+        {
+            _updatingPickers = false;
+        }
+    }
+
     private static bool TryParseFileCreationTime(string text, out ulong raw)
     {
         raw = 0;
+        text = text.Trim();
+        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            return ulong.TryParse(
+                text.AsSpan(2),
+                NumberStyles.AllowHexSpecifier,
+                CultureInfo.InvariantCulture,
+                out raw);
+        }
         if (!DateTime.TryParseExact(
-                text.Trim(),
+                text,
                 AcceptedFileTimeFormats,
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal |
@@ -280,10 +375,25 @@ public sealed class FastFileDetailsToolViewModel : ObservableObject
         }
     }
 
+    private static bool TryGetFileCreationDate(ulong raw, out DateTime utc)
+    {
+        try
+        {
+            utc = DateTime.FromFileTimeUtc(checked((long)raw));
+            return true;
+        }
+        catch (Exception exception) when (exception is
+            OverflowException or ArgumentOutOfRangeException)
+        {
+            utc = default;
+            return false;
+        }
+    }
+
     private static string FormatFileCreationTime(ulong raw) =>
-        DateTime.FromFileTimeUtc(checked((long)raw)).ToString(
-            FileTimeFormat,
-            CultureInfo.InvariantCulture);
+        TryGetFileCreationDate(raw, out DateTime utc)
+            ? utc.ToString(FileTimeFormat, CultureInfo.InvariantCulture)
+            : $"0x{raw:X16}";
 
     private static string GetDisplayName<TEnum>(TEnum value)
         where TEnum : struct, Enum

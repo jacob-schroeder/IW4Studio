@@ -1,460 +1,197 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
-        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-        xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Svg.Controls.Skia.Avalonia"
+        xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="IW4.Studio.Desktop.Views.WelcomeWindow"
         x:DataType="viewModels:WelcomeViewModel"
-        mc:Ignorable="d"
-        d:DesignWidth="1040"
-        d:DesignHeight="680"
-        Title="Welcome to IW4 Studio"
-        Width="1040"
-        Height="680"
-        MinWidth="860"
-        MinHeight="590"
+        Title="IW4 Studio" Width="760" MinWidth="500" MinHeight="324"
         WindowStartupLocation="CenterScreen">
-  <Grid RowDefinitions="Auto,*">
-    <Menu x:Name="WindowMenu" Grid.Row="0" Height="30" />
+  <Window.Styles>
+    <Style Selector="TextBlock.folder">
+      <Setter Property="FontFamily" Value="Menlo, Consolas, monospace" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="Border.sheet">
+      <Setter Property="MaxWidth" Value="470" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="18,8" />
+      <Setter Property="Padding" Value="20,16" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceOverlayBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BoxShadow" Value="0 8 24 0 #48000000" />
+    </Style>
+    <Style Selector="Border.selectedMode">
+      <Setter Property="Background" Value="{DynamicResource StudioAccentSurfaceBrush}" />
+      <Setter Property="CornerRadius" Value="6" />
+    </Style>
+    <Style Selector="RadioButton.mode">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Margin" Value="8,0" />
+      <Setter Property="MinHeight" Value="52" />
+    </Style>
+    <!-- The Fluent template puts the radio glyph in a top-aligned inner grid. -->
+    <Style Selector="RadioButton.mode /template/ Grid > Grid">
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.modeTitle">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="FontSize" Value="15" />
+    </Style>
+    <Style Selector="TextBlock.modeDescription">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+    </Style>
+  </Window.Styles>
 
-    <Grid Grid.Row="1">
-    <Grid ColumnDefinitions="280,*">
-      <Border Grid.Column="0"
-              Background="{DynamicResource StudioSidebarBrush}"
-              BorderBrush="{DynamicResource StudioBorderBrush}"
-              BorderThickness="0,0,1,0">
-        <Grid Margin="28,30,24,24" RowDefinitions="Auto,42,Auto,*,Auto">
-          
-          <Border Width="128"
-                  Height="128"
-                  CornerRadius="4"
-                  ClipToBounds="True"
-                  Background="{DynamicResource StudioAccentStrongBrush}">
-            <Image
-              Width="128"
-              Height="128"
-              Source="/Resources/logo.png"
-              Stretch="Uniform" />
-                
-          </Border>
+  <Grid>
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" IsEnabled="{Binding CanInteract}">
+      <Menu x:Name="WindowMenu" Height="30" />
 
-          <Border Grid.Row="2"
-                  Margin="0,8,0,0"
-                  Padding="13,10"
-                  CornerRadius="6"
-                  Background="{DynamicResource StudioAccentSurfaceBrush}">
-            <Grid Classes="iconTextRow" ColumnDefinitions="22,*" ColumnSpacing="10">
-              <materialIcons:MaterialIcon Grid.Column="0"
-                                           Kind="Home"
-                                           FontSize="18"
-                                           Foreground="{DynamicResource StudioTextBrush}"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center" />
-              <TextBlock Grid.Column="1"
-                         Text="Welcome"
-                         VerticalAlignment="Center"
-                         Foreground="{DynamicResource StudioTextBrush}"
-                         FontSize="13"
-                         FontWeight="SemiBold" />
-            </Grid>
-          </Border>
+      <Grid Grid.Row="1" Height="170" Background="Black" ClipToBounds="True">
+        <Image Source="/Resources/welcome_ridge.png" Stretch="Fill" />
+        <Image Source="/Resources/logo_simple.png" Width="160" Height="160"
+               Margin="24,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+               AutomationProperties.Name="IW4 Studio" />
+      </Grid>
 
-          <StackPanel Grid.Row="3" Margin="0,8,0,0">
-            <Border Padding="13, 10">
-                  <Grid Classes="iconTextRow" ColumnDefinitions="22,*" ColumnSpacing="10">
-                    <materialIcons:MaterialIcon Grid.Column="0"
-                                                 Kind="History"
-                                                 FontSize="18"
-                                                 Foreground="{DynamicResource StudioTextSubtleBrush}"
-                                                 HorizontalAlignment="Center"
-                                                 VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="Recent"
-                               FontSize="13"
-                               FontWeight="Light"
-                               Foreground="{DynamicResource StudioTextSubtleBrush}" />
-                  </Grid>
-              </Border>
-
-              <ItemsControl 
-                    IsVisible="{Binding HasRecentFiles}"
-                    ItemsSource="{Binding RecentFiles}">
-                
-                <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="viewModels:RecentFastFileItem">
-                        <Button Classes="recentFile"
-                                Tag="{Binding Path}"
-                                IsEnabled="true"
-                                Click="RecentFileButton_Click">
-                          <Grid ColumnDefinitions="28,*,Auto" ColumnSpacing="10">
-                            <Border Grid.Column="0"
-                                    Width="28"
-                                    Height="28"
-                                    CornerRadius="6"
-                                    Background="{DynamicResource StudioAccentSecondarySurfaceBrush}">
-                              <materialIcons:MaterialIcon Kind="FileCode"
-                                                           FontSize="16"
-                                                           Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}"
-                                                           HorizontalAlignment="Center"
-                                                           VerticalAlignment="Center" />
-                            </Border>
-                            <StackPanel Grid.Column="1"
-                                        Spacing="1"
-                                        VerticalAlignment="Center">
-                              <TextBlock Text="{Binding FileName}"
-                                         FontSize="12"
-                                         FontWeight="SemiBold"
-                                         TextTrimming="CharacterEllipsis" />
-                              <TextBlock Text="{Binding Directory}"
-                                         FontSize="10"
-                                         Foreground="{DynamicResource StudioTextSubtleBrush}"
-                                         TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
-                            <materialIcons:MaterialIcon Grid.Column="2"
-                                                         Kind="ArrowRight"
-                                                         FontSize="16"
-                                                         Foreground="{DynamicResource StudioTextMutedBrush}"
-                                                         VerticalAlignment="Center" />
-                          </Grid>
-                        </Button>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-
-                  <TextBlock IsVisible="{Binding !HasRecentFiles}"
-                             Text="No recently opened fastfiles."
-                             FontSize="11"
-                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="24,18,24,16" Spacing="12">
+        <Button x:Name="OpenFastFileButton" Classes="primary" Click="OpenFastFileButton_Click"
+                AutomationProperties.Name="Open Fastfile">
+          <StackPanel Orientation="Horizontal" Spacing="9">
+            <icons:MaterialIcon Kind="FolderOpen" Width="19" Height="19" />
+            <TextBlock Text="Open Fastfile…" VerticalAlignment="Center" FontSize="15" />
           </StackPanel>
-
-          <StackPanel Grid.Row="4" Spacing="5">
-            <TextBlock Text="IW4 STUDIO"
-                       Foreground="{DynamicResource StudioTextSubtleBrush}"
-                       FontSize="10"
-                       FontWeight="Bold"
-                       LetterSpacing="1.2" />
-            <StackPanel Orientation="Horizontal">
-              <TextBlock Text="Desktop" 
-                         Foreground="{DynamicResource StudioTextSubtleBrush}"
-                         FontSize="11" />
-              <TextBlock Text="{Binding DesktopVersionLabel }" 
-                         Padding="13, 0, 0, 0"
-                         Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}"
-                         FontSize="11" />
-            </StackPanel>
-            <StackPanel Orientation="Horizontal">
-              <TextBlock Text="Platform" 
-                         Foreground="{DynamicResource StudioTextSubtleBrush}"
-                         FontSize="11" />
-              
-              <TextBlock Text="{Binding PlatformLabel }" 
-                         Padding="13, 0, 0, 0"
-                         Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}"
-                         FontSize="11" />
-            </StackPanel>
+        </Button>
+        <Button Click="CreateNewButton_Click" AutomationProperties.Name="New Fastfile">
+          <StackPanel Orientation="Horizontal" Spacing="9">
+            <icons:MaterialIcon Kind="Plus" Width="19" Height="19" />
+            <TextBlock Text="New Fastfile…" VerticalAlignment="Center" FontSize="15" />
           </StackPanel>
-        </Grid>
-      </Border>
+        </Button>
+      </StackPanel>
 
-      <Border Grid.Column="1" Padding="48,34,48,34">
-        <Grid RowDefinitions="Auto,*,Auto">
-            <StackPanel MaxWidth="720" HorizontalAlignment="Stretch" Spacing="20">
-              <TextBlock Text="Welcome to IW4 Studio"
-                         FontSize="14"
-                         FontWeight="SemiBold"
-                         Foreground="{DynamicResource StudioTextMutedBrush}" />
-              
-              <TextBlock Text="Create a new fastfile, or choose one to open directly or with game engine dependencies."
-                         MaxWidth="650"
-                         HorizontalAlignment="Left"
-                         TextWrapping="Wrap"
-                         FontSize="14"
-                         LineHeight="21"
-                         Foreground="{DynamicResource StudioTextMutedBrush}" />
-
-              <Border Padding="18"
-                      CornerRadius="8"
-                      Background="{DynamicResource StudioSurfaceBrush}"
-                      BorderBrush="{DynamicResource StudioBorderBrush}"
-                      BorderThickness="1">
-                <StackPanel Spacing="11">
-                  <TextBlock Text="FASTFILE"
-                             FontSize="10"
-                             FontWeight="Bold"
-                             LetterSpacing="1.2"
-                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                    <TextBox Grid.Column="0"
-                             Margin="0 0"
-                             Text="{Binding SelectedPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                             FontWeight="Light"
-                             IsReadOnly="True"
-                             PlaceholderText="Fastfile path"
-                             VerticalContentAlignment="Center" />
-                    <Button Grid.Column="1"
-                            Margin="0 0"
-                            Content="Browse"
-                            IsEnabled="{Binding CanBrowse}"
-                            Click="BrowseButton_Click" />
-                  </Grid>
-                  <Grid ColumnDefinitions="*" ColumnSpacing="8">
-                               
-                    <StackPanel Grid.Column="0" Spacing="2">
-                      <TextBlock Text="{Binding SelectedFileName}"
-                                 FontSize="13"
-                                 FontWeight="SemiLight"
-                                 Foreground="{DynamicResource StudioTextBrush}"
-                                 TextTrimming="CharacterEllipsis" />
-                    </StackPanel>
-                  </Grid>
-
-                  
-                </StackPanel>
-              </Border>
-
-              <Grid ColumnDefinitions="1*,1*,1*"
-                    ColumnSpacing="12"
-                    HorizontalAlignment="Stretch">
-                <Button Grid.Column="0"
-                        Classes="actionCard"
-                        HorizontalAlignment="Stretch"
-                        VerticalAlignment="Stretch"
-                        IsEnabled="{Binding CanCreate}"
-                        Click="CreateNewButton_Click">
-                  <Grid RowDefinitions="Auto,*,Auto">
-                    <Grid Grid.Row="0"
-                          ColumnDefinitions="34,*"
-                          ColumnSpacing="10"
-                          VerticalAlignment="Center">
-                      <Border Grid.Column="0"
-                              Width="34"
-                              Height="34"
-                              CornerRadius="7"
-                              Background="{DynamicResource StudioAccentSecondarySurfaceBrush}">
-                        <materialIcons:MaterialIcon Kind="FilePlus"
-                                                     FontSize="18"
-                                                     Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}"
-                                                     HorizontalAlignment="Center"
-                                                     VerticalAlignment="Center" />
-                      </Border>
-                      <TextBlock Text="Create New"
-                                 Grid.Column="1"
-                                 VerticalAlignment="Center"
-                                 FontSize="15"
-                                 FontWeight="SemiBold"
-                                 TextWrapping="Wrap" />
-                    </Grid>
-                    <TextBlock Grid.Row="1"
-                               Margin="0,12,0,10"
-                               Text="Create an empty IW4 zone, publish it as a validated fastfile, and open it for editing."
-                               HorizontalAlignment="Left"
-                               FontSize="11"
-                               TextWrapping="Wrap"
-                               Foreground="{DynamicResource StudioTextMutedBrush}" />
-                    <Grid Grid.Row="2"
-                          Classes="iconTextRow"
-                          ColumnDefinitions="Auto,Auto"
-                          ColumnSpacing="4"
-                          HorizontalAlignment="Left">
-                      <TextBlock Text="New fastfile"
-                                 FontSize="11"
-                                 Foreground="{DynamicResource StudioAccentBrush}" />
-                      <materialIcons:MaterialIcon Grid.Column="1"
-                                                   Kind="ArrowRight"
-                                                   FontSize="14"
-                                                   Foreground="{DynamicResource StudioAccentBrush}"
-                                                   VerticalAlignment="Center" />
-                    </Grid>
-                  </Grid>
-                </Button>
-
-                <Button Grid.Column="1"
-                        Classes="actionCard"
-                        HorizontalAlignment="Stretch"
-                        VerticalAlignment="Stretch"
-                        IsEnabled="{Binding CanLoad}"
-                        Click="LoadSingleButton_Click">
-                  <Grid RowDefinitions="Auto,*,Auto">
-                    <Grid Grid.Row="0"
-                          ColumnDefinitions="34,*"
-                          ColumnSpacing="10"
-                          VerticalAlignment="Center">
-                      <Border Grid.Column="0"
-                              Width="34"
-                              Height="34"
-                              CornerRadius="7"
-                              Background="{DynamicResource StudioAccentSecondarySurfaceBrush}">
-                          <materialIcons:MaterialIcon Kind="FileCode"
-                                                       FontSize="18"
-                                                       Foreground="{DynamicResource StudioAccentSecondaryForegroundBrush}"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center" />
-                      </Border>
-                      <TextBlock Text="Load File"
-                                 Grid.Column="1"
-                                 VerticalAlignment="Center"
-                                 FontSize="15"
-                                 FontWeight="SemiBold"
-                                 TextWrapping="Wrap" />
-                    </Grid>
-                    <TextBlock Grid.Row="1"
-                               Margin="0,12,0,10"
-                               Text="Workspace with only the selected zone. Assets that are referenced will not be able to be viewed."
-                               HorizontalAlignment="Left"
-                               FontSize="11"
-                               TextWrapping="Wrap"
-                               Foreground="{DynamicResource StudioTextMutedBrush}" />
-                    <Grid Grid.Row="2"
-                          Classes="iconTextRow"
-                          ColumnDefinitions="Auto,Auto"
-                          ColumnSpacing="4"
-                          HorizontalAlignment="Left">
-                      <TextBlock Text="Isolated Load"
-                                 FontSize="11"
-                                 Foreground="{DynamicResource StudioAccentBrush}" />
-                      <materialIcons:MaterialIcon Grid.Column="1"
-                                                   Kind="ArrowRight"
-                                                   FontSize="14"
-                                                   Foreground="{DynamicResource StudioAccentBrush}"
-                                                   VerticalAlignment="Center" />
-                    </Grid>
-                  </Grid>
-                </Button>
-
-                <Button Grid.Column="2"
-                        Classes="actionCard primary"
-                        HorizontalAlignment="Stretch"
-                        VerticalAlignment="Stretch"
-                        IsEnabled="{Binding CanLoad}"
-                        Click="LoadDependenciesButton_Click">
-                  <Grid RowDefinitions="Auto,*,Auto">
-                    <Grid Grid.Row="0"
-                          ColumnDefinitions="34,*"
-                          ColumnSpacing="10"
-                          VerticalAlignment="Center">
-                      <Border Grid.Column="0"
-                              Width="34"
-                              Height="34"
-                              CornerRadius="7"
-                              Background="{DynamicResource StudioAccentStrongBrush}">
-                        <materialIcons:MaterialIcon Kind="FileTree"
-                                                     FontSize="18"
-                                                     Foreground="{DynamicResource StudioOnAccentBrush}"
-                                                     HorizontalAlignment="Center"
-                                                     VerticalAlignment="Center" />
-                      </Border>
-                      <TextBlock Text="Load File With Dependencies"
-                                 Grid.Column="1"
-                                 VerticalAlignment="Center"
-                                 FontSize="15"
-                                 FontWeight="SemiBold"
-                                 TextWrapping="Wrap" />
-                    </Grid>
-                    <TextBlock Grid.Row="1"
-                               Margin="0,12,0,10"
-                               Text="Load the target through its default engine dependency lifecycle, including available dependency zones and streamed image packages."
-                               FontSize="11"
-                               TextWrapping="Wrap"
-                               Foreground="{DynamicResource StudioTextMutedBrush}" />
-                    <Grid Grid.Row="2"
-                          Classes="iconTextRow"
-                          ColumnDefinitions="Auto,Auto"
-                          ColumnSpacing="4"
-                          HorizontalAlignment="Left">
-                      <TextBlock Text="Engine dependency load plan"
-                                 FontSize="11"
-                                 Foreground="{DynamicResource StudioAccentBrush}" />
-                      <materialIcons:MaterialIcon Grid.Column="1"
-                                                   Kind="ArrowRight"
-                                                   FontSize="14"
-                                                   Foreground="{DynamicResource StudioAccentBrush}"
-                                                   VerticalAlignment="Center" />
-                    </Grid>
-                  </Grid>
-                </Button>
-              </Grid>
-
-              <Border IsVisible="{Binding HasError}"
-                      Padding="14,12"
-                      CornerRadius="6"
-                      Background="{DynamicResource StudioErrorSurfaceBrush}"
-                      BorderBrush="{DynamicResource StudioErrorBorderBrush}"
-                      BorderThickness="1">
-                <Grid ColumnDefinitions="22,*" ColumnSpacing="8">
-                  <TextBlock Text="!"
-                             Foreground="{DynamicResource StudioErrorBrush}"
-                             FontWeight="Bold" />
-                  <TextBlock Grid.Column="1"
-                             Text="{Binding ErrorMessage}"
-                             TextWrapping="Wrap"
-                             Foreground="{DynamicResource StudioErrorBrush}"
-                             FontSize="12" />
-                </Grid>
-              </Border>
+      <ScrollViewer Grid.Row="3" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="24,0,24,12" Spacing="12">
+          <Border IsVisible="{Binding HasError}" Padding="12,8" CornerRadius="6"
+                  Background="{DynamicResource StudioErrorSurfaceBrush}"
+                  BorderBrush="{DynamicResource StudioErrorBorderBrush}" BorderThickness="1">
+            <StackPanel Spacing="3">
+              <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource StudioErrorBrush}"
+                         FontSize="12" TextWrapping="Wrap" />
             </StackPanel>
+          </Border>
+          <StackPanel Spacing="6">
+            <TextBlock Text="Recent fastfiles" FontSize="18" FontWeight="SemiBold" />
+            <TextBlock IsVisible="{Binding !HasRecentFiles}"
+                       Text="Fastfiles you open or create will appear here."
+                       Foreground="{DynamicResource StudioTextMutedBrush}" TextWrapping="Wrap" />
+            <ItemsControl IsVisible="{Binding HasRecentFiles}" ItemsSource="{Binding RecentFiles}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="viewModels:RecentFastFileItem">
+                  <Border BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="0,0,0,1">
+                    <Button Classes="recentFile" Tag="{Binding Path}" Click="RecentFileButton_Click"
+                            ToolTip.Tip="{Binding Path}" AutomationProperties.Name="{Binding FileName}"
+                            AutomationProperties.HelpText="{Binding Directory}">
+                      <Grid ColumnDefinitions="22,*,16" ColumnSpacing="12">
+                        <icons:MaterialIcon Kind="FileOutline" Width="21" Height="21"
+                                            Foreground="{DynamicResource StudioTextMutedBrush}" />
+                        <StackPanel Grid.Column="1" Spacing="1">
+                          <TextBlock Text="{Binding FileName}" FontSize="14" FontWeight="SemiBold"
+                                     TextTrimming="CharacterEllipsis" />
+                          <TextBlock Classes="folder" Text="{Binding Directory}" />
+                        </StackPanel>
+                        <icons:MaterialIcon Grid.Column="2" Kind="ChevronRight" Width="16" Height="16"
+                                            Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      </Grid>
+                    </Button>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
 
-          <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="16">
-            <TextBlock Text="{Binding StatusText}"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource StudioTextSubtleBrush}"
-                       FontSize="11"
-                       TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="1"
-                       Text="Dependencies are resolved beside the selected file"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource StudioTextSubtleBrush}"
-                       FontSize="10" />
-          </Grid>
+      <Border Grid.Row="4" Padding="24,10" BorderThickness="0,1,0,0"
+              BorderBrush="{DynamicResource StudioBorderBrush}">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="{Binding PlatformLabel}" FontSize="12"
+                     Foreground="{DynamicResource StudioAccentBrush}" />
+          <TextBlock Grid.Column="1" Text="{Binding DesktopVersionLabel, StringFormat='IW4 Studio {0}'}"
+                     FontSize="12" Foreground="{DynamicResource StudioTextMutedBrush}" />
         </Grid>
       </Border>
     </Grid>
 
-    <Border IsVisible="{Binding IsBusy}"
-            Background="{DynamicResource StudioScrimBrush}">
-      <Border Width="480"
-              Padding="28"
-              HorizontalAlignment="Center"
-              VerticalAlignment="Center"
-              CornerRadius="10"
-              Background="{DynamicResource StudioSurfaceRaisedBrush}"
-              BorderBrush="{DynamicResource StudioBorderStrongBrush}"
-              BorderThickness="1">
-        <StackPanel Spacing="15">
-          <StackPanel Orientation="Horizontal" Spacing="12">
-            <Border Width="64"
-                    Height="64"
-                    CornerRadius="4"
-                    ClipToBounds="True"
-                    Background="{DynamicResource StudioAccentStrongBrush}">
-                <Image
-                    Width="64"
-                    Height="64"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Source="/Resources/logo_simple.png"
-                    Stretch="Uniform" />
-                    
-            </Border>
-            <StackPanel VerticalAlignment="Center" Spacing="2">
-              <TextBlock Text="Loading workspace"
-                         FontSize="18"
-                         FontWeight="SemiBold" />
-              <TextBlock Text="The workspace will open when the asset pool is ready."
-                         FontSize="14"
-                         Foreground="{DynamicResource StudioTextMutedBrush}" />
-            </StackPanel>
+    <Grid IsVisible="{Binding IsChoosingMode}" Background="#72000000">
+      <Border x:Name="ModeSheet" Classes="sheet" KeyboardNavigation.TabNavigation="Cycle">
+        <StackPanel Spacing="10">
+          <StackPanel Spacing="3">
+            <TextBlock Text="{Binding SelectedFileName, StringFormat='Open {0}'}"
+                       FontWeight="SemiBold" FontSize="20" TextTrimming="CharacterEllipsis"
+                       ToolTip.Tip="{Binding SelectedFileName}" />
+            <Grid ColumnDefinitions="16,*" ColumnSpacing="8">
+              <icons:MaterialIcon Kind="FolderOutline" Width="16" Height="16"
+                                  Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <TextBlock Grid.Column="1" Classes="folder" Text="{Binding SelectedDirectory}"
+                         ToolTip.Tip="{Binding SelectedDirectory}" />
+            </Grid>
           </StackPanel>
-          <ProgressBar Height="5"
-                       IsIndeterminate="True"
-                       Foreground="{DynamicResource StudioAccentBrush}" />
-          <TextBlock Text="{Binding StatusText}"
-                     TextWrapping="Wrap"
-                     Foreground="{DynamicResource StudioTextMutedBrush}"
-                     FontSize="12" />
+
+          <Border BorderThickness="0,1" BorderBrush="{DynamicResource StudioBorderBrush}" Padding="0,8">
+            <StackPanel Spacing="2">
+              <Grid>
+                <Border Classes="selectedMode" IsVisible="{Binding #DependencyModeRadio.IsChecked}" />
+                <RadioButton x:Name="DependencyModeRadio" Classes="mode" GroupName="OpenMode"
+                             AutomationProperties.Name="With dependencies"
+                             AutomationProperties.HelpText="Include available dependency zones and streamed images.">
+                  <StackPanel Spacing="2">
+                    <TextBlock Classes="modeTitle" Text="With dependencies" />
+                    <TextBlock Classes="modeDescription" Text="Include available dependency zones and streamed images." />
+                  </StackPanel>
+                </RadioButton>
+              </Grid>
+              <Grid>
+                <Border Classes="selectedMode" IsVisible="{Binding #SingleModeRadio.IsChecked}" />
+                <RadioButton x:Name="SingleModeRadio" Classes="mode" GroupName="OpenMode"
+                             AutomationProperties.Name="This fastfile only"
+                             AutomationProperties.HelpText="Inspect the assets stored in this fastfile.">
+                  <StackPanel Spacing="2">
+                    <TextBlock Classes="modeTitle" Text="This fastfile only" />
+                    <TextBlock Classes="modeDescription" Text="Inspect the assets stored in this fastfile." />
+                  </StackPanel>
+                </RadioButton>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="Cancel" Click="CancelOpenButton_Click" />
+            <Button Content="Open" Classes="primary" MinWidth="78" IsDefault="{Binding IsChoosingMode}"
+                    Click="ConfirmOpenButton_Click" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <Border IsVisible="{Binding IsBusy}" Background="{DynamicResource StudioScrimBrush}">
+      <Border Classes="sheet">
+        <StackPanel Spacing="12">
+          <TextBlock Text="Loading workspace" FontSize="18" FontWeight="SemiBold" />
+          <ProgressBar Height="5" IsIndeterminate="True" Foreground="{DynamicResource StudioAccentBrush}" />
+          <TextBlock Text="{Binding StatusText}" FontSize="13" TextWrapping="Wrap"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" />
         </StackPanel>
       </Border>
     </Border>
-    </Grid>
   </Grid>
 </Window>

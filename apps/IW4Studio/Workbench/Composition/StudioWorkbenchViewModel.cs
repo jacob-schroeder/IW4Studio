@@ -185,7 +185,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 ImageFilePak,
                 PackFilePak);
             constructionResources.Add(Properties);
-            FastFileDetails = new FastFileDetailsToolViewModel(editingSession);
+            FastFileDetails = new FastFileDetailsToolViewModel(editingSession, () => { });
             ZoneDetails = new ZoneDetailsToolViewModel(workspace);
             DependencyGraph = new DependencyGraphToolViewModel(workspace);
 
