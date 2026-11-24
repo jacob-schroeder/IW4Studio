@@ -33,6 +33,8 @@ public sealed record D3dbspLinkRequest(
     public bool UseStaticModelCollisionTree { get; init; }
     public IReadOnlySet<string> StaticScriptModelNames { get; init; } = new HashSet<string>(StringComparer.Ordinal);
     public IReadOnlyList<MaterialAsset> AvailableMaterials { get; init; } = [];
+    public IReadOnlyDictionary<AssetKey, GfxImageAsset> AvailableImages { get; init; } =
+        new Dictionary<AssetKey, GfxImageAsset>();
     // Conservative displacement on each axis, weighted by the render vertex red channel.
     public IReadOnlyDictionary<string, float> MaterialDisplacements { get; init; } =
         new Dictionary<string, float>(StringComparer.Ordinal);
@@ -157,6 +159,7 @@ public static class D3dbspAssetLinker
         ValidateAssetName(assetName);
         ArgumentNullException.ThrowIfNull(request.AvailableXModels);
         ArgumentNullException.ThrowIfNull(request.AvailableMaterials);
+        ArgumentNullException.ThrowIfNull(request.AvailableImages);
         ArgumentNullException.ThrowIfNull(request.StaticScriptModelNames);
         ArgumentNullException.ThrowIfNull(request.RuntimeEntityPropertiesToRemove);
         if (request.StaticScriptModelNames.Count != 0 && (!request.WorldOnly || !request.UseSourceMaterials))
@@ -240,10 +243,10 @@ public static class D3dbspAssetLinker
             : clipMaterials
                 .Select((material, index) => CreateMaterialReference(material.Name, index))
                 .ToArray();
+        Dictionary<AssetKey, MaterialAsset> availableMaterials = request.AvailableMaterials
+            .ToDictionary(AssetKey.FromDefinition);
         if (request.UseSourceMaterials)
         {
-            Dictionary<AssetKey, MaterialAsset> availableMaterials = request.AvailableMaterials
-                .ToDictionary(AssetKey.FromDefinition);
             for (int index = 0; index < renderMaterials.Length; index++)
             {
                 // Custom source materials need not use the retail w/ or wc/ prefixes.
@@ -426,6 +429,8 @@ public static class D3dbspAssetLinker
             reflectionProbeOrigins,
             gfxStaticModelInstances,
             gfxStaticModelDrawInstances,
+            name => availableMaterials.GetValueOrDefault(AssetKey.FromWireName(new(XAssetType.Material), name)),
+            name => request.AvailableImages.GetValueOrDefault(AssetKey.FromWireName(new(XAssetType.Image), name)),
             dynamicEntityCounts,
             useSourceMaterials: request.UseSourceMaterials,
             outdoorImage: request.OutdoorImage,

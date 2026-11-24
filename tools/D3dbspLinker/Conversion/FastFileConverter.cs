@@ -409,8 +409,7 @@ internal static partial class FastFileConverter
         int fragmentProgramUploadCapacity = bootstrap?.FragmentProgramUploadCapacity ??
             (FastFileInspector.GetSingle<GfxWorldAsset>(RequireTemplate()) ??
              throw new InvalidDataException($"Template '{templatePath}' has no single GfxWorld.")).FragmentProgramUploadCapacity;
-        var availableXModels = template is null ? new List<XModelAsset>() : CaptureActiveXModels(template)
-            .Concat(dependencyPaths.SelectMany(path => LoadActiveXModels(path, worldOnly))).ToList();
+        var availableXModels = template is null ? new List<XModelAsset>() : CaptureActiveXModels(template).ToList();
         var materialSources = preparedSources?.Materials ?? (assetLibraryDirectory is null ? null : new MaterialSourceCompiler(assetLibraryDirectory, bootstrapDirectory));
         var modelSources = preparedSources?.Models ?? (materialSources is null ? null : new ModelSourceCompiler(assetLibraryDirectory ?? "", materialSources, bootstrapDirectory));
         var bootstrapMaterials = preparedSources?.BootstrapMaterials ?? (bootstrapDirectory is null ? null : new MaterialSourceCompiler(bootstrapDirectory));
@@ -418,34 +417,63 @@ internal static partial class FastFileConverter
             new ModelSourceCompiler(bootstrapDirectory ?? "", bootstrapMaterials,
                 coarsestLodOnly: compactAirbornePrecache ? Ps3MapStartupAssets.IsAirbornePrecacheModel : null));
         var availableMaterials = new Dictionary<AssetKey, MaterialAsset>();
+        var availableImages = new Dictionary<AssetKey, GfxImageAsset>();
         var availableLightingImages = new Dictionary<AssetKey, GfxImageAsset>();
-        if (useSourceMaterials && materialSources is null)
+        D3dbspFile sourceBsp = D3dbspFile.Read(inputPath);
+        IReadOnlyList<string> renderNames = sourceBsp.GetRenderMaterialNames();
+        var worldMaterialNames = renderNames.Concat(renderNames.Select(D3dbspAssetLinker.GetWorldMaterialName))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        void ReadStreamingAssets(FastFileWorkspace workspace, bool replaceWorldMaterials)
         {
-            foreach (MaterialAsset material in CaptureOwnedAssets<MaterialAsset>(RequireTemplate(), XAssetType.Material))
-                availableMaterials[AssetKey.FromDefinition(material)] = material;
-        }
-        if (useSourceMaterials || requestedLightingImages.Count != 0)
-        {
-            foreach (string providerPath in providerPaths)
+            var replacedImages = new HashSet<AssetKey>();
+            foreach (MaterialAsset material in CaptureOwnedAssets<MaterialAsset>(workspace, XAssetType.Material))
             {
-                using FastFileWorkspace provider = new FastFileDocumentService().Open(
-                    new FastFileDocumentOpenRequest(providerPath, Isolated.Instance));
-                if (useSourceMaterials)
+                AssetKey key = AssetKey.FromDefinition(material);
+                if (replaceWorldMaterials && worldMaterialNames.Contains(key.NormalizedName))
                 {
-                    availableXModels.AddRange(CaptureOwnedAssets<XModelAsset>(provider, XAssetType.XModel));
-                    if (materialSources is null)
-                        foreach (MaterialAsset material in CaptureOwnedAssets<MaterialAsset>(provider, XAssetType.Material))
-                            availableMaterials[AssetKey.FromDefinition(material)] = material;
+                    availableMaterials[key] = material;
+                    foreach (var texture in material.Textures)
+                        if (texture.Image is { } image)
+                            replacedImages.Add(AssetKey.FromDefinition(image));
                 }
-                foreach (GfxImageAsset image in CaptureOwnedAssets<GfxImageAsset>(provider, XAssetType.Image))
-                {
-                    AssetKey key = AssetKey.FromDefinition(image);
-                    if (requestedLightingImages.Contains(key))
-                        availableLightingImages[key] = image;
-                }
+                else
+                    availableMaterials.TryAdd(key, material);
+            }
+            foreach (GfxImageAsset image in CaptureOwnedAssets<GfxImageAsset>(workspace, XAssetType.Image))
+            {
+                AssetKey key = AssetKey.FromDefinition(image);
+                if (replacedImages.Contains(key))
+                    availableImages[key] = image;
+                else
+                    availableImages.TryAdd(key, image);
             }
         }
-        D3dbspFile sourceBsp = D3dbspFile.Read(inputPath);
+        if (template is not null)
+        {
+            ReadStreamingAssets(template, false);
+            foreach (string path in dependencyPaths)
+            {
+                using FastFileWorkspace dependency = worldOnly
+                    ? new FastFileDocumentService().Open(new FastFileDocumentOpenRequest(path, Isolated.Instance))
+                    : FastFileInspector.Open(path);
+                availableXModels.AddRange(CaptureActiveXModels(dependency));
+                ReadStreamingAssets(dependency, false);
+            }
+        }
+        foreach (string providerPath in providerPaths)
+        {
+            using FastFileWorkspace provider = new FastFileDocumentService().Open(
+                new FastFileDocumentOpenRequest(providerPath, Isolated.Instance));
+            ReadStreamingAssets(provider, useSourceMaterials);
+            if (useSourceMaterials)
+                availableXModels.AddRange(CaptureOwnedAssets<XModelAsset>(provider, XAssetType.XModel));
+            foreach (GfxImageAsset image in CaptureOwnedAssets<GfxImageAsset>(provider, XAssetType.Image))
+            {
+                AssetKey key = AssetKey.FromDefinition(image);
+                if (requestedLightingImages.Contains(key))
+                    availableLightingImages[key] = image;
+            }
+        }
         cancellationToken.ThrowIfCancellationRequested();
         var mapEntities = sourceBsp.GetEntities();
         IReadOnlyDictionary<string, string>[] dynamicEntities = mapEntities
@@ -506,14 +534,14 @@ internal static partial class FastFileConverter
         IReadOnlyDictionary<string, WaterMaterialDefinition> waterDefinitions = worldProperties is null
             ? new Dictionary<string, WaterMaterialDefinition>(StringComparer.Ordinal)
             : WaterMaterialAuthoring.ReadDefinitions(worldProperties);
-        string[] authoredWaterNames = sourceBsp.GetRenderMaterialNames()
+        string[] authoredWaterNames = renderNames
             .Where(WaterMaterialAuthoring.IsAuthoredMaterialName)
             .Distinct(StringComparer.Ordinal).ToArray();
         if (authoredWaterNames.Length != 0 && !useSourceMaterials)
             throw new InvalidDataException("Authored water materials require --source-materials.");
         if (materialSources is not null)
         {
-            foreach (string name in sourceBsp.GetRenderMaterialNames()
+            foreach (string name in renderNames
                          .Concat(glassDependencies.Materials)
                          .Where(name => !WaterMaterialAuthoring.IsAuthoredMaterialName(name))
                          .Concat(authoredWaterNames.Select(name => waterDefinitions.TryGetValue(name, out var definition)
@@ -523,6 +551,14 @@ internal static partial class FastFileConverter
             {
                 MaterialAsset material = materialSources.LoadMaterial(name);
                 availableMaterials[AssetKey.FromDefinition(material)] = material;
+                foreach (var layer in material.SubMaterialNames)
+                {
+                    if (layer.Value is not { Length: > 0 } layerName ||
+                        !File.Exists(materialSources.ResolveMaterialSourcePath(layerName)))
+                        continue;
+                    MaterialAsset subMaterial = materialSources.LoadMaterial(layerName);
+                    availableMaterials[AssetKey.FromDefinition(subMaterial)] = subMaterial;
+                }
             }
             foreach (string name in lightingNames)
             {
@@ -570,6 +606,9 @@ internal static partial class FastFileConverter
         GfxImageAsset? outdoorImage = outdoorImageName is null
             ? null
             : ResolveLightingImage(outdoorImageName);
+        if (materialSources is not null)
+            foreach (GfxImageAsset image in materialSources.Assets.OfType<GfxImageAsset>())
+                availableImages[AssetKey.FromDefinition(image)] = image;
         D3dbspLinkResult graph = D3dbspAssetLinker.Link(
             new D3dbspLinkRequest(
                 inputPath,
@@ -584,6 +623,7 @@ internal static partial class FastFileConverter
                 StaticScriptModelNames = staticScriptModelNames,
                 UseStaticModelCollisionTree = useStaticModelCollisionTree,
                 AvailableMaterials = availableMaterials.Values.ToArray(),
+                AvailableImages = availableImages,
                 MaterialDisplacements = waterDefinitions.Values.Where(definition => definition.Ocean is not null)
                     .ToDictionary(definition => definition.Name, definition => definition.Ocean?.Height ?? 0, StringComparer.Ordinal),
                 Lightmaps = lightmaps,
@@ -1183,6 +1223,26 @@ internal static partial class FastFileConverter
         // top-level rows must be written before the weapon can reference them.
         foreach (WeaponAsset weapon in weapons)
             roots.Add(CreateNamedOwnedRoot($"d3dbsplinker:weapon:{weapon.SerializedAssetName}", weapon));
+        // Named layers have no asset pointer in Material. Give supplied layers
+        // their own DB entries so the renderer can resolve them by name.
+        var rootedKeys = roots.Select(root => root.Asset).ToHashSet();
+        var layerRoots = new List<LinkRoot>();
+        var surfaceMaterials = graph.Roots.OfType<GfxWorldAsset>().Single().Dpvs.Surfaces
+            .Select(surface => surface.Material).OfType<MaterialAsset>().Distinct();
+        foreach (MaterialAsset material in surfaceMaterials)
+        {
+            MaterialAsset definition = availableMaterials.GetValueOrDefault(AssetKey.FromDefinition(material)) ?? material;
+            foreach (var layer in definition.SubMaterialNames)
+            {
+                if (layer.Value is not { Length: > 0 } name)
+                    continue;
+                AssetKey key = AssetKey.FromWireName(new(XAssetType.Material), name);
+                if (existingFullProviderKeys.Contains(key) && availableMaterials.TryGetValue(key, out var subMaterial) &&
+                    rootedKeys.Add(key))
+                    layerRoots.Add(CreateNamedOwnedRoot($"d3dbsplinker:world-layer:{key.NormalizedName}", subMaterial));
+            }
+        }
+        roots.InsertRange(0, layerRoots);
         if (includeStockCallsigns)
         {
             using var callsigns = new FastFileDocumentService().Open(new FastFileDocumentOpenRequest(
@@ -1978,15 +2038,6 @@ internal static partial class FastFileConverter
         }
 
         return name[0] == ',' ? name : "," + name;
-    }
-
-    private static IReadOnlyList<XModelAsset> LoadActiveXModels(string path, bool worldOnly)
-    {
-        using FastFileWorkspace workspace = worldOnly
-            ? new FastFileDocumentService().Open(
-                new FastFileDocumentOpenRequest(path, Isolated.Instance))
-            : FastFileInspector.Open(path);
-        return CaptureActiveXModels(workspace);
     }
 
     private static IReadOnlyList<TAsset> CaptureOwnedAssets<TAsset>(

@@ -118,6 +118,8 @@ internal static partial class D3dbspGfxCodec
         IReadOnlyList<GfxReflectionProbe> reflectionProbeOrigins,
         IReadOnlyList<GfxStaticModelInst> staticModelInstances,
         IReadOnlyList<GfxStaticModelDrawInst> staticModelDrawInstances,
+        Func<string, MaterialAsset?> resolveMaterial,
+        Func<string, GfxImageAsset?> resolveImage,
         IReadOnlyList<ushort>? dynamicEntityCounts = null,
         bool useSourceMaterials = false,
         GfxImageAsset? outdoorImage = null,
@@ -449,6 +451,7 @@ internal static partial class D3dbspGfxCodec
         {
             CoalesceStaticWorldSurfaces(
                 staticSurfaceStart,
+                baseLayerSize,
                 ref staticSurfaceCount,
                 ref surfaceCount,
                 ref models,
@@ -463,6 +466,8 @@ internal static partial class D3dbspGfxCodec
             ShareStaticWorldDrawBases(
                 staticSurfaceStart, staticSurfaceCount, baseLayerSize, surfaces, outputIndices);
         }
+        SetStreamingWeights(surfaces, surfaceBounds, packedPositions, packedLayers, baseLayerSize,
+            outputIndices, resolveMaterial, resolveImage);
         if (!hasRenderSpatial && staticSurfaceCount > GfxAabbTree.MaxIndexCount)
         {
             throw new InvalidDataException(
@@ -807,6 +812,7 @@ internal static partial class D3dbspGfxCodec
 
     private static void CoalesceStaticWorldSurfaces(
         int staticSurfaceStart,
+        int baseLayerSize,
         ref int staticSurfaceCount,
         ref int surfaceCount,
         ref IReadOnlyList<GfxBrushModel> models,
@@ -847,6 +853,9 @@ internal static partial class D3dbspGfxCodec
             bool isWorldSurface = first >= staticSurfaceStart && first < staticSurfaceEnd;
             int end = first + 1;
             int baseVertex = originalTriangles.BaseVertex;
+            int layerBase = originalTriangles.VertexLayerData;
+            bool extendedLayers = layerBase >= baseLayerSize;
+            int layerStride = extendedLayers ? GetBackendLayerStride(original.Material) : LayerStride;
             int vertexEnd = checked(baseVertex + originalTriangles.VertexCount);
             int triangleCount = originalTriangles.TriCount;
             while (isWorldSurface && end < staticSurfaceEnd)
@@ -859,6 +868,8 @@ internal static partial class D3dbspGfxCodec
                 int mergedEnd = Math.Max(vertexEnd, candidateEnd);
                 // Keep the merged draw exportable to v22's ushort index count.
                 if (!ReferenceEquals(candidate.Material, original.Material) ||
+                    (candidateTriangles.VertexLayerData >= baseLayerSize) != extendedLayers ||
+                    (long)candidateTriangles.VertexLayerData - layerBase != (long)(candidateBase - baseVertex) * layerStride ||
                     candidate.LightmapIndex != original.LightmapIndex ||
                     candidate.ReflectionProbeIndex != original.ReflectionProbeIndex ||
                     candidate.PrimaryLightIndex != original.PrimaryLightIndex ||
@@ -868,6 +879,8 @@ internal static partial class D3dbspGfxCodec
                 {
                     break;
                 }
+                if (candidateBase < baseVertex)
+                    layerBase = candidateTriangles.VertexLayerData;
                 baseVertex = mergedBase;
                 vertexEnd = mergedEnd;
                 triangleCount += candidateTriangles.TriCount;
@@ -891,7 +904,7 @@ internal static partial class D3dbspGfxCodec
             {
                 Triangles = new SrfTriangles
                 {
-                    VertexLayerData = checked(baseVertex * LayerStride),
+                    VertexLayerData = layerBase,
                     BaseVertex = baseVertex,
                     MinVertexIndex = 0,
                     VertexCount = checked((ushort)(vertexEnd - baseVertex)),
