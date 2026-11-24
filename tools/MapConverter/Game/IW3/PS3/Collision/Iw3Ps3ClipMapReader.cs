@@ -386,7 +386,7 @@ internal static partial class Iw3Ps3FastFileCatalog
         {
             Normal = ReadVec3(row, 0),
             Dist = BeFloat(row, 12),
-            Type = row[16],
+            Type = (CPlaneType)row[16],
             SignBits = row[17],
             Pad12 = row[18..20].ToArray()
         };

@@ -35,7 +35,7 @@ internal static class WeaponInspectorProjection
                 AddInteger(vm, rows, "ADS Transition In Time", "weapon.variant.adsTransitionInTime", draft.Variant.AdsTransitionInTime, vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantAdsTransitionInTime(value)) : null);
                 AddInteger(vm, rows, "ADS Transition Out Time", "weapon.variant.adsTransitionOutTime", draft.Variant.AdsTransitionOutTime, vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantAdsTransitionOutTime(value)) : null);
                 AddInteger(vm, rows, "Clip Size", "weapon.variant.clipSize", draft.Variant.ClipSize, vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantClipSize(value)) : null);
-                AddInteger(vm, rows, "Impact Type", "weapon.variant.impactType", draft.Variant.ImpactType, vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantImpactType(value)) : null);
+                AddEnum<WeaponImpactType>(vm, rows, "Impact Type", "weapon.variant.impactType", draft.Variant.ImpactType, vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantImpactType(value)) : null);
                 AddInteger(vm, rows, "Fire Time", "weapon.variant.fireTime", draft.Variant.FireTime, vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantFireTime(value)) : null);
                 AddFloat(vm, rows, "Penetrate Multiplier", "weapon.variant.penetrateMultiplier", draft.Variant.PenetrateMultiplier, vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantPenetrateMultiplier(value)) : null);
                 AddFloat(vm, rows, "ADS View Kick Center Speed", "weapon.variant.adsViewKickCenterSpeed", draft.Variant.AdsViewKickCenterSpeed, vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantAdsViewKickCenterSpeed(value)) : null);
@@ -54,7 +54,7 @@ internal static class WeaponInspectorProjection
                 rows.Add(ReadOnly("Definition identity", "weapon.definition.internalName", definition.InternalName ?? "Unavailable"));
                 break;
             case WeaponPropertyCategory.HudIconsAndAmmo:
-                AddInteger(vm, rows, "Dpad Icon Ratio", "weapon.variant.dpadIconRatio", draft.Variant.DpadIconRatio, vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantDpadIconRatio(value)) : null);
+                AddEnum<WeaponIconRatio>(vm, rows, "Dpad Icon Ratio", "weapon.variant.dpadIconRatio", draft.Variant.DpadIconRatio, vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantDpadIconRatio(value)) : null);
                 AddAsset<MaterialAsset>(vm, rows, "Kill Icon", "weapon.variant.killIcon", draft.Variant.KillIcon, XAssetType.Material, vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantKillIcon(value)) : null);
                 AddAsset<MaterialAsset>(vm, rows, "Dpad Icon", "weapon.variant.dpadIcon", draft.Variant.DpadIcon, XAssetType.Material, vm.IsEditable ? value => vm.Mutate(() => draft.SetVariantDpadIcon(value)) : null);
                 AddWeaponAmmoFieldsRows(vm, rows, definition.Ammo);
@@ -271,11 +271,11 @@ internal static class WeaponInspectorProjection
     private static void AddWeaponIconPointersRows(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, WeaponIconPointers current)
     {
         AddAsset<MaterialAsset>(vm, rows, "HUD Icon", "weapon.definition.icons.hudIcon", current.HudIcon, XAssetType.Material, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionIconsHudIcon(value)) : null);
-        AddInteger(vm, rows, "HUD Icon Ratio", "weapon.definition.icons.hudIconRatio", current.HudIconRatio, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionIconsHudIconRatio(value)) : null);
+        AddEnum<WeaponIconRatio>(vm, rows, "HUD Icon Ratio", "weapon.definition.icons.hudIconRatio", current.HudIconRatio, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionIconsHudIconRatio(value)) : null);
         AddAsset<MaterialAsset>(vm, rows, "Pickup Icon", "weapon.definition.icons.pickupIcon", current.PickupIcon, XAssetType.Material, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionIconsPickupIcon(value)) : null);
-        AddInteger(vm, rows, "Pickup Icon Ratio", "weapon.definition.icons.pickupIconRatio", current.PickupIconRatio, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionIconsPickupIconRatio(value)) : null);
+        AddEnum<WeaponIconRatio>(vm, rows, "Pickup Icon Ratio", "weapon.definition.icons.pickupIconRatio", current.PickupIconRatio, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionIconsPickupIconRatio(value)) : null);
         AddAsset<MaterialAsset>(vm, rows, "Ammo Counter Icon", "weapon.definition.icons.ammoCounterIcon", current.AmmoCounterIcon, XAssetType.Material, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionIconsAmmoCounterIcon(value)) : null);
-        AddInteger(vm, rows, "Ammo Counter Icon Ratio", "weapon.definition.icons.ammoCounterIconRatio", current.AmmoCounterIconRatio, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionIconsAmmoCounterIconRatio(value)) : null);
+        AddEnum<WeaponIconRatio>(vm, rows, "Ammo Counter Icon Ratio", "weapon.definition.icons.ammoCounterIconRatio", current.AmmoCounterIconRatio, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionIconsAmmoCounterIconRatio(value)) : null);
         AddEnum<AmmoCounterClipType>(vm, rows, "Ammo Counter Clip", "weapon.definition.icons.ammoCounterClip", current.AmmoCounterClip, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionIconsAmmoCounterClip(value)) : null);
         AddInteger(vm, rows, "Start Ammo", "weapon.definition.icons.startAmmo", current.StartAmmo, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionIconsStartAmmo(value)) : null);
     }
@@ -396,7 +396,7 @@ internal static class WeaponInspectorProjection
     private static void AddWeaponPhysicsFieldsRows(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, WeaponPhysicsFields current)
     {
         AddFloat(vm, rows, "Dual Wield View Model Offset", "weapon.definition.physics.dualWieldViewModelOffset", current.DualWieldViewModelOffset, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionPhysicsDualWieldViewModelOffset(value)) : null);
-        AddInteger(vm, rows, "Kill Icon Ratio", "weapon.definition.physics.killIconRatio", current.KillIconRatio, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionPhysicsKillIconRatio(value)) : null);
+        AddEnum<WeaponIconRatio>(vm, rows, "Kill Icon Ratio", "weapon.definition.physics.killIconRatio", current.KillIconRatio, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionPhysicsKillIconRatio(value)) : null);
         AddInteger(vm, rows, "Reload Ammo Add", "weapon.definition.physics.reloadAmmoAdd", current.ReloadAmmoAdd, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionPhysicsReloadAmmoAdd(value)) : null);
         AddInteger(vm, rows, "Reload Start Add", "weapon.definition.physics.reloadStartAdd", current.ReloadStartAdd, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionPhysicsReloadStartAdd(value)) : null);
         AddInteger(vm, rows, "Ammo Drop Stock Min", "weapon.definition.physics.ammoDropStockMin", current.AmmoDropStockMin, vm.IsEditable ? value => vm.Mutate(() => vm.WorkingDraft.SetDefinitionPhysicsAmmoDropStockMin(value)) : null);

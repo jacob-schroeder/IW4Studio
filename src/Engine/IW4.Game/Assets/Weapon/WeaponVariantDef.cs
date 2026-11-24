@@ -36,9 +36,9 @@ public sealed class WeaponVariantDef
     public int AdsTransitionInTime { get; init; }           // 0x18
     public int AdsTransitionOutTime { get; init; }          // 0x1C
     public int ClipSize { get; init; }                      // 0x20
-    public int ImpactType { get; init; }                    // 0x24
+    public WeaponImpactType ImpactType { get; init; }       // 0x24
     public int FireTime { get; init; }                      // 0x28
-    public int DpadIconRatio { get; init; }                 // 0x2C
+    public WeaponIconRatio DpadIconRatio { get; init; }     // 0x2C
     public float PenetrateMultiplier { get; init; }         // 0x30
     public float AdsViewKickCenterSpeed { get; init; }      // 0x34
     public float HipViewKickCenterSpeed { get; init; }      // 0x38

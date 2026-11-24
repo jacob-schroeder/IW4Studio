@@ -109,7 +109,7 @@ module internal SoundRules =
     /// donor's target semantics.
     let TargetStreamFlags(donorFlags: int, sourceFlags: int, ambient: bool) =
         let source = SndAliasBits(sourceFlags)
-        let playback = SndAliasBits(donorFlags).WithPlaybackType(2uy)
+        let playback = SndAliasBits(donorFlags).WithPlaybackType(SndAliasPlaybackType.Stream)
         let looping = playback.WithLooping(source.IsLooping)
         let master = looping.WithMaster(source.IsMaster)
         let slave = master.WithConditionalVolumeScale(source.UsesConditionalVolumeScale)

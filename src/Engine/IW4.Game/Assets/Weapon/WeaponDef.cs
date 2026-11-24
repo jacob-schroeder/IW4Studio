@@ -40,7 +40,7 @@ public sealed class WeaponDef
 
     public WeaponNoteTrackMaps NoteTrackMaps { get; init; } = new(); // 0x018..0x024
 
-    public int PlayerAnimType { get; init; }                 // 0x028
+    public int PlayerAnimType { get; init; }                 // 0x028: index into mp/playeranimtypes.txt.
     public WeaponType WeaponType { get; init; }              // 0x02C: PS3 runtime discriminator.
     public WeaponClass WeaponClass { get; init; }            // 0x030: PS3 runtime discriminator.
     public PenetrateType PenetrateType { get; init; }         // 0x034

@@ -1301,7 +1301,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
     {
         WriteVec3(writer, value.Normal);
         writer.WriteSingle(value.Dist);
-        writer.WriteByte(value.Type);
+        writer.WriteByte((byte)value.Type);
         writer.WriteByte(value.SignBits);
         RequireOptionalFixedCount(value.Pad12, 2, $"CPlane[{index}].Pad12");
         if (value.Pad12.Count == 0)

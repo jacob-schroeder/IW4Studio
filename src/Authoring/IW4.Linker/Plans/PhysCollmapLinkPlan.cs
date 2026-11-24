@@ -481,7 +481,7 @@ internal sealed class PhysCollmapLinkPlan : AssetLinkPlan
             throw new InvalidDataException($"{fieldPath}.Pad12 requires exactly two bytes.");
         WriteVec3(writer, plane.Normal, $"{fieldPath}.Normal");
         WriteSingle(writer, plane.Dist, $"{fieldPath}.Dist");
-        writer.WriteByte(plane.Type);
+        writer.WriteByte((byte)plane.Type);
         writer.WriteByte(plane.SignBits);
         writer.WriteBytes(plane.Pad12.ToArray());
     }

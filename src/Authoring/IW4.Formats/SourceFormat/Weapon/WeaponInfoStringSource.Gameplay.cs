@@ -142,14 +142,14 @@ internal static partial class WeaponInfoStringSource
             variant.KillIconPointer.Raw,
             variant.KillIcon,
             $"Weapon '{assetName}' kill icon"));
-        source.AddEnum("killIconRatio", physics.KillIconRatio, IconRatioNames,
+        source.AddEnum("killIconRatio", (int)physics.KillIconRatio, IconRatioNames,
             $"Weapon '{assetName}' kill-icon ratio");
         source.AddBoolean("flipKillIcon", flags.FlipKillIcon);
         source.AddString("dpadIcon", Referenced(
             variant.DpadIconPointer.Raw,
             variant.DpadIcon,
             $"Weapon '{assetName}' d-pad icon"));
-        source.AddEnum("dpadIconRatio", variant.DpadIconRatio, IconRatioNames,
+        source.AddEnum("dpadIconRatio", (int)variant.DpadIconRatio, IconRatioNames,
             $"Weapon '{assetName}' d-pad icon ratio");
         source.AddBoolean("dpadIconShowsAmmo", variant.DpadIconShowsAmmo);
         source.AddBoolean("noPartialReload", flags.NoPartialReload);

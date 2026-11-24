@@ -9,7 +9,7 @@ public sealed class CPlane
 
     public Vec3 Normal { get; init; }
     public float Dist { get; init; }
-    public byte Type { get; init; }
+    public CPlaneType Type { get; init; }
     public byte SignBits { get; init; }
     public IReadOnlyList<byte> Pad12 { get; init; } = [];
 }

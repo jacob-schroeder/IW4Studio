@@ -29,7 +29,7 @@ internal sealed class PreparedPreview(PreparedVariant[] variants, string? error)
                 alias.PitchMin <= 0 || alias.PitchMax < alias.PitchMin)
                 throw new InvalidDataException("Preview requires valid volume and pitch ranges.");
             if (!string.IsNullOrEmpty(alias.ChainAliasName) &&
-                (alias.FlagBits.PlaybackType != 2 || alias.SoundFiles[0].Streamed is null))
+                (alias.FlagBits.PlaybackType != SndAliasPlaybackType.Stream || alias.SoundFiles[0].Streamed is null))
                 throw new InvalidDataException("Chain preview currently requires a streamed source; loaded-sample chain dispatch is not yet recovered.");
         }
     }

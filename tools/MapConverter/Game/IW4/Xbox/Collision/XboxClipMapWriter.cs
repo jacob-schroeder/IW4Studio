@@ -79,7 +79,7 @@ internal static class XboxClipMapWriter
 
         uint planesAt = WriteTable(zone, rootAt, 0x0c, clip.Planes, CPlane.SerializedSize, 4,
             (bytes, at, plane) => Plane(bytes, at, plane));
-        var planeAddresses = new Dictionary<(float, float, float, float, byte, byte), uint>();
+        var planeAddresses = new Dictionary<(float, float, float, float, CPlaneType, byte), uint>();
         for (int i = 0; i < clip.Planes.Count; i++)
             planeAddresses.TryAdd(PlaneKey(clip.Planes[i]), planesAt + (uint)(i * CPlane.SerializedSize));
 
@@ -342,7 +342,7 @@ internal static class XboxClipMapWriter
     }
 
     private static void PlanePointer(XboxZoneStream zone, uint owner, int offset, CPlane? plane,
-        IReadOnlyDictionary<(float, float, float, float, byte, byte), uint> addresses)
+        IReadOnlyDictionary<(float, float, float, float, CPlaneType, byte), uint> addresses)
     {
         if (plane is null) return;
         if (addresses.TryGetValue(PlaneKey(plane), out uint address))
@@ -354,7 +354,7 @@ internal static class XboxClipMapWriter
         }
     }
 
-    private static (float, float, float, float, byte, byte) PlaneKey(CPlane value) =>
+    private static (float, float, float, float, CPlaneType, byte) PlaneKey(CPlane value) =>
         (value.Normal.X, value.Normal.Y, value.Normal.Z, value.Dist, value.Type, value.SignBits);
 
     private static int FindSlice<T>(IReadOnlyList<T> haystack, IReadOnlyList<T> needle)
@@ -406,7 +406,7 @@ internal static class XboxClipMapWriter
     {
         Vec3(bytes, at, plane.Normal);
         F32(bytes, at + 12, plane.Dist);
-        bytes[at + 16] = plane.Type;
+        bytes[at + 16] = (byte)plane.Type;
         bytes[at + 17] = plane.SignBits;
         if (plane.Pad12.Count != 0)
         {

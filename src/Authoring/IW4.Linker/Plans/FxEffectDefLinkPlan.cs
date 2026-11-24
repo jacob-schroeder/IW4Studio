@@ -819,7 +819,7 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
             WriteRange(writer, Required(element.ReflectionFactor, $"{path}.ReflectionFactor"));
             FxElemAtlas atlas = element.Atlas ??
                 throw new InvalidDataException($"{path}.Atlas cannot be null.");
-            writer.WriteByte(atlas.Behavior);
+            writer.WriteByte((byte)atlas.Behavior);
             writer.WriteByte(atlas.Index);
             writer.WriteByte(atlas.Fps);
             writer.WriteByte(atlas.LoopCount);

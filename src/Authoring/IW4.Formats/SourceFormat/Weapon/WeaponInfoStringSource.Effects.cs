@@ -120,13 +120,13 @@ internal static partial class WeaponInfoStringSource
             icons.HudIconPointer.Raw,
             icons.HudIcon,
             $"Weapon '{assetName}' HUD icon"));
-        source.AddEnum("hudIconRatio", icons.HudIconRatio, IconRatioNames,
+        source.AddEnum("hudIconRatio", (int)icons.HudIconRatio, IconRatioNames,
             $"Weapon '{assetName}' HUD icon ratio");
         source.AddString("pickupIcon", Referenced(
             icons.PickupIconPointer.Raw,
             icons.PickupIcon,
             $"Weapon '{assetName}' pickup icon"));
-        source.AddEnum("pickupIconRatio", icons.PickupIconRatio, IconRatioNames,
+        source.AddEnum("pickupIconRatio", (int)icons.PickupIconRatio, IconRatioNames,
             $"Weapon '{assetName}' pickup icon ratio");
         source.AddString("ammoCounterIcon", Referenced(
             icons.AmmoCounterIconPointer.Raw,
@@ -134,7 +134,7 @@ internal static partial class WeaponInfoStringSource
             $"Weapon '{assetName}' ammo-counter icon"));
         source.AddEnum(
             "ammoCounterIconRatio",
-            icons.AmmoCounterIconRatio,
+            (int)icons.AmmoCounterIconRatio,
             IconRatioNames,
             $"Weapon '{assetName}' ammo-counter icon ratio");
         source.AddEnum(

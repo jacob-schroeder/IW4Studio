@@ -70,28 +70,23 @@ public readonly record struct SndAliasBits(int RawValue)
     /// <summary>Returns a copy with the PS3-observed distance-gate bit changed.</summary>
     public SndAliasBits WithDistanceGate(bool value) => WithFlag(DistanceGateMask, value);
 
-    /// <summary>
-    /// Raw two-bit playback route. PS3 consumer 0x0033CC60 maps 1 to sample
-    /// and 2 to stream, corroborated by Xbox symbols. Values 0 and 3 are
-    /// preserved without assigning further meanings.
-    /// </summary>
-    public byte PlaybackType =>
-        (byte)((RawValue & PlaybackTypeMask) >> PlaybackTypeShift);
+    /// <summary>Playback route encoded in bits 7 and 8 of the alias flag word.</summary>
+    public SndAliasPlaybackType PlaybackType =>
+        (SndAliasPlaybackType)((RawValue & PlaybackTypeMask) >> PlaybackTypeShift);
 
     /// <summary>
-    /// Returns a copy with the raw playback route changed: 1 selects sample
-    /// playback and 2 selects streaming in the recovered PS3 consumer.
+    /// Returns a copy with only the two playback-route bits changed.
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException">The value is greater than 3.</exception>
-    public SndAliasBits WithPlaybackType(byte value)
+    /// <exception cref="ArgumentOutOfRangeException">The value is outside the two-bit field.</exception>
+    public SndAliasBits WithPlaybackType(SndAliasPlaybackType value)
     {
-        if (value > 3)
+        if ((byte)value > 3)
         {
             throw new ArgumentOutOfRangeException(nameof(value), value, "Playback type must be between 0 and 3.");
         }
 
         return new SndAliasBits((RawValue & ~PlaybackTypeMask) |
-                                (value << PlaybackTypeShift));
+                                ((int)value << PlaybackTypeShift));
     }
 
     /// <summary>

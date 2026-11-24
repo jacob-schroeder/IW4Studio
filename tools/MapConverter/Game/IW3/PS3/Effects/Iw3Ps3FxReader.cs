@@ -103,7 +103,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                 InitialRotation = FxRange(row + 0x90),
                 Gravity = FxRange(row + 0x98),
                 ReflectionFactor = FxRange(row + 0xa0),
-                Atlas = new FxElemAtlas(_data[row + 0xa8], _data[row + 0xa9],
+                Atlas = new FxElemAtlas((FxAtlasBehavior)_data[row + 0xa8], _data[row + 0xa9],
                     _data[row + 0xaa], _data[row + 0xab], _data[row + 0xac],
                     _data[row + 0xad], unchecked((short)U16(row + 0xae))),
                 ElemType = type,

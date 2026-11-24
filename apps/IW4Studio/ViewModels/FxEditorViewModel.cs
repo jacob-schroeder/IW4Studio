@@ -1129,20 +1129,21 @@ public sealed class FxElementViewModel
     {
         int columns = 1 << Math.Min(atlas.ColIndexBits, (byte)15);
         int rows = 1 << Math.Min(atlas.RowIndexBits, (byte)15);
-        string start = (atlas.Behavior & 0x03) switch
+        string start = atlas.GetStartMode() switch
         {
-            0 => "fixed start",
-            1 => "random start",
-            2 => "indexed start",
-            _ => "fixed-range start"
+            FxAtlasBehavior.StartFixed => "fixed start",
+            FxAtlasBehavior.StartRandom => "random start",
+            FxAtlasBehavior.StartIndexed => "indexed start",
+            FxAtlasBehavior.StartIndexedAlternate => "indexed start (mode 3)",
+            _ => "unknown start mode"
         };
-        string advance = (atlas.Behavior & 0x04) != 0
+        string advance = (atlas.Behavior & FxAtlasBehavior.PlayOverLife) != 0
             ? "over life"
             : "by FPS";
-        string loop = (atlas.Behavior & 0x08) != 0
+        string loop = (atlas.Behavior & FxAtlasBehavior.LoopOnlyNTimes) != 0
             ? $"loop {atlas.LoopCount:N0}×"
             : "continuous";
-        return $"behavior 0x{atlas.Behavior:X2} ({start}, {advance}, {loop}) · " +
+        return $"behavior 0x{(byte)atlas.Behavior:X2} ({start}, {advance}, {loop}) · " +
             $"index {atlas.Index:N0} · " +
             $"{atlas.EntryCount:N0} entries · {columns:N0}×{rows:N0} · " +
             $"{atlas.Fps:N0} fps";

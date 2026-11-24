@@ -732,7 +732,7 @@ public sealed class FxEffectDefLoader : XAssetLoader<FxEffectDefAsset>
     private static FxElemAtlas ReadFxElemAtlas(FastFileCursor cursor)
     {
         return new FxElemAtlas(
-            cursor.ReadByte(),
+            (FxAtlasBehavior)cursor.ReadByte(),
             cursor.ReadByte(),
             cursor.ReadByte(),
             cursor.ReadByte(),

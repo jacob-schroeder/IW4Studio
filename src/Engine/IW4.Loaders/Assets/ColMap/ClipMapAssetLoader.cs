@@ -1125,7 +1125,7 @@ internal sealed class ClipMapAssetLoader : XAssetLoader<ClipMapAsset>
         {
             Normal = ReadVec3(cursor),
             Dist = cursor.ReadSingle(),
-            Type = cursor.ReadByte(),
+            Type = (CPlaneType)cursor.ReadByte(),
             SignBits = cursor.ReadByte(),
             Pad12 = cursor.ReadBytes(2)
         };

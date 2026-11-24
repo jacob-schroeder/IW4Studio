@@ -122,9 +122,9 @@ public sealed class WeaponLoader : XAssetLoader<WeaponAsset>
             AdsTransitionInTime: rootCursor.ReadInt32(),
             AdsTransitionOutTime: rootCursor.ReadInt32(),
             ClipSize: rootCursor.ReadInt32(),
-            ImpactType: rootCursor.ReadInt32(),
+            ImpactType: (WeaponImpactType)rootCursor.ReadInt32(),
             FireTime: rootCursor.ReadInt32(),
-            DpadIconRatio: rootCursor.ReadInt32(),
+            DpadIconRatio: (WeaponIconRatio)rootCursor.ReadInt32(),
             PenetrateMultiplier: rootCursor.ReadSingle(),
             AdsViewKickCenterSpeed: rootCursor.ReadSingle(),
             HipViewKickCenterSpeed: rootCursor.ReadSingle(),
@@ -344,11 +344,11 @@ public sealed class WeaponLoader : XAssetLoader<WeaponAsset>
         root.Icons = new WeaponIconPointers
         {
             HudIconPointer = ReadPointer<MaterialAsset>(c, context, XPointerResolutionMode.AliasCell),
-            HudIconRatio = c.ReadInt32(),
+            HudIconRatio = (WeaponIconRatio)c.ReadInt32(),
             PickupIconPointer = ReadPointer<MaterialAsset>(c, context, XPointerResolutionMode.AliasCell),
-            PickupIconRatio = c.ReadInt32(),
+            PickupIconRatio = (WeaponIconRatio)c.ReadInt32(),
             AmmoCounterIconPointer = ReadPointer<MaterialAsset>(c, context, XPointerResolutionMode.AliasCell),
-            AmmoCounterIconRatio = c.ReadInt32(),
+            AmmoCounterIconRatio = (WeaponIconRatio)c.ReadInt32(),
             AmmoCounterClip = (AmmoCounterClipType)c.ReadInt32(),
             StartAmmo = c.ReadInt32()
         };
@@ -1807,7 +1807,7 @@ public sealed class WeaponLoader : XAssetLoader<WeaponAsset>
         return new WeaponPhysicsFields
         {
             DualWieldViewModelOffset = cursor.ReadSingle(),
-            KillIconRatio = cursor.ReadInt32(),
+            KillIconRatio = (WeaponIconRatio)cursor.ReadInt32(),
             ReloadAmmoAdd = cursor.ReadInt32(),
             ReloadStartAdd = cursor.ReadInt32(),
             AmmoDropStockMin = cursor.ReadInt32(),

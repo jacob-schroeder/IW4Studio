@@ -1013,12 +1013,12 @@ internal static class D3dbspMapEntsCodec
         Normal = normal,
         Dist = distance,
         Type = normal.X == 1.0f
-            ? (byte)0
+            ? CPlaneType.PositiveX
             : normal.Y == 1.0f
-                ? (byte)1
+                ? CPlaneType.PositiveY
                 : normal.Z == 1.0f
-                    ? (byte)2
-                    : (byte)3,
+                    ? CPlaneType.PositiveZ
+                    : CPlaneType.Other,
         SignBits = 0,
         Pad12 = new byte[2]
     };

@@ -298,7 +298,13 @@ internal static class BrushCollisionCompiler
     {
         Normal = ToVec3(normal),
         Dist = distance,
-        Type = normal == Vector3.UnitX ? (byte)0 : normal == Vector3.UnitY ? (byte)1 : normal == Vector3.UnitZ ? (byte)2 : (byte)3,
+        Type = normal switch
+        {
+            { X: 1, Y: 0, Z: 0 } => CPlaneType.PositiveX,
+            { X: 0, Y: 1, Z: 0 } => CPlaneType.PositiveY,
+            { X: 0, Y: 0, Z: 1 } => CPlaneType.PositiveZ,
+            _ => CPlaneType.Other
+        },
         Pad12 = new byte[2]
     };
 

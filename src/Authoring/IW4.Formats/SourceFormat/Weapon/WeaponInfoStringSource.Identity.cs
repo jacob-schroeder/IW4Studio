@@ -109,7 +109,7 @@ internal static partial class WeaponInfoStringSource
         source.AddFloat("penetrateMultiplier", variant.PenetrateMultiplier);
         source.AddEnum(
             "impactType",
-            variant.ImpactType,
+            (int)variant.ImpactType,
             ImpactTypeNames,
             $"Weapon '{assetName}' impact type");
         source.AddEnum(

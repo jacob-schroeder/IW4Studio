@@ -84,6 +84,6 @@ internal static class XboxPhysCollmapWriter
     private static void Plane(byte[] data, int offset, CPlane plane)
     {
         Vector(data, offset, plane.Normal); Float(data, offset + 12, plane.Dist);
-        data[offset + 16] = plane.Type;
+        data[offset + 16] = (byte)plane.Type;
     }
 }

@@ -608,16 +608,17 @@ public sealed class FxSpritePreview
         int sequence, uint seed)
     {
         if (atlas.EntryCount <= 1) return 0;
-        int frame = (atlas.Behavior & 3) switch
+        int frame = atlas.GetStartMode() switch
         {
-            1 => (int)(Random(seed, 22) * atlas.EntryCount),
-            2 => sequence & (atlas.EntryCount - 1),
+            FxAtlasBehavior.StartRandom => (int)(Random(seed, 22) * atlas.EntryCount),
+            FxAtlasBehavior.StartIndexed or FxAtlasBehavior.StartIndexedAlternate =>
+                sequence & (atlas.EntryCount - 1),
             _ => atlas.Index
         };
-        frame += (atlas.Behavior & 4) != 0
+        frame += (atlas.Behavior & FxAtlasBehavior.PlayOverLife) != 0
             ? (int)(normalizedLife * atlas.EntryCount)
             : (int)(atlas.Fps * age / 1000);
-        if ((atlas.Behavior & 8) != 0 && frame >= atlas.EntryCount * atlas.LoopCount)
+        if ((atlas.Behavior & FxAtlasBehavior.LoopOnlyNTimes) != 0 && frame >= atlas.EntryCount * atlas.LoopCount)
             frame = atlas.EntryCount - 1;
         return ((frame % atlas.EntryCount) + atlas.EntryCount) % atlas.EntryCount;
     }

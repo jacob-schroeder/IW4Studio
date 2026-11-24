@@ -49,7 +49,7 @@ public sealed partial class WeaponDraft
         SetVariantValues(CopyWeaponVariantDefClipSize(_asset.Variant, value));
     }
 
-    public void SetVariantImpactType(int value)
+    public void SetVariantImpactType(WeaponImpactType value)
     {
         SetVariantValues(CopyWeaponVariantDefImpactType(_asset.Variant, value));
     }
@@ -59,7 +59,7 @@ public sealed partial class WeaponDraft
         SetVariantValues(CopyWeaponVariantDefFireTime(_asset.Variant, value));
     }
 
-    public void SetVariantDpadIconRatio(int value)
+    public void SetVariantDpadIconRatio(WeaponIconRatio value)
     {
         SetVariantValues(CopyWeaponVariantDefDpadIconRatio(_asset.Variant, value));
     }
@@ -659,7 +659,7 @@ public sealed partial class WeaponDraft
         SetDefinitionValues(CopyWeaponDefIcons(RequireDefinition(), CopyWeaponIconPointersHudIcon(RequireDefinition().Icons, value)));
     }
 
-    public void SetDefinitionIconsHudIconRatio(int value)
+    public void SetDefinitionIconsHudIconRatio(WeaponIconRatio value)
     {
         SetDefinitionValues(CopyWeaponDefIcons(RequireDefinition(), CopyWeaponIconPointersHudIconRatio(RequireDefinition().Icons, value)));
     }
@@ -669,7 +669,7 @@ public sealed partial class WeaponDraft
         SetDefinitionValues(CopyWeaponDefIcons(RequireDefinition(), CopyWeaponIconPointersPickupIcon(RequireDefinition().Icons, value)));
     }
 
-    public void SetDefinitionIconsPickupIconRatio(int value)
+    public void SetDefinitionIconsPickupIconRatio(WeaponIconRatio value)
     {
         SetDefinitionValues(CopyWeaponDefIcons(RequireDefinition(), CopyWeaponIconPointersPickupIconRatio(RequireDefinition().Icons, value)));
     }
@@ -679,7 +679,7 @@ public sealed partial class WeaponDraft
         SetDefinitionValues(CopyWeaponDefIcons(RequireDefinition(), CopyWeaponIconPointersAmmoCounterIcon(RequireDefinition().Icons, value)));
     }
 
-    public void SetDefinitionIconsAmmoCounterIconRatio(int value)
+    public void SetDefinitionIconsAmmoCounterIconRatio(WeaponIconRatio value)
     {
         SetDefinitionValues(CopyWeaponDefIcons(RequireDefinition(), CopyWeaponIconPointersAmmoCounterIconRatio(RequireDefinition().Icons, value)));
     }
@@ -1259,7 +1259,7 @@ public sealed partial class WeaponDraft
         SetDefinitionValues(CopyWeaponDefPhysics(RequireDefinition(), CopyWeaponPhysicsFieldsDualWieldViewModelOffset(RequireDefinition().Physics, value)));
     }
 
-    public void SetDefinitionPhysicsKillIconRatio(int value)
+    public void SetDefinitionPhysicsKillIconRatio(WeaponIconRatio value)
     {
         SetDefinitionValues(CopyWeaponDefPhysics(RequireDefinition(), CopyWeaponPhysicsFieldsKillIconRatio(RequireDefinition().Physics, value)));
     }
@@ -11411,7 +11411,7 @@ public sealed partial class WeaponDraft
         StartAmmo = source.StartAmmo,
     };
 
-    private static WeaponIconPointers CopyWeaponIconPointersAmmoCounterIconRatio(WeaponIconPointers source, int value) => new()
+    private static WeaponIconPointers CopyWeaponIconPointersAmmoCounterIconRatio(WeaponIconPointers source, WeaponIconRatio value) => new()
     {
         HudIconPointer = source.HudIconPointer,
         HudIcon = source.HudIcon,
@@ -11441,7 +11441,7 @@ public sealed partial class WeaponDraft
         StartAmmo = source.StartAmmo,
     };
 
-    private static WeaponIconPointers CopyWeaponIconPointersHudIconRatio(WeaponIconPointers source, int value) => new()
+    private static WeaponIconPointers CopyWeaponIconPointersHudIconRatio(WeaponIconPointers source, WeaponIconRatio value) => new()
     {
         HudIconPointer = source.HudIconPointer,
         HudIcon = source.HudIcon,
@@ -11471,7 +11471,7 @@ public sealed partial class WeaponDraft
         StartAmmo = source.StartAmmo,
     };
 
-    private static WeaponIconPointers CopyWeaponIconPointersPickupIconRatio(WeaponIconPointers source, int value) => new()
+    private static WeaponIconPointers CopyWeaponIconPointersPickupIconRatio(WeaponIconPointers source, WeaponIconRatio value) => new()
     {
         HudIconPointer = source.HudIconPointer,
         HudIcon = source.HudIcon,
@@ -12321,7 +12321,7 @@ public sealed partial class WeaponDraft
         ProjectileCurvature = source.ProjectileCurvature,
     };
 
-    private static WeaponPhysicsFields CopyWeaponPhysicsFieldsKillIconRatio(WeaponPhysicsFields source, int value) => new()
+    private static WeaponPhysicsFields CopyWeaponPhysicsFieldsKillIconRatio(WeaponPhysicsFields source, WeaponIconRatio value) => new()
     {
         DualWieldViewModelOffset = source.DualWieldViewModelOffset,
         KillIconRatio = value,
@@ -21395,7 +21395,7 @@ public sealed partial class WeaponDraft
         Padding73 = source.Padding73,
     };
 
-    private static WeaponVariantDef CopyWeaponVariantDefDpadIconRatio(WeaponVariantDef source, int value) => new()
+    private static WeaponVariantDef CopyWeaponVariantDefDpadIconRatio(WeaponVariantDef source, WeaponIconRatio value) => new()
     {
         Offset = source.Offset,
         InternalNamePointer = source.InternalNamePointer,
@@ -21787,7 +21787,7 @@ public sealed partial class WeaponDraft
         Padding73 = source.Padding73,
     };
 
-    private static WeaponVariantDef CopyWeaponVariantDefImpactType(WeaponVariantDef source, int value) => new()
+    private static WeaponVariantDef CopyWeaponVariantDefImpactType(WeaponVariantDef source, WeaponImpactType value) => new()
     {
         Offset = source.Offset,
         InternalNamePointer = source.InternalNamePointer,

@@ -1179,9 +1179,9 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         writer.WriteInt32(value.AdsTransitionInTime);
         writer.WriteInt32(value.AdsTransitionOutTime);
         writer.WriteInt32(value.ClipSize);
-        writer.WriteInt32(value.ImpactType);
+        writer.WriteInt32((int)value.ImpactType);
         writer.WriteInt32(value.FireTime);
-        writer.WriteInt32(value.DpadIconRatio);
+        writer.WriteInt32((int)value.DpadIconRatio);
         writer.WriteSingle(value.PenetrateMultiplier);
         writer.WriteSingle(value.AdsViewKickCenterSpeed);
         writer.WriteSingle(value.HipViewKickCenterSpeed);
@@ -1351,11 +1351,11 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         WeaponIconPointers value)
     {
         writer.Skip(sizeof(int));
-        writer.WriteInt32(value.HudIconRatio);
+        writer.WriteInt32((int)value.HudIconRatio);
         writer.Skip(sizeof(int));
-        writer.WriteInt32(value.PickupIconRatio);
+        writer.WriteInt32((int)value.PickupIconRatio);
         writer.Skip(sizeof(int));
-        writer.WriteInt32(value.AmmoCounterIconRatio);
+        writer.WriteInt32((int)value.AmmoCounterIconRatio);
         writer.WriteInt32((int)value.AmmoCounterClip);
         writer.WriteInt32(value.StartAmmo);
     }
@@ -1494,7 +1494,7 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         writer.WriteSingle(value.DualWieldViewModelOffset);
         WriteInts(
             writer,
-            value.KillIconRatio,
+            (int)value.KillIconRatio,
             value.ReloadAmmoAdd,
             value.ReloadStartAdd,
             value.AmmoDropStockMin);

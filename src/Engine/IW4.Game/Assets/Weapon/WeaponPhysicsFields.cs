@@ -6,7 +6,7 @@ namespace IW4.Game.Assets.Weapon;
 public sealed class WeaponPhysicsFields
 {
     public float DualWieldViewModelOffset { get; init; }                          // 0x3CC
-    public int KillIconRatio { get; init; }                                       // 0x3D0
+    public WeaponIconRatio KillIconRatio { get; init; }                           // 0x3D0
     public int ReloadAmmoAdd { get; init; }                                       // 0x3D4
     public int ReloadStartAdd { get; init; }                                      // 0x3D8
     public int AmmoDropStockMin { get; init; }                                    // 0x3DC

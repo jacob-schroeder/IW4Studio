@@ -295,7 +295,7 @@ public sealed class PhysCollmapLoader : XAssetLoader<PhysCollmapAsset>
     {
         Vec3 normal = ReadVec3(cursor);
         float dist = cursor.ReadSingle();
-        byte type = cursor.ReadByte();
+        var type = (CPlaneType)cursor.ReadByte();
         byte signBits = cursor.ReadByte();
         byte[] pad12 = cursor.ReadBytes(2);
         return new CPlane

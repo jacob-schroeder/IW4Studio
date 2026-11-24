@@ -820,9 +820,9 @@ internal static class WeaponGraph
         EqualityComparer<int>.Default.Equals(left.AdsTransitionInTime, right.AdsTransitionInTime) &&
         EqualityComparer<int>.Default.Equals(left.AdsTransitionOutTime, right.AdsTransitionOutTime) &&
         EqualityComparer<int>.Default.Equals(left.ClipSize, right.ClipSize) &&
-        EqualityComparer<int>.Default.Equals(left.ImpactType, right.ImpactType) &&
+        left.ImpactType == right.ImpactType &&
         EqualityComparer<int>.Default.Equals(left.FireTime, right.FireTime) &&
-        EqualityComparer<int>.Default.Equals(left.DpadIconRatio, right.DpadIconRatio) &&
+        left.DpadIconRatio == right.DpadIconRatio &&
         FloatEquals(left.PenetrateMultiplier, right.PenetrateMultiplier) &&
         FloatEquals(left.AdsViewKickCenterSpeed, right.AdsViewKickCenterSpeed) &&
         FloatEquals(left.HipViewKickCenterSpeed, right.HipViewKickCenterSpeed) &&
@@ -1134,11 +1134,11 @@ internal static class WeaponGraph
         ReferenceEquals(left, right) ||
         left is not null && right is not null &&
         ProviderEquals(left.HudIcon, right.HudIcon) &&
-        EqualityComparer<int>.Default.Equals(left.HudIconRatio, right.HudIconRatio) &&
+        left.HudIconRatio == right.HudIconRatio &&
         ProviderEquals(left.PickupIcon, right.PickupIcon) &&
-        EqualityComparer<int>.Default.Equals(left.PickupIconRatio, right.PickupIconRatio) &&
+        left.PickupIconRatio == right.PickupIconRatio &&
         ProviderEquals(left.AmmoCounterIcon, right.AmmoCounterIcon) &&
-        EqualityComparer<int>.Default.Equals(left.AmmoCounterIconRatio, right.AmmoCounterIconRatio) &&
+        left.AmmoCounterIconRatio == right.AmmoCounterIconRatio &&
         EqualityComparer<AmmoCounterClipType>.Default.Equals(left.AmmoCounterClip, right.AmmoCounterClip) &&
         EqualityComparer<int>.Default.Equals(left.StartAmmo, right.StartAmmo);
 
@@ -1185,7 +1185,7 @@ internal static class WeaponGraph
         ReferenceEquals(left, right) ||
         left is not null && right is not null &&
         FloatEquals(left.DualWieldViewModelOffset, right.DualWieldViewModelOffset) &&
-        EqualityComparer<int>.Default.Equals(left.KillIconRatio, right.KillIconRatio) &&
+        left.KillIconRatio == right.KillIconRatio &&
         EqualityComparer<int>.Default.Equals(left.ReloadAmmoAdd, right.ReloadAmmoAdd) &&
         EqualityComparer<int>.Default.Equals(left.ReloadStartAdd, right.ReloadStartAdd) &&
         EqualityComparer<int>.Default.Equals(left.AmmoDropStockMin, right.AmmoDropStockMin) &&
