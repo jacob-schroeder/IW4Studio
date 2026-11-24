@@ -1325,8 +1325,8 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
     {
         writer.WriteUInt16(value.FirstCollAabbIndex);
         writer.WriteUInt16(value.CollAabbCount);
-        writer.WriteInt32(value.BrushContents);
-        writer.WriteInt32(value.TerrainContents);
+        writer.WriteInt32((int)value.BrushContents);
+        writer.WriteInt32((int)value.TerrainContents);
         WriteVec3(writer, value.Mins);
         WriteVec3(writer, value.Maxs);
         writer.WriteInt32(value.LeafBrushNode);
@@ -1446,7 +1446,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         WriteVec3(writer, value.Mass.CenterOfMass);
         WriteVec3(writer, value.Mass.MomentsOfInertia);
         WriteVec3(writer, value.Mass.ProductsOfInertia);
-        writer.WriteInt32(value.Contents);
+        writer.WriteInt32((int)value.Contents);
     }
 
     private static void WriteVec3(LinkTemplateWriter writer, Vec3 value)
@@ -1915,7 +1915,7 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
         BitConverter.SingleToInt32Bits(value.Radius) == 0;
 
     private static bool IsZero(DynEntityClient? value) =>
-        value is not null && value.PhysObjId == 0 && value.Flags == 0 &&
+        value is not null && value.PhysObjId == 0 && value.Flags == DynEntityClientFlags.None &&
         value.LightingHandle == 0 && value.Health == 0;
 
     private static bool IsZero(DynEntityColl? value) =>

@@ -13,7 +13,7 @@ public sealed class DynEntityClient
     public const int SerializedSize = 0x0C;
 
     public int PhysObjId { get; init; }
-    public ushort Flags { get; init; }
+    public DynEntityClientFlags Flags { get; init; }
     public ushort LightingHandle { get; init; }
     public int Health { get; init; }
 }

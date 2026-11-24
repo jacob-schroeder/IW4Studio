@@ -192,7 +192,7 @@ internal static class BrushCollisionCompiler
             {
                 Mins = model.MidPoint, Maxs = model.HalfSize,
                 Radius = vertices.Max(point => point.Length()),
-                Leaf = new CLeaf { Mins = model.MidPoint, Maxs = model.HalfSize, BrushContents = modelContents, LeafBrushNode = node }
+                Leaf = new CLeaf { Mins = model.MidPoint, Maxs = model.HalfSize, BrushContents = (CollisionContents)modelContents, LeafBrushNode = node }
             });
         }
         return new ClipMapAsset
@@ -214,7 +214,7 @@ internal static class BrushCollisionCompiler
                 new CLeaf(),
                 new CLeaf
                 {
-                    BrushContents = unchecked((int)combinedContents),
+                    BrushContents = (CollisionContents)combinedContents,
                     Mins = leafBounds.MidPoint,
                     Maxs = leafBounds.HalfSize,
                     LeafBrushNode = 1

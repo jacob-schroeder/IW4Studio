@@ -25,5 +25,5 @@ public sealed class DynEntityDef
     public PhysPresetAsset? PhysPreset { get; init; }
     public int Health { get; init; }
     public PhysMass Mass { get; init; } = new();
-    public int Contents { get; init; }
+    public CollisionContents Contents { get; init; }
 }

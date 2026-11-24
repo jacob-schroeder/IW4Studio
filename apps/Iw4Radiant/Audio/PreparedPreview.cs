@@ -21,8 +21,6 @@ internal sealed class PreparedPreview(PreparedVariant[] variants, string? error)
                 throw new InvalidDataException("Preview requires finite, nonnegative variant probabilities.");
             if (alias.Sequence == int.MaxValue)
                 throw new InvalidDataException("Variant sequence overflow is not supported by the preview.");
-            if (alias.Flags.UnmappedBits != 0)
-                throw new InvalidDataException($"Alias flags 0x{unchecked((uint)alias.Flags.UnmappedBits):X8} have unrecovered behavior and are not supported by the preview.");
             if (alias.Flags.UsesFullDryLevel || alias.Flags.UsesNoWetLevel ||
                 alias.Flags.UsesRandomStartPosition)
                 throw new InvalidDataException("This alias requests dry/wet gain or random start behavior unsupported by the preview.");

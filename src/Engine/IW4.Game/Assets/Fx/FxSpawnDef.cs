@@ -4,7 +4,10 @@ using IW4.Game.Pointers;
 
 namespace IW4.Game.Assets.Fx;
 
-/// <summary>The two serialized words use looping or one-shot count-range arms.</summary>
+/// <summary>
+/// Looping elements store an interval in milliseconds and a count. One-shot
+/// elements and their copies in the emission group store a count range.
+/// </summary>
 public sealed record FxSpawnDef(int FirstWord, int SecondWord)
 {
     public FxSpawnDefLooping Looping => new(FirstWord, SecondWord);

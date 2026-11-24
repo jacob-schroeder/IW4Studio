@@ -1,14 +1,15 @@
 namespace IW4.Game.Assets.Material;
 
 /// <summary>
-/// Proven serialized material routing flags. Unnamed bits remain valid when
-/// carried through this enum and are intentionally not assigned speculative
-/// meanings.
+/// Serialized material routing flags.
 /// </summary>
 [Flags]
 public enum MaterialGameFlags : byte
 {
     None = 0,
+    /// <summary>Excludes this material from receiving projected marks on PS3.
+    /// The original authoring property that sets this bit is unknown.</summary>
+    NoImpactMarks = 0x01,
     HasLightmap = 0x02,
     NoMarks = 0x04,
     Sky = 0x08,
@@ -21,5 +22,12 @@ public enum MaterialGameFlags : byte
     /// shadow-caster queue instead of using the shared caster material.
     /// </summary>
     MaterialSpecificShadowCaster = 0x80,
-    ShadowCasterRouteMask = CastsShadow | MaterialSpecificShadowCaster
+    ShadowCasterRouteMask = CastsShadow | MaterialSpecificShadowCaster,
+
+    /// <summary>
+    /// A material with either bit set is excluded as a projected-mark receiver
+    /// on PS3. Stock layered materials retain each bit only if every input
+    /// layer sets that same bit.
+    /// </summary>
+    MarkReceiverExclusionMask = NoImpactMarks | NoMarks
 }

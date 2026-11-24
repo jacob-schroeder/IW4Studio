@@ -98,7 +98,7 @@ internal static class Iw3DynamicEntityCompiler
                         MomentsOfInertia = Vec3(item.MomentsOfInertia),
                         ProductsOfInertia = Vec3(item.ProductsOfInertia)
                     },
-                    Contents = item.Contents
+                    Contents = (CollisionContents)item.Contents
                 };
             }
             targetLists[listIndex] = Array.AsReadOnly(targetRows);

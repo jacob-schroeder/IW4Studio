@@ -1,5 +1,6 @@
 using System.Numerics;
 using IW4.Formats.SourceFormat.Material;
+using IW4.Game.Assets.ColMap;
 using IW4.Game.Assets.Material;
 
 namespace Iw4Radiant.Materials;
@@ -32,19 +33,23 @@ internal sealed record MaterialSource(
     internal MaterialGameFlags GameFlags { get; init; }
     internal MaterialSurfaceTypeBits SurfaceTypeBits { get; init; }
 
-    internal int GetSurfaceTypeFlags()
+    internal CollisionSurfaceFlags GetCollisionSurfaceFlags()
     {
+        var flags = (GameFlags & MaterialGameFlags.NoMarks) != 0
+            ? CollisionSurfaceFlags.NoMarks
+            : CollisionSurfaceFlags.None;
+        if (IsWater)
+            flags |= CollisionSurfaceFlags.NoDlight | CollisionSurfaceFlags.NoCastShadow;
+
         uint bits = (uint)SurfaceTypeBits;
-        if (bits == 0) return 0;
+        if (bits == 0) return flags;
         int type = BitOperations.TrailingZeroCount(bits) + 1;
         if (!BitOperations.IsPow2(bits) || type >= (int)MaterialSurfaceType.Count)
             throw new NotSupportedException($"Material '{Name}' has no single supported collision surface type.");
-        return type << 20;
+        return flags | (CollisionSurfaceFlags)(type << 20);
     }
 
     // Direct mp_highrise.ff readback: both w/_default_water and
     // wc/armada_water use DETAIL|WATER and the same native surface flags.
     internal int GetCollisionContents() => IsWater ? 0x08000020 : 1;
-
-    internal int GetCollisionSurfaceFlags() => IsWater ? 0x01460020 : GetSurfaceTypeFlags();
 }

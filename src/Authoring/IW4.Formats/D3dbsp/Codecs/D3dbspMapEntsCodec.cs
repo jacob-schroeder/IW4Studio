@@ -284,7 +284,7 @@ internal static class D3dbspMapEntsCodec
             CLeaf leaf = collisionModel.Leaf ??
                 throw new InvalidDataException(
                     $"Collision model {collisionModelIndex} has no collision leaf.");
-            if (leaf.CollAabbCount != 0 || leaf.TerrainContents != 0)
+            if (leaf.CollAabbCount != 0 || leaf.TerrainContents != CollisionContents.None)
             {
                 throw new NotSupportedException(
                     $"Brush-backed trigger collision model {collisionModelIndex} contains terrain/AABB " +
@@ -873,7 +873,7 @@ internal static class D3dbspMapEntsCodec
         if (collisionModel is null ||
             collisionModel.Leaf is not { } leaf ||
             leaf.CollAabbCount != 0 ||
-            leaf.TerrainContents != 0)
+            leaf.TerrainContents != CollisionContents.None)
         {
             return false;
         }
@@ -935,7 +935,7 @@ internal static class D3dbspMapEntsCodec
         }
 
         return model.Contents == unchecked((int)combinedContents) &&
-            leaf.BrushContents == unchecked((int)combinedContents);
+            leaf.BrushContents == (CollisionContents)combinedContents;
     }
 
     private static bool SameBounds(Bounds left, Bounds right) =>

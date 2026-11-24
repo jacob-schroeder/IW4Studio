@@ -85,7 +85,7 @@ public sealed class FxSourceDocument
                 string timing = group == "Looping"
                     ? $"Every {Number(spawn["loopingIntervalMsec"])} ms · " +
                       (Number(spawn["count"]) == int.MaxValue ? "continuous" : $"{Number(spawn["count"])} spawns")
-                    : group == "One shot" ? "Triggered once" : "Child emission";
+                    : group == "One shot" ? "Triggered once" : "Copied child one-shot";
                 return new FxSourceLayer(index, group, type, material, editable, timing);
             }).ToArray();
         }
@@ -94,7 +94,8 @@ public sealed class FxSourceDocument
     public string ReadField(int index, FxSourceField field)
     {
         JsonObject element = EditableElement(_root, index);
-        JsonObject spawn = (JsonObject)element["spawn"]!;
+        FxSpawnDef spawn = _effect.ElemDefs[index].Spawn;
+        bool isLooping = index < _effect.ElemDefCountLooping;
         JsonObject life = (JsonObject)element["lifeSpanMsec"]!;
         return field switch
         {
@@ -108,9 +109,11 @@ public sealed class FxSourceDocument
             FxSourceField.Opacity => ColorPeak(element, "a").ToString(CultureInfo.InvariantCulture),
             FxSourceField.LifeBase => Number(life["base"]).ToString(CultureInfo.InvariantCulture),
             FxSourceField.LifeAmplitude => Number(life["amplitude"]).ToString(CultureInfo.InvariantCulture),
-            FxSourceField.SpawnInterval => Number(spawn["loopingIntervalMsec"]).ToString(CultureInfo.InvariantCulture),
-            FxSourceField.SpawnCount => Number(spawn["count"]) == int.MaxValue ? "∞" :
-                Number(spawn["count"]).ToString(CultureInfo.InvariantCulture),
+            FxSourceField.SpawnInterval => (isLooping ? spawn.Looping.IntervalMsec : spawn.OneShotCount.Base)
+                .ToString(CultureInfo.InvariantCulture),
+            FxSourceField.SpawnCount when !isLooping => spawn.OneShotCount.Amplitude.ToString(CultureInfo.InvariantCulture),
+            FxSourceField.SpawnCount => spawn.Looping.Count == int.MaxValue ? "∞" :
+                spawn.Looping.Count.ToString(CultureInfo.InvariantCulture),
             FxSourceField.Gravity => Format(NumberFloat(((JsonObject)element["gravity"]!)["base"])),
             FxSourceField.Rotation => Format(NumberFloat(((JsonObject)element["initialRotation"]!)["base"])),
             FxSourceField.Speed => Format(MotionSpeed(element)),
@@ -126,6 +129,7 @@ public sealed class FxSourceDocument
             JsonObject element = EditableElement(root, index);
             JsonObject spawn = (JsonObject)element["spawn"]!;
             JsonObject life = (JsonObject)element["lifeSpanMsec"]!;
+            bool isLooping = index < _effect.ElemDefCountLooping;
             switch (field)
             {
                 case FxSourceField.Material:
@@ -169,7 +173,7 @@ public sealed class FxSourceDocument
                     spawn["loopingIntervalMsec"] = NonNegativeInt(value);
                     break;
                 case FxSourceField.SpawnCount:
-                    spawn["count"] = value.Trim() == "∞" ? int.MaxValue : NonNegativeInt(value);
+                    spawn["count"] = isLooping && value.Trim() == "∞" ? int.MaxValue : NonNegativeInt(value);
                     break;
                 case FxSourceField.Gravity:
                     float gravity = FiniteFloat(value);
@@ -186,8 +190,7 @@ public sealed class FxSourceDocument
                 default:
                     throw new ArgumentOutOfRangeException(nameof(field));
             }
-            if ((field is FxSourceField.SpawnInterval or FxSourceField.SpawnCount) &&
-                index < Number(root["elemDefCountLooping"]))
+            if (isLooping && field is (FxSourceField.SpawnInterval or FxSourceField.SpawnCount))
                 AdjustLoopingLife(root, _root);
         });
     }

@@ -9,6 +9,7 @@ public sealed class VehiclePhysDef
     public const int SerializedSize = 0xB4;
 
     public int PhysicsEnabled { get; init; }
+    public bool IsPhysicsEnabled => PhysicsEnabled != 0;
     public XPointer<string> PhysPresetNamePointer { get; init; }
     public string? PhysPresetName { get; init; }
     public XPointer<PhysPresetAsset> PhysPresetPointer { get; init; }

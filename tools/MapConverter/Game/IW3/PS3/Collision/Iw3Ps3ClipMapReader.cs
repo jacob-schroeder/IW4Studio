@@ -461,8 +461,8 @@ internal static partial class Iw3Ps3FastFileCatalog
             {
                 FirstCollAabbIndex = Be16(row, 0),
                 CollAabbCount = Be16(row, 2),
-                BrushContents = BinaryPrimitives.ReadInt32BigEndian(row[4..]),
-                TerrainContents = BinaryPrimitives.ReadInt32BigEndian(row[8..]),
+                BrushContents = (CollisionContents)BinaryPrimitives.ReadInt32BigEndian(row[4..]),
+                TerrainContents = (CollisionContents)BinaryPrimitives.ReadInt32BigEndian(row[8..]),
                 // IW4's legacy property names store midpoint and half-size.
                 Mins = bounds.MidPoint,
                 Maxs = bounds.HalfSize,
@@ -722,7 +722,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                         MomentsOfInertia = ReadVec3(bytes, 0x44),
                         ProductsOfInertia = ReadVec3(bytes, 0x50)
                     },
-                    Contents = BinaryPrimitives.ReadInt32BigEndian(bytes[0x5c..])
+                    Contents = (CollisionContents)BinaryPrimitives.ReadInt32BigEndian(bytes[0x5c..])
                 });
             }
             return definitions;

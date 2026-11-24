@@ -286,7 +286,7 @@ internal static class XboxClipMapWriter
                     Vec3(bytes, at + 52, definition.Mass.CenterOfMass);
                     Vec3(bytes, at + 64, definition.Mass.MomentsOfInertia);
                     Vec3(bytes, at + 76, definition.Mass.ProductsOfInertia);
-                    I32(bytes, at + 88, definition.Contents);
+                    I32(bytes, at + 88, (int)definition.Contents);
                 });
             for (int i = 0; i < definitions.Count; i++)
             {
@@ -427,8 +427,8 @@ internal static class XboxClipMapWriter
     {
         U16(bytes, at, leaf.FirstCollAabbIndex);
         U16(bytes, at + 2, leaf.CollAabbCount);
-        I32(bytes, at + 4, leaf.BrushContents);
-        I32(bytes, at + 8, leaf.TerrainContents);
+        I32(bytes, at + 4, (int)leaf.BrushContents);
+        I32(bytes, at + 8, (int)leaf.TerrainContents);
         Vec3(bytes, at + 12, leaf.Mins);
         Vec3(bytes, at + 24, leaf.Maxs);
         I32(bytes, at + 36, leaf.LeafBrushNode);

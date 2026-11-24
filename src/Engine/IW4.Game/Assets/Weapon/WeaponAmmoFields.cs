@@ -20,5 +20,9 @@ public sealed class WeaponAmmoFields
     public int Damage { get; init; }                                              // 0x230
     public int PlayerDamage { get; init; }                                        // 0x234
     public int MeleeDamage { get; init; }                                         // 0x238
+
+    /// <summary>
+    /// iDamageType has no known use in IW4 PS3 game code. All stock PS3 weapons store zero.
+    /// </summary>
     public int DamageType { get; init; }                                          // 0x23C
 }

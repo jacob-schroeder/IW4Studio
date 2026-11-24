@@ -140,6 +140,8 @@ public sealed class MaterialEditorViewModel
         new("Format", ImageFormatText),
         new("Mip levels", MipCountText),
         new("Technique set", TechniqueSetName),
+        new("Projected marks", (ActiveMaterial.Info.GameFlags & MaterialGameFlags.MarkReceiverExclusionMask) != 0
+            ? "Excluded by flags" : "Allowed by flags"),
         new("Atlas", AtlasText)
     ];
 

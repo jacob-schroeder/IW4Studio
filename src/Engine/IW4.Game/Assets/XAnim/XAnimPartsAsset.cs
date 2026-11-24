@@ -29,8 +29,7 @@ public sealed class XAnimPartsAsset : BaseAsset
     public byte NotifyCount { get; init; }
     /// <summary>
     /// Native SP getanimassettype returns this unsigned byte directly from
-    /// XAnimParts +0x1E. Values outside the known XAnimAssetType members,
-    /// including stock 0 and 7, remain valid and are retained unchanged.
+    /// XAnimParts +0x1E. The full byte is preserved for unlisted values.
     /// </summary>
     public XAnimAssetType AssetType { get; init; }
     public byte Pad1F { get; init; }

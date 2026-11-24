@@ -232,7 +232,7 @@ internal static class TerrainCollisionCompiler
             {
                 CollAabbCount = checked((ushort)trees.Count),
                 BrushContents = occupied.BrushContents,
-                TerrainContents = terrainContents,
+                TerrainContents = (CollisionContents)terrainContents,
                 Mins = leafBounds.MidPoint,
                 Maxs = leafBounds.HalfSize,
                 LeafBrushNode = occupied.LeafBrushNode

@@ -78,7 +78,7 @@ public sealed class VehicleExchange
         source.AddBoolean("projectileDamage", asset.ProjectileDamage);
         source.AddBoolean("projectileSplashDamage", asset.ProjectileSplashDamage);
         source.AddBoolean("heavyExplosiveDamage", asset.HeavyExplosiveDamage);
-        source.AddBoolean("physicsEnabled", physics.PhysicsEnabled);
+        source.AddBoolean("physicsEnabled", physics.IsPhysicsEnabled);
         source.AddString("physicsPreset", Materialized(
             physics.PhysPresetNamePointer.Raw, physics.PhysPresetName,
             $"Vehicle '{assetName}' physics preset name"));

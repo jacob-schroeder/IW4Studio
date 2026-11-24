@@ -391,7 +391,7 @@ internal static class D3dbspCollisionCodec
             {
                 FirstCollAabbIndex = (ushort)firstAabb,
                 CollAabbCount = (ushort)aabbCount,
-                BrushContents = unchecked((int)contents),
+                BrushContents = (CollisionContents)contents,
                 TerrainContents = CombineTerrainContents(
                     firstAabb,
                     aabbCount,
@@ -447,7 +447,7 @@ internal static class D3dbspCollisionCodec
                 {
                     FirstCollAabbIndex = (ushort)firstAabb,
                     CollAabbCount = (ushort)aabbCount,
-                    BrushContents = unchecked((int)contents),
+                    BrushContents = (CollisionContents)contents,
                     TerrainContents = CombineTerrainContents(
                         firstAabb,
                         aabbCount,
@@ -1192,7 +1192,7 @@ internal static class D3dbspCollisionCodec
         CLeafBrushNode node = clipMap.LeafBrushNodes[leaf.LeafBrushNode] ??
             throw new InvalidDataException(
                 $"{description} references a null leaf-brush node.");
-        if (node.Contents != leaf.BrushContents)
+        if (node.Contents != (int)leaf.BrushContents)
         {
             throw new InvalidDataException(
                 $"{description} leaf-brush contents differ from the root node contents.");
@@ -1478,14 +1478,14 @@ internal static class D3dbspCollisionCodec
         return contents;
     }
 
-    private static int CombineTerrainContents(
+    private static CollisionContents CombineTerrainContents(
         int first,
         int count,
         IReadOnlyList<CollisionAabbTree> collisionAabbs,
         IReadOnlyList<ClipMaterial> materials,
         string description)
     {
-        int contents = 0;
+        CollisionContents contents = CollisionContents.None;
         for (int index = 0; index < count; index++)
         {
             CollisionAabbTree aabb = collisionAabbs[first + index] ??
@@ -1495,7 +1495,7 @@ internal static class D3dbspCollisionCodec
                 throw new InvalidDataException(
                     $"{description} AABB {index} references material {aabb.MaterialIndex}; the material table has {materials.Count} rows.");
             }
-            contents |= (int)materials[aabb.MaterialIndex].Contents;
+            contents |= materials[aabb.MaterialIndex].Contents;
         }
         return contents;
     }

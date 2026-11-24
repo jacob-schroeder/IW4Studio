@@ -7,6 +7,8 @@ public sealed class FxGlassInitPieceState
     public FxSpatialFrame Frame { get; init; }
     public float Radius { get; init; }
     public FxVec2 TexCoordOrigin { get; init; }
+    /// <summary>Bit 31 corresponds to the edge from vertex 0 to vertex 1.
+    /// Successive edges use descending bits. Set means supported and clear means exposed.</summary>
     public uint SupportMask { get; init; }
     public float AreaX2 { get; init; }
     public byte DefIndex { get; init; }

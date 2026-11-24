@@ -79,7 +79,7 @@ public static class RuntimePhysicsAuthoring
             },
             XModel = model,
             PhysPreset = model.PhysPreset,
-            Contents = 1
+            Contents = CollisionContents.Solid
         };
     }
 

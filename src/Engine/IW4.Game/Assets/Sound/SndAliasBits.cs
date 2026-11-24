@@ -1,9 +1,8 @@
 namespace IW4.Game.Assets.Sound;
 
 /// <summary>
-/// Lossless decoded view of an alias flag word. The raw signed integer keeps
-/// every serialized bit; decoded meanings reflect the recovered consumers
-/// and retain platform-specific uncertainty.
+/// Decoded view of an alias flag word. Bits 15–31 are unused in the stock
+/// PS3 fastfiles. <see cref="RawValue"/> retains all 32 serialized bits.
 /// </summary>
 public readonly record struct SndAliasBits(int RawValue)
 {
@@ -18,16 +17,6 @@ public readonly record struct SndAliasBits(int RawValue)
     public const int PlaybackTypeShift = 7;
     public const int EntityChannelMask = 0x0000_7e00;
     public const int EntityChannelShift = 9;
-
-    private const int MappedMask = LoopingMask |
-                                   MasterMask |
-                                   ConditionalVolumeScaleMask |
-                                   FullDryLevelMask |
-                                   NoWetLevelMask |
-                                   RandomStartPositionMask |
-                                   DistanceGateMask |
-                                   PlaybackTypeMask |
-                                   EntityChannelMask;
 
     /// <summary>
     /// Whether streamed audio loops at its end. This behavior is confirmed
@@ -132,12 +121,6 @@ public readonly record struct SndAliasBits(int RawValue)
         return new SndAliasBits((RawValue & ~EntityChannelMask) |
                                 (value << EntityChannelShift));
     }
-
-    /// <summary>
-    /// Bits whose meanings are not established by the recovered consumers:
-    /// bits 15–31. These remain intact in <see cref="RawValue"/>.
-    /// </summary>
-    public int UnmappedBits => RawValue & ~MappedMask;
 
     private SndAliasBits WithFlag(int mask, bool value) =>
         new(value ? RawValue | mask : RawValue & ~mask);

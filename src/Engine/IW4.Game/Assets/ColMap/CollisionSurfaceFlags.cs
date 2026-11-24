@@ -2,8 +2,8 @@ using IW4.Game.Assets.Material;
 
 namespace IW4.Game.Assets.ColMap;
 
-// Named masks from the PS3 SP/MP surface-parameter tables. The material category
-// is an ordinal in bits 20..24; see MaterialSurfaceType. Unlisted bits are retained.
+// Most masks are named in the PS3 SP/MP surface-parameter tables. Bits 20..24
+// hold a MaterialSurfaceType ordinal. Unlisted bits are retained.
 [Flags]
 public enum CollisionSurfaceFlags : int
 {
@@ -14,10 +14,15 @@ public enum CollisionSurfaceFlags : int
     Ladder = 0x00000008,
     NoImpact = 0x00000010,
     NoMarks = 0x00000020,
+    /// <summary>HDR portal surface marker. Stock PS3 hdrportal materials carry this bit.</summary>
+    HdrPortal = 0x00000040,
     NoDraw = 0x00000080,
     NoPenetrate = 0x00000100,
     Stairs = 0x00000200,
     NoLightmap = 0x00000400,
+    /// <summary>Marks an exposed border face on a glass brush. Stock PS3 panes
+    /// record exposed edges as clear bits in their initial support mask.</summary>
+    GlassEdgeExposed = 0x00000800,
     Soft = 0x00001000,
     NoSteps = 0x00002000,
     NonSolid = 0x00004000,

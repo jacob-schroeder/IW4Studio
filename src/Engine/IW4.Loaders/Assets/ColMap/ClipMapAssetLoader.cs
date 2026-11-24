@@ -893,7 +893,7 @@ internal sealed class ClipMapAssetLoader : XAssetLoader<ClipMapAsset>
                 context);
             int health = rowCursor.ReadInt32();
             PhysMass mass = ReadPhysMass(rowCursor);
-            int contents = rowCursor.ReadInt32();
+            var contents = (CollisionContents)rowCursor.ReadInt32();
             rows[i] = new DynEntityDef
             {
                 Type = type,
@@ -962,7 +962,7 @@ internal sealed class ClipMapAssetLoader : XAssetLoader<ClipMapAsset>
             rows[i] = new DynEntityClient
             {
                 PhysObjId = rowCursor.ReadInt32(),
-                Flags = rowCursor.ReadUInt16(),
+                Flags = (DynEntityClientFlags)rowCursor.ReadUInt16(),
                 LightingHandle = rowCursor.ReadUInt16(),
                 Health = rowCursor.ReadInt32()
             };
@@ -1329,8 +1329,8 @@ internal sealed class ClipMapAssetLoader : XAssetLoader<ClipMapAsset>
         {
             FirstCollAabbIndex = cursor.ReadUInt16(),
             CollAabbCount = cursor.ReadUInt16(),
-            BrushContents = cursor.ReadInt32(),
-            TerrainContents = cursor.ReadInt32(),
+            BrushContents = (CollisionContents)cursor.ReadInt32(),
+            TerrainContents = (CollisionContents)cursor.ReadInt32(),
             Mins = ReadVec3(cursor),
             Maxs = ReadVec3(cursor),
             LeafBrushNode = cursor.ReadInt32()

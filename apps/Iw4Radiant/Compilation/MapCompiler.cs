@@ -131,7 +131,7 @@ internal static class MapCompiler
                 // Native PS3 Rust and Highrise sky brushes use SKY|NOIMPACT|NOMARKS
                 // and CONTENTS_SKY without CONTENTS_SOLID.
                 return new ClipMaterial { Name = name, Contents = material.IsSky ? CollisionContents.Sky : (CollisionContents)material.GetCollisionContents(),
-                    SurfaceFlags = material.IsSky ? CollisionSurfaceFlags.Sky | CollisionSurfaceFlags.NoImpact | CollisionSurfaceFlags.NoMarks : (CollisionSurfaceFlags)material.GetCollisionSurfaceFlags() };
+                    SurfaceFlags = material.IsSky ? CollisionSurfaceFlags.Sky | CollisionSurfaceFlags.NoImpact | CollisionSurfaceFlags.NoMarks : material.GetCollisionSurfaceFlags() };
             }).ToArray();
         var baseMaterialsByName = baseMaterials.ToDictionary(material =>
             material.Name ?? throw new InvalidDataException("A collision material has no name."), StringComparer.Ordinal);

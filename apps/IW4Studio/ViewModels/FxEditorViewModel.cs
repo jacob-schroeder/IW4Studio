@@ -1041,7 +1041,8 @@ public sealed class FxElementViewModel
                 $"{FormatCount(element.Spawn.Looping.Count)}",
             FxElementGroup.OneShot =>
                 $"{FormatRange(element.Spawn.OneShotCount.Base, element.Spawn.OneShotCount.Amplitude)} births",
-            _ => "child-emission template"
+            _ =>
+                $"{FormatRange(element.Spawn.OneShotCount.Base, element.Spawn.OneShotCount.Amplitude)} births · copied child template"
         };
 
     private static string FormatSpawn(
@@ -1054,7 +1055,7 @@ public sealed class FxElementViewModel
             FxElementGroup.OneShot =>
                 $"count {FormatRange(element.Spawn.OneShotCount.Base, element.Spawn.OneShotCount.Amplitude)}",
             _ =>
-                $"union words {element.Spawn.FirstWord:N0}, {element.Spawn.SecondWord:N0} · driven by parent emission"
+                $"count {FormatRange(element.Spawn.OneShotCount.Base, element.Spawn.OneShotCount.Amplitude)} · copied child template"
         };
 
     private static string SpawnPropertyName(FxElementGroup group) =>
@@ -1062,7 +1063,7 @@ public sealed class FxElementViewModel
         {
             FxElementGroup.Looping => "Loop spawn",
             FxElementGroup.OneShot => "One-shot count",
-            _ => "Emission spawn union"
+            _ => "Emission one-shot count"
         };
 
     private static string GroupName(FxElementGroup group) => group switch

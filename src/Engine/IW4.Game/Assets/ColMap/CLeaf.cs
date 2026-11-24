@@ -14,8 +14,8 @@ public sealed class CLeaf
 
     public ushort FirstCollAabbIndex { get; init; }
     public ushort CollAabbCount { get; init; }
-    public int BrushContents { get; init; }
-    public int TerrainContents { get; init; }
+    public CollisionContents BrushContents { get; init; }
+    public CollisionContents TerrainContents { get; init; }
     public ModelVec3 Mins { get; init; }
     public ModelVec3 Maxs { get; init; }
     public int LeafBrushNode { get; init; }
