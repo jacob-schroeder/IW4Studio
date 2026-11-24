@@ -17,12 +17,7 @@ public sealed class DbHeaderReader
 
         XFileVersion version = (XFileVersion)cursor.ReadUInt32();
 
-        bool allowOnlineUpdate = cursor.ReadByte() switch
-        {
-            0 => false,
-            1 => true,
-            var value => throw new InvalidDataException($"Invalid allowOnlineUpdate byte {value} at 0x{cursor.Offset - 1:X}.")
-        };
+        bool allowOnlineUpdate = cursor.ReadByte() != 0;
 
         ulong fileCreationTimeRaw = cursor.ReadUInt64();
         uint languageMask = cursor.ReadUInt32();
