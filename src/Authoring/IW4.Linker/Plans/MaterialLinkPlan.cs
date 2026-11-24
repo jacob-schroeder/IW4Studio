@@ -51,17 +51,17 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
         GfxStateBits[] stateBits = FreezeItems(
             definition.StateBits,
             "Material.StateBits");
-        MaterialXStringEntry[] xstrings = FreezeItems(
-            definition.XStrings,
-            "Material.XStrings");
+        MaterialLayerName[] subMaterialNames = FreezeItems(
+            definition.SubMaterialNames,
+            "Material.SubMaterialNames");
         ValidateByteCount(textures.Length, "Material.Textures");
         ValidateByteCount(constants.Length, "Material.Constants");
         ValidateByteCount(stateBits.Length, "Material.StateBits");
-        ValidateByteCount(xstrings.Length, "Material.XStrings");
+        ValidateByteCount(subMaterialNames.Length, "Material.SubMaterialNames");
         ValidateDeclaredCount(definition.TextureCount, textures.Length, "Material.Textures");
         ValidateDeclaredCount(definition.ConstantCount, constants.Length, "Material.Constants");
         ValidateDeclaredCount(definition.StateBitsCount, stateBits.Length, "Material.StateBits");
-        ValidateDeclaredCount(definition.XStringCount, xstrings.Length, "Material.XStrings");
+        ValidateDeclaredCount(definition.LayerCount, subMaterialNames.Length, "Material.SubMaterialNames");
 
         LinkStorageSymbol? vertexReservation = textures.Length == 0
             ? null
@@ -87,10 +87,10 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
         LinkStorageTarget? stateBitsTable = freezer.FreezeStateBitsTable(
             definition.StateBitsPointer,
             stateBits);
-        LinkStorageTarget? xstringTable = FreezeXStringTable(
+        LinkStorageTarget? subMaterialNamesTable = FreezeSubMaterialNames(
             freeze,
-            definition.XStringTablePointer,
-            xstrings);
+            definition.SubMaterialNamesPointer,
+            subMaterialNames);
         LinkStorageSymbol? runtimeState = hasRuntimeTechniqueState
             ? LinkStorageSymbol.SourceFree(
                 XFileBlockType.RUNTIME,
@@ -116,7 +116,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
         writer.WriteByte(checked((byte)stateBits.Length));
         writer.WriteByte((byte)definition.StateFlags);
         writer.WriteByte((byte)definition.CameraRegion);
-        writer.WriteByte(checked((byte)xstrings.Length));
+        writer.WriteByte(checked((byte)subMaterialNames.Length));
         writer.WriteByte(definition.Pad43);
         writer.Skip(MaterialAsset.TechniqueSlotCount * sizeof(ushort));
         writer.WriteUInt16(definition.Pad8E);
@@ -133,7 +133,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
                 textureTable,
                 constantTable,
                 stateBitsTable,
-                xstringTable));
+                subMaterialNamesTable));
     }
 
     internal override LinkStorageSymbol Root { get; }
@@ -171,7 +171,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
         LinkStorageTarget? textureTable,
         LinkStorageTarget? constantTable,
         LinkStorageTarget? stateBitsTable,
-        LinkStorageTarget? xstringTable)
+        LinkStorageTarget? subMaterialNamesTable)
     {
         if (vertexReservation is not null)
         {
@@ -214,12 +214,12 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
                 stateBitsTable.Value,
                 "Material.StateBits");
         }
-        if (xstringTable is not null)
+        if (subMaterialNamesTable is not null)
         {
             yield return new PresenceStorageLinkOperation(
                 new LinkStorageCell(root, 0xa4),
-                xstringTable.Value.View,
-                "Material.XStrings");
+                subMaterialNamesTable.Value.View,
+                "Material.SubMaterialNames");
         }
     }
 
@@ -325,28 +325,28 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
             "Material.Constants");
     }
 
-    private static LinkStorageTarget? FreezeXStringTable(
+    private static LinkStorageTarget? FreezeSubMaterialNames(
         LinkAssetFreezeScope freeze,
         IW4.Game.Pointers.XPointerReference pointer,
-        IReadOnlyList<MaterialXStringEntry> xstrings)
+        IReadOnlyList<MaterialLayerName> subMaterialNames)
     {
-        if (xstrings.Count == 0 &&
+        if (subMaterialNames.Count == 0 &&
             pointer.Type == IW4.Game.Pointers.PointerType.Null)
             return null;
 
-        var values = new LinkStorageSymbol?[xstrings.Count];
-        for (int index = 0; index < xstrings.Count; index++)
+        var values = new LinkStorageSymbol?[subMaterialNames.Count];
+        for (int index = 0; index < subMaterialNames.Count; index++)
         {
-            MaterialXStringEntry entry = xstrings[index];
+            MaterialLayerName entry = subMaterialNames[index];
             if (entry.Index != index)
             {
                 throw new InvalidDataException(
-                    $"Material.XStrings[{index}] declares table index {entry.Index}.");
+                    $"Material.SubMaterialNames[{index}] declares table index {entry.Index}.");
             }
             values[index] = freeze.FreezeOptionalXString(
                 entry.Value,
                 entry.Pointer.Untyped,
-                $"Material.XStrings[{index}]");
+                $"Material.SubMaterialNames[{index}]");
         }
 
         return freeze.FreezeStorage(
@@ -354,11 +354,11 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
             new byte[checked(values.Length * sizeof(int))],
             XFileBlockType.LARGE,
             alignment: 4,
-            (table, addend) => CreateXStringOperations(table, addend, values),
-            "Material.XStrings");
+            (table, addend) => CreateSubMaterialNameOperations(table, addend, values),
+            "Material.SubMaterialNames");
     }
 
-    private static IEnumerable<LinkOperation> CreateXStringOperations(
+    private static IEnumerable<LinkOperation> CreateSubMaterialNameOperations(
         LinkStorageSymbol table,
         int addend,
         IReadOnlyList<LinkStorageSymbol?> values)
@@ -372,7 +372,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
                 table,
                 checked(addend + index * sizeof(int)),
                 value,
-                $"Material.XStrings[{index}]");
+                $"Material.SubMaterialNames[{index}]");
         }
     }
 
@@ -395,7 +395,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
             definition.StateBitsCount != 0 ||
             definition.StateFlags != MaterialStateFlags.None ||
             definition.CameraRegion != GfxCameraRegionType.LitOpaque ||
-            definition.XStringCount != 0 ||
+            definition.LayerCount != 0 ||
             definition.Pad43 != 0 ||
             definition.Pad8E != 0;
         if (hasNonzeroInfo || hasNonzeroRoot)
@@ -428,7 +428,7 @@ internal sealed class MaterialLinkPlan : AssetLinkPlan
             HasItems(definition.Textures, "Material.Textures") ||
             HasItems(definition.Constants, "Material.Constants") ||
             HasItems(definition.StateBits, "Material.StateBits") ||
-            HasItems(definition.XStrings, "Material.XStrings"))
+            HasItems(definition.SubMaterialNames, "Material.SubMaterialNames"))
         {
             throw new InvalidDataException(
                 "A comma-prefixed Material provider cannot contain referenced or structural data.");

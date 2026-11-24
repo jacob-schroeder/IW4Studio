@@ -102,7 +102,7 @@ public sealed class PhysCollmapLoader : XAssetLoader<PhysCollmapAsset>
 
             XPointer<BrushWrapper> brushPointer = ReadPointer<BrushWrapper>(entryCursor, context, XPointerResolutionMode.Direct);
             brushPointers[i] = brushPointer;
-            int type = entryCursor.ReadInt32();
+            var type = (PhysGeomPrimitive)entryCursor.ReadInt32();
             Vec3[] orientation = [ReadVec3(entryCursor), ReadVec3(entryCursor), ReadVec3(entryCursor)];
             Bounds bounds = ReadBounds(entryCursor);
 

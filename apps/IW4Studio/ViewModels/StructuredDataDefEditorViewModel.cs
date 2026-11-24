@@ -511,10 +511,12 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
         {
             StructuredDataDefinitionDraft definition =
                 _workingDraft.Definitions[definitionIndex];
-            int rootStructIndex = definition.RootType.UnionValue;
-            bool hasNavigableRootStruct = IsRootStruct(
-                definition,
-                rootStructIndex);
+            bool hasNavigableRootStruct =
+                definition.RootType.Type == StructuredDataTypeCategory.DataStruct &&
+                IsRootStruct(definition, definition.RootType.StructIndex);
+            int rootStructIndex = hasNavigableRootStruct
+                ? definition.RootType.StructIndex
+                : -1;
             var enumChildren = definition.Enums.Select((_, index) =>
                 new StructuredDataNavigationNodeViewModel(
                     new StructuredDataSelection(
@@ -657,15 +659,15 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
             StructuredDataSelectionKind.Definition => BuildDefinitionRows(
                 definition,
                 selection.DefinitionIndex),
-            StructuredDataSelectionKind.RootType => IsRootStruct(
-                definition,
-                definition.RootType.UnionValue)
+            StructuredDataSelectionKind.RootType =>
+                definition.RootType.Type == StructuredDataTypeCategory.DataStruct &&
+                IsRootStruct(definition, definition.RootType.StructIndex)
                     ? BuildStructRows(
                         definition,
                         new StructuredDataSelection(
                             StructuredDataSelectionKind.Struct,
                             selection.DefinitionIndex,
-                            definition.RootType.UnionValue))
+                            definition.RootType.StructIndex))
                     :
                     [
                         TypeRow(
@@ -750,9 +752,9 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
         StructuredDataDefinitionDraft definition,
         int definitionIndex)
     {
-        bool hasRootStruct = IsRootStruct(
-            definition,
-            definition.RootType.UnionValue);
+        bool hasRootStruct =
+            definition.RootType.Type == StructuredDataTypeCategory.DataStruct &&
+            IsRootStruct(definition, definition.RootType.StructIndex);
         yield return TypeRow(
             new StructuredDataSelection(
                 StructuredDataSelectionKind.RootType,
@@ -915,23 +917,23 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
                 ReferenceDisplayName(
                     definition,
                     StructuredDataTypeCategory.DataEnum,
-                    value.UnionValue),
+                    value.EnumIndex),
             StructuredDataTypeCategory.DataStruct =>
                 ReferenceDisplayName(
                     definition,
                     StructuredDataTypeCategory.DataStruct,
-                    value.UnionValue),
+                    value.StructIndex),
             StructuredDataTypeCategory.DataIndexedArray
-                when IsValidIndex(value.UnionValue, definition.IndexedArrays.Count) =>
+                when IsValidIndex(value.IndexedArrayIndex, definition.IndexedArrays.Count) =>
                 FormatSemanticType(
                     definition,
-                    definition.IndexedArrays[value.UnionValue].ElementType,
+                    definition.IndexedArrays[value.IndexedArrayIndex].ElementType,
                     depth + 1),
             StructuredDataTypeCategory.DataEnumArray
-                when IsValidIndex(value.UnionValue, definition.EnumedArrays.Count) =>
+                when IsValidIndex(value.EnumedArrayIndex, definition.EnumedArrays.Count) =>
                 FormatSemanticType(
                     definition,
-                    definition.EnumedArrays[value.UnionValue].ElementType,
+                    definition.EnumedArrays[value.EnumedArrayIndex].ElementType,
                     depth + 1),
             _ => FormatType(definition, value)
         };
@@ -952,10 +954,10 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
 
         if (value.Type == StructuredDataTypeCategory.DataIndexedArray)
         {
-            if (!IsValidIndex(value.UnionValue, definition.IndexedArrays.Count))
-                return $"Unresolved fixed array #{value.UnionValue}";
+            if (!IsValidIndex(value.IndexedArrayIndex, definition.IndexedArrays.Count))
+                return $"Unresolved fixed array #{value.IndexedArrayIndex}";
             StructuredDataIndexedArrayDraft array =
-                definition.IndexedArrays[value.UnionValue];
+                definition.IndexedArrays[value.IndexedArrayIndex];
             string cardinality = $"Fixed [{array.ArraySize:N0}]";
             if (IsBitPackedBoolean(array.ElementType, array.ElementSize))
                 cardinality += " · bit-packed";
@@ -969,10 +971,10 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
 
         if (value.Type == StructuredDataTypeCategory.DataEnumArray)
         {
-            if (!IsValidIndex(value.UnionValue, definition.EnumedArrays.Count))
-                return $"Unresolved keyed array #{value.UnionValue}";
+            if (!IsValidIndex(value.EnumedArrayIndex, definition.EnumedArrays.Count))
+                return $"Unresolved keyed array #{value.EnumedArrayIndex}";
             StructuredDataEnumedArrayDraft array =
-                definition.EnumedArrays[value.UnionValue];
+                definition.EnumedArrays[value.EnumedArrayIndex];
             string cardinality = $"Keyed by {ReferenceDisplayName(
                 definition,
                 StructuredDataTypeCategory.DataEnum,
@@ -1095,20 +1097,20 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
         if (depth >= 8)
             return null;
         if (value.Type == StructuredDataTypeCategory.DataIndexedArray &&
-            IsValidIndex(value.UnionValue, definition.IndexedArrays.Count))
+            IsValidIndex(value.IndexedArrayIndex, definition.IndexedArrays.Count))
         {
             return ReferenceArrayDepth(
                 definition,
-                definition.IndexedArrays[value.UnionValue].ElementType,
+                definition.IndexedArrays[value.IndexedArrayIndex].ElementType,
                 category,
                 index,
                 depth + 1);
         }
         if (value.Type == StructuredDataTypeCategory.DataEnumArray &&
-            IsValidIndex(value.UnionValue, definition.EnumedArrays.Count))
+            IsValidIndex(value.EnumedArrayIndex, definition.EnumedArrays.Count))
         {
             StructuredDataEnumedArrayDraft array =
-                definition.EnumedArrays[value.UnionValue];
+                definition.EnumedArrays[value.EnumedArrayIndex];
             if (category == StructuredDataTypeCategory.DataEnum &&
                 array.EnumIndex == index)
             {
@@ -1153,7 +1155,7 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
         string scalar = ScalarTypeName(value.Type);
         return value.Type == StructuredDataTypeCategory.DataString &&
             value.UnionValue > 0
-                ? $"{scalar} ({value.UnionValue:N0})"
+                ? $"{scalar} ({value.StringDataLength:N0})"
                 : scalar;
     }
 
@@ -1237,7 +1239,7 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
         int index) =>
         IsValidIndex(index, definition.Structs.Count) &&
         definition.RootType.Type == StructuredDataTypeCategory.DataStruct &&
-        definition.RootType.UnionValue == index;
+        definition.RootType.StructIndex == index;
 
     internal static string FormatReferenceLabel(
         StructuredDataDefinitionDraft definition,

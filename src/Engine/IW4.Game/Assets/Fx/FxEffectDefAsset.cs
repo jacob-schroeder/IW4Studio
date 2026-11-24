@@ -13,7 +13,7 @@ public sealed class FxEffectDefAsset : BaseAsset
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
     public override string? SerializedAssetName => Name;
-    public int Flags { get; init; }
+    public FxEffectFlags Flags { get; init; }
     public int TotalSize { get; init; }
     public int MsecLoopingLife { get; init; }
     public int ElemDefCountLooping { get; init; }

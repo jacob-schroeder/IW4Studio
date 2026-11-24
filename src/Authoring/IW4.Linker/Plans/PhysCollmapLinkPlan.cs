@@ -131,7 +131,7 @@ internal sealed class PhysCollmapLinkPlan : AssetLinkPlan
                 freeze,
                 $"PhysCollmap.Geoms[{index}].BrushWrapper");
             writer.Skip(sizeof(int));
-            writer.WriteInt32(geom.Type);
+            writer.WriteInt32((int)geom.Type);
             for (int orientation = 0; orientation < geom.Orientation.Count; orientation++)
             {
                 WriteVec3(

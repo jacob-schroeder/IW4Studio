@@ -27,7 +27,12 @@ public sealed class XAnimPartsAsset : BaseAsset
     // Historical field name: PS3 console boneCount[ALL] (bucket 11).
     public byte BoneNameCount { get; init; }
     public byte NotifyCount { get; init; }
-    public byte AssetType { get; init; }
+    /// <summary>
+    /// Native SP getanimassettype returns this unsigned byte directly from
+    /// XAnimParts +0x1E. Values outside the known XAnimAssetType members,
+    /// including stock 0 and 7, remain valid and are retained unchanged.
+    /// </summary>
+    public XAnimAssetType AssetType { get; init; }
     public byte Pad1F { get; init; }
     public int RandomDataShortCount { get; init; }
     public int IndexCount { get; init; }

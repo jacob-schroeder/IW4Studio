@@ -429,7 +429,7 @@ public static class FontAssemblyCompiler
         StateBitsCount = template.StateBitsCount,
         StateFlags = template.StateFlags,
         CameraRegion = template.CameraRegion,
-        XStringCount = template.XStringCount,
+        LayerCount = template.LayerCount,
         Pad43 = template.Pad43,
         InlineTechniqueSlotStateBits = template.InlineTechniqueSlotStateBits.ToArray(),
         Pad8E = template.Pad8E,
@@ -456,7 +456,7 @@ public static class FontAssemblyCompiler
             LoadBits = row.LoadBits.ToArray(),
             CommandWordCount = row.CommandWordCount
         }).ToArray(),
-        XStrings = template.XStrings.Select(row => new MaterialXStringEntry(
+        SubMaterialNames = template.SubMaterialNames.Select(row => new MaterialLayerName(
             row.Index,
             default,
             row.Value)).ToArray()

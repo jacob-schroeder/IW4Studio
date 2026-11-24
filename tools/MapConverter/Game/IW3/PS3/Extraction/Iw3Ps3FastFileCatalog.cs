@@ -1086,7 +1086,7 @@ internal static partial class Iw3Ps3FastFileCatalog
             return new PhysPresetAsset
             {
                 Name = _ownedNamePrefix + name,
-                Type = BinaryPrimitives.ReadInt32BigEndian(source[4..]),
+                SoundClassIndex = BinaryPrimitives.ReadInt32BigEndian(source[4..]),
                 Mass = BinaryPrimitives.ReadSingleBigEndian(source[8..]),
                 Bounce = BinaryPrimitives.ReadSingleBigEndian(source[12..]),
                 Friction = BinaryPrimitives.ReadSingleBigEndian(source[16..]),

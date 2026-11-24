@@ -9,7 +9,7 @@ public sealed class FxElemDef
     public const int SerializedSize = 0xFC;
 
     public int Offset { get; init; }
-    public int Flags { get; init; }
+    public FxElemFlags Flags { get; init; }
     public required FxSpawnDef Spawn { get; init; }
     public required FxFloatRange SpawnRange { get; init; }
     public required FxFloatRange FadeInRange { get; init; }
@@ -52,5 +52,7 @@ public sealed class FxElemDef
     public byte SortOrder { get; init; }
     public byte LightingFrac { get; init; }
     public byte UseItemClip { get; init; }
-    public byte FadeInfo { get; init; }
+    // 0xFB: impact marks reach their authored alpha after this many eighths of a second.
+    public byte MarkFadeInEighthSeconds { get; init; }
+    public int MarkFadeInMilliseconds => MarkFadeInEighthSeconds * 125;
 }

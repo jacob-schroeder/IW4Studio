@@ -13,6 +13,9 @@ public sealed class XSurface
     public byte DeformedRaw { get; init; }
     public bool Deformed => DeformedRaw != 0;
     public XSurfaceStreamFlags StreamFlags { get; init; }
+    public XSurfaceVertexColorMode VertexColorMode =>
+        (XSurfaceVertexColorMode)(StreamFlags &
+            (XSurfaceStreamFlags.GrayscaleVertexColor | XSurfaceStreamFlags.NoVertexColor));
     public byte Pad03 { get; init; }
     public ushort VertCount { get; init; }
     public ushort TriCount { get; init; }

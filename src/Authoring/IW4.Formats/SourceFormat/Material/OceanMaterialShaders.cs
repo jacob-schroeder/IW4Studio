@@ -127,7 +127,7 @@ internal static class OceanMaterialShaders
             Kind = kind,
             Data = data,
             DataSize = checked((uint)data.Length),
-            ProgramBytes = new byte[MaterialShaderAsset.GetProgramByteCount(kind)]
+            LoadDefTail = new byte[MaterialShaderAsset.GetLoadDefTailSize(kind)]
         };
     }
 }

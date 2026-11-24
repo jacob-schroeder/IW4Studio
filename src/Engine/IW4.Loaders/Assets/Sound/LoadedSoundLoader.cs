@@ -70,11 +70,11 @@ public sealed class LoadedSoundLoader : XAssetLoader<LoadedSound>
                 $"LoadedSound physical data size {physicalDataByteCount:N0} bytes exceeds the " +
                 $"{SoundFile.MaxInMemoryPayloadBytes / (1024 * 1024)} MiB in-memory sound limit.");
         }
-        ushort frameCount = rootCursor.ReadUInt16();
+        ushort durationMilliseconds = rootCursor.ReadUInt16();
         ushort channelCount = rootCursor.ReadUInt16();
         ushort sampleRate = rootCursor.ReadUInt16();
-        ushort pad0E = rootCursor.ReadUInt16();
-        ushort pad10 = rootCursor.ReadUInt16();
+        ushort initialSkipSamples = rootCursor.ReadUInt16();
+        ushort endTrimSamples = rootCursor.ReadUInt16();
         ushort seekTableCount = rootCursor.ReadUInt16();
         XPointer<byte[]> seekTablePointer = context.PointerReader.ReadPointer<byte[]>(
             rootCursor,
@@ -133,11 +133,11 @@ public sealed class LoadedSoundLoader : XAssetLoader<LoadedSound>
             NamePointer = namePointer,
             Name = name,
             PhysicalDataByteCount = physicalDataByteCount,
-            FrameCount = frameCount,
+            DurationMilliseconds = durationMilliseconds,
             ChannelCount = channelCount,
             SampleRate = sampleRate,
-            Pad0E = pad0E,
-            Pad10 = pad10,
+            InitialSkipSamples = initialSkipSamples,
+            EndTrimSamples = endTrimSamples,
             SeekTableCount = seekTableCount,
             SeekTablePointer = seekTablePointer,
             SeekTable = seekTable,

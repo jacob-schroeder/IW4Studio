@@ -42,11 +42,11 @@ internal static class XboxMaterialWriter
         root[0x3a] = checked((byte)material.Constants.Count);
         root[0x3b] = checked((byte)material.StateBits.Count);
         root[0x3c] = (byte)material.StateFlags; root[0x3d] = (byte)material.CameraRegion;
-        root[0x3e] = checked((byte)material.XStrings.Count);
+        root[0x3e] = checked((byte)material.SubMaterialNames.Count);
         if (material.TechniqueSet?.Name is string set)
             U32(root, 0x40, zone.Asset(XboxAssetType.TechniqueSet, NativeTechniqueSetName(set)));
         U32(root, 0x44, Present(material.Textures.Count)); U32(root, 0x48, Present(material.Constants.Count));
-        U32(root, 0x4c, Present(material.StateBits.Count)); U32(root, 0x50, Present(material.XStrings.Count));
+        U32(root, 0x4c, Present(material.StateBits.Count)); U32(root, 0x50, Present(material.SubMaterialNames.Count));
         zone.Write(root, 4, XboxBlock.Temp);
         zone.String(name);
         if (material.Textures.Count != 0)
@@ -90,13 +90,13 @@ internal static class XboxMaterialWriter
             }
             zone.Write(states, 4);
         }
-        if (material.XStrings.Count != 0)
+        if (material.SubMaterialNames.Count != 0)
         {
-            byte[] names = new byte[material.XStrings.Count * 4];
-            for (int i = 0; i < material.XStrings.Count; i++)
-                if (material.XStrings[i].Value != null) U32(names, i * 4, Inline);
+            byte[] names = new byte[material.SubMaterialNames.Count * 4];
+            for (int i = 0; i < material.SubMaterialNames.Count; i++)
+                if (material.SubMaterialNames[i].Value != null) U32(names, i * 4, Inline);
             zone.Write(names, 4);
-            foreach (var item in material.XStrings)
+            foreach (var item in material.SubMaterialNames)
                 if (item.Value is string s) zone.String(s);
         }
     }

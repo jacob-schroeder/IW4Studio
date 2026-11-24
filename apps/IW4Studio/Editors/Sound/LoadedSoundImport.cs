@@ -39,8 +39,9 @@ internal sealed record LoadedSoundImport(LoadedSound Replacement, MpegAudioPrevi
                 "The MP3 contains too many MPEG frames for an IW4 LoadedSound.");
         }
 
+        long playableSamples = analysis.TotalSamples - template.InitialSkipSamples - template.EndTrimSamples;
         long durationMilliseconds = checked(
-            analysis.TotalSamples * 1000L / analysis.SampleRate);
+            playableSamples * 1000L / analysis.SampleRate);
         if (durationMilliseconds is <= 0 or > ushort.MaxValue)
         {
             throw new InvalidDataException(
@@ -72,11 +73,11 @@ internal sealed record LoadedSoundImport(LoadedSound Replacement, MpegAudioPrevi
             NamePointer = template.NamePointer,
             Name = template.Name,
             PhysicalDataByteCount = physicalData.Length,
-            FrameCount = checked((ushort)durationMilliseconds),
+            DurationMilliseconds = checked((ushort)durationMilliseconds),
             ChannelCount = checked((ushort)analysis.ChannelCount),
             SampleRate = checked((ushort)analysis.SampleRate),
-            Pad0E = template.Pad0E,
-            Pad10 = template.Pad10,
+            InitialSkipSamples = template.InitialSkipSamples,
+            EndTrimSamples = template.EndTrimSamples,
             SeekTableCount = checked((ushort)analysis.FrameOffsets.Count),
             SeekTablePointer = template.SeekTablePointer,
             SeekTable = seekTable,

@@ -23,9 +23,9 @@ public sealed class ShaderExchange
         byte[]? data = asset.Data?.ToArray();
         if (data is not { Length: > 0 } || asset.DataSize != data.Length)
             throw new InvalidDataException($"{assetType} '{name}' has incomplete PS3 shader bytecode.");
-        byte[] programBytes = asset.ProgramBytes?.ToArray()
+        byte[] programBytes = asset.LoadDefTail?.ToArray()
             ?? throw new InvalidDataException($"{assetType} '{name}' has no native program bytes.");
-        if (programBytes.Length != MaterialShaderAsset.GetProgramByteCount(asset.Kind))
+        if (programBytes.Length != MaterialShaderAsset.GetLoadDefTailSize(asset.Kind))
             throw new InvalidDataException($"{assetType} '{name}' has an invalid native program-byte count.");
 
         string programName = Path.ChangeExtension(name, ".cg");
@@ -64,7 +64,7 @@ public sealed class ShaderExchange
             metadata.Name != name || metadata.Kind != (byte)kind)
             throw new InvalidDataException($"{assetType} '{name}' has an unsupported metadata format, version, name, or kind.");
         if (metadata.ProgramBytes is null ||
-            metadata.ProgramBytes.Length != MaterialShaderAsset.GetProgramByteCount(kind))
+            metadata.ProgramBytes.Length != MaterialShaderAsset.GetLoadDefTailSize(kind))
             throw new InvalidDataException($"{assetType} '{name}' has an invalid native program-byte count.");
         byte[] data = File.ReadAllBytes(dataPath);
         if (data.Length == 0)
@@ -75,7 +75,7 @@ public sealed class ShaderExchange
             Kind = kind,
             Data = data,
             DataSize = checked((uint)data.Length),
-            ProgramBytes = metadata.ProgramBytes
+            LoadDefTail = metadata.ProgramBytes
         };
     }
 

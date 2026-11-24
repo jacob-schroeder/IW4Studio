@@ -28,14 +28,7 @@ public sealed class SndAlias
     public float DistanceMin { get; init; }
     public float DistanceMax { get; init; }
     public float VelocityMin { get; init; }
-    public int Flags { get; init; }
-
-    /// <summary>Decoded view of <see cref="Flags"/>; the raw value remains the serialized field.</summary>
-    public SndAliasBits FlagBits
-    {
-        get => new(Flags);
-        init => Flags = value.RawValue;
-    }
+    public SndAliasBits Flags { get; init; }
 
     public float SlavePercentage { get; init; }
     public float Probability { get; init; }

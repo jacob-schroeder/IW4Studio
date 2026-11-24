@@ -1,4 +1,5 @@
 using IW4.Game.Assets.XModel;
+using IW4.Game.Assets.ColMap;
 using IW4.Game.Assets.Physics;
 using IW4.Game.Math;
 using IW4.Formats.XModel;
@@ -125,8 +126,8 @@ public sealed partial class XModelDraft
         if (_collisionSurfaces.Count != 0)
         {
             Bounds visualBounds = BoundsFromVertices(retargeted.Vertices, Model.BaseMat.ElementAtOrDefault(0));
-            int contents = _collisionSurfaces.Aggregate(0, (value, row) => value | row.Contents);
-            int surfaceFlags = _collisionSurfaces[0].SurfaceFlags;
+            CollisionContents contents = _collisionSurfaces.Aggregate(CollisionContents.None, (value, row) => value | row.Contents);
+            CollisionSurfaceFlags surfaceFlags = _collisionSurfaces[0].SurfaceFlags;
             _collisionSurfaces.Clear();
             _collisionSurfaces.Add(new XModelCollSurf(visualBounds, 0, contents, surfaceFlags));
         }
@@ -187,7 +188,7 @@ public sealed partial class XModelDraft
         if ((uint)index >= (uint)_collisionSurfaces.Count) throw new ArgumentOutOfRangeException(nameof(index));
         if (!float.IsFinite(bounds.MidPoint.X) || !float.IsFinite(bounds.MidPoint.Y) || !float.IsFinite(bounds.MidPoint.Z) || !float.IsFinite(bounds.HalfSize.X) || !float.IsFinite(bounds.HalfSize.Y) || !float.IsFinite(bounds.HalfSize.Z) || bounds.HalfSize.X < 0 || bounds.HalfSize.Y < 0 || bounds.HalfSize.Z < 0 || boneIndex < 0 || boneIndex >= Model.NumBones)
             throw new ArgumentOutOfRangeException(nameof(bounds));
-        _collisionSurfaces[index] = new XModelCollSurf(CopyBounds(bounds), checked((ushort)boneIndex), contents, surfaceFlags);
+        _collisionSurfaces[index] = new XModelCollSurf(CopyBounds(bounds), checked((ushort)boneIndex), (CollisionContents)contents, (CollisionSurfaceFlags)surfaceFlags);
     }
     public void SetPhysPreset(PhysPresetAsset? value) => PhysPreset = value;
     public void SetPhysCollmap(PhysCollmapAsset? value) => PhysCollmap = value;
@@ -329,7 +330,7 @@ public sealed partial class XModelDraft
             Flags = value.Flags,
             CollSurfsPointer = value.CollSurfsPointer,
             NumCollSurfs = collisionChanged ? checked((byte)surfaces.Count) : value.NumCollSurfs,
-            Contents = collisionChanged ? surfaces.Aggregate(0, (contents, row) => contents | row.Contents) : value.Contents,
+            Contents = collisionChanged ? (int)surfaces.Aggregate(CollisionContents.None, (contents, row) => contents | row.Contents) : value.Contents,
             CollSurfs = CopyCollSurfs(surfaces),
             BoneInfoPointer = value.BoneInfoPointer,
             BoneInfo = CopyBoneInfo(boneInfoOverride ?? value.BoneInfo),

@@ -21,15 +21,18 @@ internal sealed class PreparedPreview(PreparedVariant[] variants, string? error)
                 throw new InvalidDataException("Preview requires finite, nonnegative variant probabilities.");
             if (alias.Sequence == int.MaxValue)
                 throw new InvalidDataException("Variant sequence overflow is not supported by the preview.");
-            if (alias.FlagBits.UnmappedBits != 0)
-                throw new InvalidDataException($"Alias flags 0x{unchecked((uint)alias.FlagBits.UnmappedBits):X8} have unrecovered behavior and are not supported by the preview.");
+            if (alias.Flags.UnmappedBits != 0)
+                throw new InvalidDataException($"Alias flags 0x{unchecked((uint)alias.Flags.UnmappedBits):X8} have unrecovered behavior and are not supported by the preview.");
+            if (alias.Flags.UsesFullDryLevel || alias.Flags.UsesNoWetLevel ||
+                alias.Flags.UsesRandomStartPosition)
+                throw new InvalidDataException("This alias requests dry/wet gain or random start behavior unsupported by the preview.");
             if (!float.IsFinite(alias.VolumeMin) || !float.IsFinite(alias.VolumeMax) ||
                 alias.VolumeMin < 0 || alias.VolumeMax < alias.VolumeMin ||
                 !float.IsFinite(alias.PitchMin) || !float.IsFinite(alias.PitchMax) ||
                 alias.PitchMin <= 0 || alias.PitchMax < alias.PitchMin)
                 throw new InvalidDataException("Preview requires valid volume and pitch ranges.");
             if (!string.IsNullOrEmpty(alias.ChainAliasName) &&
-                (alias.FlagBits.PlaybackType != SndAliasPlaybackType.Stream || alias.SoundFiles[0].Streamed is null))
+                (alias.Flags.PlaybackType != SndAliasPlaybackType.Stream || alias.SoundFiles[0].Streamed is null))
                 throw new InvalidDataException("Chain preview currently requires a streamed source; loaded-sample chain dispatch is not yet recovered.");
         }
     }

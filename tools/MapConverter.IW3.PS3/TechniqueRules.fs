@@ -91,7 +91,7 @@ module internal TechniqueRules =
         let vertex = pass.VertexShader
         if isNull pixel || pixel.Kind <> MaterialShaderKind.Pixel || isNull pixel.Data ||
            hash pixel.Data <> "7374f3332aa9209de36533cc116b027240db8abc828acfad5053131d2878d013" ||
-           pixel.ProgramBytes.Length <> 12 || (pixel.ProgramBytes |> Array.exists ((<>) 0uy)) then
+           pixel.LoadDefTail.Length <> 12 || (pixel.LoadDefTail |> Array.exists ((<>) 0uy)) then
             invalid "Source grass shadow pixel program changed."
         if isNull vertex || isNull vertex.Data ||
            hash vertex.Data <> "804d2f07964b0fbcbeb9d3e0225accc2c70080ef434e6df1a35d38a6ed07800d" then
@@ -103,7 +103,7 @@ module internal TechniqueRules =
                 Kind = pixel.Kind, NamePointer = Unchecked.defaultof<_>,
                 Name = prefix + "vertcol_simple_atest_nc_native_shadow.hlsl",
                 DataPointer = Unchecked.defaultof<_>, DataSize = uint32 nativePixel.Length,
-                ProgramBytes = Array.copy pixel.ProgramBytes, Data = Array.copy nativePixel)
+                LoadDefTail = Array.copy pixel.LoadDefTail, Data = Array.copy nativePixel)
         let changedPass = copyPass pass replacement (pass.Args.ToArray())
         slots[2] <- MaterialTechniqueSlot(slots[2].Type, Unchecked.defaultof<_>,
                                           copyTechnique technique [| changedPass |])
@@ -248,8 +248,8 @@ module internal TechniqueRules =
                     |> Array.filter (fun shader -> not (isNull shader) && shader.Kind = kind && shader.Name = placeholder.Name)
                 if matches.Length <> 1 || isNull matches[0].Data ||
                    matches[0].DataSize <> uint32 matches[0].Data.Length ||
-                   isNull matches[0].ProgramBytes ||
-                   matches[0].ProgramBytes.Length <> MaterialShaderAsset.GetProgramByteCount kind then
+                   isNull matches[0].LoadDefTail ||
+                   matches[0].LoadDefTail.Length <> MaterialShaderAsset.GetLoadDefTailSize kind then
                     fail $"Native local-light shader '{placeholder.Name}' is missing or incomplete."
                 let original = matches[0]
                 let shader =
@@ -257,7 +257,7 @@ module internal TechniqueRules =
                         Kind = kind, NamePointer = Unchecked.defaultof<_>,
                         Name = prefix + "iw4_local_light/" + original.Name,
                         DataPointer = Unchecked.defaultof<_>, DataSize = original.DataSize,
-                        ProgramBytes = Array.copy original.ProgramBytes, Data = Array.copy original.Data)
+                        LoadDefTail = Array.copy original.LoadDefTail, Data = Array.copy original.Data)
                 shaderCache.Add(key, shader)
                 shader
 
@@ -440,8 +440,8 @@ module internal TechniqueRules =
                     |> Array.filter (fun shader -> not (isNull shader) && shader.Kind = kind && shader.Name = placeholder.Name)
                 if matches.Length <> 1 || isNull matches[0].Data ||
                    matches[0].DataSize <> uint32 matches[0].Data.Length ||
-                   isNull matches[0].ProgramBytes ||
-                   matches[0].ProgramBytes.Length <> MaterialShaderAsset.GetProgramByteCount kind then
+                   isNull matches[0].LoadDefTail ||
+                   matches[0].LoadDefTail.Length <> MaterialShaderAsset.GetLoadDefTailSize kind then
                     fail $"Native sun-shadow shader '{placeholder.Name}' is missing or incomplete."
                 let original = matches[0]
                 let shader =
@@ -449,7 +449,7 @@ module internal TechniqueRules =
                         Kind = kind, NamePointer = Unchecked.defaultof<_>,
                         Name = prefix + "iw4_sun_shadow/" + original.Name,
                         DataPointer = Unchecked.defaultof<_>, DataSize = original.DataSize,
-                        ProgramBytes = Array.copy original.ProgramBytes, Data = Array.copy original.Data)
+                        LoadDefTail = Array.copy original.LoadDefTail, Data = Array.copy original.Data)
                 shaderCache.Add(key, shader)
                 shader
 

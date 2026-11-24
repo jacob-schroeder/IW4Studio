@@ -208,7 +208,7 @@ internal static class Iw3MaterialCompiler
             StateBitsCount = template.StateBitsCount,
             StateFlags = stateFlags,
             CameraRegion = template.CameraRegion,
-            XStringCount = template.XStringCount,
+            LayerCount = template.LayerCount,
             Pad43 = template.Pad43,
             InlineTechniqueSlotStateBits = template.InlineTechniqueSlotStateBits.ToArray(),
             Pad8E = template.Pad8E,
@@ -244,7 +244,7 @@ internal static class Iw3MaterialCompiler
                 LoadBits = stateWords[index],
                 CommandWordCount = state.CommandWordCount
             }).ToArray(),
-            XStrings = template.XStrings.Select(value => new MaterialXStringEntry(
+            SubMaterialNames = template.SubMaterialNames.Select(value => new MaterialLayerName(
                 value.Index,
                 default,
                 value.Value)).ToArray()

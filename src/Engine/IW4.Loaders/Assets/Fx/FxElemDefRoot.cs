@@ -5,7 +5,7 @@ namespace IW4.Loaders.Assets.Fx;
 
 internal sealed record FxElemDefRoot(
     int Offset,
-    int Flags,
+    FxElemFlags Flags,
     FxSpawnDef Spawn,
     FxFloatRange SpawnRange,
     FxFloatRange FadeInRange,
@@ -39,4 +39,4 @@ internal sealed record FxElemDefRoot(
     byte SortOrder,
     byte LightingFrac,
     byte UseItemClip,
-    byte FadeInfo);
+    byte MarkFadeInEighthSeconds);

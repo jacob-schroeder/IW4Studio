@@ -139,9 +139,9 @@ public sealed class FxSpritePreview
                 if (element.EffectEmitted.Name is not null || element.EffectOnImpact.Name is not null ||
                     element.EffectOnDeath.Name is not null)
                     notices.Add("emission and impact/death child effects omitted");
-                if ((element.Flags & 0x100) != 0)
+                if (element.Flags.UsesCollision)
                     notices.Add("collision omitted");
-                if ((element.Flags & 0x08000000) != 0)
+                if (element.Flags.UsesModelPhysics)
                     notices.Add("model physics omitted");
                 if (element.ElemType is FxElemType.OmniLight or FxElemType.SpotLight)
                 {
@@ -247,12 +247,14 @@ public sealed class FxSpritePreview
             if (budget < 3) return;
             ElementNode node = effect.Elements[elementIndex];
             FxElemDef element = node.Definition;
-            int interval = element.Spawn.LoopingIntervalMsec;
             long first, last;
+            int interval = 0;
             if (node.Looping)
             {
-                if (interval <= 0 || element.Spawn.Count <= 0) continue;
-                long count = element.Spawn.Count == int.MaxValue ? long.MaxValue : element.Spawn.Count;
+                FxSpawnDefLooping spawn = element.Spawn.Looping;
+                interval = spawn.IntervalMsec;
+                if (interval <= 0 || spawn.Count <= 0) continue;
+                long count = spawn.Count == int.MaxValue ? long.MaxValue : spawn.Count;
                 double lastSpawnTime = Math.Min(time, effect.LoopingLifeMilliseconds);
                 last = Math.Min(count, Math.Max(0, (long)Math.Floor(lastSpawnTime / interval) + 1));
                 double active = Maximum(element.SpawnDelayMsec) + ActiveDuration(node);
@@ -262,8 +264,8 @@ public sealed class FxSpritePreview
             }
             else
             {
-                // One-shot count occupies the spawn union's interval and count fields.
-                long count = interval + (long)(element.Spawn.Count *
+                FxSpawnDefOneShot spawn = element.Spawn.OneShotCount;
+                long count = spawn.Base + (long)(spawn.Amplitude *
                     Random(parentSeed, (uint)(elementIndex + 31)));
                 first = 0;
                 last = Math.Clamp(count, 0, MaximumSequencesPerElement);
@@ -273,7 +275,7 @@ public sealed class FxSpritePreview
             {
                 uint seed = Mix(parentSeed ^ ((uint)(elementIndex + 1) * 0x9e3779b9u) ^
                     ((uint)(sequence + 1) * 0x85ebca6bu));
-                double birth = node.Looping ? sequence * (double)interval : 0;
+                double birth = sequence * (double)interval;
                 birth += SampleRange(element.SpawnDelayMsec.Base, element.SpawnDelayMsec.Amplitude,
                     Random(seed, 0));
                 double elapsed = time - birth;
@@ -339,7 +341,7 @@ public sealed class FxSpritePreview
                 if (visual.Material is null || budget < 6 || elementBudget < 6) continue;
                 float size0 = VisualSize(state.Base.Size0, state.Amplitude.Size0,
                     next.Base.Size0, next.Amplitude.Size0, fraction, Random(seed, 7));
-                float size1 = (element.Flags & 0x10000000) != 0
+                float size1 = element.Flags.HasNonuniformScale
                     ? VisualSize(state.Base.Size1, state.Amplitude.Size1,
                         next.Base.Size1, next.Amplitude.Size1, fraction, Random(seed, 8)) : size0;
                 if (element.ElemType == FxElemType.Cloud)
@@ -440,13 +442,13 @@ public sealed class FxSpritePreview
             double active = ActiveDuration(node);
             if (node.Looping)
             {
-                if (element.Spawn.Count <= 0 || element.Spawn.LoopingIntervalMsec <= 0) continue;
-                double lastSpawn = element.Spawn.Count == int.MaxValue
-                    ? loopingLife : Math.Min(loopingLife, (element.Spawn.Count - 1d) *
-                        element.Spawn.LoopingIntervalMsec);
+                if (element.Spawn.Looping.Count <= 0 || element.Spawn.Looping.IntervalMsec <= 0) continue;
+                double lastSpawn = element.Spawn.Looping.Count == int.MaxValue
+                    ? loopingLife : Math.Min(loopingLife, (element.Spawn.Looping.Count - 1d) *
+                        element.Spawn.Looping.IntervalMsec);
                 duration = Math.Max(duration, lastSpawn + Maximum(element.SpawnDelayMsec) + active);
             }
-            else if (element.Spawn.LoopingIntervalMsec > 0 || element.Spawn.Count > 0)
+            else if (element.Spawn.OneShotCount.Base > 0 || element.Spawn.OneShotCount.Amplitude > 0)
                 duration = Math.Max(duration, Maximum(element.SpawnDelayMsec) + active);
         }
         return duration;
@@ -490,7 +492,7 @@ public sealed class FxSpritePreview
             SampleRange(element.SpawnOrigin[2].Base, element.SpawnOrigin[2].Amplitude, Random(seed, 4)));
         // Spawn-relative coordinates rotate with the placed effect; world-relative
         // coordinates stay on world axes. Static editor placements share spawn/now frames.
-        Vector3 spawned = origin + ((element.Flags & 0x2) != 0
+        Vector3 spawned = origin + (element.Flags.SpawnRelativeToEffect
             ? Vector3.TransformNormal(source, orientation) : source);
         return spawned + SampleOffset(element, seed, orientation);
     }
@@ -500,13 +502,13 @@ public sealed class FxSpritePreview
         float radius = SampleRange(element.SpawnOffsetRadius.Base, element.SpawnOffsetRadius.Amplitude,
             Random(seed, 24));
         float angle = Random(seed, 25) * MathF.Tau;
-        switch (element.Flags & 0x30)
+        switch (element.Flags.SpawnOffsetMode)
         {
-            case 0x10: // sphere
+            case FxSpawnOffsetMode.Sphere:
                 float z = Random(seed, 26) * 2 - 1;
                 float xy = MathF.Sqrt(Math.Max(0, 1 - z * z));
                 return radius * new Vector3(MathF.Cos(angle) * xy, MathF.Sin(angle) * xy, z);
-            case 0x20: // cylinder
+            case FxSpawnOffsetMode.Cylinder:
                 float height = SampleRange(element.SpawnOffsetHeight.Base,
                     element.SpawnOffsetHeight.Amplitude, Random(seed, 27));
                 return Vector3.TransformNormal(new Vector3(height,
@@ -517,12 +519,12 @@ public sealed class FxSpritePreview
 
     private static Matrix4x4 ElementOrientation(FxElemDef element, Matrix4x4 orientation, uint seed)
     {
-        switch (element.Flags & 0xC0)
+        switch (element.Flags.RunRelativeTo)
         {
-            case 0x40: // frame at spawn
-            case 0x80: // current effect frame; equal to spawn for static editor emitters
+            case FxRunRelativeTo.Spawn:
+            case FxRunRelativeTo.Effect: // Static placements share the same spawn and current frames.
                 return orientation;
-            case 0xC0: // align the local X axis with the sampled spawn offset
+            case FxRunRelativeTo.Offset: // Align the local X axis with the sampled offset.
                 Vector3 forward = SampleOffset(element, seed, orientation);
                 if (forward.LengthSquared() < 0.0001f) return orientation;
                 forward = Vector3.Normalize(forward);
@@ -539,8 +541,8 @@ public sealed class FxSpritePreview
     private static Vector3 SampleDisplacement(FxElemDef element, float normalizedLife,
         float life, uint seed, bool world)
     {
-        int flag = world ? 0x02000000 : 0x01000000;
-        if ((element.Flags & flag) == 0 || element.VelSamples.Count < 2) return Vector3.Zero;
+        bool hasGraph = world ? element.Flags.HasWorldVelocityGraph : element.Flags.HasLocalVelocityGraph;
+        if (!hasGraph || element.VelSamples.Count < 2) return Vector3.Zero;
         int segments = element.VelSamples.Count - 1;
         float progress = normalizedLife * segments;
         int full = Math.Min(segments - 1, (int)progress);
@@ -565,11 +567,11 @@ public sealed class FxSpritePreview
         float progress = normalizedLife * (element.VelSamples.Count - 1);
         int index = Math.Min(element.VelSamples.Count - 2, (int)progress);
         float fraction = progress - index;
-        Vector3 local = (element.Flags & 0x01000000) != 0
+        Vector3 local = element.Flags.HasLocalVelocityGraph
             ? Vector3.Lerp(SampleVector(element.VelSamples[index].Local.Velocity, seed),
                 SampleVector(element.VelSamples[index + 1].Local.Velocity, seed), fraction)
             : Vector3.Zero;
-        Vector3 world = (element.Flags & 0x02000000) != 0
+        Vector3 world = element.Flags.HasWorldVelocityGraph
             ? Vector3.Lerp(SampleVector(element.VelSamples[index].World.Velocity, seed),
                 SampleVector(element.VelSamples[index + 1].World.Velocity, seed), fraction)
             : Vector3.Zero;

@@ -45,7 +45,7 @@ internal static class TerrainCollisionCompiler
                 throw new InvalidDataException($"Terrain '{terrain.Material}' has an invalid mesh grid.");
             if (!materialIndices.TryGetValue(terrain.Material, out ushort materialIndex))
                 throw new InvalidDataException($"Terrain collision material '{terrain.Material}' is missing.");
-            terrainContents |= source.Materials[materialIndex].Contents;
+            terrainContents |= (int)source.Materials[materialIndex].Contents;
             var localIndices = new ushort[terrain.Vertices.Length];
             for (int i = 0; i < localIndices.Length; i++)
             {

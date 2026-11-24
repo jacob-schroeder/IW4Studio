@@ -7,11 +7,11 @@ using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.ViewModels;
 
-internal sealed class LoadedSoundClip(LoadedSound asset, string label, TimeSpan duration)
+internal sealed class LoadedSoundClip(LoadedSound asset, string label)
 {
     internal LoadedSound Asset { get; } = asset;
     internal string Label { get; } = label;
-    internal TimeSpan Duration { get; } = duration;
+    internal TimeSpan Duration { get; } = TimeSpan.FromMilliseconds(asset.DurationMilliseconds);
     internal bool HasAudio => Asset.PhysicalData is { Length: > 0 };
     internal float[]? Peaks { get; set; }
     internal TimeSpan Position { get; set; }
@@ -68,7 +68,7 @@ internal sealed class LoadedSoundEditorViewModel : ObservableObject, IAssetEdito
     private LoadedSoundClip CaptureOriginal()
     {
         var asset = _baseline.Capture();
-        var clip = new LoadedSoundClip(asset, "Current workspace audio", TimeSpan.FromMilliseconds(asset.FrameCount));
+        var clip = new LoadedSoundClip(asset, "Current workspace audio");
         _ = LoadPeaksAsync(clip);
         return clip;
     }
@@ -106,7 +106,7 @@ internal sealed class LoadedSoundEditorViewModel : ObservableObject, IAssetEdito
             _history.Add(Replacement);
             if (_history.Count > 6) _history.RemoveAt(0);
             Replacement = SameAudio(result.Replacement, Original.Asset) ? null :
-                new LoadedSoundClip(result.Replacement, fileName, result.Analysis.Duration);
+                new LoadedSoundClip(result.Replacement, fileName);
             if (Replacement is { } clip) _ = LoadPeaksAsync(clip);
         }
         catch (OperationCanceledException) when (_disposed) { }

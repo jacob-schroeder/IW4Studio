@@ -3,6 +3,7 @@ namespace IW4.Formats.SourceFormat.XAnim
 open System
 open System.Collections.Generic
 open System.IO
+open IW4.Game.Assets.XAnim
 
 [<Struct>]
 type internal XAnimSourceQuat2(value0: int16, value1: int16) =
@@ -101,7 +102,7 @@ type internal XAnimSourceParts =
     { NumFrames: uint16
       Looped: bool
       Framerate: float32
-      AssetType: byte
+      AssetType: XAnimAssetType
       Bones: IReadOnlyList<XAnimSourceBoneTrack>
       Notifies: IReadOnlyList<XAnimSourceNotify>
       Delta: XAnimSourceDeltaTrack option }

@@ -43,14 +43,8 @@ public sealed class MaterialShaderAsset : BaseAsset
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
     };
 
-    public static int GetProgramByteCount(MaterialShaderKind kind) => kind switch
-    {
-        MaterialShaderKind.Pixel => PixelShaderSerializedSize -
-            (sizeof(int) + ShaderLoadDefSerializedSize),
-        MaterialShaderKind.Vertex => VertexShaderSerializedSize -
-            (sizeof(int) + ShaderLoadDefSerializedSize),
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
-    };
+    public static int GetLoadDefTailSize(MaterialShaderKind kind) =>
+        GetSerializedSize(kind) - sizeof(uint) - ShaderLoadDefSerializedSize;
 
     // 0x00: XString. Both PS3 bodies push LARGE and call Load_XString.
     public XString NamePointer { get; init; }
@@ -62,9 +56,9 @@ public sealed class MaterialShaderAsset : BaseAsset
     public XPointer<MaterialShaderBytecode> DataPointer { get; init; }
     public uint DataSize { get; init; }
 
-    // Pixel only, 0x0C..0x17. Preserve these GPU program bytes verbatim.
-    // Vertex shaders have no trailing program bytes.
-    public byte[] ProgramBytes { get; init; } = [];
+    // Pixel root +0x0C..0x17. These bytes are outside the active load definition.
+    // Preserve them verbatim. Vertex roots end immediately after the byte count.
+    public byte[] LoadDefTail { get; init; } = [];
 
     // Materialized GfxShaderLoadDef payload, not an additional root field.
     public byte[]? Data { get; init; }

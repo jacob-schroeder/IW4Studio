@@ -41,7 +41,7 @@ internal static class BrushCollisionCompiler
         if (materials.Count is 0 or > short.MaxValue)
             throw new NotSupportedException("Brush collision requires between 1 and 32767 materials.");
         var materialIndices = materials.Select((material, index) =>
-                (Name: material.Name ?? throw new InvalidDataException("A collision material has no name."), material.Contents, Index: index))
+                (Name: material.Name ?? throw new InvalidDataException("A collision material has no name."), Contents: (int)material.Contents, Index: index))
             .ToDictionary(item => (item.Name, item.Contents), item => item.Index);
 
         var planes = new List<CPlane>();
@@ -60,7 +60,7 @@ internal static class BrushCollisionCompiler
             IReadOnlyList<MapPolygon> polygons = source.GetPolygons();
             if (!baseMaterials.TryGetValue(polygons[0].Face.Material, out ClipMaterial? baseMaterial))
                 throw new InvalidDataException($"Brush {brushIndex} material '{polygons[0].Face.Material}' is missing.");
-            int brushContents = BrushContents.Compile(BrushContents.ReadForCompilation(source), baseMaterial.Contents);
+            int brushContents = BrushContents.Compile(BrushContents.ReadForCompilation(source), (int)baseMaterial.Contents);
             var faceMaterials = polygons.Select(polygon =>
                 materialIndices.TryGetValue((polygon.Face.Material, brushContents), out int index)
                     ? index

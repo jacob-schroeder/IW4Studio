@@ -130,7 +130,7 @@ internal static class Iw3Ps3AudioCompiler
                 if (!payload.AsSpan().StartsWith("ID3"u8))
                     throw new NotSupportedException($"COD4 PS3 sound '{sound.Name}' is not an ID3 MP3 payload.");
                 StreamedSound stream = package.AddPayload(payload);
-                int flags = SoundRules.TargetStreamFlags(donor.Flags, source.Flags, ambient);
+                SndAliasBits flags = SoundRules.TargetStreamFlags(donor.Flags, source.Flags, ambient);
                 foreach (var (aliasName, rows) in aliases)
                 {
                     rows.Add(new SndAlias

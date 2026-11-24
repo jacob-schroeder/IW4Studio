@@ -71,7 +71,7 @@ public sealed partial class PhysCollmapExchange
             throw new InvalidDataException($"{field}.BrushWrapper has no materialized body.");
         return new GeomDocument
         {
-            Type = geom.Type,
+            Type = (int)geom.Type,
             Orientation = geom.Orientation.ToArray(),
             Bounds = geom.Bounds,
             BrushWrapper = geom.BrushWrapper is null ? null :
@@ -88,7 +88,7 @@ public sealed partial class PhysCollmapExchange
         ValidateBounds(geom.Bounds, $"{field}.Bounds");
         return new PhysGeomInfo
         {
-            Type = geom.Type,
+            Type = (PhysGeomPrimitive)geom.Type,
             Orientation = geom.Orientation,
             Bounds = geom.Bounds,
             BrushWrapper = geom.BrushWrapper is null ? null :

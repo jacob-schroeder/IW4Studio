@@ -12,11 +12,14 @@ public sealed class LoadedSound : BaseAsset
     public string? Name { get; init; }
     public override string? SerializedAssetName => Name;
     public int PhysicalDataByteCount { get; init; }
-    public ushort FrameCount { get; init; }
+    /// <summary>Playback duration in milliseconds.</summary>
+    public ushort DurationMilliseconds { get; init; }
     public ushort ChannelCount { get; init; }
     public ushort SampleRate { get; init; }
-    public ushort Pad0E { get; init; }
-    public ushort Pad10 { get; init; }
+    /// <summary>Decoded sample frames per channel skipped on the first read.</summary>
+    public ushort InitialSkipSamples { get; init; }
+    /// <summary>Trailing decoded sample frames per channel excluded from the authored duration.</summary>
+    public ushort EndTrimSamples { get; init; }
     public ushort SeekTableCount { get; init; }
     public int SeekTableByteCount => checked(SeekTableCount * sizeof(uint));
     public XPointer<byte[]> SeekTablePointer { get; init; }

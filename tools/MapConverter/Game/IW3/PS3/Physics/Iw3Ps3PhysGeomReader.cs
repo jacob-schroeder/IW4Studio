@@ -92,7 +92,7 @@ internal static partial class Iw3Ps3FastFileCatalog
             return new PhysGeomInfo
             {
                 BrushWrapper = brush,
-                Type = sourceType == 4 ? 5 : sourceType,
+                Type = sourceType == 4 ? PhysGeomPrimitive.Cylinder : (PhysGeomPrimitive)sourceType,
                 Orientation = [ReadVec3(bytes, 8), ReadVec3(bytes, 0x14),
                     ReadVec3(bytes, 0x20)],
                 Bounds = new Bounds

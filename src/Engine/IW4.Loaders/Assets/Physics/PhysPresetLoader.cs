@@ -54,7 +54,7 @@ public sealed class PhysPresetLoader : XAssetLoader<PhysPresetAsset>
         XPointer<string> namePointer = context.PointerReader.ReadPointer<string>(
             rootCursor,
             XPointerResolutionMode.Direct);
-        int type = rootCursor.ReadInt32();
+        int soundClassIndex = rootCursor.ReadInt32();
         float mass = rootCursor.ReadSingle();
         float bounce = rootCursor.ReadSingle();
         float friction = rootCursor.ReadSingle();
@@ -96,7 +96,7 @@ public sealed class PhysPresetLoader : XAssetLoader<PhysPresetAsset>
             RuntimeAddress = rootAddress,
             NamePointer = namePointer,
             Name = name,
-            Type = type,
+            SoundClassIndex = soundClassIndex,
             Mass = mass,
             Bounce = bounce,
             Friction = friction,

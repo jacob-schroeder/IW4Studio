@@ -429,7 +429,7 @@ internal sealed class SoundLinkPlan : AssetLinkPlan
             writer.WriteSingle(alias.DistanceMin);
             writer.WriteSingle(alias.DistanceMax);
             writer.WriteSingle(alias.VelocityMin);
-            writer.WriteInt32(alias.Flags);
+            writer.WriteInt32(alias.Flags.RawValue);
             writer.WriteSingle(alias.SlavePercentage);
             writer.WriteSingle(alias.Probability);
             writer.WriteSingle(alias.LfePercentage);

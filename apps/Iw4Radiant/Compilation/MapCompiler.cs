@@ -106,14 +106,14 @@ internal static class MapCompiler
             .Select(name =>
             {
                 if (ClipBrushMaterial.IsPlayerClip(name))
-                    return new ClipMaterial { Name = name, Contents = ClipBrushMaterial.Contents,
-                        SurfaceFlags = ClipBrushMaterial.SurfaceFlags };
+                    return new ClipMaterial { Name = name, Contents = (CollisionContents)ClipBrushMaterial.Contents,
+                        SurfaceFlags = (CollisionSurfaceFlags)ClipBrushMaterial.SurfaceFlags };
                 if (ClipBrushMaterial.IsLadder(name))
-                    return new ClipMaterial { Name = name, Contents = ClipBrushMaterial.Contents,
-                        SurfaceFlags = ClipBrushMaterial.LadderSurfaceFlags };
+                    return new ClipMaterial { Name = name, Contents = (CollisionContents)ClipBrushMaterial.Contents,
+                        SurfaceFlags = (CollisionSurfaceFlags)ClipBrushMaterial.LadderSurfaceFlags };
                 if (CaulkMaterial.IsCaulk(name))
-                    return new ClipMaterial { Name = name, Contents = CaulkMaterial.Contents,
-                        SurfaceFlags = CaulkMaterial.SurfaceFlags };
+                    return new ClipMaterial { Name = name, Contents = (CollisionContents)CaulkMaterial.Contents,
+                        SurfaceFlags = (CollisionSurfaceFlags)CaulkMaterial.SurfaceFlags };
                 if (!materials.TryGetValue(name, out MaterialSource? material) ||
                     !material.IsWater && !File.Exists(material.ImagePath))
                     throw new InvalidDataException($"Material '{name}' is unavailable. Load its material and image in the asset browser before building.");
@@ -130,8 +130,8 @@ internal static class MapCompiler
                     throw new NotSupportedException($"Material '{name}' is outside the native lit world profile. Use an opaque, alpha-tested or standard alpha-blended world material.");
                 // Native PS3 Rust and Highrise sky brushes use SKY|NOIMPACT|NOMARKS
                 // and CONTENTS_SKY without CONTENTS_SOLID.
-                return new ClipMaterial { Name = name, Contents = material.IsSky ? 0x800 : material.GetCollisionContents(),
-                    SurfaceFlags = material.IsSky ? 0x34 : material.GetCollisionSurfaceFlags() };
+                return new ClipMaterial { Name = name, Contents = material.IsSky ? CollisionContents.Sky : (CollisionContents)material.GetCollisionContents(),
+                    SurfaceFlags = material.IsSky ? CollisionSurfaceFlags.Sky | CollisionSurfaceFlags.NoImpact | CollisionSurfaceFlags.NoMarks : (CollisionSurfaceFlags)material.GetCollisionSurfaceFlags() };
             }).ToArray();
         var baseMaterialsByName = baseMaterials.ToDictionary(material =>
             material.Name ?? throw new InvalidDataException("A collision material has no name."), StringComparer.Ordinal);
@@ -141,17 +141,17 @@ internal static class MapCompiler
                 return brush.Faces.Select(face =>
                 {
                     ClipMaterial material = baseMaterialsByName[face.Material];
-                    return (face.Material, Contents: BrushContents.Compile(kind, material.Contents));
+                    return (face.Material, Contents: BrushContents.Compile(kind, (int)material.Contents));
                 });
             })
             .Concat(document.World.Terrains.Select(terrain =>
-                (terrain.Material, baseMaterialsByName[terrain.Material].Contents)))
+                (terrain.Material, Contents: (int)baseMaterialsByName[terrain.Material].Contents)))
             .Distinct()
             .OrderBy(item => item.Material, StringComparer.Ordinal).ThenBy(item => item.Contents)
             .Select(item => new ClipMaterial
             {
                 Name = item.Material,
-                Contents = item.Contents,
+                Contents = (CollisionContents)item.Contents,
                 SurfaceFlags = baseMaterialsByName[item.Material].SurfaceFlags
             }).ToArray();
         progress?.Report("Compiling entities and brush collision…");

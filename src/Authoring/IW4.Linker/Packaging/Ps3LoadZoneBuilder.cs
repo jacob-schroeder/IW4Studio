@@ -234,7 +234,7 @@ public static class Ps3LoadZoneBuilder
             StateBitsCount = 1,
             StateFlags = MaterialStateFlags.None,
             CameraRegion = GfxCameraRegionType.Count,
-            XStringCount = 0,
+            LayerCount = 0,
             Pad43 = 0,
             InlineTechniqueSlotStateBits = inlineTechniqueState,
             Pad8E = 0,
@@ -261,7 +261,7 @@ public static class Ps3LoadZoneBuilder
                     CommandWordCount = 0
                 }
             ],
-            XStrings = []
+            SubMaterialNames = []
         };
     }
 

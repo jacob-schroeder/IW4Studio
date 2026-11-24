@@ -115,7 +115,7 @@ internal static class Iw3PhysPresetCompiler
         string sndAliasPrefix) => new()
     {
         Name = name,
-        Type = 0,
+        SoundClassIndex = 0,
         Mass = mass,
         Bounce = bounce,
         Friction = friction,
@@ -235,7 +235,7 @@ internal static class Iw3PhysPresetCompiler
         return new PhysPresetAsset
         {
             Name = name,
-            Type = 0,
+            SoundClassIndex = 0,
             Mass = ParseFloat(fields["mass"], name, "mass"),
             Bounce = ParseFloat(fields["bounce"], name, "bounce"),
             Friction = hasInfiniteFriction

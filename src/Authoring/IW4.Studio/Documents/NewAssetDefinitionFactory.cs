@@ -118,8 +118,8 @@ internal static class NewAssetDefinitionFactory
             {
                 Kind = MaterialShaderKind.Pixel,
                 Name = name,
-                ProgramBytes = new byte[
-                    MaterialShaderAsset.GetProgramByteCount(
+                LoadDefTail = new byte[
+                    MaterialShaderAsset.GetLoadDefTailSize(
                         MaterialShaderKind.Pixel)]
             },
             XAssetType.VertexShader => new MaterialShaderAsset

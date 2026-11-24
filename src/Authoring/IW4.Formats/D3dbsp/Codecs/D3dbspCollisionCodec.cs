@@ -101,10 +101,10 @@ internal static class D3dbspCollisionCodec
             materials[index] = new ClipMaterial
             {
                 Name = Encoding.Latin1.GetString(row[..nameLength]),
-                SurfaceFlags = BinaryPrimitives.ReadInt32LittleEndian(row[64..]),
+                SurfaceFlags = (CollisionSurfaceFlags)BinaryPrimitives.ReadInt32LittleEndian(row[64..]),
                 // IW4 retains the disk contents flags. The IW3 runtime loader's
                 // 0xDFFFFFFB mask is not part of the IW4 linked asset graph.
-                Contents = BinaryPrimitives.ReadInt32LittleEndian(row[68..])
+                Contents = (CollisionContents)BinaryPrimitives.ReadInt32LittleEndian(row[68..])
             };
         }
 
@@ -678,8 +678,8 @@ internal static class D3dbspCollisionCodec
 
             Span<byte> row = data.AsSpan(index * DiskMaterialSize, DiskMaterialSize);
             Encoding.Latin1.GetBytes(name, row);
-            BinaryPrimitives.WriteInt32LittleEndian(row[64..], material.SurfaceFlags);
-            BinaryPrimitives.WriteInt32LittleEndian(row[68..], material.Contents);
+            BinaryPrimitives.WriteInt32LittleEndian(row[64..], (int)material.SurfaceFlags);
+            BinaryPrimitives.WriteInt32LittleEndian(row[68..], (int)material.Contents);
         }
 
         return data;
@@ -1495,7 +1495,7 @@ internal static class D3dbspCollisionCodec
                 throw new InvalidDataException(
                     $"{description} AABB {index} references material {aabb.MaterialIndex}; the material table has {materials.Count} rows.");
             }
-            contents |= materials[aabb.MaterialIndex].Contents;
+            contents |= (int)materials[aabb.MaterialIndex].Contents;
         }
         return contents;
     }

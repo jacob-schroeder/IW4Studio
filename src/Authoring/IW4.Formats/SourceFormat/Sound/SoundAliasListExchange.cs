@@ -89,7 +89,7 @@ public sealed class SoundAliasListExchange
             DistanceMin = Float(json, "distanceMin", path),
             DistanceMax = Float(json, "distanceMax", path),
             VelocityMin = Float(json, "velocityMin", path),
-            Flags = Integer(json, "flags", path),
+            Flags = new SndAliasBits(Integer(json, "flags", path)),
             SlavePercentage = Float(json, "slavePercentage", path),
             Probability = Float(json, "probability", path),
             LfePercentage = Float(json, "lfePercentage", path),
@@ -243,17 +243,18 @@ public sealed class SoundAliasListExchange
             throw new InvalidDataException($"{path}.physicalDataByteCount is outside the supported payload limit.");
         byte[]? audio = ReadPayload(json, root, path, "audioPath", "audioStatus", audioCount);
         byte[]? seek = ReadPayload(json, root, path, "seekTablePath", "seekTableStatus", checked(seekCount * sizeof(uint)));
+        // Preserve the established exchange keys while decoding their PS3 meanings.
         return new LoadedSoundFile
         {
             LoadedSound = new LoadedSound
             {
                 Name = name,
                 PhysicalDataByteCount = audioCount,
-                FrameCount = UShort(json, "frameCount", path),
+                DurationMilliseconds = UShort(json, "frameCount", path),
                 ChannelCount = UShort(json, "channelCount", path),
                 SampleRate = UShort(json, "sampleRate", path),
-                Pad0E = UShort(json, "pad0E", path),
-                Pad10 = UShort(json, "pad10", path),
+                InitialSkipSamples = UShort(json, "pad0E", path),
+                EndTrimSamples = UShort(json, "pad10", path),
                 SeekTableCount = seekCount,
                 PhysicalData = audio,
                 SeekTable = seek
@@ -554,7 +555,7 @@ public sealed class SoundAliasListExchange
             WriteFloat(writer, "distanceMin", alias.DistanceMin);
             WriteFloat(writer, "distanceMax", alias.DistanceMax);
             WriteFloat(writer, "velocityMin", alias.VelocityMin);
-            writer.WriteNumber("flags", alias.Flags);
+            writer.WriteNumber("flags", alias.Flags.RawValue);
             WriteFloat(writer, "slavePercentage", alias.SlavePercentage);
             WriteFloat(writer, "probability", alias.Probability);
             WriteFloat(writer, "lfePercentage", alias.LfePercentage);
@@ -586,11 +587,11 @@ public sealed class SoundAliasListExchange
                     if (loaded is not null)
                     {
                         writer.WriteNumber("physicalDataByteCount", loaded.PhysicalDataByteCount);
-                        writer.WriteNumber("frameCount", loaded.FrameCount);
+                        writer.WriteNumber("frameCount", loaded.DurationMilliseconds);
                         writer.WriteNumber("channelCount", loaded.ChannelCount);
                         writer.WriteNumber("sampleRate", loaded.SampleRate);
-                        writer.WriteNumber("pad0E", loaded.Pad0E);
-                        writer.WriteNumber("pad10", loaded.Pad10);
+                        writer.WriteNumber("pad0E", loaded.InitialSkipSamples);
+                        writer.WriteNumber("pad10", loaded.EndTrimSamples);
                         writer.WriteNumber("seekTableCount", loaded.SeekTableCount);
                     }
                     WriteString(writer, "audioPath", paths.Audio);

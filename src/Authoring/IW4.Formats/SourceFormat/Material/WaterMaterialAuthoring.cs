@@ -330,7 +330,7 @@ public static class WaterMaterialAuthoring
             StateFlags = (source.StateFlags & ~(MaterialStateFlags.CullBack | MaterialStateFlags.CullFront)) |
                 MaterialStateFlags.WritesDepth | MaterialStateFlags.UsesDepthBuffer,
             CameraRegion = GfxCameraRegionType.LitOpaque,
-            XStringCount = checked((byte)source.XStrings.Count),
+            LayerCount = checked((byte)source.SubMaterialNames.Count),
             Pad43 = source.Pad43,
             InlineTechniqueSlotStateBits = source.InlineTechniqueSlotStateBits.ToArray(),
             Pad8E = source.Pad8E,
@@ -340,7 +340,7 @@ public static class WaterMaterialAuthoring
             Textures = textures,
             Constants = constants,
             StateBits = CreateSurfaceStates(source),
-            XStrings = source.XStrings.Select(value => new MaterialXStringEntry(value.Index, default, value.Value)).ToArray()
+            SubMaterialNames = source.SubMaterialNames.Select(value => new MaterialLayerName(value.Index, default, value.Value)).ToArray()
         };
     }
 

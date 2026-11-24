@@ -1,6 +1,7 @@
 using System.Numerics;
 using IW4.Formats.SourceFormat.XModel;
 using IW4.Formats.XModel;
+using IW4.Game.Assets.ColMap;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.Physics;
 using IW4.Game.Assets.XModel;
@@ -83,7 +84,7 @@ internal sealed class XModelSource
                 XModelCollSurf collision = model.CollSurfs[collisionIndex++];
                 if (collision.BoneIndex != rigid.BoneOffset / DObjSkelMatSize)
                     throw new InvalidDataException($"XModel '{Name}' collision bone does not match its rigid group.");
-                bool solid = (collision.Contents & 1) != 0;
+                bool solid = (collision.Contents & CollisionContents.Solid) != 0;
                 if (solid && rigid.TriCount > MaximumCollisionTrianglesPerGroup)
                     throw new NotSupportedException($"XModel '{Name}' has too much indexed collision geometry for player clip.");
                 var indices = new HashSet<int>();

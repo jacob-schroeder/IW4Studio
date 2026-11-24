@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Text.Json;
 using IW4.Game.Assets.GfxMap;
+using IW4.Game.Assets.ColMap;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.XModel;
 using IW4.Game.Math;
@@ -464,7 +465,7 @@ internal static class Iw3XModelExportImporter
                     Y = emitted.HalfSize.Y + boundsTolerance,
                     Z = emitted.HalfSize.Z + boundsTolerance
                 };
-                result.Add(new XModelCollSurf(emitted, bone, value.Contents, value.Flags));
+                result.Add(new XModelCollSurf(emitted, bone, (CollisionContents)value.Contents, (CollisionSurfaceFlags)value.Flags));
             }
         }
         return Array.AsReadOnly(result.ToArray());

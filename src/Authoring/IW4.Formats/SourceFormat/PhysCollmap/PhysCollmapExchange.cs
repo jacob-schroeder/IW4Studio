@@ -10,7 +10,6 @@ namespace IW4.Formats.SourceFormat.PhysCollmap;
 /// </summary>
 public sealed partial class PhysCollmapExchange
 {
-    private const int MapCylinderType = 5;
 
     public IReadOnlyList<string> Unlink(
         string sourceDirectory,
@@ -23,7 +22,7 @@ public sealed partial class PhysCollmapExchange
         // The map exchange supports the canonical cylinder tag. Preserve other
         // cylinder-dispatched tags in the native document.
         if (asset.Geoms.All(geom => geom is { EffectiveShape: PhysGeomShape.Box } or
-            { EffectiveShape: PhysGeomShape.Cylinder, Type: MapCylinderType }))
+            { EffectiveShape: PhysGeomShape.Cylinder, Type: PhysGeomPrimitive.Cylinder }))
         {
             ValidateAsset(asset);
             return output.WriteTextBatch([

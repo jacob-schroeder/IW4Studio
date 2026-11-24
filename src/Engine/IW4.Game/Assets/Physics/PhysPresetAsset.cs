@@ -13,8 +13,12 @@ public sealed class PhysPresetAsset : BaseAsset
     public string? Name { get; init; }
     public override string? SerializedAssetName => Name;
 
-    // 0x04..0x18: physical material parameters.
-    public int Type { get; init; }
+    /// <summary>
+    /// Runtime collision-sound class index at +0x04. SP and MP assign it from
+    /// the sound-alias prefix when registering per-surface collision sounds.
+    /// </summary>
+    public int SoundClassIndex { get; init; }
+    // 0x08..0x18: physical material parameters.
     public float Mass { get; init; }
     public float Bounce { get; init; }
     public float Friction { get; init; }

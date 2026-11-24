@@ -162,7 +162,7 @@ public sealed class SoundAliasListLoader : XAssetLoader<SoundAliasListAsset>
             cursor.ReadSingle(),
             cursor.ReadSingle(),
             cursor.ReadSingle(),
-            cursor.ReadInt32(),
+            new SndAliasBits(cursor.ReadInt32()),
             cursor.ReadSingle(),
             cursor.ReadSingle(),
             cursor.ReadSingle(),

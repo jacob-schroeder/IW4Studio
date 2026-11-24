@@ -40,7 +40,7 @@ internal static class XboxXAnimWriter
         for (int i = 0; i < 10; i++) root[18 + i] = anim.BoneCounts[i];
         root[28] = anim.BoneNameCount;
         root[29] = anim.NotifyCount;
-        root[30] = anim.AssetType;
+        root[30] = (byte)anim.AssetType;
         root[31] = anim.Pad1F;
         I(root, 32, anim.RandomDataShortCount);
         I(root, 36, anim.IndexCount);

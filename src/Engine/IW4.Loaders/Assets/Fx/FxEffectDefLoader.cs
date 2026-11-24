@@ -30,7 +30,7 @@ public sealed class FxEffectDefLoader : XAssetLoader<FxEffectDefAsset>
         var rootCursor = new FastFileCursor(rootBytes, rootAddress);
 
         XString namePointer = ReadXStringPointer(rootCursor, context);
-        int flags = rootCursor.ReadInt32();
+        FxEffectFlags flags = (FxEffectFlags)rootCursor.ReadInt32();
         int totalSize = rootCursor.ReadInt32();
         int msecLoopingLife = rootCursor.ReadInt32();
         int elemDefCountLooping = rootCursor.ReadInt32();
@@ -113,7 +113,7 @@ public sealed class FxEffectDefLoader : XAssetLoader<FxEffectDefAsset>
     {
         int offset = cursor.AddressAt(cursor.Offset)?.Offset ?? cursor.Offset;
         int start = cursor.Offset;
-        int flags = cursor.ReadInt32();
+        var flags = new FxElemFlags(cursor.ReadInt32());
         FxSpawnDef spawn = ReadFxSpawnDef(cursor);
         FxFloatRange spawnRange = ReadFxFloatRange(cursor);
         FxFloatRange fadeInRange = ReadFxFloatRange(cursor);
@@ -150,7 +150,7 @@ public sealed class FxEffectDefLoader : XAssetLoader<FxEffectDefAsset>
         byte sortOrder = cursor.ReadByte();
         byte lightingFrac = cursor.ReadByte();
         byte useItemClip = cursor.ReadByte();
-        byte fadeInfo = cursor.ReadByte();
+        byte markFadeInEighthSeconds = cursor.ReadByte();
 
         if (cursor.Offset - start != FxElemDef.SerializedSize)
             throw new InvalidDataException($"FxElemDef consumed 0x{cursor.Offset - start:X} bytes instead of 0x{FxElemDef.SerializedSize:X}.");
@@ -191,7 +191,7 @@ public sealed class FxEffectDefLoader : XAssetLoader<FxEffectDefAsset>
             sortOrder,
             lightingFrac,
             useItemClip,
-            fadeInfo);
+            markFadeInEighthSeconds);
     }
 
     private FxElemDef ReadFxElemDefChildren(
@@ -260,7 +260,7 @@ public sealed class FxEffectDefLoader : XAssetLoader<FxEffectDefAsset>
             SortOrder = root.SortOrder,
             LightingFrac = root.LightingFrac,
             UseItemClip = root.UseItemClip,
-            FadeInfo = root.FadeInfo
+            MarkFadeInEighthSeconds = root.MarkFadeInEighthSeconds
         };
     }
 

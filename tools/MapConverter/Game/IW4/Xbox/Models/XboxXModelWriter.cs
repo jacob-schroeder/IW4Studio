@@ -129,8 +129,8 @@ internal static class XboxXModelWriter
             {
                 Bounds(bytes, at, item.Bounds);
                 XboxWire.I32(bytes, at + 24, item.BoneIndex);
-                XboxWire.I32(bytes, at + 28, item.Contents);
-                XboxWire.I32(bytes, at + 32, item.SurfaceFlags);
+                XboxWire.I32(bytes, at + 28, (int)item.Contents);
+                XboxWire.I32(bytes, at + 32, (int)item.SurfaceFlags);
             });
         Table(zone, rootAt, 0xf0, model.BoneInfo, XBoneInfo.SerializedSize, 4,
             (bytes, at, item) =>

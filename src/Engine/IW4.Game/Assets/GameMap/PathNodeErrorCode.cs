@@ -1,13 +1,7 @@
 namespace IW4.Game.Assets.GameMap;
 
-/// <summary>
-/// PC-correlated interpretation of the path-node minimum-use-distance/error
-/// union. Its use and values on PS3 have not been independently confirmed.
-/// </summary>
-/// <remarks>
-/// Source: OpenAssetTools commit 30d2d498bd8e3f2401037b24f3db6f96d39554c4,
-/// src/Common/Game/IW4/IW4_Assets.h, PathNodeErrorCode.
-/// </remarks>
+/// <summary>Diagnostic index at node +0x30 when the HasError spawn flag is set.
+/// PS3 SP 0x1B4E94 indexes the nine messages at 0x6D1F8C.</summary>
 public enum PathNodeErrorCode
 {
     None = 0x00,

@@ -1,4 +1,5 @@
 using IW4.Game.Assets.XModel;
+using IW4.Game.Assets.ColMap;
 using IW4.Game.Math;
 using IW4.Game.ScriptStrings;
 using MapConverter.Bootstrap.Material;
@@ -91,7 +92,7 @@ internal static class MilTntBombMp
                         Y = 6.05672f,
                         Z = 3.170301f
                     }
-                }, 0, 1, 13631488)
+                }, 0, CollisionContents.Solid, (CollisionSurfaceFlags)13631488)
             ],
             BoneInfo = [
                 new XBoneInfo(new Bounds
@@ -143,7 +144,8 @@ internal static class MilTntBombMp
                 {
                     TileMode = XSurfaceTileMode.IntentionalTiling,
                     DeformedRaw = 0x00,
-                    StreamFlags = (XSurfaceStreamFlags)21,
+                    StreamFlags = XSurfaceStreamFlags.Verts0InLarge |
+                        XSurfaceStreamFlags.TriIndicesInLarge | XSurfaceStreamFlags.NoVertexColor,
                     Pad03 = 0x00,
                     VertCount = 672,
                     TriCount = 572,
@@ -2021,7 +2023,8 @@ internal static class MilTntBombMp
                 {
                     TileMode = XSurfaceTileMode.IntentionalTiling,
                     DeformedRaw = 0x00,
-                    StreamFlags = (XSurfaceStreamFlags)13,
+                    StreamFlags = XSurfaceStreamFlags.Verts0InLarge |
+                        XSurfaceStreamFlags.TriIndicesInLarge | XSurfaceStreamFlags.GrayscaleVertexColor,
                     Pad03 = 0x00,
                     VertCount = 24,
                     TriCount = 12,

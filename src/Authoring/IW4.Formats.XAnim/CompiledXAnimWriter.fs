@@ -239,7 +239,7 @@ module internal CompiledXAnimWriter =
         writer.Write(if parts.Looped then parts.NumFrames else numLoopFrames)
         writer.Write(Checked.uint16 parts.Bones.Count)
         writer.Write(byte flags)
-        writer.Write(parts.AssetType)
+        writer.Write(byte parts.AssetType)
         writer.Write(Checked.uint16 (MathF.Round(parts.Framerate, MidpointRounding.AwayFromZero)))
 
         match parts.Delta with

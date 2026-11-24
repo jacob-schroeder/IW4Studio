@@ -15,11 +15,11 @@ internal sealed class LoadedSoundLinkPlan : AssetLinkPlan
         AssetKey key,
         string originalSerializedName,
         int physicalDataByteCount,
-        ushort frameCount,
+        ushort durationMilliseconds,
         ushort channelCount,
         ushort sampleRate,
-        ushort pad0E,
-        ushort pad10,
+        ushort initialSkipSamples,
+        ushort endTrimSamples,
         ushort seekTableCount,
         LinkStorageTarget? seekTable,
         LinkStorageTarget? physicalData,
@@ -32,11 +32,11 @@ internal sealed class LoadedSoundLinkPlan : AssetLinkPlan
         var writer = new LinkTemplateWriter(LoadedSound.SerializedSize);
         writer.Skip(sizeof(int));
         writer.WriteInt32(physicalDataByteCount);
-        writer.WriteUInt16(frameCount);
+        writer.WriteUInt16(durationMilliseconds);
         writer.WriteUInt16(channelCount);
         writer.WriteUInt16(sampleRate);
-        writer.WriteUInt16(pad0E);
-        writer.WriteUInt16(pad10);
+        writer.WriteUInt16(initialSkipSamples);
+        writer.WriteUInt16(endTrimSamples);
         writer.WriteUInt16(seekTableCount);
         writer.Skip(sizeof(int));
         writer.Skip(sizeof(int));
@@ -112,11 +112,11 @@ internal sealed class LoadedSoundLinkPlan : AssetLinkPlan
             key,
             originalSerializedName,
             definition.PhysicalDataByteCount,
-            definition.FrameCount,
+            definition.DurationMilliseconds,
             definition.ChannelCount,
             definition.SampleRate,
-            definition.Pad0E,
-            definition.Pad10,
+            definition.InitialSkipSamples,
+            definition.EndTrimSamples,
             definition.SeekTableCount,
             frozenSeek,
             frozenPhysical,
@@ -189,11 +189,11 @@ internal sealed class LoadedSoundLinkPlan : AssetLinkPlan
         byte[]? physicalData)
     {
         if (definition.PhysicalDataByteCount != 0 ||
-            definition.FrameCount != 0 ||
+            definition.DurationMilliseconds != 0 ||
             definition.ChannelCount != 0 ||
             definition.SampleRate != 0 ||
-            definition.Pad0E != 0 ||
-            definition.Pad10 != 0 ||
+            definition.InitialSkipSamples != 0 ||
+            definition.EndTrimSamples != 0 ||
             definition.SeekTableCount != 0 ||
             definition.SeekTablePointer.Raw != 0 ||
             definition.PhysicalDataPointer.Raw != 0 ||

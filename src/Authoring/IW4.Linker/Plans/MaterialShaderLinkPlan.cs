@@ -15,7 +15,7 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
         AssetKey key,
         string originalSerializedName,
         MaterialShaderKind kind,
-        byte[] programBytes,
+        byte[] loadDefTail,
         byte[]? bytecode,
         LinkAliasCellSymbol? bytecodeAlias,
         LinkStorageSymbol? vertexReservation,
@@ -30,7 +30,7 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
         writer.Skip(sizeof(int));
         writer.Skip(sizeof(int));
         writer.WriteUInt32(checked((uint)(bytecode?.Length ?? 0)));
-        writer.WriteBytes(programBytes);
+        writer.WriteBytes(loadDefTail);
         Root = LinkStorageSymbol.SourceBytes(
             XFileBlockType.TEMP,
             writer.Complete(),
@@ -61,15 +61,15 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
         MaterialShaderKind kind = definition.Kind;
         _ = GetRootSize(kind);
 
-        byte[] programBytes = definition.ProgramBytes?.ToArray()
+        byte[] loadDefTail = definition.LoadDefTail?.ToArray()
             ?? throw new InvalidDataException(
-                $"{GetDisplayName(kind)} program bytes cannot be null.");
-        int expectedProgramByteCount = GetProgramByteCount(kind);
-        if (programBytes.Length != expectedProgramByteCount)
+                $"{GetDisplayName(kind)} load-definition tail cannot be null.");
+        int expectedTailSize = MaterialShaderAsset.GetLoadDefTailSize(kind);
+        if (loadDefTail.Length != expectedTailSize)
         {
             throw new InvalidDataException(
                 $"{GetDisplayName(kind)} requires exactly " +
-                $"{expectedProgramByteCount} trailing program byte(s).");
+                $"{expectedTailSize} trailing program byte(s).");
         }
 
         byte[]? bytecode = definition.Data?.ToArray();
@@ -79,7 +79,7 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
                 definition.DataPointer.Type !=
                     IW4.Game.Pointers.PointerType.Null ||
                 bytecode is not null ||
-                programBytes.Any(value => value != 0))
+                loadDefTail.Any(value => value != 0))
             {
                 throw new InvalidDataException(
                     $"A comma-prefixed {GetDisplayName(kind)} provider must have a zeroed reference body.");
@@ -126,7 +126,7 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
             key,
             originalSerializedName,
             kind,
-            programBytes,
+            loadDefTail,
             bytecode,
             bytecodeAlias,
             vertexReservation,
@@ -159,19 +159,6 @@ internal sealed class MaterialShaderLinkPlan : AssetLinkPlan
         try
         {
             return MaterialShaderAsset.GetSerializedSize(kind);
-        }
-        catch (ArgumentOutOfRangeException)
-        {
-            throw new InvalidDataException(
-                $"Unsupported material shader kind {kind}.");
-        }
-    }
-
-    private static int GetProgramByteCount(MaterialShaderKind kind)
-    {
-        try
-        {
-            return MaterialShaderAsset.GetProgramByteCount(kind);
         }
         catch (ArgumentOutOfRangeException)
         {

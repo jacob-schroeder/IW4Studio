@@ -237,11 +237,11 @@ internal sealed class SoundDraft
         NamePointer = clearNamePointer ? default : source.NamePointer,
         Name = name,
         PhysicalDataByteCount = source.PhysicalDataByteCount,
-        FrameCount = source.FrameCount,
+        DurationMilliseconds = source.DurationMilliseconds,
         ChannelCount = source.ChannelCount,
         SampleRate = source.SampleRate,
-        Pad0E = source.Pad0E,
-        Pad10 = source.Pad10,
+        InitialSkipSamples = source.InitialSkipSamples,
+        EndTrimSamples = source.EndTrimSamples,
         SeekTableCount = source.SeekTableCount,
         SeekTablePointer = clearPayloadPointers ? default : source.SeekTablePointer,
         SeekTable = cloneBytes ? source.SeekTable?.ToArray() : source.SeekTable,
@@ -371,11 +371,11 @@ internal sealed class SoundDraft
         right is not null &&
         string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
         left.PhysicalDataByteCount == right.PhysicalDataByteCount &&
-        left.FrameCount == right.FrameCount &&
+        left.DurationMilliseconds == right.DurationMilliseconds &&
         left.ChannelCount == right.ChannelCount &&
         left.SampleRate == right.SampleRate &&
-        left.Pad0E == right.Pad0E &&
-        left.Pad10 == right.Pad10 &&
+        left.InitialSkipSamples == right.InitialSkipSamples &&
+        left.EndTrimSamples == right.EndTrimSamples &&
         left.SeekTableCount == right.SeekTableCount &&
         ByteArrayEquals(left.SeekTable, right.SeekTable) &&
         ByteArrayEquals(left.PhysicalData, right.PhysicalData);

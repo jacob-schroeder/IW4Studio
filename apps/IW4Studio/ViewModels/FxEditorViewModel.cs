@@ -133,6 +133,8 @@ public sealed class FxEditorViewModel
         RootProperties =
         [
             new("Flags", rootFlagsText),
+            new("Lighting at spawn", (effect.Flags & FxEffectFlags.NeedsLighting) != FxEffectFlags.None
+                ? "Sampled" : "Full bright"),
             new("Compiled allocation", totalSizeText),
             new("Looping life", LoopingLifeText),
             new("Looping rows", LoopingCount.ToString("N0", CultureInfo.CurrentCulture)),
@@ -986,7 +988,9 @@ public sealed class FxElementViewModel
             new("Table index", globalIndex.ToString("N0", CultureInfo.CurrentCulture)),
             new("Element band", $"{GroupName(group)} row {groupIndex:N0}"),
             new("Type", $"{FormatIdentifier(element.ElemType.ToString())} ({(byte)element.ElemType:N0})"),
-            new("Flags", $"0x{unchecked((uint)element.Flags):X8}"),
+            new("Flags", $"0x{unchecked((uint)element.Flags.RawValue):X8}"),
+            new("Spawn offset mode", element.Flags.SpawnOffsetMode.ToString()),
+            new("Run relative to", element.Flags.RunRelativeTo.ToString()),
             new(SpawnPropertyName(group), FormatSpawn(element, group)),
             new("Spawn delay", FormatRange(element.SpawnDelayMsec, "ms")),
             new("Life span", FormatRange(element.LifeSpanMsec, "ms")),
@@ -1017,9 +1021,14 @@ public sealed class FxElementViewModel
             new("Extended payload", FormatExtended(element)),
             new("Sort order", element.SortOrder.ToString("N0", CultureInfo.CurrentCulture)),
             new("Lighting fraction", $"{element.LightingFrac:N0} / 255"),
-            new("Use item clip", element.UseItemClip == 0 ? "No" : $"Yes ({element.UseItemClip:N0})"),
-            new("Fade info", $"0x{element.FadeInfo:X2}")
+            new("Use item clip", element.UseItemClip == 0 ? "No" : $"Yes ({element.UseItemClip:N0})")
         };
+        if (element.ElemType == FxElemType.Decal)
+            properties.Add(new("Mark fade-in", $"{element.MarkFadeInMilliseconds:N0} ms"));
+        if (element.ElemType is FxElemType.Cloud or FxElemType.SparkCloud)
+            properties.Add(new("Cloud shape", FormatIdentifier(element.Flags.CloudShape.ToString())));
+        if (element.Flags.UnmappedBits != 0)
+            properties.Add(new("Unmapped flag bits", $"0x{element.Flags.UnmappedBits:X8}"));
         return Array.AsReadOnly(properties.ToArray());
     }
 
@@ -1028,10 +1037,10 @@ public sealed class FxElementViewModel
         FxElementGroup group) => group switch
         {
             FxElementGroup.Looping =>
-                $"every {FxEditorViewModel.FormatMilliseconds(element.Spawn.LoopingIntervalMsec)}, " +
-                $"{FormatCount(element.Spawn.Count)}",
+                $"every {FxEditorViewModel.FormatMilliseconds(element.Spawn.Looping.IntervalMsec)}, " +
+                $"{FormatCount(element.Spawn.Looping.Count)}",
             FxElementGroup.OneShot =>
-                $"{FormatRange(element.Spawn.LoopingIntervalMsec, element.Spawn.Count)} births",
+                $"{FormatRange(element.Spawn.OneShotCount.Base, element.Spawn.OneShotCount.Amplitude)} births",
             _ => "child-emission template"
         };
 
@@ -1040,12 +1049,12 @@ public sealed class FxElementViewModel
         FxElementGroup group) => group switch
         {
             FxElementGroup.Looping =>
-                $"interval {FxEditorViewModel.FormatMilliseconds(element.Spawn.LoopingIntervalMsec)} · " +
-                $"count {FormatCount(element.Spawn.Count)}",
+                $"interval {FxEditorViewModel.FormatMilliseconds(element.Spawn.Looping.IntervalMsec)} · " +
+                $"count {FormatCount(element.Spawn.Looping.Count)}",
             FxElementGroup.OneShot =>
-                $"count {FormatRange(element.Spawn.LoopingIntervalMsec, element.Spawn.Count)}",
+                $"count {FormatRange(element.Spawn.OneShotCount.Base, element.Spawn.OneShotCount.Amplitude)}",
             _ =>
-                $"union words {element.Spawn.LoopingIntervalMsec:N0}, {element.Spawn.Count:N0} · driven by parent emission"
+                $"union words {element.Spawn.FirstWord:N0}, {element.Spawn.SecondWord:N0} · driven by parent emission"
         };
 
     private static string SpawnPropertyName(FxElementGroup group) =>

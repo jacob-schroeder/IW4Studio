@@ -378,7 +378,7 @@ module internal NativeXAnimCodec =
             IndexCount = asset.IndexCount, NumFrames = asset.NumFrames, Flags = asset.Flags,
             DeltaFlags = asset.DeltaFlags, BoneCounts = (asset.BoneCounts |> Seq.toArray),
             BoneNameCount = asset.BoneNameCount, NotifyCount = asset.NotifyCount,
-            AssetType = asset.AssetType, Pad1F = asset.Pad1F,
+            AssetType = byte asset.AssetType, Pad1F = asset.Pad1F,
             Framerate = asset.Framerate, Frequency = asset.Frequency,
             Names = (asset.Names |> Seq.map (fun value -> text value.Text) |> Seq.toArray),
             Notify = (asset.Notify |> Seq.map (fun value -> NativeNotify(Name = text value.Name.Text, Time = value.Time)) |> Seq.toArray),
@@ -421,7 +421,7 @@ module internal NativeXAnimCodec =
             IndexCount = source.IndexCount, NumFrames = source.NumFrames, Flags = source.Flags,
             DeltaFlags = source.DeltaFlags, BoneCounts = boneCounts,
             BoneNameCount = source.BoneNameCount, NotifyCount = source.NotifyCount,
-            AssetType = source.AssetType, Pad1F = source.Pad1F,
+            AssetType = LanguagePrimitives.EnumOfValue<byte, XAnimAssetType> source.AssetType, Pad1F = source.Pad1F,
             Framerate = source.Framerate, Frequency = source.Frequency,
             Names = (names |> Array.map scriptString),
             Notify = (notify |> Array.map (fun value ->

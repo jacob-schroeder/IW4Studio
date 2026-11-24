@@ -9,7 +9,7 @@ public sealed class PhysGeomInfo
 
     public XPointer<BrushWrapper> BrushWrapperPointer { get; init; }
     public BrushWrapper? BrushWrapper { get; init; }
-    public int Type { get; init; }
+    public PhysGeomPrimitive Type { get; init; }
     public IReadOnlyList<Vec3> Orientation { get; init; } = [];
     public Bounds Bounds { get; init; } = new();
 
@@ -22,7 +22,7 @@ public sealed class PhysGeomInfo
             if (BrushWrapper is not null || BrushWrapperPointer.Raw != 0)
                 return PhysGeomShape.Brush;
 
-            return Type == 1 ? PhysGeomShape.Box : PhysGeomShape.Cylinder;
+            return Type == PhysGeomPrimitive.Box ? PhysGeomShape.Box : PhysGeomShape.Cylinder;
         }
     }
 }

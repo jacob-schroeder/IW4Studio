@@ -77,7 +77,7 @@ public sealed class PhysPresetExchange
         return new PhysPresetAsset
         {
             Name = assetName,
-            Type = native.Type,
+            SoundClassIndex = native.Type,
             Mass = values[0],
             Bounce = values[1],
             Friction = values[2],
@@ -102,7 +102,7 @@ public sealed class PhysPresetExchange
             Format = NativeFormat,
             Version = 1,
             Name = name,
-            Type = asset.Type,
+            Type = asset.SoundClassIndex,
             FloatBits = [
                 BitConverter.SingleToUInt32Bits(asset.Mass),
                 BitConverter.SingleToUInt32Bits(asset.Bounce),

@@ -693,8 +693,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                     };
                     surfaceBounds[index] = new GfxSurfaceBounds
                     {
-                        Bounds = WorldEndpointBounds(row + 0x1c),
-                        Unknown18To1F = new byte[8]
+                        Bounds = WorldEndpointBounds(row + 0x1c)
                     };
                 }
             }

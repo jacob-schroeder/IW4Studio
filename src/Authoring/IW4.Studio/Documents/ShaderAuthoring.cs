@@ -24,7 +24,7 @@ public sealed class ShaderDraft
     public string? Name => _baseline.Name;
     public MaterialShaderKind Kind => _baseline.Kind;
     public ReadOnlyMemory<byte> Bytecode => _replacement ?? _baseline.Data;
-    public ReadOnlyMemory<byte> ProgramBytes => _baseline.ProgramBytes;
+    public ReadOnlyMemory<byte> LoadDefTail => _baseline.LoadDefTail;
 
     internal object Revision { get; }
 
@@ -60,7 +60,7 @@ public sealed class ShaderDraft
         Kind == other.Kind &&
         string.Equals(Name, other.Name, StringComparison.Ordinal) &&
         Bytecode.Span.SequenceEqual(other.Bytecode.Span) &&
-        ProgramBytes.Span.SequenceEqual(other.ProgramBytes.Span);
+        LoadDefTail.Span.SequenceEqual(other.LoadDefTail.Span);
 
     private static MaterialShaderAsset Copy(MaterialShaderAsset baseline, byte[]? replacement) => new()
     {
@@ -74,7 +74,7 @@ public sealed class ShaderDraft
         DataPointer = replacement is null ? baseline.DataPointer : default,
         DataSize = replacement is null ? baseline.DataSize : checked((uint)replacement.Length),
         Data = (replacement ?? baseline.Data)?.ToArray(),
-        ProgramBytes = baseline.ProgramBytes.ToArray()
+        LoadDefTail = baseline.LoadDefTail.ToArray()
     };
 }
 

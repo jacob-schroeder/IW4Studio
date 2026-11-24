@@ -3,6 +3,7 @@ using IW4.Loaders.Assets.Material;
 using IW4.Loaders.Assets.Physics;
 using IW4.Game.Assets;
 using IW4.Game.Assets.Material;
+using IW4.Game.Assets.ColMap;
 using IW4.Game.Assets.XModel;
 using ModelBounds = IW4.Game.Math.Bounds;
 using IW4.Game.Pointers;
@@ -447,8 +448,8 @@ public sealed class XModelLoader : XAssetLoader<XModelAssetModel>
         return new XModelCollSurf(
             ReadBounds(cursor),
             cursor.ReadInt32(),
-            cursor.ReadInt32(),
-            cursor.ReadInt32());
+            (CollisionContents)cursor.ReadInt32(),
+            (CollisionSurfaceFlags)cursor.ReadInt32());
     }
 
     private static IReadOnlyList<XBoneInfo> ReadXBoneInfoArray(

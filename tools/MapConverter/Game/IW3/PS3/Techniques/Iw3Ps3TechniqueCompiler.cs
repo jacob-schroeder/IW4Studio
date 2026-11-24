@@ -383,7 +383,6 @@ internal sealed class Iw3Ps3TechniqueCompiler(
             ? MaterialShaderKind.Vertex
             : MaterialShaderKind.Pixel;
         ReadOnlySpan<byte> root = source.Root.Span;
-        int rootSize = MaterialShaderAsset.GetSerializedSize(kind);
         if (root.Length != (source.IsVertex ? 12 : 20))
             throw new InvalidDataException($"IW3 PS3 shader '{name}' has an invalid wrapper size.");
 
@@ -416,9 +415,8 @@ internal sealed class Iw3Ps3TechniqueCompiler(
             Name = OwnedNamePrefix + name,
             DataSize = (uint)program.Length,
             Data = program.ToArray(),
-            // These are runtime GPU fields; the target linker requires its own
-            // serialized wrapper width while retaining the Cg container intact.
-            ProgramBytes = new byte[rootSize - 4 - MaterialShaderAsset.ShaderLoadDefSerializedSize]
+            // The IW4 serialized program has its own layout after the load definition.
+            LoadDefTail = new byte[MaterialShaderAsset.GetLoadDefTailSize(kind)]
         };
         _shaders.Add(source, asset);
         _shadersByName.Add(key, asset);

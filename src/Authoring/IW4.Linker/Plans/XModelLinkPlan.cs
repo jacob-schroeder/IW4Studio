@@ -479,8 +479,8 @@ internal sealed class XModelLinkPlan : AssetLinkPlan
                 throw new InvalidDataException($"XModel.CollSurfs[{index}].BoneIndex is out of range.");
             WriteBounds(writer, value.Bounds, $"XModel.CollSurfs[{index}].Bounds");
             writer.WriteInt32(value.BoneIndex);
-            writer.WriteInt32(value.Contents);
-            writer.WriteInt32(value.SurfaceFlags);
+            writer.WriteInt32((int)value.Contents);
+            writer.WriteInt32((int)value.SurfaceFlags);
         }
         return ResolveSerialized(
             definition.CollSurfsPointer.Untyped,

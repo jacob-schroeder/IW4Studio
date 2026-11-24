@@ -1527,7 +1527,9 @@ public sealed class GfxWorldLoader : XAssetLoader<GfxWorldAsset>
                         Z = c.ReadSingle()
                     }
                 },
-                Unknown18To1F = c.ReadBytes(8)
+                MipRadius = c.ReadUInt16(),
+                InvHighMipRadius = c.ReadBytes(GfxSurfaceBounds.LayerSlotCount),
+                TailPadding = c.ReadByte()
             };
         }
 
@@ -1593,9 +1595,28 @@ public sealed class GfxWorldLoader : XAssetLoader<GfxWorldAsset>
         DbLoadExecutionContext context)
     {
         byte[] bytes = LoadInlineArray(cursor, pointer, count, GfxHeroOnlyLight.SerializedSize, 4, context, "GfxWorld.heroOnlyLights");
+        var c = new FastFileCursor(bytes);
         var rows = new GfxHeroOnlyLight[count];
         for (int i = 0; i < rows.Length; i++)
-            rows[i] = new GfxHeroOnlyLight(bytes.AsSpan(i * GfxHeroOnlyLight.SerializedSize, GfxHeroOnlyLight.SerializedSize).ToArray());
+        {
+            GfxHeroOnlyLightType type = (GfxHeroOnlyLightType)c.ReadByte();
+            byte[] unused = c.ReadBytes(3);
+            var color = new ModelVec3 { X = c.ReadSingle(), Y = c.ReadSingle(), Z = c.ReadSingle() };
+            var direction = new ModelVec3 { X = c.ReadSingle(), Y = c.ReadSingle(), Z = c.ReadSingle() };
+            var origin = new ModelVec3 { X = c.ReadSingle(), Y = c.ReadSingle(), Z = c.ReadSingle() };
+            rows[i] = new GfxHeroOnlyLight
+            {
+                Type = type,
+                Reserved01To03 = unused,
+                Color = color,
+                Direction = direction,
+                Origin = origin,
+                Radius = c.ReadSingle(),
+                CosHalfFovOuter = c.ReadSingle(),
+                CosHalfFovInner = c.ReadSingle(),
+                Exponent = c.ReadInt32()
+            };
+        }
 
         return rows;
     }

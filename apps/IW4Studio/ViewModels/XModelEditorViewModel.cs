@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using IW4.Game.Assets;
 using IW4.Game.Assets.XModel;
+using IW4.Game.Assets.ColMap;
 using IW4.Game.Assets.Image;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.Physics;
@@ -1282,10 +1283,11 @@ public sealed class XModelEditorViewModel
                 void Update(Func<IW4.Game.Math.Bounds, IW4.Game.Math.Bounds> bounds, int? bone = null, int? contents = null, int? flags = null)
                 {
                     XModelCollSurf current = _workingDraft.CollisionSurfaces[rowIndex];
-                    _workingDraft.SetCollisionSurface(rowIndex, bounds(current.Bounds), bone ?? current.BoneIndex, contents ?? current.Contents, flags ?? current.SurfaceFlags);
+                    _workingDraft.SetCollisionSurface(rowIndex, bounds(current.Bounds), bone ?? current.BoneIndex, contents ?? (int)current.Contents, flags ?? (int)current.SurfaceFlags);
                     RefreshCandidateState();
                 }
                 string prefix = $"xmodel.collSurfs[{rowIndex}]";
+                MaterialSurfaceType materialType = row.SurfaceFlags.GetMaterialSurfaceType();
                 collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} midpoint X", prefix + ".midpoint.x", row.Bounds.MidPoint.X, IsEditable ? value => Update(bounds => new IW4.Game.Math.Bounds { MidPoint = new IW4.Game.Math.Vec3 { X = value, Y = bounds.MidPoint.Y, Z = bounds.MidPoint.Z }, HalfSize = bounds.HalfSize }) : null));
                 collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} midpoint Y", prefix + ".midpoint.y", row.Bounds.MidPoint.Y, IsEditable ? value => Update(bounds => new IW4.Game.Math.Bounds { MidPoint = new IW4.Game.Math.Vec3 { X = bounds.MidPoint.X, Y = value, Z = bounds.MidPoint.Z }, HalfSize = bounds.HalfSize }) : null));
                 collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} midpoint Z", prefix + ".midpoint.z", row.Bounds.MidPoint.Z, IsEditable ? value => Update(bounds => new IW4.Game.Math.Bounds { MidPoint = new IW4.Game.Math.Vec3 { X = bounds.MidPoint.X, Y = bounds.MidPoint.Y, Z = value }, HalfSize = bounds.HalfSize }) : null));
@@ -1293,8 +1295,10 @@ public sealed class XModelEditorViewModel
                 collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} halfsize Y", prefix + ".halfsize.y", row.Bounds.HalfSize.Y, IsEditable ? value => Update(bounds => new IW4.Game.Math.Bounds { MidPoint = bounds.MidPoint, HalfSize = new IW4.Game.Math.Vec3 { X = bounds.HalfSize.X, Y = value, Z = bounds.HalfSize.Z } }) : null));
                 collisionRows.Add(new InspectorFloatPropertyRowViewModel($"CollSurf {rowIndex} halfsize Z", prefix + ".halfsize.z", row.Bounds.HalfSize.Z, IsEditable ? value => Update(bounds => new IW4.Game.Math.Bounds { MidPoint = bounds.MidPoint, HalfSize = new IW4.Game.Math.Vec3 { X = bounds.HalfSize.X, Y = bounds.HalfSize.Y, Z = value } }) : null));
                 collisionRows.Add(new InspectorIntegerPropertyRowViewModel($"CollSurf {rowIndex} bone", prefix + ".bone", row.BoneIndex, IsEditable ? value => Update(bounds => bounds, bone: value) : null));
-                collisionRows.Add(new InspectorIntegerPropertyRowViewModel($"CollSurf {rowIndex} contents", prefix + ".contents", row.Contents, IsEditable ? value => Update(bounds => bounds, contents: value) : null));
-                collisionRows.Add(new InspectorIntegerPropertyRowViewModel($"CollSurf {rowIndex} surface flags", prefix + ".surfaceFlags", row.SurfaceFlags, IsEditable ? value => Update(bounds => bounds, flags: value) : null));
+                collisionRows.Add(new InspectorIntegerPropertyRowViewModel($"CollSurf {rowIndex} contents", prefix + ".contents", (int)row.Contents, IsEditable ? value => Update(bounds => bounds, contents: value) : null));
+                collisionRows.Add(new InspectorIntegerPropertyRowViewModel($"CollSurf {rowIndex} surface flags", prefix + ".surfaceFlags", (int)row.SurfaceFlags, IsEditable ? value => Update(bounds => bounds, flags: value) : null));
+                collisionRows.Add(ReadOnly($"CollSurf {rowIndex} material type", prefix + ".materialType",
+                    materialType == MaterialSurfaceType.Count ? "Unknown (31)" : materialType.ToString()));
             }
             collisionRows.Add(new InspectorAssetReferencePropertyRowViewModel(
                 "PhysPreset", "xmodel.physPreset", XAssetType.PhysPreset, _workingDraft.PhysPreset?.Name,
@@ -1312,7 +1316,7 @@ public sealed class XModelEditorViewModel
                     PhysGeomInfo geom = collmap.Geoms[index];
                     collisionRows.Add(ReadOnly(
                         $"Physics geometry {index}", $"xmodel.physCollmap.geoms[{index}]",
-                        $"{geom.EffectiveShape} (raw type {geom.Type})"));
+                        $"{geom.EffectiveShape} (raw type {(int)geom.Type})"));
                 }
             }
             sections.Add(new InspectorSectionViewModel("Collision", collisionRows));

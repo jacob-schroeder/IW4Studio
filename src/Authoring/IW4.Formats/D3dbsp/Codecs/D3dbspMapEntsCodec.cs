@@ -783,7 +783,7 @@ internal static class D3dbspMapEntsCodec
         {
             ClipMaterial material = materials[index] ??
                 throw new InvalidDataException($"Collision material row {index} is null.");
-            if (material.Contents != contents)
+            if ((int)material.Contents != contents)
                 continue;
             if (index > short.MaxValue)
             {
@@ -802,8 +802,8 @@ internal static class D3dbspMapEntsCodec
         materials.Add(new ClipMaterial
         {
             Name = "trigger",
-            SurfaceFlags = 0x00040080,
-            Contents = contents
+            SurfaceFlags = CollisionSurfaceFlags.NoCastShadow | CollisionSurfaceFlags.NoDraw,
+            Contents = (CollisionContents)contents
         });
         return materialIndex;
     }

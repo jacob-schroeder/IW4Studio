@@ -10,6 +10,9 @@ public readonly record struct SndAliasBits(int RawValue)
     public const int LoopingMask = 0x0000_0001;
     public const int MasterMask = 0x0000_0002;
     public const int ConditionalVolumeScaleMask = 0x0000_0004;
+    public const int FullDryLevelMask = 0x0000_0008;
+    public const int NoWetLevelMask = 0x0000_0010;
+    public const int RandomStartPositionMask = 0x0000_0020;
     public const int DistanceGateMask = 0x0000_0040;
     public const int PlaybackTypeMask = 0x0000_0180;
     public const int PlaybackTypeShift = 7;
@@ -19,6 +22,9 @@ public readonly record struct SndAliasBits(int RawValue)
     private const int MappedMask = LoopingMask |
                                    MasterMask |
                                    ConditionalVolumeScaleMask |
+                                   FullDryLevelMask |
+                                   NoWetLevelMask |
+                                   RandomStartPositionMask |
                                    DistanceGateMask |
                                    PlaybackTypeMask |
                                    EntityChannelMask;
@@ -58,6 +64,22 @@ public readonly record struct SndAliasBits(int RawValue)
     /// </summary>
     public SndAliasBits WithConditionalVolumeScale(bool value) =>
         WithFlag(ConditionalVolumeScaleMask, value);
+
+    /// <summary>Uses unity dry gain instead of the current environmental dry level.</summary>
+    public bool UsesFullDryLevel => (RawValue & FullDryLevelMask) != 0;
+
+    public SndAliasBits WithFullDryLevel(bool value) => WithFlag(FullDryLevelMask, value);
+
+    /// <summary>Uses zero wet gain instead of the current environmental wet level.</summary>
+    public bool UsesNoWetLevel => (RawValue & NoWetLevelMask) != 0;
+
+    public SndAliasBits WithNoWetLevel(bool value) => WithFlag(NoWetLevelMask, value);
+
+    /// <summary>Requests a randomized playback position on eligible starts and restarts.</summary>
+    public bool UsesRandomStartPosition => (RawValue & RandomStartPositionMask) != 0;
+
+    public SndAliasBits WithRandomStartPosition(bool value) =>
+        WithFlag(RandomStartPositionMask, value);
 
     /// <summary>
     /// Whether spatial checks are forced even for a non-3D channel and
@@ -113,7 +135,7 @@ public readonly record struct SndAliasBits(int RawValue)
 
     /// <summary>
     /// Bits whose meanings are not established by the recovered consumers:
-    /// bits 3–5 and 15–31. These remain intact in <see cref="RawValue"/>.
+    /// bits 15–31. These remain intact in <see cref="RawValue"/>.
     /// </summary>
     public int UnmappedBits => RawValue & ~MappedMask;
 

@@ -62,21 +62,12 @@ internal sealed class MaterialShaderAssetLoader : XAssetLoader<MaterialShaderAss
             XPointerResolutionMode.Direct);
 
         // +0x04: GfxShaderLoadDef programLoadDef (alias-cell pointer + byte count).
+        var program = new MaterialShaderProgram(rootBytes.AsSpan(rootCursor.Offset), kind);
         XPointerReference dataPointer = context.PointerReader.ReadCell(
             rootCursor,
             XPointerResolutionMode.AliasCell);
-        uint dataSize = rootCursor.ReadUInt32();
-
-        // Pixel programs contain the 0x08-byte load definition plus 0x0C
-        // trailing bytes. Vertex programs contain only the load definition.
-        byte[] programBytes = rootCursor.ReadBytes(
-            MaterialShaderAsset.GetProgramByteCount(kind));
-
-        if (rootCursor.Offset != rootSize)
-        {
-            throw new InvalidDataException(
-                $"{GetDisplayName(kind)} consumed 0x{rootCursor.Offset:X} bytes instead of 0x{rootSize:X}.");
-        }
+        uint dataSize = program.LoadDef.ByteCount;
+        byte[] loadDefTail = program.LoadDefTail.ToArray();
 
         string? name;
         byte[]? data;
@@ -108,7 +99,7 @@ internal sealed class MaterialShaderAssetLoader : XAssetLoader<MaterialShaderAss
             Name = name,
             DataPointer = dataPointer.AsPointer<MaterialShaderBytecode>(),
             DataSize = dataSize,
-            ProgramBytes = programBytes,
+            LoadDefTail = loadDefTail,
             Data = data
         };
     }

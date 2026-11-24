@@ -154,7 +154,7 @@ public sealed class PathDataLoader
         int index)
     {
         var nodeType = (PathNodeType)rowCursor.ReadInt32();
-        ushort spawnFlags = rowCursor.ReadUInt16();
+        var spawnFlags = (PathNodeSpawnFlags)rowCursor.ReadUInt16();
         ScriptStringReference targetName = ReadScriptString(rowCursor, rowAddress, 0x06, context, $"PathData.nodes[{index}].targetName");
         ScriptStringReference scriptLinkName = ReadScriptString(rowCursor, rowAddress, 0x08, context, $"PathData.nodes[{index}].scriptLinkName");
         ScriptStringReference scriptNoteworthy = ReadScriptString(rowCursor, rowAddress, 0x0A, context, $"PathData.nodes[{index}].scriptNoteworthy");
@@ -323,7 +323,7 @@ public sealed class PathDataLoader
             rows[index] = new PathBaseNode
             {
                 Origin = ReadVec3(rowCursor),
-                Type = rowCursor.ReadUInt32()
+                TypeMask = (PathNodeTypeMask)rowCursor.ReadUInt32()
             };
         }
 

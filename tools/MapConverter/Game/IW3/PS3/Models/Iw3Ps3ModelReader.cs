@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using MapConverter.Game.IW3.PS3.Rules;
 using MapConverter.Game.IW3.PS3.Materials;
 using IW4.Game.Assets.Material;
+using IW4.Game.Assets.ColMap;
 using IW4.Game.Assets.Physics;
 using IW4.Game.Assets.XModel;
 using IW4.Game.Math;
@@ -246,8 +247,8 @@ internal static partial class Iw3Ps3FastFileCatalog
                 targetCollision[index] = new XModelCollSurf(
                     ReadMinMaxBounds(collisionBytes, offset, offset + 12),
                     BinaryPrimitives.ReadInt32BigEndian(collisionBytes[(offset + 24)..]),
-                    BinaryPrimitives.ReadInt32BigEndian(collisionBytes[(offset + 28)..]),
-                    BinaryPrimitives.ReadInt32BigEndian(collisionBytes[(offset + 32)..]));
+                    (CollisionContents)BinaryPrimitives.ReadInt32BigEndian(collisionBytes[(offset + 28)..]),
+                    (CollisionSurfaceFlags)BinaryPrimitives.ReadInt32BigEndian(collisionBytes[(offset + 32)..]));
             }
             ReadOnlySpan<byte> sourceBoneInfo = source.BoneInfo.Span;
             var targetBoneInfo = new XBoneInfo[bones];

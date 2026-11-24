@@ -13,7 +13,7 @@ internal sealed class PhysPresetLinkPlan : AssetLinkPlan
     private PhysPresetLinkPlan(
         AssetKey key,
         string originalSerializedName,
-        int type,
+        int soundClassIndex,
         int[] floatWords,
         LinkStorageSymbol? sndAliasPrefix,
         byte tempDefaultToCylinder,
@@ -27,7 +27,7 @@ internal sealed class PhysPresetLinkPlan : AssetLinkPlan
     {
         var writer = new LinkTemplateWriter(PhysPresetAsset.SerializedSize);
         writer.Skip(sizeof(int));
-        writer.WriteInt32(type);
+        writer.WriteInt32(soundClassIndex);
         for (int index = 0; index < 5; index++)
             writer.WriteInt32(floatWords[index]);
         writer.Skip(sizeof(int));
@@ -60,7 +60,7 @@ internal sealed class PhysPresetLinkPlan : AssetLinkPlan
         int[] floatWords = FreezeFloatWords(definition);
         if (originalSerializedName.StartsWith(','))
         {
-            if (definition.Type != 0 ||
+            if (definition.SoundClassIndex != 0 ||
                 floatWords.Any(word => word != 0) ||
                 definition.SndAliasPrefix is not null ||
                 definition.TempDefaultToCylinder != 0 ||
@@ -81,7 +81,7 @@ internal sealed class PhysPresetLinkPlan : AssetLinkPlan
         return new PhysPresetLinkPlan(
             key,
             originalSerializedName,
-            definition.Type,
+            definition.SoundClassIndex,
             floatWords,
             freeze.FreezeOptionalXString(
                 definition.SndAliasPrefix,

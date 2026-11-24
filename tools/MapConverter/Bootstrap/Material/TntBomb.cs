@@ -99,7 +99,7 @@ internal static class TntBomb
             StateBitsCount = 0x05,
             StateFlags = (MaterialStateFlags)121,
             CameraRegion = GfxCameraRegionType.LitOpaque,
-            XStringCount = 0x00,
+            LayerCount = 0x00,
             Pad43 = 0x00,
             Pad8E = 0,
             TechniqueSet = new MaterialTechniqueSetAsset { Name = techniqueSetName },

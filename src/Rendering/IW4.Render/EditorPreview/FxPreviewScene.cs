@@ -197,16 +197,16 @@ public sealed class FxPreviewScene
         for (int index = 0; index < loopingCount; index++)
         {
             FxElemDef element = effect.ElemDefs[index];
-            if (element.Spawn.Count == InfiniteLoopCount ||
+            if (element.Spawn.Looping.Count == InfiniteLoopCount ||
                 effect.MsecLoopingLife == InfiniteLoopCount)
             {
                 return MaximumDurationMilliseconds + 1;
             }
 
-            long lastSpawn = element.Spawn.Count > 1 &&
-                element.Spawn.LoopingIntervalMsec > 0
-                    ? (long)element.Spawn.LoopingIntervalMsec *
-                      (element.Spawn.Count - 1)
+            long lastSpawn = element.Spawn.Looping.Count > 1 &&
+                element.Spawn.Looping.IntervalMsec > 0
+                    ? (long)element.Spawn.Looping.IntervalMsec *
+                      (element.Spawn.Looping.Count - 1)
                     : 0;
             duration = Math.Max(
                 duration,
@@ -242,8 +242,8 @@ public sealed class FxPreviewScene
              index++)
         {
             FxElemDef element = effect.ElemDefs[index];
-            int interval = element.Spawn.LoopingIntervalMsec;
-            int requestedCount = element.Spawn.Count;
+            int interval = element.Spawn.Looping.IntervalMsec;
+            int requestedCount = element.Spawn.Looping.Count;
             int count;
             if (requestedCount == InfiniteLoopCount)
             {
@@ -286,8 +286,8 @@ public sealed class FxPreviewScene
         {
             FxElemDef element = effect.ElemDefs[index];
             int count = SampleIntRange(
-                element.Spawn.LoopingIntervalMsec,
-                element.Spawn.Count,
+                element.Spawn.OneShotCount.Base,
+                element.Spawn.OneShotCount.Amplitude,
                 StableRandom(FixedEffectSeed, sequence: 0, key: 19));
             int boundedCount = Math.Min(
                 Math.Max(0, count),
@@ -401,7 +401,7 @@ public sealed class FxPreviewScene
             previousVelocity = velocity;
         }
 
-        if ((element.Flags & 0x04000000) != 0)
+        if (element.Flags.HasGravity)
         {
             float gravity = SampleFloatRange(
                 element.Gravity,
@@ -431,11 +431,11 @@ public sealed class FxPreviewScene
                     StableRandom(randomSeed, sequence: 0, key: 8)));
         }
 
-        int offsetMode = element.Flags & 0x30;
+        FxSpawnOffsetMode offsetMode = element.Flags.SpawnOffsetMode;
         float radius = SampleFloatRange(
             element.SpawnOffsetRadius,
             StableRandom(randomSeed, sequence: 0, key: 11));
-        if (offsetMode == 0x10)
+        if (offsetMode == FxSpawnOffsetMode.Sphere)
         {
             float yaw = StableRandom(randomSeed, sequence: 0, key: 9) *
                 MathF.Tau;
@@ -449,7 +449,7 @@ public sealed class FxPreviewScene
                 planar * MathF.Sin(yaw),
                 height) * radius;
         }
-        else if (offsetMode == 0x20)
+        else if (offsetMode == FxSpawnOffsetMode.Cylinder)
         {
             float yaw = StableRandom(randomSeed, sequence: 0, key: 9) *
                 MathF.Tau;
@@ -496,7 +496,7 @@ public sealed class FxPreviewScene
         FxElemVelStateSample previous = element.VelSamples[sampleIndex];
         FxElemVelStateSample next = element.VelSamples[sampleIndex + 1];
         Vector3 velocity = Vector3.Zero;
-        if ((element.Flags & 0x02000000) != 0)
+        if (element.Flags.HasWorldVelocityGraph)
         {
             velocity += InterpolateVelocity(
                 previous.World,
@@ -505,7 +505,7 @@ public sealed class FxPreviewScene
                 previousWeight,
                 nextWeight);
         }
-        if ((element.Flags & 0x01000000) != 0)
+        if (element.Flags.HasLocalVelocityGraph)
         {
             // The editor preview uses an identity effect orientation. The
             // compiled local curve therefore shares the world basis here.
@@ -527,7 +527,7 @@ public sealed class FxPreviewScene
         float elapsedMilliseconds,
         Vector3 velocity)
     {
-        if ((element.Flags & 0x04000000) == 0)
+        if (!element.Flags.HasGravity)
             return velocity;
 
         float gravity = SampleFloatRange(
@@ -614,7 +614,7 @@ public sealed class FxPreviewScene
             next.Amplitude.Size0,
             sizeRandom0,
             fraction);
-        float size1 = (element.Flags & 0x10000000) != 0
+        float size1 = element.Flags.HasNonuniformScale
             ? InterpolateNumeric(
                 previous.Base.Size1,
                 previous.Amplitude.Size1,

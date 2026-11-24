@@ -130,15 +130,14 @@ public sealed partial class RenderAssetLookup
         var rootCursor = new FastFileCursor(rootBytes, address);
         XPointer<string> namePointer = new(rootCursor.ReadInt32(), XPointerResolutionMode.Direct, address);
         XBlockAddress dataPointerCell = address.Add(4);
-        int dataPointerRaw = rootCursor.ReadInt32();
-        uint dataSize = rootCursor.ReadUInt32();
-        byte[] programBytes = rootCursor.ReadBytes(
-            MaterialShaderAsset.GetProgramByteCount(kind));
+        var program = new MaterialShaderProgram(rootBytes.AsSpan(rootCursor.Offset), kind);
+        MaterialShaderLoadDef loadDef = program.LoadDef;
+        uint dataSize = loadDef.ByteCount;
 
         if (dataSize > int.MaxValue)
             return null;
 
-        XPointerReference dataPointer = XPointerReference.FromRaw(dataPointerRaw, XPointerResolutionMode.AliasCell, dataPointerCell);
+        XPointerReference dataPointer = XPointerReference.FromRaw(loadDef.EncodedBytecodePointer, XPointerResolutionMode.AliasCell, dataPointerCell);
         byte[]? data = null;
         if (ResolveAddress(dataPointer) is { } dataAddress)
         {
@@ -161,7 +160,7 @@ public sealed partial class RenderAssetLookup
             Name = ReadCString(namePointer.Untyped),
             DataPointer = dataPointer.AsPointer<MaterialShaderBytecode>(),
             DataSize = dataSize,
-            ProgramBytes = programBytes,
+            LoadDefTail = program.LoadDefTail.ToArray(),
             Data = data
         };
     }
@@ -304,7 +303,7 @@ public sealed partial class RenderAssetLookup
             Kind = kind,
             Name = XAssetPool.CanonicalizeName(name),
             DataSize = 0,
-            ProgramBytes = [],
+            LoadDefTail = [],
             Data = null
         };
     }

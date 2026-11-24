@@ -12,7 +12,7 @@ namespace IW4.Render.Shaders;
 public sealed class ShaderProgramResolution
 {
     private readonly byte[] _data;
-    private readonly byte[] _rootProgramBytes;
+    private readonly byte[] _loadDefTail;
 
     public ShaderProgramResolution(
         XPointerReference pointer,
@@ -36,7 +36,7 @@ public sealed class ShaderProgramResolution
         }
 
         _data = shader?.Data?.ToArray() ?? [];
-        _rootProgramBytes = shader?.ProgramBytes?.ToArray() ?? [];
+        _loadDefTail = shader?.LoadDefTail?.ToArray() ?? [];
         Pointer = pointer;
         Kind = kind;
         ResolutionKind = resolutionKind;
@@ -49,7 +49,7 @@ public sealed class ShaderProgramResolution
             : Convert.ToHexString(SHA256.HashData(_data));
         RuntimeAddress = shader?.RuntimeAddress;
         Data = new ReadOnlyMemory<byte>(_data);
-        RootProgramBytes = new ReadOnlyMemory<byte>(_rootProgramBytes);
+        LoadDefTail = new ReadOnlyMemory<byte>(_loadDefTail);
     }
 
     public XPointerReference Pointer { get; }
@@ -72,7 +72,7 @@ public sealed class ShaderProgramResolution
 
     public ReadOnlyMemory<byte> Data { get; }
 
-    public ReadOnlyMemory<byte> RootProgramBytes { get; }
+    public ReadOnlyMemory<byte> LoadDefTail { get; }
 
     public bool HasProgramData => _data.Length > 0;
 

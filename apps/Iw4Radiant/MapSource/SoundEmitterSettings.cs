@@ -92,9 +92,9 @@ internal sealed record SoundEmitterSettings
             throw new ArgumentException("The sound's outer hearing range must exceed its inner range, including inherited defaults.");
         if (!float.IsFinite(volume) || volume < 0 || !float.IsFinite(pitch) || pitch <= 0)
             throw new ArgumentException("The sound has invalid default volume or pitch.");
-        bool looping = HasPlaybackOverride || !Looping ? Looping : alias.FlagBits.IsLooping;
+        bool looping = HasPlaybackOverride || !Looping ? Looping : alias.Flags.IsLooping;
         return new SoundEmitterPlayback(looping, Math.Clamp(volume, 0, 1), pitch, min, max,
-            Channel ?? alias.FlagBits.EntityChannelIndex, alias.FlagBits.EnforcesDistanceGate, alias.VolumeFalloffCurve);
+            Channel ?? alias.Flags.EntityChannelIndex, alias.Flags.EnforcesDistanceGate, alias.VolumeFalloffCurve);
     }
 
     private static string? Number(float? value) => value?.ToString("G9", CultureInfo.InvariantCulture);

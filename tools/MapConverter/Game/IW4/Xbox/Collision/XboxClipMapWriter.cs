@@ -98,8 +98,8 @@ internal static class XboxClipMapWriter
         uint materialsAt = WriteTable(zone, rootAt, 0x1c, clip.Materials, ClipMaterial.SerializedSize, 4,
             (bytes, at, material) =>
             {
-                I32(bytes, at + 4, material.SurfaceFlags);
-                I32(bytes, at + 8, material.Contents);
+                I32(bytes, at + 4, (int)material.SurfaceFlags);
+                I32(bytes, at + 8, (int)material.Contents);
             });
         for (int i = 0; i < clip.Materials.Count; i++)
             if (clip.Materials[i].Name is { } materialName)

@@ -10,7 +10,7 @@ public sealed class PhysPresetDraft
     internal PhysPresetDraft(PhysPresetAsset asset)
     {
         Name = asset.Name;
-        Type = asset.Type;
+        SoundClassIndex = asset.SoundClassIndex;
         Mass = asset.Mass;
         Bounce = asset.Bounce;
         Friction = asset.Friction;
@@ -25,7 +25,7 @@ public sealed class PhysPresetDraft
     }
 
     public string? Name { get; }
-    public int Type { get; set; }
+    public int SoundClassIndex { get; set; }
     public float Mass { get; set; }
     public float Bounce { get; set; }
     public float Friction { get; set; }
@@ -47,7 +47,7 @@ public sealed class PhysPresetDraft
 
     internal PhysPresetAsset ToAsset(PhysPresetAsset? imported = null) => new()
     {
-        Name = Name, Type = Type,
+        Name = Name, SoundClassIndex = SoundClassIndex,
         Mass = Mass, Bounce = Bounce, Friction = Friction,
         BulletForceScale = BulletForceScale, ExplosiveForceScale = ExplosiveForceScale,
         PiecesSpreadFraction = PiecesSpreadFraction, PiecesUpwardVelocity = PiecesUpwardVelocity,
@@ -60,7 +60,7 @@ public sealed class PhysPresetDraft
     };
 
     public bool Matches(PhysPresetDraft other) =>
-        Name == other.Name && Type == other.Type && SndAliasPrefix == other.SndAliasPrefix &&
+        Name == other.Name && SoundClassIndex == other.SoundClassIndex && SndAliasPrefix == other.SndAliasPrefix &&
         TempDefaultToCylinder == other.TempDefaultToCylinder && PerSurfaceSndAlias == other.PerSurfaceSndAlias &&
         Pad2A == other.Pad2A && SameBits(Mass, other.Mass) && SameBits(Bounce, other.Bounce) &&
         SameBits(Friction, other.Friction) && SameBits(BulletForceScale, other.BulletForceScale) &&
@@ -74,7 +74,7 @@ public sealed class PhysPresetDraft
     // changes, null strings, flag bytes and original NaN payloads survive.
     public void ApplyEdits(PhysPresetDraft before, PhysPresetDraft after)
     {
-        if (before.Type != after.Type) Type = after.Type;
+        if (before.SoundClassIndex != after.SoundClassIndex) SoundClassIndex = after.SoundClassIndex;
         if (!SameBits(before.Mass, after.Mass)) Mass = after.Mass;
         if (!SameBits(before.Bounce, after.Bounce)) Bounce = after.Bounce;
         if (!SameBits(before.Friction, after.Friction)) Friction = after.Friction;

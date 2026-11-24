@@ -322,11 +322,11 @@ internal static class StructuredDataSourceWriter
                 StructuredDataTypeCategory.DataFloat => "float",
                 StructuredDataTypeCategory.DataShort => "short",
                 StructuredDataTypeCategory.DataString =>
-                    $"string({type.UnionValue})",
+                    $"string({type.StringDataLength})",
                 StructuredDataTypeCategory.DataEnum =>
-                    GetEnumName(type.UnionValue),
+                    GetEnumName(type.EnumIndex),
                 StructuredDataTypeCategory.DataStruct =>
-                    GetStructName(def, type.UnionValue),
+                    GetStructName(def, type.StructIndex),
                 _ => null
             };
             if (typeName is not null)
@@ -335,7 +335,7 @@ internal static class StructuredDataSourceWriter
             if (type.Type == StructuredDataTypeCategory.DataIndexedArray)
             {
                 StructuredDataIndexedArray array =
-                    def.IndexedArrays[type.UnionValue];
+                    def.IndexedArrays[type.IndexedArrayIndex];
                 arrays.Add($"[{array.ArraySize}]");
                 type = array.ElementType;
                 continue;
@@ -343,7 +343,7 @@ internal static class StructuredDataSourceWriter
             if (type.Type == StructuredDataTypeCategory.DataEnumArray)
             {
                 StructuredDataEnumedArray array =
-                    def.EnumedArrays[type.UnionValue];
+                    def.EnumedArrays[type.EnumedArrayIndex];
                 arrays.Add($"[{GetEnumName(array.EnumIndex)}]");
                 type = array.ElementType;
                 continue;
@@ -447,7 +447,7 @@ internal static class StructuredDataSourceWriter
         if (type.Type == StructuredDataTypeCategory.DataIndexedArray)
         {
             StructuredDataIndexedArray array =
-                def.IndexedArrays[type.UnionValue] ??
+                def.IndexedArrays[type.IndexedArrayIndex] ??
                 throw new InvalidDataException(
                     $"{context} references a null indexed array.");
             elementType = array.ElementType;
@@ -455,7 +455,7 @@ internal static class StructuredDataSourceWriter
         else
         {
             StructuredDataEnumedArray array =
-                def.EnumedArrays[type.UnionValue] ??
+                def.EnumedArrays[type.EnumedArrayIndex] ??
                 throw new InvalidDataException(
                     $"{context} references a null enum array.");
             elementType = array.ElementType;
@@ -479,17 +479,17 @@ internal static class StructuredDataSourceWriter
         StructuredDataTypeCategory.DataBool => 1,
         StructuredDataTypeCategory.DataFloat => 32,
         StructuredDataTypeCategory.DataShort => 16,
-        StructuredDataTypeCategory.DataString => checked((ulong)type.UnionValue * 8),
+        StructuredDataTypeCategory.DataString => checked((ulong)type.StringDataLength * 8),
         StructuredDataTypeCategory.DataEnum => 16,
         StructuredDataTypeCategory.DataStruct => checked(
             GetStructSizeInBytes(
                 def,
-                def.Structs[type.UnionValue],
-                type.UnionValue) * 8),
+                def.Structs[type.StructIndex],
+                type.StructIndex) * 8),
         StructuredDataTypeCategory.DataIndexedArray =>
-            GetIndexedArraySizeInBits(def.IndexedArrays[type.UnionValue]),
+            GetIndexedArraySizeInBits(def.IndexedArrays[type.IndexedArrayIndex]),
         StructuredDataTypeCategory.DataEnumArray =>
-            GetEnumArraySizeInBits(def, def.EnumedArrays[type.UnionValue]),
+            GetEnumArraySizeInBits(def, def.EnumedArrays[type.EnumedArrayIndex]),
         _ => throw new InvalidDataException(
             $"Unsupported structured-data type {type.Type}.")
     };
@@ -527,7 +527,7 @@ internal static class StructuredDataSourceWriter
         StructuredDataDef def,
         int structIndex) =>
         def.RootType.Type == StructuredDataTypeCategory.DataStruct &&
-        def.RootType.UnionValue == structIndex;
+        def.RootType.StructIndex == structIndex;
 
     private static string GetStructName(
         StructuredDataDef def,
@@ -597,17 +597,17 @@ internal static class StructuredDataSourceWriter
             switch (type.Type)
             {
                 case StructuredDataTypeCategory.DataString:
-                    return UpdateSize(checksum, (ulong)type.UnionValue);
+                    return UpdateSize(checksum, type.StringDataLength);
                 case StructuredDataTypeCategory.DataEnum:
-                    return UpdateString(checksum, GetEnumName(type.UnionValue));
+                    return UpdateString(checksum, GetEnumName(type.EnumIndex));
                 case StructuredDataTypeCategory.DataStruct:
                     return UpdateString(
                         checksum,
-                        GetStructName(def, type.UnionValue));
+                        GetStructName(def, type.StructIndex));
                 case StructuredDataTypeCategory.DataIndexedArray:
                 {
                     StructuredDataIndexedArray array =
-                        def.IndexedArrays[type.UnionValue];
+                        def.IndexedArrays[type.IndexedArrayIndex];
                     checksum = UpdateSize(checksum, (ulong)array.ArraySize);
                     type = array.ElementType;
                     continue;
@@ -615,7 +615,7 @@ internal static class StructuredDataSourceWriter
                 case StructuredDataTypeCategory.DataEnumArray:
                 {
                     StructuredDataEnumedArray array =
-                        def.EnumedArrays[type.UnionValue];
+                        def.EnumedArrays[type.EnumedArrayIndex];
                     checksum = UpdateString(
                         checksum,
                         GetEnumName(array.EnumIndex));

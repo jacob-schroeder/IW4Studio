@@ -44,9 +44,9 @@ public sealed partial class MaterialExchange
                 unchecked((byte)SignedByte(value, $"Material.stateBitsEntry[{index}]"))))
             .ToArray();
 
-        JsonElement nativeStrings = JsonArray(native, "xstrings", "Material._native");
-        MaterialXStringEntry[] xstrings = nativeStrings.EnumerateArray()
-            .Select((value, index) => new MaterialXStringEntry(index, default,
+        JsonElement nativeLayerNames = JsonArray(native, "xstrings", "Material._native");
+        MaterialLayerName[] subMaterialNames = nativeLayerNames.EnumerateArray()
+            .Select((value, index) => new MaterialLayerName(index, default,
                 value.ValueKind switch
                 {
                     JsonValueKind.Null => null,
@@ -95,8 +95,8 @@ public sealed partial class MaterialExchange
             StateBits = stateBits,
             StateFlags = (MaterialStateFlags)Byte(root, "stateFlags", "Material"),
             CameraRegion = CameraRegion(String(root, "cameraRegion", "Material")),
-            XStringCount = CheckedCount(xstrings.Length, "xstrings"),
-            XStrings = xstrings,
+            LayerCount = CheckedCount(subMaterialNames.Length, "xstrings"),
+            SubMaterialNames = subMaterialNames,
             Pad43 = Byte(native, "pad43", "Material._native"),
             Pad8E = UShort(native, "pad8E", "Material._native"),
             RuntimeTechniqueSlotStateBits = Bool(native, "runtimeTechniqueStatePresent", "Material._native")

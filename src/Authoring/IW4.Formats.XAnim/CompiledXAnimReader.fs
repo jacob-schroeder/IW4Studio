@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.IO
 open System.Text
+open IW4.Game.Assets.XAnim
 
 module internal CompiledXAnimReader =
     let private smallScale = 0.003921568859368563f
@@ -109,7 +110,7 @@ module internal CompiledXAnimReader =
                || (int flags &&& 0x06) = 0x06
                || (version = 17us && (int flags &&& 0x04) <> 0) then
                 raise (InvalidDataException($"XAnim '{assetName}' has invalid compiled flags 0x{flags:X2}."))
-            let assetType = reader.ReadByte()
+            let assetType = LanguagePrimitives.EnumOfValue<byte, XAnimAssetType> (reader.ReadByte())
             let framerate = reader.ReadUInt16()
             let looped = (int flags &&& 0x01) <> 0
             if not looped && storedFrames = 0us then

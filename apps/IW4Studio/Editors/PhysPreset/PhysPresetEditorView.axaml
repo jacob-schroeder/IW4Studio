@@ -117,9 +117,9 @@
               <Expander Header="Native settings">
                 <StackPanel Spacing="6">
                   <Grid ColumnDefinitions="*,90">
-                    <TextBlock Text="Type" VerticalAlignment="Center" />
-                    <TextBox Grid.Column="1" Text="{Binding Type.Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                             IsReadOnly="{Binding Type.IsReadOnly}" AutomationProperties.Name="Native preset type" />
+                    <TextBlock Text="Sound class index" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding SoundClassIndex.Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             IsReadOnly="{Binding SoundClassIndex.IsReadOnly}" AutomationProperties.Name="Physics sound class index" />
                   </Grid>
                   <CheckBox Content="Temporarily default to cylinder" IsChecked="{Binding TempDefaultToCylinder, Mode=TwoWay}"
                             IsEnabled="{Binding IsEditable}" />

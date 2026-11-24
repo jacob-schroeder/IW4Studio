@@ -82,7 +82,7 @@ public sealed class MaterialDraft
         StateBitsCount = value.StateBitsCount,
         StateFlags = value.StateFlags,
         CameraRegion = value.CameraRegion,
-        XStringCount = value.XStringCount,
+        LayerCount = value.LayerCount,
         Pad43 = value.Pad43,
         InlineTechniqueSlotStateBits = value.InlineTechniqueSlotStateBits.ToArray(),
         Pad8E = value.Pad8E,
@@ -97,8 +97,8 @@ public sealed class MaterialDraft
         Constants = value.Constants.Select(Copy).ToArray(),
         StateBitsPointer = value.StateBitsPointer,
         StateBits = value.StateBits.Select(Copy).ToArray(),
-        XStringTablePointer = value.XStringTablePointer,
-        XStrings = value.XStrings.Select(value => value with { }).ToArray()
+        SubMaterialNamesPointer = value.SubMaterialNamesPointer,
+        SubMaterialNames = value.SubMaterialNames.Select(value => value with { }).ToArray()
     };
 
     private static MaterialTextureDef Copy(
@@ -161,7 +161,7 @@ public sealed class MaterialDraft
         left.StateBitsCount == right.StateBitsCount &&
         left.StateFlags == right.StateFlags &&
         left.CameraRegion == right.CameraRegion &&
-        left.XStringCount == right.XStringCount &&
+        left.LayerCount == right.LayerCount &&
         left.Pad43 == right.Pad43 &&
         left.InlineTechniqueSlotStateBits.SequenceEqual(
             right.InlineTechniqueSlotStateBits) &&
@@ -172,7 +172,7 @@ public sealed class MaterialDraft
         SequenceEqual(left.Textures, right.Textures, TextureEquals) &&
         SequenceEqual(left.Constants, right.Constants, ConstantEquals) &&
         SequenceEqual(left.StateBits, right.StateBits, StateBitsEquals) &&
-        SequenceEqual(left.XStrings, right.XStrings, XStringEquals);
+        SequenceEqual(left.SubMaterialNames, right.SubMaterialNames, LayerNameEquals);
 
     private static bool InfoEquals(MaterialInfo left, MaterialInfo right) =>
         string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
@@ -207,9 +207,9 @@ public sealed class MaterialDraft
         left.LoadBits.SequenceEqual(right.LoadBits) &&
         left.CommandWordCount == right.CommandWordCount;
 
-    private static bool XStringEquals(
-        MaterialXStringEntry left,
-        MaterialXStringEntry right) =>
+    private static bool LayerNameEquals(
+        MaterialLayerName left,
+        MaterialLayerName right) =>
         left.Index == right.Index &&
         string.Equals(left.Value, right.Value, StringComparison.Ordinal);
 

@@ -1693,7 +1693,7 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
             RequireOptionalFixedCount(root.DpvsDyn.DynEntClientWordCount, 2, "GfxWorld.DpvsDyn.DynEntClientWordCount");
             RequireOptionalFixedCount(root.DpvsDyn.DynEntClientCount, 2, "GfxWorld.DpvsDyn.DynEntClientCount");
             for (int index = 0; index < value.SurfaceBounds.Count; index++)
-                RequireCount(value.SurfaceBounds[index].Unknown18To1F, 8, $"GfxWorld.Dpvs.SurfaceBounds[{index}].Unknown18To1F");
+                RequireCount(value.SurfaceBounds[index].InvHighMipRadius, GfxSurfaceBounds.LayerSlotCount, $"GfxWorld.Dpvs.SurfaceBounds[{index}].InvHighMipRadius");
         }
 
         private static void WriteWorldDraw(LinkTemplateWriter writer, GfxWorldDraw value)
@@ -1794,8 +1794,22 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
 
         private static void WriteHeroOnlyLight(LinkTemplateWriter writer, GfxHeroOnlyLight value, string path)
         {
-            RequireCount(value.Bytes, GfxHeroOnlyLight.SerializedSize, $"{path}.Bytes");
-            writer.WriteBytes(value.Bytes.ToArray());
+            writer.WriteByte((byte)value.Type);
+            RequireCount(value.Reserved01To03, 3, $"{path}.Reserved01To03");
+            writer.WriteBytes(value.Reserved01To03.ToArray());
+            writer.WriteSingle(value.Color.X);
+            writer.WriteSingle(value.Color.Y);
+            writer.WriteSingle(value.Color.Z);
+            writer.WriteSingle(value.Direction.X);
+            writer.WriteSingle(value.Direction.Y);
+            writer.WriteSingle(value.Direction.Z);
+            writer.WriteSingle(value.Origin.X);
+            writer.WriteSingle(value.Origin.Y);
+            writer.WriteSingle(value.Origin.Z);
+            writer.WriteSingle(value.Radius);
+            writer.WriteSingle(value.CosHalfFovOuter);
+            writer.WriteSingle(value.CosHalfFovInner);
+            writer.WriteInt32(value.Exponent);
         }
 
         private static void WriteLightRegionAxis(LinkTemplateWriter writer, GfxLightRegionAxis value, string path)
@@ -1816,8 +1830,10 @@ internal sealed class GfxWorldLinkPlan : AssetLinkPlan
         private static void WriteSurfaceBounds(LinkTemplateWriter writer, GfxSurfaceBounds value, string path)
         {
             WriteBounds(writer, value.Bounds, $"{path}.Bounds");
-            RequireCount(value.Unknown18To1F, 8, $"{path}.Unknown18To1F");
-            writer.WriteBytes(value.Unknown18To1F.ToArray());
+            writer.WriteUInt16(value.MipRadius);
+            RequireCount(value.InvHighMipRadius, GfxSurfaceBounds.LayerSlotCount, $"{path}.InvHighMipRadius");
+            writer.WriteBytes(value.InvHighMipRadius.ToArray());
+            writer.WriteByte(value.TailPadding);
         }
 
         private static void WriteTriangles(LinkTemplateWriter writer, SrfTriangles value)

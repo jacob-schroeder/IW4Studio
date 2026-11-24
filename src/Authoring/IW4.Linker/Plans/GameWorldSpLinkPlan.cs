@@ -145,7 +145,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
                 $"{fieldPath}[{index}].Links");
 
             writer.WriteInt32((int)constant.NodeType);
-            writer.WriteUInt16(constant.SpawnFlags);
+            writer.WriteUInt16((ushort)constant.SpawnFlags);
             writer.Skip(5 * sizeof(ushort));
             writer.WriteInt32(constant.AnimScriptFunc);
             WriteVec3(writer, constant.Origin);
@@ -812,7 +812,7 @@ internal sealed class GameWorldSpLinkPlan : AssetLinkPlan
         {
             PathBaseNode value = path.BaseNodes[index] ?? throw new InvalidDataException(
                 $"GameWorldSp.Path.BaseNodes[{index}] cannot be null.");
-            if (!IsZero(value.Origin) || value.Type != 0)
+            if (!IsZero(value.Origin) || value.TypeMask != PathNodeTypeMask.None)
             {
                 throw new InvalidDataException(
                     "GameWorldSp.Path.BaseNodes is source-free RUNTIME storage and must be zero initialized.");

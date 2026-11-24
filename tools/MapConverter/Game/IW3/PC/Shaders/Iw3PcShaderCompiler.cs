@@ -113,7 +113,7 @@ internal sealed class Iw3PcShaderCompiler
                 DataPointer = default,
                 DataSize = checked((uint)data.Length),
                 Data = data,
-                ProgramBytes = kind == MaterialShaderKind.Pixel ? new byte[12] : []
+                LoadDefTail = new byte[MaterialShaderAsset.GetLoadDefTailSize(kind)]
             };
             return new Iw3ShaderCompilation(
                 asset,

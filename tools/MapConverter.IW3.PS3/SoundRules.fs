@@ -107,10 +107,10 @@ module internal SoundRules =
     /// those to IW4. PS3 SndAliasBits confirms loop, master request, and
     /// conditional slave volume at the same bits. Other bits keep the native
     /// donor's target semantics.
-    let TargetStreamFlags(donorFlags: int, sourceFlags: int, ambient: bool) =
+    let TargetStreamFlags(donorFlags: SndAliasBits, sourceFlags: int, ambient: bool) =
         let source = SndAliasBits(sourceFlags)
-        let playback = SndAliasBits(donorFlags).WithPlaybackType(SndAliasPlaybackType.Stream)
+        let playback = donorFlags.WithPlaybackType(SndAliasPlaybackType.Stream)
         let looping = playback.WithLooping(source.IsLooping)
         let master = looping.WithMaster(source.IsMaster)
         let slave = master.WithConditionalVolumeScale(source.UsesConditionalVolumeScale)
-        slave.WithEntityChannelIndex(if ambient then 25uy else 19uy).RawValue
+        slave.WithEntityChannelIndex(if ambient then 25uy else 19uy)

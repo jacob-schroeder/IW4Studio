@@ -125,7 +125,7 @@ public sealed class XAnimPartsLoader : XAssetLoader<XAnimPartsAsset>
             BoneCounts = boneCounts,
             BoneNameCount = boneNameCount,
             NotifyCount = notifyCount,
-            AssetType = assetType,
+            AssetType = (XAnimAssetType)assetType,
             Pad1F = pad1F,
             RandomDataShortCount = randomDataShortCount,
             IndexCount = indexCount,

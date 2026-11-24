@@ -665,8 +665,8 @@ internal sealed class ClipMapLinkPlan : AssetLinkPlan
                 static (writer, item, _) =>
                 {
                     writer.Skip(sizeof(int));
-                    writer.WriteInt32(item.SurfaceFlags);
-                    writer.WriteInt32(item.Contents);
+                    writer.WriteInt32((int)item.SurfaceFlags);
+                    writer.WriteInt32((int)item.Contents);
                 },
                 "ClipMap.Materials",
                 operations: (table, addend) => names

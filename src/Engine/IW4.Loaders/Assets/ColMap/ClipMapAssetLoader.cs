@@ -347,8 +347,8 @@ internal sealed class ClipMapAssetLoader : XAssetLoader<ClipMapAsset>
                 checked(i * ClipMaterial.SerializedSize),
                 ClipMaterial.SerializedSize);
             XPointer<string> namePointer = ReadPointer<string>(rowCursor, context, XPointerResolutionMode.Direct);
-            int surfaceFlags = rowCursor.ReadInt32();
-            int contents = rowCursor.ReadInt32();
+            CollisionSurfaceFlags surfaceFlags = (CollisionSurfaceFlags)rowCursor.ReadInt32();
+            CollisionContents contents = (CollisionContents)rowCursor.ReadInt32();
             rows[i] = new ClipMaterial
             {
                 NamePointer = namePointer,

@@ -373,8 +373,7 @@ internal static partial class D3dbspGfxCodec
             };
             surfaceBounds[outputIndex] = new GfxSurfaceBounds
             {
-                Bounds = decodedBounds,
-                Unknown18To1F = new byte[8]
+                Bounds = decodedBounds
             };
         }
 
@@ -918,7 +917,9 @@ internal static partial class D3dbspGfxCodec
                 coalescedBounds.Add(new GfxSurfaceBounds
                 {
                     Bounds = bounds.ToBounds($"Coalesced render surfaces {first}..{end - 1}"),
-                    Unknown18To1F = surfaceBounds[first].Unknown18To1F
+                    MipRadius = surfaceBounds[first].MipRadius,
+                    InvHighMipRadius = surfaceBounds[first].InvHighMipRadius,
+                    TailPadding = surfaceBounds[first].TailPadding
                 });
             }
             if (isWorldSurface)

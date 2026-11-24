@@ -38,7 +38,7 @@ internal static class XboxPhysCollmapWriter
             var g = asset.Geoms[i];
             int at = i * 68;
             if (g.BrushWrapper != null) U32(geoms, at, Inline);
-            I32(geoms, at + 4, g.Type);
+            I32(geoms, at + 4, (int)g.Type);
             for (int j = 0; j < 3; j++) Vector(geoms, at + 8 + j * 12, g.Orientation[j]);
             Vector(geoms, at + 44, g.Bounds.MidPoint); Vector(geoms, at + 56, g.Bounds.HalfSize);
         }

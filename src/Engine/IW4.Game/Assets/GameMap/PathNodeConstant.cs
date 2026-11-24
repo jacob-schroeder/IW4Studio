@@ -9,7 +9,7 @@ public sealed class PathNodeConstant
     public const int SerializedSize = 0x40;
 
     public PathNodeType NodeType { get; init; }
-    public ushort SpawnFlags { get; init; }
+    public PathNodeSpawnFlags SpawnFlags { get; init; }
     public ScriptStringReference TargetName { get; init; } = NullScriptString();
     public ScriptStringReference ScriptLinkName { get; init; } = NullScriptString();
     public ScriptStringReference ScriptNoteworthy { get; init; } = NullScriptString();
@@ -21,23 +21,38 @@ public sealed class PathNodeConstant
     public float ForwardX { get; init; }
     public float ForwardY { get; init; }
     public float Radius { get; init; }
-    /// <summary>Uninterpreted dword at +0x30, preserved by the loader and linker.</summary>
+    // +0x30: keep the exact word, including unknown error codes and floating-point payloads.
     public uint MinUseDistSqOrErrorBits { get; init; }
 
-    public float MinUseDistSq
+    /// <summary>Minimum use distance in squared world units when the diagnostic flag is clear.</summary>
+    public float? MinUseDistSq
     {
-        get => BitConverter.Int32BitsToSingle(unchecked((int)MinUseDistSqOrErrorBits));
-        init => MinUseDistSqOrErrorBits = unchecked((uint)BitConverter.SingleToInt32Bits(value));
+        get => (SpawnFlags & PathNodeSpawnFlags.HasError) == 0
+            ? BitConverter.UInt32BitsToSingle(MinUseDistSqOrErrorBits)
+            : null;
+        init
+        {
+            if (value is float distanceSquared)
+            {
+                MinUseDistSqOrErrorBits = BitConverter.SingleToUInt32Bits(distanceSquared);
+                SpawnFlags &= ~PathNodeSpawnFlags.HasError;
+            }
+        }
     }
 
-    /// <summary>
-    /// Alternative PC-correlated view of +0x30. This view does not determine
-    /// whether the node currently holds an error or a distance.
-    /// </summary>
-    public PathNodeErrorCode Error
+    public PathNodeErrorCode? Error
     {
-        get => (PathNodeErrorCode)unchecked((int)MinUseDistSqOrErrorBits);
-        init => MinUseDistSqOrErrorBits = unchecked((uint)value);
+        get => (SpawnFlags & PathNodeSpawnFlags.HasError) != 0
+            ? (PathNodeErrorCode)unchecked((int)MinUseDistSqOrErrorBits)
+            : null;
+        init
+        {
+            if (value is PathNodeErrorCode code)
+            {
+                MinUseDistSqOrErrorBits = unchecked((uint)code);
+                SpawnFlags |= PathNodeSpawnFlags.HasError;
+            }
+        }
     }
 
     public short OverlapNode0 { get; init; }

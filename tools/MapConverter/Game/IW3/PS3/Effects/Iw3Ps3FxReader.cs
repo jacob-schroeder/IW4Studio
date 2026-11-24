@@ -35,7 +35,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                 {
                     Name = sourceName is null ? null :
                         EffectRules.ReferenceName(_ownedNamePrefix, sourceName),
-                    Flags = unchecked((int)U32(start + 4)),
+                    Flags = (FxEffectFlags)unchecked((int)U32(start + 4)),
                     TotalSize = unchecked((int)U32(start + 8)),
                     MsecLoopingLife = unchecked((int)U32(start + 0xc)),
                     ElemDefCountLooping = looping,
@@ -87,7 +87,7 @@ internal static partial class Iw3Ps3FastFileCatalog
 
             return new FxElemDef
             {
-                Flags = unchecked((int)U32(row)),
+                Flags = new FxElemFlags(unchecked((int)U32(row))),
                 Spawn = new FxSpawnDef(unchecked((int)U32(row + 4)), unchecked((int)U32(row + 8))),
                 SpawnRange = FxRange(row + 0xc),
                 FadeInRange = FxRange(row + 0x14),

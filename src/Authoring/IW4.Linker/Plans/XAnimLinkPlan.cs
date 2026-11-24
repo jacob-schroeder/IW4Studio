@@ -95,7 +95,7 @@ internal sealed class XAnimLinkPlan : AssetLinkPlan
         writer.WriteBytes(definition.BoneCounts.ToArray());
         writer.WriteByte(definition.BoneNameCount);
         writer.WriteByte(definition.NotifyCount);
-        writer.WriteByte(definition.AssetType);
+        writer.WriteByte((byte)definition.AssetType);
         writer.WriteByte(definition.Pad1F);
         writer.WriteInt32(definition.RandomDataShortCount);
         writer.WriteInt32(definition.IndexCount);

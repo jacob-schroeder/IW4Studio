@@ -42,7 +42,7 @@ public sealed class PhysCollmapGeomDraft
     private PhysCollmapGeomDraft(PhysGeomShape shape, Vector3 position, Vector3 size)
     {
         Shape = shape;
-        Type = shape == PhysGeomShape.Box ? 1 : 5;
+        Type = shape == PhysGeomShape.Box ? PhysGeomPrimitive.Box : PhysGeomPrimitive.Cylinder;
         Position = position;
         Size = size;
         Orientation = Matrix4x4.Identity;
@@ -70,7 +70,7 @@ public sealed class PhysCollmapGeomDraft
     }
 
     public PhysGeomShape Shape { get; }
-    public int Type { get; }
+    public PhysGeomPrimitive Type { get; }
     public Vector3 Position { get; private set; }
     public Vector3 Size { get; private set; }
     /// <summary>Row basis. A cylinder's local Z row is its stock axial Orientation[0].</summary>

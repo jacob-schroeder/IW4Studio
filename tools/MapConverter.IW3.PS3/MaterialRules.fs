@@ -160,7 +160,7 @@ module internal MaterialRules =
             StateBitsCount = byte states.Count,
             StateFlags = material.StateFlags,
             CameraRegion = material.CameraRegion,
-            XStringCount = material.XStringCount,
+            LayerCount = material.LayerCount,
             Pad43 = material.Pad43,
             InlineTechniqueSlotStateBits = material.InlineTechniqueSlotStateBits,
             Pad8E = material.Pad8E,
@@ -174,8 +174,8 @@ module internal MaterialRules =
             Constants = material.Constants,
             StateBitsPointer = (if Object.ReferenceEquals(states, material.StateBits) then material.StateBitsPointer else Unchecked.defaultof<_>),
             StateBits = states,
-            XStringTablePointer = material.XStringTablePointer,
-            XStrings = material.XStrings)
+            SubMaterialNamesPointer = material.SubMaterialNamesPointer,
+            SubMaterialNames = material.SubMaterialNames)
 
     /// Replace the technique set and its matching state table as one material.
     let WithTechniqueSetAndStates(material: MaterialAsset, set: MaterialTechniqueSetAsset,

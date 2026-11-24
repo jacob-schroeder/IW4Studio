@@ -34,10 +34,11 @@ public sealed class PhysPresetEditorViewModel : ObservableObject, IAssetEditorSt
         ExplosiveForceScale = Float("Explosive force scale", _original.ExplosiveForceScale, value => _working.ExplosiveForceScale = value);
         PiecesSpreadFraction = Float("Spread fraction", _original.PiecesSpreadFraction, value => _working.PiecesSpreadFraction = value);
         PiecesUpwardVelocity = Float("Upward velocity", _original.PiecesUpwardVelocity, value => _working.PiecesUpwardVelocity = value);
-        Type = new("Type", nameof(PhysPresetAsset.Type), _original.Type, value => _working.Type = value, isReadOnly: !IsEditable);
+        SoundClassIndex = new("Sound class index", nameof(PhysPresetAsset.SoundClassIndex),
+            _original.SoundClassIndex, value => _working.SoundClassIndex = value, isReadOnly: !IsEditable);
         SoundPrefix = new("Sound alias prefix", nameof(PhysPresetAsset.SndAliasPrefix), _original.SndAliasPrefix,
             value => _working.SndAliasPrefix = value, PhysPresetDraft.ValidateSoundPrefix, isReadOnly: !IsEditable);
-        _inputs = [Mass, Bounce, Friction, BulletForceScale, ExplosiveForceScale, PiecesSpreadFraction, PiecesUpwardVelocity, Type, SoundPrefix];
+        _inputs = [Mass, Bounce, Friction, BulletForceScale, ExplosiveForceScale, PiecesSpreadFraction, PiecesUpwardVelocity, SoundClassIndex, SoundPrefix];
         foreach (var input in _inputs)
             input.PropertyChanged += InputChanged;
         UpdateInputAccess();
@@ -67,7 +68,7 @@ public sealed class PhysPresetEditorViewModel : ObservableObject, IAssetEditorSt
     public InspectorFloatPropertyRowViewModel ExplosiveForceScale { get; }
     public InspectorFloatPropertyRowViewModel PiecesSpreadFraction { get; }
     public InspectorFloatPropertyRowViewModel PiecesUpwardVelocity { get; }
-    public InspectorIntegerPropertyRowViewModel Type { get; }
+    public InspectorIntegerPropertyRowViewModel SoundClassIndex { get; }
     public InspectorTextPropertyRowViewModel SoundPrefix { get; }
 
     private float FiniteFrictionInput => PhysPresetAsset.IsInfiniteFriction(_original.Friction) ? 0f : _original.Friction;
@@ -217,7 +218,7 @@ public sealed class PhysPresetEditorViewModel : ObservableObject, IAssetEditorSt
         ExplosiveForceScale.RefreshAppliedValue(draft.ExplosiveForceScale);
         PiecesSpreadFraction.RefreshAppliedValue(draft.PiecesSpreadFraction);
         PiecesUpwardVelocity.RefreshAppliedValue(draft.PiecesUpwardVelocity);
-        Type.RefreshAppliedValue(draft.Type);
+        SoundClassIndex.RefreshAppliedValue(draft.SoundClassIndex);
         SoundPrefix.RefreshAppliedValue(draft.SndAliasPrefix ?? string.Empty);
         UpdateInputAccess();
         OnPropertyChanged(nameof(InfiniteFriction));

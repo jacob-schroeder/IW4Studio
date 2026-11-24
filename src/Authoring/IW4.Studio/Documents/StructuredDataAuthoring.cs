@@ -491,32 +491,27 @@ public sealed class StructuredDataEnumedArrayDraft
 
 public sealed class StructuredDataTypeDraft
 {
-    internal StructuredDataTypeDraft(StructuredDataType source)
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        Type = source.Type;
-        UnionValue = source.UnionValue;
-    }
+    private StructuredDataType _value;
 
-    private StructuredDataTypeDraft(StructuredDataTypeDraft source)
-    {
-        Type = source.Type;
-        UnionValue = source.UnionValue;
-    }
+    internal StructuredDataTypeDraft(StructuredDataType source) =>
+        _value = source ?? throw new ArgumentNullException(nameof(source));
 
-    public StructuredDataTypeCategory Type { get; private set; }
-    public int UnionValue { get; private set; }
+    public StructuredDataTypeCategory Type => _value.Type;
+    public int UnionValue => _value.UnionValue;
+    public uint StringDataLength => _value.StringDataLength;
+    public int EnumIndex => _value.EnumIndex;
+    public int StructIndex => _value.StructIndex;
+    public int IndexedArrayIndex => _value.IndexedArrayIndex;
+    public int EnumedArrayIndex => _value.EnumedArrayIndex;
 
-    public void SetType(StructuredDataTypeCategory value) => Type = value;
-    public void SetUnionValue(int value) => UnionValue = value;
+    public void SetType(StructuredDataTypeCategory value) =>
+        _value = new StructuredDataType { Type = value, UnionValue = UnionValue };
 
-    internal StructuredDataTypeDraft Copy() => new(this);
+    public void SetUnionValue(int value) =>
+        _value = new StructuredDataType { Type = Type, UnionValue = value };
 
-    internal StructuredDataType ToAsset() => new()
-    {
-        Type = Type,
-        UnionValue = UnionValue
-    };
+    internal StructuredDataTypeDraft Copy() => new(_value);
+    internal StructuredDataType ToAsset() => _value;
 
     internal bool SemanticallyEquals(StructuredDataTypeDraft other) =>
         Type == other.Type && UnionValue == other.UnionValue;

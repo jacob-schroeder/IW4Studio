@@ -438,8 +438,8 @@ internal static partial class Iw3Ps3FastFileCatalog
                 result[index] = new ClipMaterial
                 {
                     Name = Encoding.Latin1.GetString(row[..end]),
-                    SurfaceFlags = BinaryPrimitives.ReadInt32BigEndian(row[0x40..]),
-                    Contents = BinaryPrimitives.ReadInt32BigEndian(row[0x44..])
+                    SurfaceFlags = (CollisionSurfaceFlags)BinaryPrimitives.ReadInt32BigEndian(row[0x40..]),
+                    Contents = (CollisionContents)BinaryPrimitives.ReadInt32BigEndian(row[0x44..])
                 };
             }
             return result;

@@ -103,7 +103,7 @@ public sealed class MaterialLoader : XAssetLoader<MaterialAssetModel>
         byte stateBitsCount = rootCursor.ReadByte();
         MaterialStateFlags stateFlags = (MaterialStateFlags)rootCursor.ReadByte();
         GfxCameraRegionType cameraRegion = (GfxCameraRegionType)rootCursor.ReadByte();
-        byte xstringCount = rootCursor.ReadByte();
+        byte layerCount = rootCursor.ReadByte();
         byte pad43 = rootCursor.ReadByte();
         ushort[] inlineTechniqueSlotStateBits = ReadUshorts(rootCursor, TechniqueSlotCount);
         ushort pad8E = rootCursor.ReadUInt16();
@@ -112,7 +112,7 @@ public sealed class MaterialLoader : XAssetLoader<MaterialAssetModel>
         XPointerReference textureTablePointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
         XPointerReference constantTablePointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
         XPointerReference stateBitsPointer = context.PointerReader.ReadCell(rootCursor, XPointerResolutionMode.Direct);
-        XPointerReference xstringTablePointer = ReadRawCell(rootCursor, context, XPointerResolutionMode.Direct);
+        XPointerReference subMaterialNamesPointer = ReadRawCell(rootCursor, context, XPointerResolutionMode.Direct);
 
         if (rootCursor.Offset != MaterialSize)
             throw new InvalidDataException($"Material consumed 0x{rootCursor.Offset:X} bytes instead of 0x{MaterialSize:X}.");
@@ -130,7 +130,7 @@ public sealed class MaterialLoader : XAssetLoader<MaterialAssetModel>
             IReadOnlyList<MaterialTextureDef> textures = ReadTextureDefArray(cursor, textureTablePointer, textureCount, context);
             IReadOnlyList<MaterialConstantDef> constants = ReadMaterialConstantArray(cursor, constantTablePointer, constantCount, context);
             IReadOnlyList<GfxStateBits> stateBits = ReadGfxStateBitsArray(cursor, stateBitsPointer, stateBitsCount, context);
-            IReadOnlyList<MaterialXStringEntry> xstrings = ReadXStringPointerArray(cursor, xstringTablePointer, xstringCount, context);
+            IReadOnlyList<MaterialLayerName> subMaterialNames = ReadSubMaterialNames(cursor, subMaterialNamesPointer, layerCount, context);
 
 
             return new MaterialAssetModel
@@ -156,7 +156,7 @@ public sealed class MaterialLoader : XAssetLoader<MaterialAssetModel>
                 StateBitsCount = stateBitsCount,
                 StateFlags = stateFlags,
                 CameraRegion = cameraRegion,
-                XStringCount = xstringCount,
+                LayerCount = layerCount,
                 Pad43 = pad43,
                 InlineTechniqueSlotStateBits = inlineTechniqueSlotStateBits,
                 Pad8E = pad8E,
@@ -170,8 +170,8 @@ public sealed class MaterialLoader : XAssetLoader<MaterialAssetModel>
                 Constants = constants,
                 StateBitsPointer = stateBitsPointer,
                 StateBits = stateBits,
-                XStringTablePointer = xstringTablePointer,
-                XStrings = xstrings
+                SubMaterialNamesPointer = subMaterialNamesPointer,
+                SubMaterialNames = subMaterialNames
             };
         }
         finally
@@ -621,27 +621,27 @@ public sealed class MaterialLoader : XAssetLoader<MaterialAssetModel>
         return context.RegisterGfxStateLoadBits(aliasCell, loadBits);
     }
 
-    private static IReadOnlyList<MaterialXStringEntry> ReadXStringPointerArray(
+    private static IReadOnlyList<MaterialLayerName> ReadSubMaterialNames(
         FastFileCursor cursor,
         XPointerReference pointer,
         int count,
         DbLoadExecutionContext context)
     {
         if (count < 0)
-            throw new InvalidDataException($"Invalid negative Material XString count {count}.");
+            throw new InvalidDataException($"Invalid negative Material layer count {count}.");
 
         if (pointer.Type == PointerType.Null)
             return [];
 
         if (pointer.CellAddress is not { } cellAddress)
-            throw new InvalidDataException($"Material XString[] cell 0x{pointer.Raw:X8} has no destination cell address.");
+            throw new InvalidDataException($"Material sub-material name table cell 0x{pointer.Raw:X8} has no destination cell address.");
 
         context.Blocks.AlignCurrent(4);
         XBlockAddress tableAddress = context.Blocks.CurrentAddress;
         context.Blocks.WriteInt32(cellAddress, XPointerCodec.Encode(tableAddress));
         byte[] pointerBytes = context.Blocks.Load(cursor, checked(count * sizeof(int)), out XBlockAddress pointerTableAddress);
         if (pointerTableAddress != tableAddress)
-            throw new InvalidDataException($"Material XString[] pointer patched to {tableAddress}, but table loaded at {pointerTableAddress}.");
+            throw new InvalidDataException($"Material sub-material name table pointer patched to {tableAddress}, but table loaded at {pointerTableAddress}.");
 
         var pointerCursor = new FastFileCursor(pointerBytes, pointerTableAddress);
         var pointers = new XPointer<string>[count];
@@ -649,9 +649,9 @@ public sealed class MaterialLoader : XAssetLoader<MaterialAssetModel>
         for (int i = 0; i < pointers.Length; i++)
             pointers[i] = context.PointerReader.ReadPointer<string>(pointerCursor, XPointerResolutionMode.Direct);
 
-        var entries = new MaterialXStringEntry[count];
+        var entries = new MaterialLayerName[count];
         for (int i = 0; i < pointers.Length; i++)
-            entries[i] = new MaterialXStringEntry(i, pointers[i], ReadXString(cursor, pointers[i], context));
+            entries[i] = new MaterialLayerName(i, pointers[i], ReadXString(cursor, pointers[i], context));
 
         return entries;
     }

@@ -253,15 +253,15 @@ public sealed partial class MaterialExchange
         if (asset.TextureCount != asset.Textures.Count ||
             asset.ConstantCount != asset.Constants.Count ||
             asset.StateBitsCount != asset.StateBits.Count ||
-            asset.XStringCount != asset.XStrings.Count)
+            asset.LayerCount != asset.SubMaterialNames.Count)
         {
             throw new InvalidDataException(
                 $"Material '{assetName}' table counts do not match their materialized rows.");
         }
-        for (int index = 0; index < asset.XStrings.Count; index++)
+        for (int index = 0; index < asset.SubMaterialNames.Count; index++)
         {
-            if (asset.XStrings[index].Index != index)
-                throw new InvalidDataException($"Material '{assetName}' XString row {index} has a different table index.");
+            if (asset.SubMaterialNames[index].Index != index)
+                throw new InvalidDataException($"Material '{assetName}' layer name at row {index} has a different table index.");
         }
 
         _ = CameraRegionName(asset.CameraRegion, assetName);
@@ -473,7 +473,7 @@ public sealed partial class MaterialExchange
             }
             writer.WriteEndArray();
             writer.WriteStartArray("xstrings");
-            foreach (MaterialXStringEntry entry in asset.XStrings)
+            foreach (MaterialLayerName entry in asset.SubMaterialNames)
             {
                 if (entry.Value is null)
                     writer.WriteNullValue();

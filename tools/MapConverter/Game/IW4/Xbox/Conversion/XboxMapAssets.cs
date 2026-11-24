@@ -107,7 +107,7 @@ internal static class XboxMapAssets
     internal static void Preset(XboxZoneStream zone, PhysPresetAsset p)
     {
         byte[] root = new byte[44];
-        U32(root, 0, Inline); I32(root, 4, p.Type); Float(root, 8, p.Mass);
+        U32(root, 0, Inline); I32(root, 4, p.SoundClassIndex); Float(root, 8, p.Mass);
         Float(root, 12, p.Bounce); Float(root, 16, p.Friction);
         Float(root, 20, p.BulletForceScale); Float(root, 24, p.ExplosiveForceScale);
         if (p.SndAliasPrefix != null) U32(root, 28, Inline);

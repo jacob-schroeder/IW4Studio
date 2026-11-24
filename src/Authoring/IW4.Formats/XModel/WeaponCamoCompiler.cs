@@ -668,7 +668,7 @@ public static class WeaponCamoCompiler
     {
         Kind = source.Kind,
         Name = "," + CanonicalRequiredName(source),
-        ProgramBytes = new byte[MaterialShaderAsset.GetProgramByteCount(source.Kind)]
+        LoadDefTail = new byte[MaterialShaderAsset.GetLoadDefTailSize(source.Kind)]
     };
 
     private static bool SameIdentity(BaseAsset left, BaseAsset right) =>

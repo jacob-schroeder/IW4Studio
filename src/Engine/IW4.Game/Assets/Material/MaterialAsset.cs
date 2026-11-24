@@ -23,7 +23,8 @@ public sealed class MaterialAsset : BaseAsset
     public byte StateBitsCount { get; init; }
     public MaterialStateFlags StateFlags { get; init; }
     public GfxCameraRegionType CameraRegion { get; init; }
-    public byte XStringCount { get; init; }
+    // +0x42: zero uses this material. Otherwise +0xA4 lists the layers in streaming order.
+    public byte LayerCount { get; init; }
     public byte Pad43 { get; init; }
     public IReadOnlyList<ushort> InlineTechniqueSlotStateBits
     {
@@ -45,8 +46,8 @@ public sealed class MaterialAsset : BaseAsset
     public IReadOnlyList<MaterialConstantDef> Constants { get; init; } = [];
     public XPointerReference StateBitsPointer { get; init; }
     public IReadOnlyList<GfxStateBits> StateBits { get; init; } = [];
-    public XPointerReference XStringTablePointer { get; init; }
-    public IReadOnlyList<MaterialXStringEntry> XStrings { get; init; } = [];
+    public XPointerReference SubMaterialNamesPointer { get; init; }
+    public IReadOnlyList<MaterialLayerName> SubMaterialNames { get; init; } = [];
 
     internal void SetTechniqueSlotStateId(int slotIndex, int passIndex, ushort stateId)
     {

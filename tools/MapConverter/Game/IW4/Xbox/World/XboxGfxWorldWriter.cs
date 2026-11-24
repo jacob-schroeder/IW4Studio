@@ -794,9 +794,11 @@ internal static class XboxGfxWorldWriter
         for (int i = 0; i < bounds.Count; i++)
         {
             Bounds(rows, i * 0x20, bounds[i].Bounds);
-            IReadOnlyList<byte> tail = bounds[i].Unknown18To1F;
-            if (tail.Count != 8) throw new InvalidDataException("A world surface bounds row has an invalid tail.");
-            for (int j = 0; j < 8; j++) rows[i * 0x20 + 24 + j] = tail[j];
+            H(rows, i * 0x20 + 24, bounds[i].MipRadius);
+            IReadOnlyList<byte> weights = bounds[i].InvHighMipRadius;
+            if (weights.Count != GfxSurfaceBounds.LayerSlotCount) throw new InvalidDataException("A world surface bounds row has an invalid layer-weight count.");
+            for (int j = 0; j < GfxSurfaceBounds.LayerSlotCount; j++) rows[i * 0x20 + 26 + j] = weights[j];
+            rows[i * 0x20 + 31] = bounds[i].TailPadding;
         }
         zone.Write(rows, 4);
     }
@@ -844,10 +846,19 @@ internal static class XboxGfxWorldWriter
         byte[] rows = new byte[checked(lights.Count * GfxHeroOnlyLight.SerializedSize)];
         for (int i = 0; i < lights.Count; i++)
         {
-            IReadOnlyList<byte> src = lights[i].Bytes;
-            if (src.Count != GfxHeroOnlyLight.SerializedSize)
-                throw new InvalidDataException("A hero-only light has an invalid row size.");
-            for (int j = 0; j < src.Count; j++) rows[i * GfxHeroOnlyLight.SerializedSize + j] = src[j];
+            GfxHeroOnlyLight light = lights[i];
+            int offset = i * GfxHeroOnlyLight.SerializedSize;
+            rows[offset] = (byte)light.Type;
+            if (light.Reserved01To03.Count != 3)
+                throw new InvalidDataException("A hero-only light has an invalid spare-byte count.");
+            for (int j = 0; j < 3; j++) rows[offset + 1 + j] = light.Reserved01To03[j];
+            Vec(rows, offset + 4, light.Color);
+            Vec(rows, offset + 16, light.Direction);
+            Vec(rows, offset + 28, light.Origin);
+            F(rows, offset + 40, light.Radius);
+            F(rows, offset + 44, light.CosHalfFovOuter);
+            F(rows, offset + 48, light.CosHalfFovInner);
+            I(rows, offset + 52, light.Exponent);
         }
         zone.Write(rows, 4);
     }

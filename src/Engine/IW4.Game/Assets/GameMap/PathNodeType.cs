@@ -1,13 +1,6 @@
 namespace IW4.Game.Assets.GameMap;
 
-/// <summary>
-/// Path-node categories correlated from the PC IW4 definitions. PS3 category
-/// semantics have not been independently confirmed.
-/// </summary>
-/// <remarks>
-/// Source: OpenAssetTools commit 30d2d498bd8e3f2401037b24f3db6f96d39554c4,
-/// src/Common/Game/IW4/IW4_Assets.h, nodeType.
-/// </remarks>
+/// <summary>Serialized PS3 node categories. The SP name table at 0x71516C has 20 entries.</summary>
 public enum PathNodeType
 {
     Error = 0x00,
@@ -31,5 +24,6 @@ public enum PathNodeType
     Turret = 0x12,
     Guard = 0x13,
     Count = 0x14,
-    DontLink = 0x14
+    // Extra bit index in the runtime base-node mask.
+    DontLink = Count
 }

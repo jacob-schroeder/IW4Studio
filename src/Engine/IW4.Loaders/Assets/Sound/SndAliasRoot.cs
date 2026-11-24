@@ -20,7 +20,7 @@ internal sealed record SndAliasRoot(
     float DistanceMin,
     float DistanceMax,
     float VelocityMin,
-    int Flags,
+    SndAliasBits Flags,
     float SlavePercentage,
     float Probability,
     float LfePercentage,

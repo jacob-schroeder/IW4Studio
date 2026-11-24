@@ -283,7 +283,7 @@ public static class XModelImportedMaterialCompiler
                     MaterialStateFlags.CullFrontShadow)
                 : template.StateFlags,
             CameraRegion = template.CameraRegion,
-            XStringCount = template.XStringCount,
+            LayerCount = template.LayerCount,
             Pad43 = template.Pad43,
             InlineTechniqueSlotStateBits = template.InlineTechniqueSlotStateBits.ToArray(),
             Pad8E = template.Pad8E,
@@ -306,7 +306,7 @@ public static class XModelImportedMaterialCompiler
             Constants = copiedConstants,
             StateBits = template.StateBits.Select(row =>
                 CloneStateBits(row, doubleSided)).ToArray(),
-            XStrings = template.XStrings.Select(row => new MaterialXStringEntry(
+            SubMaterialNames = template.SubMaterialNames.Select(row => new MaterialLayerName(
                 row.Index,
                 default,
                 row.Value)).ToArray()

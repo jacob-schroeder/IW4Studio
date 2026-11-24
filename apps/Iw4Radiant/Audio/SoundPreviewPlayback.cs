@@ -54,7 +54,7 @@ internal sealed class SoundPreviewPlayback : IDisposable
                     part.Player.Dispose();
                     part.Player = null;
                     part.Completed = true;
-                    if (!part.Selection.Profile.Looping && !part.Selection.Variant.Alias.FlagBits.IsLooping &&
+                    if (!part.Selection.Profile.Looping && !part.Selection.Variant.Alias.Flags.IsLooping &&
                         part.Selection.Variant.Chain is { } chain)
                     {
                         chained ??= [];

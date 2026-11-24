@@ -14,6 +14,6 @@ public sealed class ClipMaterial
 
     public XPointer<string> NamePointer { get; init; }
     public string? Name { get; init; }
-    public int SurfaceFlags { get; init; }
-    public int Contents { get; init; }
+    public CollisionSurfaceFlags SurfaceFlags { get; init; }
+    public CollisionContents Contents { get; init; }
 }

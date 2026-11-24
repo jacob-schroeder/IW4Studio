@@ -319,7 +319,7 @@ public sealed partial class RenderAssetLookup
             IsReferencePlaceholderShader(namedFallback, assetPool);
         bool hydratedObject = !referencePlaceholder &&
             (namedFallback?.Data is { Length: > 0 } ||
-             namedFallback?.ProgramBytes is { Length: > 0 });
+             namedFallback?.LoadDefTail is { Length: > 0 });
         bool namedPlaceholder = referencePlaceholder ||
             !hydratedObject && !string.IsNullOrWhiteSpace(namedFallback?.Name);
         return new ShaderProgramResolution(
@@ -478,7 +478,7 @@ public sealed partial class RenderAssetLookup
                         Name = shader.Name,
                         DataPointer = hydrated.DataPointer,
                         DataSize = hydrated.DataSize,
-                        ProgramBytes = hydrated.ProgramBytes.Length > 0 ? hydrated.ProgramBytes : shader.ProgramBytes,
+                        LoadDefTail = hydrated.LoadDefTail.Length > 0 ? hydrated.LoadDefTail : shader.LoadDefTail,
                         Data = hydrated.Data
                     };
                 }

@@ -28,7 +28,7 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
     {
         var writer = new LinkTemplateWriter(FxEffectDefAsset.SerializedSize);
         writer.Skip(sizeof(int));
-        writer.WriteInt32(definition.Flags);
+        writer.WriteInt32((int)definition.Flags);
         writer.WriteInt32(definition.TotalSize);
         writer.WriteInt32(definition.MsecLoopingLife);
         writer.WriteInt32(definition.ElemDefCountLooping);
@@ -81,7 +81,7 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
         }
         if (originalSerializedName.StartsWith(','))
         {
-            if (definition.Flags != 0 ||
+            if (definition.Flags != FxEffectFlags.None ||
                 definition.TotalSize != 0 ||
                 definition.MsecLoopingLife != 0 ||
                 definition.ElemDefCountLooping != 0 ||
@@ -797,9 +797,9 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
             FxSpawnDef spawn = element.Spawn ??
                 throw new InvalidDataException($"{path}.Spawn cannot be null.");
             var writer = new LinkTemplateWriter(FxElemDef.SerializedSize);
-            writer.WriteInt32(element.Flags);
-            writer.WriteInt32(spawn.LoopingIntervalMsec);
-            writer.WriteInt32(spawn.Count);
+            writer.WriteInt32(element.Flags.RawValue);
+            writer.WriteInt32(spawn.FirstWord);
+            writer.WriteInt32(spawn.SecondWord);
             WriteRange(writer, Required(element.SpawnRange, $"{path}.SpawnRange"));
             WriteRange(writer, Required(element.FadeInRange, $"{path}.FadeInRange"));
             WriteRange(writer, Required(element.FadeOutRange, $"{path}.FadeOutRange"));
@@ -844,7 +844,7 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
             writer.WriteByte(element.SortOrder);
             writer.WriteByte(element.LightingFrac);
             writer.WriteByte(element.UseItemClip);
-            writer.WriteByte(element.FadeInfo);
+            writer.WriteByte(element.MarkFadeInEighthSeconds);
             return new FrozenElement(
                 writer.Complete(),
                 velocityStorage,

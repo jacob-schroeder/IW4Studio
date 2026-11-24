@@ -44,7 +44,7 @@ public sealed class FxExchange
         var asset = new FxEffectDefAsset
         {
             Name = storedName,
-            Flags = Int(root, "flags", "Fx"),
+            Flags = (FxEffectFlags)Int(root, "flags", "Fx"),
             TotalSize = Int(root, "totalSize", "Fx"),
             MsecLoopingLife = Int(root, "msecLoopingLife", "Fx"),
             ElemDefCountLooping = Int(root, "elemDefCountLooping", "Fx"),
@@ -107,8 +107,8 @@ public sealed class FxExchange
         FxElemExtendedDef? extended = ReadExtended(Property(value, "extended", path), type, $"{path}.Extended");
         return new FxElemDef
         {
-            Flags = Int(value, "flags", path),
-            Spawn = Record<FxSpawnDef>(Property(value, "spawn", path), $"{path}.Spawn", "loopingIntervalMsec", "count"),
+            Flags = new FxElemFlags(Int(value, "flags", path)),
+            Spawn = ReadSpawn(Property(value, "spawn", path), $"{path}.Spawn"),
             SpawnRange = FloatRange(Property(value, "spawnRange", path), $"{path}.SpawnRange"),
             FadeInRange = FloatRange(Property(value, "fadeInRange", path), $"{path}.FadeInRange"),
             FadeOutRange = FloatRange(Property(value, "fadeOutRange", path), $"{path}.FadeOutRange"),
@@ -146,7 +146,7 @@ public sealed class FxExchange
             SortOrder = Byte(value, "sortOrder", path),
             LightingFrac = Byte(value, "lightingFrac", path),
             UseItemClip = Byte(value, "useItemClip", path),
-            FadeInfo = Byte(value, "fadeInfo", path)
+            MarkFadeInEighthSeconds = Byte(value, "fadeInfo", path)
         };
     }
 
@@ -283,6 +283,10 @@ public sealed class FxExchange
 
     private static FxIntRange IntRange(JsonElement value, string path) =>
         Record<FxIntRange>(value, path, "base", "amplitude");
+
+    // Version-one native graphs retain their original two serialized spawn keys.
+    private static FxSpawnDef ReadSpawn(JsonElement value, string path) =>
+        new(Int(value, "loopingIntervalMsec", path), Int(value, "count", path));
 
     private static Vec3 Vec(JsonElement value, string path) =>
         Record<Vec3>(value, path, "x", "y", "z");
@@ -425,7 +429,7 @@ public sealed class FxExchange
             Name = asset.Name,
             SourceOffset = asset.Offset,
             SourceNamePointer = Pointer(asset.NamePointer),
-            asset.Flags,
+            Flags = (int)asset.Flags,
             asset.TotalSize,
             asset.MsecLoopingLife,
             asset.ElemDefCountLooping,
@@ -484,11 +488,17 @@ public sealed class FxExchange
         if (element.Extended is null && element.ExtendedPointer.Raw != 0)
             throw new InvalidDataException($"{path}.Extended has a pointer but no materialized payload.");
 
+        FxSpawnDef spawn = Required(element.Spawn, $"{path}.Spawn");
+
         return new
         {
             element.Offset,
-            element.Flags,
-            Spawn = Required(element.Spawn, $"{path}.Spawn"),
+            Flags = element.Flags.RawValue,
+            Spawn = new
+            {
+                LoopingIntervalMsec = spawn.FirstWord,
+                Count = spawn.SecondWord
+            },
             SpawnRange = Required(element.SpawnRange, $"{path}.SpawnRange"),
             FadeInRange = Required(element.FadeInRange, $"{path}.FadeInRange"),
             FadeOutRange = Required(element.FadeOutRange, $"{path}.FadeOutRange"),
@@ -530,7 +540,7 @@ public sealed class FxExchange
             element.SortOrder,
             element.LightingFrac,
             element.UseItemClip,
-            element.FadeInfo
+            FadeInfo = element.MarkFadeInEighthSeconds
         };
     }
 
