@@ -1,3 +1,4 @@
+using IW4.Studio.Desktop.Workbench.Tools.AssetDependencies;
 using IW4.Studio.Desktop.Workbench.Tools.ConsoleOutput;
 using IW4.Studio.Desktop.Workbench.Tools.Diagnostics;
 using IW4.Studio.Desktop.Workbench.Tools.DependencyGraph;
@@ -25,4 +26,5 @@ public sealed record StudioToolContext(
     PropertiesToolViewModel Properties,
     FastFileDetailsToolViewModel FastFileDetails,
     ZoneDetailsToolViewModel ZoneDetails,
-    DependencyGraphToolViewModel DependencyGraph);
+    DependencyGraphToolViewModel DependencyGraph,
+    AssetDependenciesToolViewModel AssetDependencies);

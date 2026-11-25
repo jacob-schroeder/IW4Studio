@@ -210,6 +210,16 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
             _selectionContext.Select(ToSelection(catalogEntry));
     }
 
+    internal void OpenCatalogEntry(WorkspaceAssetCatalogEntry entry)
+    {
+        var identity = AssetExplorerItemIdentity.From(entry);
+        var row = _editor.CatalogEntries.FirstOrDefault(candidate => candidate.Identity == identity);
+        if (row is not null)
+            _selectionContext.Select(ToSelection(row));
+        else if (entry.DependencyIdentity is { } provider && _slotsByProvider.TryGetValue(provider.ProviderId, out var slot))
+            TryOpenPoolRow(slot.Address, slot.ActiveProviderId);
+    }
+
     internal bool TryOpenPoolRow(XAssetPoolAddress address, XAssetProviderId providerId)
     {
         FastFileContentsRow? row = _poolContents.FirstOrDefault(candidate =>

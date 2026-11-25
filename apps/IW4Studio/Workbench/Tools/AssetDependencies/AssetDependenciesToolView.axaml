@@ -1,0 +1,186 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:dependencies="using:IW4.Studio.Desktop.Workbench.Tools.AssetDependencies"
+             x:Class="IW4.Studio.Desktop.Workbench.Tools.AssetDependencies.AssetDependenciesToolView"
+             x:DataType="dependencies:AssetDependenciesToolViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="360"
+             d:DesignHeight="700">
+  <UserControl.Styles>
+    <Style Selector="Button.dependencyScope">
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="9,4" />
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceSunkenBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+    </Style>
+    <Style Selector="Button.dependencyScope.selected">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+    </Style>
+    <Style Selector="Button.dependencyRow">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="8,7" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid>
+    <StackPanel IsVisible="{Binding HasNoSelection}"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Margin="24"
+                Spacing="8">
+      <TextBlock Text="No asset selected"
+                 HorizontalAlignment="Center"
+                 FontSize="13"
+                 FontWeight="SemiBold"
+                 Foreground="{DynamicResource StudioTextBrush}" />
+      <TextBlock Text="Choose an asset to see its direct relationships."
+                 MaxWidth="240"
+                 TextAlignment="Center"
+                 TextWrapping="Wrap"
+                 FontSize="10"
+                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+    </StackPanel>
+
+    <Grid IsVisible="{Binding HasSelection}" RowDefinitions="Auto,Auto,*">
+      <StackPanel Margin="14,14,14,12" Spacing="3">
+        <TextBlock Text="{Binding AssetType}"
+                   FontSize="10"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <TextBlock Text="{Binding AssetName}"
+                   FontSize="15"
+                   FontWeight="SemiBold"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioTextBrush}" />
+      </StackPanel>
+
+      <Border Grid.Row="1"
+              Padding="12,9"
+              BorderBrush="{DynamicResource StudioBorderBrush}"
+              BorderThickness="0,1">
+        <StackPanel Spacing="6">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button x:Name="UsedByButton"
+                    Classes="dependencyScope"
+                    Classes.selected="{Binding IsUsedByScope}"
+                    ToolTip.Tip="Assets that directly reference the selected asset"
+                    Click="ScopeButton_Click">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <TextBlock Text="Used by" />
+                <TextBlock Text="{Binding UsedByCount}" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="UsesButton"
+                    Classes="dependencyScope"
+                    Classes.selected="{Binding IsUsesScope}"
+                    ToolTip.Tip="Assets directly referenced by the selected asset"
+                    Click="ScopeButton_Click">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <TextBlock Text="Uses" />
+                <TextBlock Text="{Binding UsesCount}" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+          <TextBlock Text="Direct references in loaded fastfiles"
+                     FontSize="11" Foreground="{DynamicResource StudioTextMutedBrush}" />
+        </StackPanel>
+      </Border>
+
+      <Grid Grid.Row="2">
+        <TextBlock Text="Finding direct relationships…"
+                   IsVisible="{Binding IsLoading}"
+                   Margin="16"
+                   FontSize="11"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+        <TextBlock Text="{Binding ErrorMessage}"
+                   IsVisible="{Binding HasError}"
+                   Margin="16"
+                   TextWrapping="Wrap"
+                   FontSize="11"
+                   Foreground="{DynamicResource StudioErrorBrush}" />
+        <TextBlock Text="{Binding EmptyText}"
+                   IsVisible="{Binding IsEmpty}"
+                   Margin="16"
+                   TextWrapping="Wrap"
+                   FontSize="11"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+        <ListBox IsVisible="{Binding HasItems}"
+                 Classes="studioOutputList"
+                 ItemsSource="{Binding Items}"
+                 SelectionMode="Single"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate>
+              <VirtualizingStackPanel />
+            </ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="dependencies:AssetDependencyListItemViewModel">
+              <Grid>
+                <Border IsVisible="{Binding IsHeading}"
+                        Padding="14,12,14,5"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
+                        BorderThickness="0,1,0,0">
+                  <TextBlock Text="{Binding Heading}"
+                             FontSize="10"
+                             FontWeight="Bold"
+                             Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                </Border>
+                <Border IsVisible="{Binding IsRow}"
+                        Margin="6,0"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
+                        BorderThickness="0,0,0,1"
+                        ToolTip.Tip="{Binding ToolTipText}">
+                  <Button Classes="dependencyRow"
+                          Command="{Binding OpenCommand}"
+                          IsEnabled="{Binding CanOpen}">
+                    <StackPanel Spacing="4">
+                      <TextBlock Text="{Binding Name}"
+                                 ToolTip.Tip="{Binding Name}"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"
+                                 TextTrimming="CharacterEllipsis"
+                                 Foreground="{DynamicResource StudioTextBrush}" />
+                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="5">
+                        <TextBlock Text="Field:"
+                                   FontSize="10"
+                                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding ReferenceFieldsText}"
+                                   ToolTip.Tip="{Binding ReferenceFieldsText}"
+                                   FontSize="10"
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      </Grid>
+                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="5">
+                        <TextBlock Text="Fastfile:"
+                                   FontSize="9"
+                                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding FastFile}"
+                                   ToolTip.Tip="{Binding FastFile}"
+                                   FontSize="9"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+                      </Grid>
+                    </StackPanel>
+                  </Button>
+                </Border>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+    </Grid>
+  </Grid>
+</UserControl>

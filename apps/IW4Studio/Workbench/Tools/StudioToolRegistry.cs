@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using IW4.Studio.Desktop.Workbench.Docking;
+using IW4.Studio.Desktop.Workbench.Tools.AssetDependencies;
 using IW4.Studio.Desktop.Workbench.Tools.ConsoleOutput;
 using IW4.Studio.Desktop.Workbench.Tools.Diagnostics;
 using IW4.Studio.Desktop.Workbench.Tools.DependencyGraph;
@@ -170,6 +171,20 @@ public static class StudioToolRegistry
                     }
                 },
                 context),
+            Implemented(
+                Descriptor(
+                    StudioToolIds.AssetDependencies,
+                    "Dependencies",
+                    "SourceBranch",
+                    50,
+                    defaultOpen: false,
+                    DockRegion.Right,
+                    DockRailGroup.Right),
+                new AssetDependenciesToolView
+                {
+                    DataContext = context.AssetDependencies
+                },
+                context.AssetDependencies),
             Implemented(
                 Descriptor(
                     StudioToolIds.DependencyGraph,

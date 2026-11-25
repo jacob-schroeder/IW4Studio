@@ -276,6 +276,7 @@ public sealed class LinkAssetProvider
         SerializedType = serializedType;
         OriginalSerializedName = Plan.OriginalSerializedName;
         IsReferencePlaceholder = Plan.IsReferencePlaceholder;
+        _namedDependencies = IsReferencePlaceholder ? [] : CaptureUnlinkedNamedDependencies(definition);
     }
 
     public AssetKey Key { get; }
@@ -284,6 +285,125 @@ public sealed class LinkAssetProvider
     public bool IsReferencePlaceholder { get; }
 
     internal AssetLinkPlan Plan { get; }
+
+    private readonly (XAssetType Type, string Name, string Field)[] _namedDependencies;
+
+    /// <summary>
+    /// Captures immediate asset references from this provider's frozen storage
+    /// graph, including symbolic references that have no materialized asset.
+    /// </summary>
+    public IReadOnlyList<(XAssetType Type, string Name, string Field)> CaptureDependencies(
+        CancellationToken cancellationToken)
+    {
+        var dependencies = new List<(XAssetType Type, string Name, string Field)>();
+        void Add(AssetDependency dependency)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            dependencies.Add((
+                dependency.SerializedType,
+                dependency.Key.NormalizedName,
+                dependency.FieldPath));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        Plan.VisitReferences(
+            Add,
+            Add,
+            _ => { },
+            cancellationToken: cancellationToken);
+        foreach (var dependency in _namedDependencies)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            dependencies.Add(dependency);
+        }
+        return dependencies.AsReadOnly();
+    }
+
+    // Snapshot semantic names that the native plan writes as XStrings without
+    // an AssetDependency. These entries never affect its storage or closure.
+    private static (XAssetType Type, string Name, string Field)[] CaptureUnlinkedNamedDependencies(
+        BaseAsset definition)
+    {
+        List<(XAssetType Type, string Name, string Field)>? named = null;
+
+        void Add(XAssetType type, string? name, string field)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return;
+            AssetKey key;
+            try
+            {
+                key = AssetKey.FromWireName(
+                    CanonicalAssetFamily.FromSerializedType(type), name);
+            }
+            catch (ArgumentException)
+            {
+                return;
+            }
+            (named ??= []).Add((type, key.NormalizedName, field));
+        }
+
+        switch (definition)
+        {
+            case SoundAliasListAsset sound:
+                for (int index = 0; index < sound.Aliases.Count; index++)
+                {
+                    SndAlias alias = sound.Aliases[index];
+                    string path = $"Sound.Aliases[{index}]";
+                    Add(XAssetType.Sound, alias.SecondaryAliasName,
+                        $"{path}.SecondaryAliasName");
+                    Add(XAssetType.Sound, alias.ChainAliasName,
+                        $"{path}.ChainAliasName");
+                }
+                break;
+
+            case FxEffectDefAsset effect:
+                for (int index = 0; index < effect.ElemDefs.Count; index++)
+                {
+                    FxElemDef element = effect.ElemDefs[index];
+                    if (element.ElemType != FxElemType.Sound)
+                        continue;
+                    string path = $"Fx.ElemDefs[{index}]";
+                    if (element.VisualCount > 1)
+                    {
+                        for (int visualIndex = 0;
+                             visualIndex < element.VisualArray.Count;
+                             visualIndex++)
+                        {
+                            AddSoundVisual(element.VisualArray[visualIndex],
+                                $"{path}.VisualArray[{visualIndex}]");
+                        }
+                    }
+                    else
+                    {
+                        AddSoundVisual(element.Visuals, $"{path}.Visuals");
+                    }
+                }
+                break;
+
+            case WeaponAssetDefinition weapon:
+                Add(XAssetType.Weapon, weapon.Variant.AlternateWeaponName,
+                    "Weapon.Variant.AlternateWeaponName");
+                break;
+
+            case VehicleDefAsset vehicle:
+                if (vehicle.Phys.PhysPreset is null)
+                    Add(XAssetType.PhysPreset, vehicle.Phys.PhysPresetName,
+                        "Vehicle.Phys.PhysPresetName");
+                if (vehicle.TurretWeapon is null)
+                    Add(XAssetType.Weapon, vehicle.TurretWeaponName,
+                        "Vehicle.TurretWeaponName");
+                break;
+        }
+
+        return named?.ToArray() ?? [];
+
+        void AddSoundVisual(FxElemDefVisuals visuals, string path)
+        {
+            if (visuals.Visual is FxSoundVisual soundVisual)
+                Add(XAssetType.Sound, soundVisual.SoundName, $"{path}.SoundName");
+        }
+    }
 }
 
 /// <summary>

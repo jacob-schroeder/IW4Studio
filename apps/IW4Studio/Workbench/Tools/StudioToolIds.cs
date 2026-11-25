@@ -11,6 +11,7 @@ public static class StudioToolIds
     public const string GscUsages = "gsc-usages";
     public const string LivePreview = "map-render";
     public const string Properties = "properties";
+    public const string AssetDependencies = "asset-dependencies";
     public const string FastFileDetails = "fastfile-details";
     public const string DependencyGraph = "dependency-graph";
 }

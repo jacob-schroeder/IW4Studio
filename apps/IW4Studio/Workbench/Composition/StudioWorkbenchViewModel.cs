@@ -19,6 +19,7 @@ using IW4.Studio.Desktop.Workbench.Docking;
 using IW4.Studio.Desktop.Workbench.Navigation;
 using IW4.Studio.Desktop.Workbench.Selection;
 using IW4.Studio.Desktop.Workbench.Tools;
+using IW4.Studio.Desktop.Workbench.Tools.AssetDependencies;
 using IW4.Studio.Desktop.Workbench.Tools.AssetPool;
 using IW4.Studio.Desktop.Workbench.Tools.ConsoleOutput;
 using IW4.Studio.Desktop.Workbench.Tools.Diagnostics;
@@ -45,7 +46,7 @@ namespace IW4.Studio.Desktop.Workbench.Composition;
 /// navigators, selection, tools, and dock controller remain independently
 /// testable; this type only connects their public seams.
 /// </summary>
-public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
+public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDisposable
 {
     private readonly WorkbenchSelectionContext _selectionContext = new();
     private readonly CancellationTokenSource _gscWorkspaceWarmupCancellation = new();
@@ -189,6 +190,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 ShowStreamedImages);
             ZoneDetails = new ZoneDetailsToolViewModel(editingSession);
             DependencyGraph = new DependencyGraphToolViewModel(workspace);
+            AssetDependencies = new AssetDependenciesToolViewModel(FastFileAssets.OpenCatalogEntry);
 
             StudioToolContext toolContext = new(
                 FastFileAssets,
@@ -202,7 +204,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 Properties,
                 FastFileDetails,
                 ZoneDetails,
-                DependencyGraph);
+                DependencyGraph,
+                AssetDependencies);
             Registrations = StudioToolRegistry.CreateDefault(toolContext);
             _registrationsById = Registrations.ToDictionary(
                 registration => registration.Descriptor.Id,
@@ -215,6 +218,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     new DockRegionSizeLimits(minimum: 260, maximum: 520, initial: 320)));
 
             FastFileAssets.ContentsRequested += FastFileAssets_ContentsRequested;
+            FastFileAssets.PropertyChanged += ContentsSelectionChanged;
+            editingSession.AppliedAssetsChanged += DependencyAssetsChanged;
             _selectionContext.SelectionChanged += SelectionContext_SelectionChanged;
             _gscSourceNavigation.NavigationRequested +=
                 GscSourceNavigation_NavigationRequested;
@@ -351,6 +356,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     public ZoneDetailsToolViewModel ZoneDetails { get; }
 
     public DependencyGraphToolViewModel DependencyGraph { get; }
+
+    public AssetDependenciesToolViewModel AssetDependencies { get; }
 
     public IReadOnlyList<StudioToolRegistration> Registrations { get; }
 
@@ -674,6 +681,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     public void LogSaveResult(SaveAsResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
+        if (result.Succeeded)
+            RefreshAssetDependencies();
         ConsoleOutput.Append(
             result.Succeeded
                 ? ConsoleOutputLevel.Information
@@ -822,6 +831,10 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         if (!_gscWorkspaceWarmup.IsCompleted)
             _gscWorkspaceWarmupCancellation.Cancel();
         FastFileAssets.ContentsRequested -= FastFileAssets_ContentsRequested;
+        FastFileAssets.PropertyChanged -= ContentsSelectionChanged;
+        Editor.EditingSession.AppliedAssetsChanged -= DependencyAssetsChanged;
+        CancelDependencyBuild();
+        _dependencyIndex = null;
         _selectionContext.SelectionChanged -= SelectionContext_SelectionChanged;
         _gscSourceNavigation.NavigationRequested -=
             GscSourceNavigation_NavigationRequested;
@@ -1252,6 +1265,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             CloseEditorTab(tab);
 
         ReanchorSelectedD3dbspTab();
+        DependencyAssetsChanged(sender, args);
     }
 
     private void ReanchorSelectedD3dbspTab()
@@ -1294,6 +1308,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
     private void NotifyCenterSelectionChanged()
     {
+        RefreshAssetDependencies();
         Properties.SetDocumentSelection(
             SelectedEditorTab?.Selection,
             SelectedEditorTab?.StreamedImage,
@@ -1381,6 +1396,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(ActiveBottomContent));
                 break;
             case DockRegion.Right:
+                if (args.PropertyName == nameof(DockRegionState.ActiveToolId))
+                    RefreshAssetDependencies();
                 OnPropertyChanged(nameof(IsRightOpen));
                 OnPropertyChanged(nameof(RightSize));
                 OnPropertyChanged(nameof(RightPaneWidth));

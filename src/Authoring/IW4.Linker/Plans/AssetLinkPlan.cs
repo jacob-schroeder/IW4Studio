@@ -63,7 +63,8 @@ internal abstract class AssetLinkPlan
         Action<AssetDependency> visitProviderDependency,
         Action<AssetDependency> visitDependencyOnly,
         Action<ScriptStringLinkOperation> visitScriptString,
-        ISet<LinkStorageSymbol>? visitedStorage = null)
+        ISet<LinkStorageSymbol>? visitedStorage = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(visitProviderDependency);
         ArgumentNullException.ThrowIfNull(visitDependencyOnly);
@@ -74,11 +75,13 @@ internal abstract class AssetLinkPlan
 
         void VisitStorage(LinkStorageSymbol storage)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!visited.Add(storage))
                 return;
 
             foreach (LinkOperation operation in storage.Definition.Operations)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 switch (operation)
                 {
                     case ProviderLinkOperation provider:
