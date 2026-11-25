@@ -584,13 +584,13 @@ public sealed class TransactionalSaveAsService
         if (validateDefaultMpLifecycle)
         {
             string dependencyDirectory =
-                FastFileDocumentService.ResolveDependencyDirectory(workspace.SourcePath);
+                DbZoneCatalog.ResolveDependencyDirectory(workspace.SourcePath);
             loadedZone = DbDefaultZoneDependencyLoader.LoadDefaultMpCandidateForValidation(
                 loadSession,
                 targetZoneName,
                 candidatePath,
                 dependencyDirectory,
-                FastFileDocumentService.ResolveAdditionalDependencyDirectories(
+                DbZoneCatalog.ResolveAdditionalDependencyDirectories(
                     dependencyDirectory),
                 target => _ = loadSession.FreezeLinkAssetPool(target));
         }

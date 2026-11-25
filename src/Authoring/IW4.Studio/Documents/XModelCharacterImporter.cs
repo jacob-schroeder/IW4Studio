@@ -1,4 +1,5 @@
 using System.Numerics;
+using IW4.AI.XModel;
 using IW4.Formats.SourceFormat.Character;
 using IW4.Formats.XModel;
 using IW4.Game.Assets.Material;
@@ -141,7 +142,8 @@ public static class XModelCharacterImporter
             }
         }
         draft.RebuildCharacterVisualBounds();
-        XModelAssemblyCompileResult compiled = XModelAssemblyCompiler.Compile(draft);
+        XModelAssemblyCompileResult compiled = XModelAssemblyCompiler.Compile(draft,
+            new XModelUsage(PlayerBody: !viewHands, ViewHands: viewHands));
         if (!compiled.IsSuccess)
             throw new InvalidDataException(string.Join(" ", compiled.Issues
                 .Where(issue => issue.Severity == AssetValidationSeverity.Error)

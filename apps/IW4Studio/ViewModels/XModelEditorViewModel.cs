@@ -386,57 +386,65 @@ public sealed class XModelEditorViewModel
         return applied;
     }
 
-    public bool TryStageImportedLod(XModelExportDocument document, string? source, bool replaceSelected, out string? error)
+    public async Task<(bool Staged, string? Error)> StageImportedLodAsync(
+        XModelExportDocument document,
+        string? source,
+        bool replaceSelected,
+        bool replaceModel,
+        Func<IReadOnlyList<string>, Task<bool>> confirmRisks)
     {
-        error = null;
-        if (!IsEditable || _workingDraft is null) { error = "This XModel is not editable."; return false; }
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(confirmRisks);
+        if (_disposed)
+            return (false, null);
+        if (!IsEditable || _workingDraft is null)
+            return (false, "This XModel is not editable.");
+
+        XModelDraft activeDraft = _workingDraft;
+        var previousCompilation = _compiledCandidate;
         try
         {
+            XModelDraft candidate = activeDraft.Clone();
             int lodIndex;
-            if (replaceSelected && SelectedAssemblyLod is { IsOccupied: true } selected)
+            if (replaceModel)
+            {
+                candidate.ReplaceVisualModel(document, source);
+                lodIndex = 0;
+            }
+            else if (replaceSelected && SelectedAssemblyLod is { IsOccupied: true } selected)
             {
                 lodIndex = selected.LodIndex;
-                _workingDraft.ReplaceLod(lodIndex, document, source);
+                candidate.ReplaceLod(lodIndex, document, source);
             }
             else
             {
-                lodIndex = _workingDraft.LodAssembly
-                    .First(lod => !lod.IsOccupied)
-                    .SlotIndex;
-                _workingDraft.AppendImportedLod(document, source);
+                lodIndex = candidate.LodAssembly.First(lod => !lod.IsOccupied).SlotIndex;
+                candidate.AppendImportedLod(document, source);
             }
-            ResolveWorkspaceMaterialUsages(_workingDraft, lodIndex);
-            ResolveImportedMaterialTemplates(_workingDraft, lodIndex);
-            RefreshAssemblyProjection(lodIndex);
-            return true;
-        }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
-        { error = exception.Message; return false; }
-    }
+            ResolveWorkspaceMaterialUsages(candidate, lodIndex);
+            ResolveImportedMaterialTemplates(candidate, lodIndex);
 
-    public bool TryStageReplacementModel(
-        XModelExportDocument document,
-        string? source,
-        out string? error)
-    {
-        error = null;
-        if (!IsEditable || _workingDraft is null)
-        {
-            error = "This XModel is not editable.";
-            return false;
+            XModelAssemblyCompileResult compiled = XModelAssemblyCompiler.Compile(candidate);
+            IReadOnlyList<string> risks = compiled.ImportRisksFor(replaceModel ? null : lodIndex);
+            if (risks.Count > 0 && !await confirmRisks(risks))
+                return (false, null);
+
+            // Edits and LOD selection changes rebuild the active compilation.
+            if (_disposed || !ReferenceEquals(_workingDraft, activeDraft) ||
+                !ReferenceEquals(previousCompilation, _compiledCandidate))
+                return (false, null);
+
+            _workingDraft = candidate;
+            RefreshAssemblyProjection(lodIndex, compiled);
+            return (true, null);
         }
-        try
+        catch (OperationCanceledException)
         {
-            _workingDraft.ReplaceVisualModel(document, source);
-            ResolveWorkspaceMaterialUsages(_workingDraft, 0);
-            ResolveImportedMaterialTemplates(_workingDraft, 0);
-            RefreshAssemblyProjection(0);
-            return true;
+            return (false, null);
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
         {
-            error = exception.Message;
-            return false;
+            return (false, exception.Message);
         }
     }
 
@@ -713,7 +721,7 @@ public sealed class XModelEditorViewModel
         NotifyProjectionChanged();
     }
 
-    private void RefreshAssemblyProjection(int? preferredIndex)
+    private void RefreshAssemblyProjection(int? preferredIndex, XModelAssemblyCompileResult? preparedCompile = null)
     {
         if (_workingDraft is null) return;
         _assemblyLods = _workingDraft.LodAssembly.Select(lod => new XModelLodAssemblyItemViewModel(lod)).ToArray();
@@ -722,15 +730,15 @@ public sealed class XModelEditorViewModel
             : _assemblyLods.FirstOrDefault(lod => lod.IsOccupied);
         if (_selectedAssemblyLod is { IsBaseline: true } baseline)
             _selectedLod = _lods.FirstOrDefault(lod => lod.LodIndex == baseline.LodIndex) ?? _selectedLod;
-        RefreshCandidateState();
+        RefreshCandidateState(preparedCompile: preparedCompile);
         RefreshInspector(notify: false);
         NotifyProjectionChanged();
     }
 
-    private void RefreshCandidateState(bool rebuildMaterialProjection = true)
+    private void RefreshCandidateState(bool rebuildMaterialProjection = true, XModelAssemblyCompileResult? preparedCompile = null)
     {
         if (_workingDraft is null) return;
-        RefreshCompilation(_workingDraft, rebuildMaterialProjection);
+        RefreshCompilation(_workingDraft, rebuildMaterialProjection, preparedCompile);
         bool importedCandidate = _workingDraft.LodAssembly.Any(lod => lod.IsImported);
         if (importedCandidate && _compiledCandidate?.IsSuccess != true)
         {
@@ -818,9 +826,9 @@ public sealed class XModelEditorViewModel
                 provider.SerializedAssetName))
             .ToArray();
 
-    private void RefreshCompilation(XModelDraft draft, bool rebuildMaterialProjection = true)
+    private void RefreshCompilation(XModelDraft draft, bool rebuildMaterialProjection = true, XModelAssemblyCompileResult? preparedCompile = null)
     {
-        _compiledCandidate = XModelAssemblyCompiler.Compile(draft);
+        _compiledCandidate = preparedCompile ?? XModelAssemblyCompiler.Compile(draft);
         _candidateDiagnostics = _session.ValidateCandidate(draft).Issues
             .Concat(_compiledCandidate.Issues)
             .GroupBy(issue => (issue.FieldPath, issue.Message, issue.Severity))

@@ -8,6 +8,7 @@ namespace IW4.Loaders.Database.Planning;
 /// </summary>
 public sealed class DbZoneCatalog
 {
+    private static readonly string[] AdditionalDependencyDirectoryNames = ["mappack1", "mappack2"];
     private readonly Dictionary<string, DbZoneCatalogEntry> _entries;
 
     public DbZoneCatalog(string directory)
@@ -88,4 +89,19 @@ public sealed class DbZoneCatalog
         ArgumentException.ThrowIfNullOrWhiteSpace(nameOrPath);
         return Path.GetFileNameWithoutExtension(nameOrPath.Trim());
     }
+
+    public static string ResolveDependencyDirectory(string targetPath)
+    {
+        string containingDirectory = Path.GetDirectoryName(Path.GetFullPath(targetPath))
+            ?? throw new InvalidDataException($"Fastfile path '{targetPath}' has no containing directory.");
+        return AdditionalDependencyDirectoryNames.Contains(Path.GetFileName(containingDirectory), StringComparer.OrdinalIgnoreCase)
+            ? Directory.GetParent(containingDirectory)?.FullName
+                ?? throw new InvalidDataException($"Fastfile path '{targetPath}' has no dependency root.")
+            : containingDirectory;
+    }
+
+    public static IEnumerable<string> ResolveAdditionalDependencyDirectories(string directory) =>
+        AdditionalDependencyDirectoryNames
+            .Select(name => Path.Combine(directory, name))
+            .Where(Directory.Exists);
 }

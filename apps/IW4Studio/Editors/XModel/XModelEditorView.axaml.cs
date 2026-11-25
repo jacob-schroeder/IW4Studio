@@ -126,8 +126,8 @@ public sealed partial class XModelEditorView : UserControl
                     new FilePickerFileType("XMODEL_EXPORT files") { Patterns = ["*.XMODEL_EXPORT", "*.xmodel_export"] }
                 ]
             });
-            IStorageFile? file = files.FirstOrDefault();
-            if (file is null) return;
+            using IStorageFile? file = files.FirstOrDefault();
+            if (file is null || !_isAttached || !ReferenceEquals(DataContext, viewModel)) return;
 
             XModelExportDocument? document;
             await using (Stream stream = await file.OpenReadAsync())
@@ -165,12 +165,13 @@ public sealed partial class XModelEditorView : UserControl
                     }
                 }
             }
-            bool staged = replaceModel
-                ? viewModel.TryStageReplacementModel(document, file.TryGetLocalPath() ?? file.Name, out string? error)
-                : viewModel.TryStageImportedLod(document, file.TryGetLocalPath() ?? file.Name, replaceSelected, out error);
-            if (!staged)
+            if (!_isAttached || !ReferenceEquals(DataContext, viewModel)) return;
+            var (staged, error) = await viewModel.StageImportedLodAsync(
+                document, file.TryGetLocalPath() ?? file.Name, replaceSelected, replaceModel,
+                reasons => XModelImportWarningDialog.ConfirmAsync(this, viewModel, file.Name, reasons));
+            if (error is not null)
                 viewModel.ReportXModelExportStatus($"XModel geometry import blocked: {error}", IW4.Studio.Documents.AssetValidationSeverity.Error);
-            else
+            else if (staged)
                 viewModel.ReportXModelExportSuccess(replaceModel
                     ? $"Staged {file.Name} as a complete rigid model replacement; review rebuilt bounds, collision, materials, and validation before Apply."
                     : $"Staged {file.Name}; review material remapping and validation before Apply.");

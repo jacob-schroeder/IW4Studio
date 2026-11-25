@@ -65,14 +65,14 @@ public sealed class FastFileDocumentService
         ZonePlan plan,
         DbLoadSession session)
     {
-        string directory = ResolveDependencyDirectory(request.Path);
+        string directory = DbZoneCatalog.ResolveDependencyDirectory(request.Path);
         LinkAssetPool? targetAssets = null;
         DbDependencyLoadExecution execution = DbDefaultZoneDependencyLoader.Execute(
             session,
             request.Path,
             plan.ProfileName,
             directory,
-            ResolveAdditionalDependencyDirectories(directory),
+            DbZoneCatalog.ResolveAdditionalDependencyDirectories(directory),
             target => targetAssets = session.FreezeLinkAssetPool(target));
         WorkspaceZone[] zones = execution.LoadedZones
             .Select(zone => new WorkspaceZone(
@@ -119,23 +119,6 @@ public sealed class FastFileDocumentService
             profileName,
             graph);
     }
-
-    private static readonly string[] AdditionalDependencyDirectoryNames = ["mappack1", "mappack2"];
-
-    internal static string ResolveDependencyDirectory(string targetPath)
-    {
-        string containingDirectory = Path.GetDirectoryName(Path.GetFullPath(targetPath))
-            ?? throw new InvalidDataException($"Fastfile path '{targetPath}' has no containing directory.");
-        return AdditionalDependencyDirectoryNames.Contains(Path.GetFileName(containingDirectory), StringComparer.OrdinalIgnoreCase)
-            ? Directory.GetParent(containingDirectory)?.FullName
-                ?? throw new InvalidDataException($"Fastfile path '{targetPath}' has no dependency root.")
-            : containingDirectory;
-    }
-
-    internal static IEnumerable<string> ResolveAdditionalDependencyDirectories(string directory) =>
-        AdditionalDependencyDirectoryNames
-            .Select(name => Path.Combine(directory, name))
-            .Where(Directory.Exists);
 
     /// <summary>Creates an empty semantic workspace with an exact PS3 language selection.</summary>
     public FastFileWorkspace CreateBlank(

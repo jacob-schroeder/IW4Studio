@@ -5,6 +5,8 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using IW4.AI.XModel;
+using IW4.Formats.SourceFormat.Character;
 using Iw4Radiant.Editing;
 using Iw4Radiant.Materials;
 using Iw4Radiant.Rendering;
@@ -92,6 +94,7 @@ public partial class XModelBrowser : UserControl
             var selected = ModelList.SelectedItem as XModelThumbnail;
             PlaceButton.IsEnabled = selected is not null;
             PreviewButton.IsEnabled = selected?.Preview is not null;
+            ImportAdviceButton.IsEnabled = selected is not null;
             AddFoliageButton.IsEnabled = selected is not null;
             FindButton.IsEnabled = ReplaceButton.IsEnabled = selected is not null;
             if (selected is not null)
@@ -144,6 +147,11 @@ public partial class XModelBrowser : UserControl
             if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected) return;
             finishGestures();
             ShowPreview(owner, selected.Model);
+        };
+        ImportAdviceButton.Click += async (_, _) =>
+        {
+            if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected) return;
+            await ShowImportAdviceAsync(owner, session, selected.Model);
         };
         AddFoliageButton.Click += (_, _) =>
         {
@@ -352,6 +360,71 @@ public partial class XModelBrowser : UserControl
             var line = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("70,*"), ColumnSpacing = 8 };
             line.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
             Grid.SetColumn(slider, 1); line.Children.Add(slider); Grid.SetRow(line, row); grid.Children.Add(line);
+        }
+    }
+
+    private async Task ShowImportAdviceAsync(Window owner, EditorSession session, XModelSource model)
+    {
+        string? root = ReferenceEquals(_catalog?.Resolve(model.Name), model) ? _catalog.RootDirectory :
+            ReferenceEquals(_bundledCatalog?.Resolve(model.Name), model) ? _bundledCatalog.RootDirectory : null;
+        string nativePath = root is null ? "" : Path.Combine(root, "xmodel_native", model.Name + ".json");
+        bool MatchesModel(Iw4Radiant.MapSource.MapEntity entity) => XModelGeometry.IsModel(entity) &&
+            entity.Properties["model"].Equals(model.Name, StringComparison.Ordinal);
+        int? placements = session.Document.Entities.Count(MatchesModel);
+        foreach (var instance in session.Document.Entities.Where(PrefabLibrary.IsPrefab))
+        {
+            if (session.Prefabs.GetPreview(instance, session.FilePath) is not { } preview)
+            {
+                placements = null;
+                break;
+            }
+            placements += preview.Entities.Count(MatchesModel);
+        }
+        bool playerBody = false, viewHands = false;
+        try
+        {
+            MapFactionSettings factions = MapFactionAuthoring.Read(session.Document.World.Properties);
+            foreach (FactionAppearance? appearance in new[]
+            {
+                factions.Allies == MapFactionAuthoring.UsArmy ? factions.AlliesAssaultA ?? RangersAssaultAppearance.StockA : null,
+                factions.Axis == MapFactionAuthoring.UsArmy ? factions.AxisAssaultA ?? RangersAssaultAppearance.StockA : null
+            })
+            {
+                if (appearance is null) continue;
+                playerBody |= appearance.Body.Equals(model.Name, StringComparison.Ordinal);
+                viewHands |= appearance.ViewHands.Equals(model.Name, StringComparison.Ordinal);
+            }
+        }
+        catch (InvalidDataException) { /* Malformed map metadata cannot establish a player role. */ }
+        var usage = new XModelUsage(placements, playerBody, viewHands);
+        string context = usage.Description ?? "Usage in this map is unknown.";
+
+        var message = new TextBlock { Text = "Reading native model…", TextWrapping = TextWrapping.Wrap };
+        var window = new Window
+        {
+            Title = $"Import advice · {model.Name}", Width = 600, Height = 430, MinWidth = 420,
+            MinHeight = 280, WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new ScrollViewer { Margin = new Thickness(20), Content = message }
+        };
+        window.Show(owner);
+        if (root is null || !File.Exists(nativePath))
+        {
+            message.Text = context + "\n\n" +
+                $"{model.Name} has authored preview geometry but no native XModel in this library. " +
+                "Vertex stream routing, compiled LOD comparisons, and stock peer comparisons need the native model. " +
+                "Export or import it, then reopen this advice.";
+            return;
+        }
+        try
+        {
+            XModelImportReport report = await Task.Run(() =>
+                ImportAdvisor.AssessModel(new NativeModelPreviewAssets(root).LoadModel(model.Name).Model, usage));
+            if (!window.IsVisible) return;
+            message.Text = XModelAdviceText.Format(report);
+        }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception) || exception is System.Text.Json.JsonException)
+        {
+            if (window.IsVisible) message.Text = context + "\n\nThe native model could not be assessed. " + exception.Message;
         }
     }
 

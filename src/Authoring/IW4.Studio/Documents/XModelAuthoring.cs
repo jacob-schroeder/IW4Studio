@@ -44,7 +44,7 @@ public sealed partial class XModelDraft
     internal bool RebuildWeightedBoneBounds { get; private set; }
     public bool HasStagedAssemblyChanges => !AssemblyEquals(CreateAssembly(Model), Model.CollLod, _lodAssembly, CollisionLod) || !CollSurfsEqual(Model.CollSurfs, _collisionSurfaces) || !ReferenceEquals(Model.PhysPreset, PhysPreset) || !ReferenceEquals(Model.PhysCollmap, PhysCollmap);
 
-    internal XModelDraft Clone() => new(this);
+    public XModelDraft Clone() => new(this);
 
     internal XModelAsset ToAsset() => CopyRoot(
         Model,

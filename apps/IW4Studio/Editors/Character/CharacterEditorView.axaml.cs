@@ -163,7 +163,8 @@ public sealed partial class CharacterEditorView : UserControl, IEditorTextNaviga
             using (file)
             {
                 if (file.TryGetLocalPath() is { } path)
-                    await viewModel.ImportGlbAsync(path, viewHands);
+                    await viewModel.ImportGlbAsync(path, viewHands,
+                        reasons => XModelImportWarningDialog.ConfirmAsync(this, viewModel, file.Name, reasons));
                 else
                     viewModel.ReportReplacementFailure("Choose a GLB on the local filesystem.");
             }

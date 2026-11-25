@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Buffers.Binary;
 using System.Numerics;
+using IW4.AI.XModel;
 using IW4.Game.Assets;
 using IW4.Game.Assets.Image;
 using IW4.Game.Assets.Material;
@@ -18,7 +19,7 @@ public static class XModelAssemblyCompiler
     // XMODEL_EXPORT writes six decimal places; allow only that round-trip
     // precision at retained root/bone containment boundaries.
     private const float ContainmentTolerance = 0.00001f;
-    public static XModelAssemblyCompileResult Compile(XModelDraft draft)
+    public static XModelAssemblyCompileResult Compile(XModelDraft draft, XModelUsage? usage = null)
     {
         ArgumentNullException.ThrowIfNull(draft);
         var issues = new List<AssetValidationIssue>(XModelLodAssemblyValidator.Validate(draft));
@@ -141,10 +142,21 @@ public static class XModelAssemblyCompiler
                 ? RebuildRootBoneInfo(baseline.BoneInfo, rootBoneBounds, rootBoneRadius)
                 : baseline.BoneInfo;
         XModelAsset candidate = CopyWithAssembly(baseline, lods, materials, invHigh, safeSurfaceCount, safeActiveCount, maxLoaded, draft.CollisionLod, draft.CollisionSurfaces, draft.PhysPreset, draft.PhysCollmap, visualBounds, radius, boneInfo);
+        XModelImportReport? advice = null;
+        if (!issues.Any(issue => issue.Severity == AssetValidationSeverity.Error))
+        {
+            advice = ImportAdvisor.AssessModel(candidate, usage);
+            if (advice.UsageDescription is { } description)
+                issues.Add(new AssetValidationIssue("xmodel.import.usage", description, AssetValidationSeverity.Information));
+            foreach (string warning in advice.Warnings)
+                issues.Add(new AssetValidationIssue("xmodel.import", warning, AssetValidationSeverity.Warning));
+            foreach (string transition in advice.LodTransitions)
+                issues.Add(new AssetValidationIssue("xmodel.lods", transition, AssetValidationSeverity.Information));
+        }
         return new XModelAssemblyCompileResult(
             candidate,
             Array.AsReadOnly(providers.Values.ToArray()),
-            Array.AsReadOnly(issues.ToArray()));
+            Array.AsReadOnly(issues.ToArray())) { ImportAdvice = advice };
     }
 
     private static void CopyBaselineMaterialRows(XModelAsset model, XModelLodInfo lod, List<IW4.Game.Assets.Material.MaterialAsset?> materials, List<ushort> invHigh, int lodIndex, List<AssetValidationIssue> issues)
@@ -424,5 +436,10 @@ public sealed record XModelAssemblyCompileResult(
     IReadOnlyList<BaseAsset> Providers,
     IReadOnlyList<AssetValidationIssue> Issues)
 {
+    // The advisor tags risk reasons when it emits diagnostics.
+    internal XModelImportReport? ImportAdvice { get; init; }
+
     public bool IsSuccess => !Issues.Any(issue => issue.Severity == AssetValidationSeverity.Error);
+
+    public IReadOnlyList<string> ImportRisksFor(int? lodIndex) => ImportAdvice?.ImportRisksFor(lodIndex) ?? [];
 }

@@ -154,9 +154,12 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
         IEnumerable<WorkbenchDiagnostic> validationProjection =
             validationIssues.Select((issue, index) => new WorkbenchDiagnostic(
                 $"{issue.FieldPath}:{index}",
-                issue.Severity == AssetValidationSeverity.Error
-                    ? WorkbenchDiagnosticSeverity.Error
-                    : WorkbenchDiagnosticSeverity.Warning,
+                issue.Severity switch
+                {
+                    AssetValidationSeverity.Error => WorkbenchDiagnosticSeverity.Error,
+                    AssetValidationSeverity.Information => WorkbenchDiagnosticSeverity.Information,
+                    _ => WorkbenchDiagnosticSeverity.Warning
+                },
                 SourceName,
                 $"{issue.FieldPath} — {issue.Message}"));
 

@@ -5,7 +5,8 @@ namespace IW4.Studio.Documents;
 public enum AssetValidationSeverity
 {
     Warning,
-    Error
+    Error,
+    Information
 }
 
 public sealed record AssetValidationIssue

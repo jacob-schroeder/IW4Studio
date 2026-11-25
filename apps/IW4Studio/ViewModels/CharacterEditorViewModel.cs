@@ -159,7 +159,7 @@ public sealed class CharacterEditorViewModel : RawFileEditorViewModel
         catch (Exception ex) when (IsAssetError(ex)) { StatusMessage = ex.Message; }
     }
 
-    public async Task ImportGlbAsync(string path, bool viewHands)
+    public async Task ImportGlbAsync(string path, bool viewHands, Func<IReadOnlyList<string>, Task<bool>> confirmRisks)
     {
         if (_importing || !(viewHands ? CanEditHands : CanEditBody)) return;
         _importing = true;
@@ -178,6 +178,8 @@ public sealed class CharacterEditorViewModel : RawFileEditorViewModel
                 return XModelCharacterImporter.Compile(template, document, newName, path, viewHands);
             });
             if (_disposed) return;
+            bool accepted = await confirmRisks(compiled.ImportRisksFor(null));
+            if (!accepted || _disposed) return;
             if (oldName != (viewHands ? ViewHands : BodyModel))
                 throw new InvalidOperationException("The template changed during import. Select the intended template and import again.");
             if (!_projection.TryReplace(viewHands ? CharacterFieldKind.Viewhands : CharacterFieldKind.Body,
@@ -185,7 +187,15 @@ public sealed class CharacterEditorViewModel : RawFileEditorViewModel
                 throw new InvalidOperationException(reason);
             _session.AddCharacterModel(compiled);
             PayloadInput = source;
-            StatusMessage = $"Added '{newName}' to the fastfile. Apply to use it in this character.";
+            string[] warnings = compiled.Issues
+                .Where(issue => issue.Severity == AssetValidationSeverity.Warning)
+                .Select(issue => issue.Message)
+                .ToArray();
+            string? usage = compiled.Issues.FirstOrDefault(issue => issue.FieldPath == "xmodel.import.usage")?.Message;
+            StatusMessage = warnings.Length == 0
+                ? $"Added '{newName}' to the fastfile. {usage} Apply to use it in this character."
+                : $"{warnings.Length} import {(warnings.Length == 1 ? "warning" : "warnings")} for '{newName}'. " +
+                  $"{usage} {string.Join(" ", warnings)} Apply to use it in this character.";
         }
         catch (Exception ex) when (IsAssetError(ex)) { if (!_disposed) StatusMessage = ex.Message; }
         finally { _importing = false; }

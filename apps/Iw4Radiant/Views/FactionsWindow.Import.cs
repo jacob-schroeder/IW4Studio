@@ -2,8 +2,10 @@ using System.ComponentModel;
 using System.Diagnostics;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using IW4.AI.XModel;
 using IW4.Formats.SourceFormat.Character;
 using Iw4Radiant.Compilation;
+using Iw4Radiant.Materials;
 
 namespace Iw4Radiant.Views;
 
@@ -12,6 +14,7 @@ public partial class FactionsWindow
     private readonly HashSet<string> _createdAssetFolders = new(StringComparer.Ordinal);
     private MapFactionSettings? _appliedSettings;
     private bool _importing, _createdCharacterDirectory;
+    private int _adviceRevision;
 
     private async void ImportBlender_Click(object? sender, RoutedEventArgs e)
     {
@@ -29,6 +32,7 @@ public partial class FactionsWindow
         bool targetAxis = _axis;
         FactionAppearance? before = targetAxis ? _axisAssaultA : _alliesAssaultA;
         bool editingBefore = targetAxis ? _editingAxis : _editingAllies;
+        _adviceRevision++;
         SetImportBusy(true);
         try
         {
@@ -56,9 +60,10 @@ public partial class FactionsWindow
                     prefix + "_viewhands", HeadIncluded: true, CustomAssetFolder: prefix);
                 if (targetAxis) { _axisAssaultA = appearance; _editingAxis = false; }
                 else { _alliesAssaultA = appearance; _editingAllies = false; }
-                ImportStatus.Text = "Imported body and hands, optimized for PS3. Review the detail levels, then Apply to save.";
                 ShowReplacementState();
                 RequestPreview(clear: true);
+                ImportStatus.Text = "Imported body and hands, optimized for PS3. Reviewing native model advice…";
+                _ = ShowImportedAdviceAsync(output, appearance, targetAxis, newlyImported: true);
             }
             catch
             {
@@ -82,6 +87,50 @@ public partial class FactionsWindow
         finally { SetImportBusy(false); }
     }
 
+    private void ReviewImportAdvice_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_importing || !EditableVariant || ActiveReplacement is not { CustomAssetFolder: { } folder } appearance ||
+            _mapFilePath is null) return;
+        string output = Path.Combine(MapFactionAuthoring.GetCharacterAssetsDirectory(_mapFilePath), folder);
+        ImportStatus.Text = "Reviewing native model advice…";
+        _ = ShowImportedAdviceAsync(output, appearance, _axis, newlyImported: false);
+    }
+
+    private async Task ShowImportedAdviceAsync(string output, FactionAppearance appearance,
+        bool targetAxis, bool newlyImported)
+    {
+        int revision = ++_adviceRevision;
+        var bodyUsage = new XModelUsage(PlayerBody: true);
+        var handsUsage = new XModelUsage(ViewHands: true);
+        try
+        {
+            var advice = await Task.Run(() =>
+            {
+                var assets = new NativeModelPreviewAssets(output);
+                XModelImportReport bodyReport = ImportAdvisor.AssessModel(
+                    assets.LoadModel(appearance.Body).Model, bodyUsage);
+                XModelImportReport handsReport = ImportAdvisor.AssessModel(
+                    assets.LoadModel(appearance.ViewHands).Model, handsUsage);
+                return (bodyReport, handsReport);
+            });
+            if (!AdviceIsCurrent()) return;
+            ImportStatus.Text = (newlyImported
+                ? "Imported body and hands, optimized for PS3. Review the detail levels, then Apply to save."
+                : "Custom body and hands.") + "\n\n" +
+                "Body\n" + XModelAdviceText.Format(advice.bodyReport) + "\n\n" +
+                "View hands\n" + XModelAdviceText.Format(advice.handsReport);
+        }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception) || exception is System.Text.Json.JsonException)
+        {
+            if (AdviceIsCurrent()) ImportStatus.Text =
+                bodyUsage.Description + "\n" + handsUsage.Description +
+                "\n\nThe native model could not be assessed. " + exception.Message;
+        }
+
+        bool AdviceIsCurrent() => !_closed && revision == _adviceRevision && _axis == targetAxis &&
+            ReferenceEquals(ActiveReplacement, appearance);
+    }
+
     private void SetImportBusy(bool busy)
     {
         _importing = busy;
@@ -89,7 +138,7 @@ public partial class FactionsWindow
         AlliesButton.IsEnabled = AxisButton.IsEnabled = !busy;
         AlliesFaction.IsEnabled = AxisFaction.IsEnabled = !busy;
         Variants.IsEnabled = Search.IsEnabled = !busy;
-        RestoreStock.IsEnabled = ReplaceAppearance.IsEnabled = !busy;
+        RestoreStock.IsEnabled = ReplaceAppearance.IsEnabled = ReviewImportAdvice.IsEnabled = !busy;
         ReplacementBody.IsEnabled = ReplacementHead.IsEnabled = ReplacementHands.IsEnabled = !busy;
         HandsPreview.IsEnabled = SaveBlenderKit.IsEnabled = !busy;
         PreviewLod.IsEnabled = !busy && PreviewLod.ItemsSource is IEnumerable<LodChoice> levels && levels.Skip(1).Any();

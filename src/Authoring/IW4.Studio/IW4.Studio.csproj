@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\IW4.AI\IW4.AI.csproj" />
     <ProjectReference Include="..\IW4.Formats\IW4.Formats.csproj" />
     <ProjectReference Include="..\..\Engine\IW4.Game\IW4.Game.csproj" />
     <ProjectReference Include="..\..\Engine\IW4.Loaders\IW4.Loaders.csproj" />

@@ -37,6 +37,7 @@
                 <WrapPanel Orientation="Horizontal">
                     <Button x:Name="PlaceButton" Classes="panelAction" Content="Place model" IsEnabled="False" Margin="0,0,6,4" />
                     <Button x:Name="PreviewButton" Classes="panelAction" Content="Large preview" IsEnabled="False" Margin="0,0,6,4" />
+                    <Button x:Name="ImportAdviceButton" Classes="panelAction" Content="Import advice" IsEnabled="False" Margin="0,0,6,4" />
                     <CheckBox x:Name="AlignSurface" Content="Align to surface" Margin="0,0,10,4" />
                     <Button x:Name="DropButton" Classes="panelAction" Content="Drop selection" Margin="0,0,6,4" />
                     <Button x:Name="FindButton" Classes="panelAction" Content="Find instances" IsEnabled="False" Margin="0,0,6,4" />

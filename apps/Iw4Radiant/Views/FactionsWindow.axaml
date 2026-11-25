@@ -89,7 +89,7 @@
                     <Border Grid.Row="4" MaxHeight="190" BorderBrush="#505861" BorderThickness="1" CornerRadius="6" Padding="12">
                         <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel Spacing="8">
-                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
                                 <StackPanel Spacing="2">
                                     <TextBlock Text="Replace appearance" FontWeight="SemiBold" />
                                     <TextBlock x:Name="ReplacementStatus" TextWrapping="Wrap" Opacity="0.7" FontSize="11" />
@@ -98,6 +98,8 @@
                                         Click="ReplaceAppearance_Click" />
                                 <Button x:Name="RestoreStock" Grid.Column="2" Content="Restore stock"
                                         Click="RestoreStock_Click" IsVisible="False" />
+                                <Button x:Name="ReviewImportAdvice" Grid.Column="3" Content="Import advice"
+                                        Click="ReviewImportAdvice_Click" IsVisible="False" />
                             </Grid>
                             <Grid x:Name="ReplacementEditor" ColumnDefinitions="*,*,*" ColumnSpacing="8" IsVisible="False">
                                 <StackPanel Spacing="3">

@@ -135,6 +135,7 @@ public partial class FactionsWindow : Window
     private void ShowTeam()
     {
         if (!_ready) return;
+        _adviceRevision++;
         _updating = true;
         try
         {
@@ -207,6 +208,7 @@ public partial class FactionsWindow : Window
     private void Variant_Changed(object? sender, SelectionChangedEventArgs e)
     {
         if (!_ready || _updating) return;
+        _adviceRevision++;
         ShowReplacementState();
         RequestPreview(clear: true);
     }
@@ -220,6 +222,7 @@ public partial class FactionsWindow : Window
             $"     Axis · {AxisFaction.SelectedItem}{(SelectedFaction(AxisFaction).Id == MapFactionAuthoring.UsArmy && _axisAssaultA is not null ? " · Assault 1 replaced" : "")}";
         ReplaceAppearance.IsVisible = editable && !custom;
         RestoreStock.IsVisible = editable && replacement is not null;
+        ReviewImportAdvice.IsVisible = editable && custom;
         ReplacementEditor.IsVisible = editable && ActiveEditing && !custom;
         BlenderImportPanel.IsVisible = editable && (ActiveEditing || custom);
         ReplaceAppearance.Content = replacement is null ? "Replace appearance" : "Edit replacement";
