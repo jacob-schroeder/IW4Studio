@@ -1,4 +1,3 @@
-using IW4.Studio.Desktop.Workbench.Tools.AssetPool;
 using IW4.Studio.Desktop.Workbench.Tools.ConsoleOutput;
 using IW4.Studio.Desktop.Workbench.Tools.Diagnostics;
 using IW4.Studio.Desktop.Workbench.Tools.DependencyGraph;
@@ -16,7 +15,6 @@ namespace IW4.Studio.Desktop.Workbench.Tools;
 
 public sealed record StudioToolContext(
     FastFileAssetsNavigatorViewModel FastFileAssets,
-    AssetPoolNavigatorViewModel AssetPool,
     ImageFilePakToolViewModel ImageFilePak,
     PackFilePakToolViewModel PackFilePak,
     ConsoleOutputBuffer ConsoleOutput,

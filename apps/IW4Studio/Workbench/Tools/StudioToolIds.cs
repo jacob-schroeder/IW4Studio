@@ -3,7 +3,6 @@ namespace IW4.Studio.Desktop.Workbench.Tools;
 public static class StudioToolIds
 {
     public const string FastFileAssets = "fastfile-assets";
-    public const string AssetPool = "asset-pool";
     public const string ImageFilePak = "imagefile-pak";
     public const string PackFilePak = "packfile-pak";
     public const string ConsoleOutput = "console-output";
@@ -13,6 +12,5 @@ public static class StudioToolIds
     public const string LivePreview = "map-render";
     public const string Properties = "properties";
     public const string FastFileDetails = "fastfile-details";
-    public const string ZoneDetails = "zone-details";
     public const string DependencyGraph = "dependency-graph";
 }

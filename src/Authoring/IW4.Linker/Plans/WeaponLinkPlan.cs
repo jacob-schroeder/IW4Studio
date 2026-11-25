@@ -141,14 +141,16 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             variant.KillIcon,
             variant.KillIconPointer.Untyped,
             XAssetType.Material,
-            "Weapon.Variant.KillIcon");
+            "Weapon.Variant.KillIcon",
+            freeze);
         AddProvider(
             operations,
             0x4c,
             variant.DpadIcon,
             variant.DpadIconPointer.Untyped,
             XAssetType.Material,
-            "Weapon.Variant.DpadIcon");
+            "Weapon.Variant.DpadIcon",
+            freeze);
         RequireCount(
             variant.AiVsAiAccuracyGraphKnotCount,
             variant.AiVsAiAccuracyGraphKnots.Count,
@@ -226,7 +228,8 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             definition.HandModel,
             definition.HandModelPointer.Untyped,
             XAssetType.XModel,
-            "Weapon.Definition.HandModel");
+            "Weapon.Definition.HandModel",
+            freeze);
         LinkStorageTarget? rightAnimations = FreezeXStringArray(
             definition.RightHandAnimationNamePointers,
             definition.RightHandAnimationNames,
@@ -290,10 +293,12 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             throw new InvalidDataException("Weapon.Definition.FlashEffects cannot be null.");
         AddProvider(operations, 0x048, flashEffects.View,
             flashEffects.ViewPointer.Untyped,
-            XAssetType.Fx, "Weapon.Definition.FlashEffects.View");
+            XAssetType.Fx, "Weapon.Definition.FlashEffects.View",
+            freeze);
         AddProvider(operations, 0x04c, flashEffects.World,
             flashEffects.WorldPointer.Untyped,
-            XAssetType.Fx, "Weapon.Definition.FlashEffects.World");
+            XAssetType.Fx, "Weapon.Definition.FlashEffects.World",
+            freeze);
 
         WeaponPrimarySoundFields primarySounds = definition.PrimarySounds ??
             throw new InvalidDataException("Weapon.Definition.PrimarySounds cannot be null.");
@@ -310,24 +315,30 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             throw new InvalidDataException("Weapon.Definition.ShellEjectEffects cannot be null.");
         AddProvider(operations, 0x110, shellEject.View,
             shellEject.ViewPointer.Untyped,
-            XAssetType.Fx, "Weapon.Definition.ShellEjectEffects.View");
+            XAssetType.Fx, "Weapon.Definition.ShellEjectEffects.View",
+            freeze);
         AddProvider(operations, 0x114, shellEject.World,
             shellEject.WorldPointer.Untyped,
-            XAssetType.Fx, "Weapon.Definition.ShellEjectEffects.World");
+            XAssetType.Fx, "Weapon.Definition.ShellEjectEffects.World",
+            freeze);
         AddProvider(operations, 0x118, shellEject.ViewLastShot,
             shellEject.ViewLastShotPointer.Untyped,
-            XAssetType.Fx, "Weapon.Definition.ShellEjectEffects.ViewLastShot");
+            XAssetType.Fx, "Weapon.Definition.ShellEjectEffects.ViewLastShot",
+            freeze);
         AddProvider(operations, 0x11c, shellEject.WorldLastShot,
             shellEject.WorldLastShotPointer.Untyped,
-            XAssetType.Fx, "Weapon.Definition.ShellEjectEffects.WorldLastShot");
+            XAssetType.Fx, "Weapon.Definition.ShellEjectEffects.WorldLastShot",
+            freeze);
         WeaponReticleFields reticle = definition.Reticle ??
             throw new InvalidDataException("Weapon.Definition.Reticle cannot be null.");
         AddProvider(operations, 0x120, reticle.CenterMaterial,
             reticle.CenterMaterialPointer.Untyped,
-            XAssetType.Material, "Weapon.Definition.Reticle.CenterMaterial");
+            XAssetType.Material, "Weapon.Definition.Reticle.CenterMaterial",
+            freeze);
         AddProvider(operations, 0x124, reticle.SideMaterial,
             reticle.SideMaterialPointer.Untyped,
-            XAssetType.Material, "Weapon.Definition.Reticle.SideMaterial");
+            XAssetType.Material, "Weapon.Definition.Reticle.SideMaterial",
+            freeze);
 
         LinkStorageTarget? worldGunModels = FreezeProviderTable(
             definition.WorldGunModelPointers,
@@ -351,28 +362,32 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             definition.WorldClipModel,
             definition.WorldClipModelPointer.Untyped,
             XAssetType.XModel,
-            "Weapon.Definition.WorldClipModel");
+            "Weapon.Definition.WorldClipModel",
+            freeze);
         AddProvider(
             operations,
             0x1e0,
             definition.RocketModel,
             definition.RocketModelPointer.Untyped,
             XAssetType.XModel,
-            "Weapon.Definition.RocketModel");
+            "Weapon.Definition.RocketModel",
+            freeze);
         AddProvider(
             operations,
             0x1e4,
             definition.KnifeModel,
             definition.KnifeModelPointer.Untyped,
             XAssetType.XModel,
-            "Weapon.Definition.KnifeModel");
+            "Weapon.Definition.KnifeModel",
+            freeze);
         AddProvider(
             operations,
             0x1e8,
             definition.WorldKnifeModel,
             definition.WorldKnifeModelPointer.Untyped,
             XAssetType.XModel,
-            "Weapon.Definition.WorldKnifeModel");
+            "Weapon.Definition.WorldKnifeModel",
+            freeze);
 
         WeaponIconPointers icons = definition.Icons ??
             throw new InvalidDataException("Weapon.Definition.Icons cannot be null.");
@@ -382,21 +397,24 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             icons.HudIcon,
             icons.HudIconPointer.Untyped,
             XAssetType.Material,
-            "Weapon.Definition.Icons.HudIcon");
+            "Weapon.Definition.Icons.HudIcon",
+            freeze);
         AddProvider(
             operations,
             0x1f4,
             icons.PickupIcon,
             icons.PickupIconPointer.Untyped,
             XAssetType.Material,
-            "Weapon.Definition.Icons.PickupIcon");
+            "Weapon.Definition.Icons.PickupIcon",
+            freeze);
         AddProvider(
             operations,
             0x1fc,
             icons.AmmoCounterIcon,
             icons.AmmoCounterIconPointer.Untyped,
             XAssetType.Material,
-            "Weapon.Definition.Icons.AmmoCounterIcon");
+            "Weapon.Definition.Icons.AmmoCounterIcon",
+            freeze);
 
         WeaponAmmoFields ammo = definition.Ammo ??
             throw new InvalidDataException("Weapon.Definition.Ammo cannot be null.");
@@ -412,16 +430,20 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             throw new InvalidDataException("Weapon.Definition.Overlay cannot be null.");
         AddProvider(operations, 0x308, overlay.Material,
             overlay.MaterialPointer.Untyped,
-            XAssetType.Material, "Weapon.Definition.Overlay.Material");
+            XAssetType.Material, "Weapon.Definition.Overlay.Material",
+            freeze);
         AddProvider(operations, 0x30c, overlay.MaterialLowRes,
             overlay.MaterialLowResPointer.Untyped,
-            XAssetType.Material, "Weapon.Definition.Overlay.MaterialLowRes");
+            XAssetType.Material, "Weapon.Definition.Overlay.MaterialLowRes",
+            freeze);
         AddProvider(operations, 0x310, overlay.MaterialEmp,
             overlay.MaterialEmpPointer.Untyped,
-            XAssetType.Material, "Weapon.Definition.Overlay.MaterialEmp");
+            XAssetType.Material, "Weapon.Definition.Overlay.MaterialEmp",
+            freeze);
         AddProvider(operations, 0x314, overlay.MaterialEmpLowRes,
             overlay.MaterialEmpLowResPointer.Untyped,
-            XAssetType.Material, "Weapon.Definition.Overlay.MaterialEmpLowRes");
+            XAssetType.Material, "Weapon.Definition.Overlay.MaterialEmpLowRes",
+            freeze);
         if (definition.PhysCollmap is null && definition.PhysCollmapName is not null)
         {
             throw new NotSupportedException(
@@ -442,7 +464,8 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             definition.PhysCollmap,
             definition.PhysCollmapPointer.Untyped,
             XAssetType.PhysCollmap,
-            "Weapon.Definition.PhysCollmap");
+            "Weapon.Definition.PhysCollmap",
+            freeze);
 
         FreezeProjectileOperations(definition, freeze, operations);
         FreezeAccuracyOperations(definition, variant, freeze, operations);
@@ -483,7 +506,8 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             "Weapon.Definition.Rumble.MeleeImpactRumble", freeze);
         AddProvider(operations, 0x5c0, definition.Tracer,
             definition.TracerPointer.Untyped,
-            XAssetType.Tracer, "Weapon.Definition.Tracer");
+            XAssetType.Tracer, "Weapon.Definition.Tracer",
+            freeze);
         FreezeTurretOperations(definition, freeze, operations);
     }
 
@@ -496,13 +520,16 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             throw new InvalidDataException("Weapon.Definition.Projectile cannot be null.");
         AddProvider(operations, 0x420, projectile.Model,
             projectile.ModelPointer.Untyped,
-            XAssetType.XModel, "Weapon.Definition.Projectile.Model");
+            XAssetType.XModel, "Weapon.Definition.Projectile.Model",
+            freeze);
         AddProvider(operations, 0x428, projectile.ExplosionEffect,
             projectile.ExplosionEffectPointer.Untyped,
-            XAssetType.Fx, "Weapon.Definition.Projectile.ExplosionEffect");
+            XAssetType.Fx, "Weapon.Definition.Projectile.ExplosionEffect",
+            freeze);
         AddProvider(operations, 0x42c, projectile.DudEffect,
             projectile.DudEffectPointer.Untyped,
-            XAssetType.Fx, "Weapon.Definition.Projectile.DudEffect");
+            XAssetType.Fx, "Weapon.Definition.Projectile.DudEffect",
+            freeze);
         AddSoundCell(operations, 0x430, projectile.ExplosionSoundPointer,
             projectile.ExplosionSoundValuePointer, projectile.ExplosionSound,
             "Weapon.Definition.Projectile.ExplosionSound", freeze);
@@ -541,13 +568,16 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
 
         AddProvider(operations, 0x44c, projectile.TrailEffect,
             projectile.TrailEffectPointer.Untyped,
-            XAssetType.Fx, "Weapon.Definition.Projectile.TrailEffect");
+            XAssetType.Fx, "Weapon.Definition.Projectile.TrailEffect",
+            freeze);
         AddProvider(operations, 0x450, projectile.BeaconEffect,
             projectile.BeaconEffectPointer.Untyped,
-            XAssetType.Fx, "Weapon.Definition.Projectile.BeaconEffect");
+            XAssetType.Fx, "Weapon.Definition.Projectile.BeaconEffect",
+            freeze);
         AddProvider(operations, 0x46c, projectile.IgnitionEffect,
             projectile.IgnitionEffectPointer.Untyped,
-            XAssetType.Fx, "Weapon.Definition.Projectile.IgnitionEffect");
+            XAssetType.Fx, "Weapon.Definition.Projectile.IgnitionEffect",
+            freeze);
         AddSoundCell(operations, 0x470, projectile.IgnitionSoundPointer,
             projectile.IgnitionSoundValuePointer, projectile.IgnitionSound,
             "Weapon.Definition.Projectile.IgnitionSound", freeze);
@@ -615,7 +645,8 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
             "Weapon.Definition.Turret.OverheatSound", freeze);
         AddProvider(operations, 0x5e0, turret.OverheatEffect,
             turret.OverheatEffectPointer.Untyped,
-            XAssetType.Fx, "Weapon.Definition.Turret.OverheatEffect");
+            XAssetType.Fx, "Weapon.Definition.Turret.OverheatEffect",
+            freeze);
         AddXString(operations, 0x5e4, turret.BarrelSpinRumble,
             turret.BarrelSpinRumblePointer.Untyped,
             "Weapon.Definition.Turret.BarrelSpinRumble", freeze);
@@ -672,7 +703,8 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
                 pointers[index].Untyped,
                 definitions[index],
                 expectedType,
-                $"{fieldPath}[{index}]");
+                $"{fieldPath}[{index}]",
+                allowExternalReference: freeze.IsAuthoredDetached);
         }
 
         return freeze.FreezeStorageView(
@@ -1044,13 +1076,15 @@ internal sealed class WeaponLinkPlan : AssetLinkPlan
         BaseAsset? definition,
         XPointerReference pointer,
         XAssetType expectedType,
-        string fieldPath)
+        string fieldPath,
+        LinkAssetFreezeScope freeze)
     {
         AssetDependency? dependency = FreezeProviderDependency(
             pointer,
             definition,
             expectedType,
-            fieldPath);
+            fieldPath,
+            allowExternalReference: freeze.IsAuthoredDetached);
         if (dependency is not { } frozen)
             return;
         operations.Add((owner, addend) => ProviderOperation(

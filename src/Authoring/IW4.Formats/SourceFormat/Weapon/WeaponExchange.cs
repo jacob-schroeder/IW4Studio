@@ -9,7 +9,7 @@ namespace IW4.Formats.SourceFormat.Weapon;
 /// Writes IW4 weapons and their original accuracy graphs in the native
 /// WEAPONFILE/WEAPONACCUFILE source formats.
 /// </summary>
-public sealed class WeaponExchange
+public sealed partial class WeaponExchange
 {
     private static readonly StringComparer SourcePathComparer =
         OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()

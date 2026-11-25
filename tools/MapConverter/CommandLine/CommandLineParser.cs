@@ -11,7 +11,7 @@ internal static class CommandLineParser
         Usage:
           mapconverter to-xbox360 <ps3-map.ff> <imagefile7.tsv> <xbox-map.ff>
           mapconverter --game iw3 --platform ps3 --map <path> --load <path> --source-fastfiles <directory> --imagefile-index -1 --output <directory>
-          mapconverter --game iw3 --platform pc --map <path> --load <path> [--iwd <path>] [--source-fastfiles <directory>] [--source-library <directory>] [--allow-missing-sounds] [--imagefile-index <-1|1-20>] --output <directory>
+          mapconverter --game iw3 --platform pc --map <path> --load <path> [--iwd <path>] [--source-fastfiles <directory>] [--source-library <directory>] [--allow-missing-sounds] [--imagefile-index <-1|1-20>] [--factions <profile>] --output <directory>
           mapconverter --game iw3 --platform pc --map <path> --world-template <iw4.ff> [--bootstrap-fastfile <iw4.ff>] --output <directory>
 
         Options:
@@ -43,8 +43,7 @@ internal static class CommandLineParser
                                      beneath --source-library (or --source-fastfiles).
           --allow-missing-sounds     Requires --source-library. Record absent sound
                                      payloads as TODOs in source provenance and
-                                     continue. Sound payloads remain unconverted;
-                                     no audio is synthesized. Strict by default.
+                                     continue with available sounds. Strict by default.
           --bootstrap-fastfile <ff>  Requires --world-template. Supplies native
                                      world/model materials and their dependencies.
                                      Full conversion includes the bundled gameplay
@@ -52,11 +51,12 @@ internal static class CommandLineParser
           --imagefile-index <-1|1-20>
                                      Required with an image source. Use -1 for
                                      the map's named .pak shared with its _load
-                                     fastfile, or 1-20 for imagefileN.pak.
-          --factions <profile>      PS3 only: us/russia (default) or tf141/opfor.
+                                     fastfile, or 1-20 for imagefileN.pak. Full PC
+                                     conversion defaults to -1 for bundled assets.
+          --factions <profile>      Full conversion: us/russia (default) or tf141/opfor.
                                      Selects native player models and faction assets.
           --output <directory>       Destination directory.
-                                     PS3 writes <map>.ff, <map>_load.ff, <map>.pak,
+                                     Full conversions write <map>.ff, <map>_load.ff, an image package,
                                      <map>_snd.pak, and resident <map>_ui.ff.
           --help                     Show this help text.
 
@@ -173,8 +173,8 @@ internal static class CommandLineParser
         FactionProfile factions = FactionProfile.UsRussia;
         if (values.TryGetValue("--factions", out string? factionValue))
         {
-            if (!sourceIsPs3)
-                return CommandLineParseResult.Failure("Option '--factions' is supported only for PS3 source conversion.");
+            if (worldOnly)
+                return CommandLineParseResult.Failure("Option '--factions' requires full conversion.");
             if (FactionRules.Parse(factionValue) is not { } selected)
                 return CommandLineParseResult.Failure("Option '--factions' must be us/russia or tf141/opfor.");
             factions = selected;
@@ -209,7 +209,7 @@ internal static class CommandLineParser
                 "'--source-fastfiles', or '--source-library' is specified.");
         }
 
-        if (!hasIwd && !hasSourceFastFiles && !hasSourceLibrary && hasImageFileIndex)
+        if ((worldOnly || sourceIsPs3) && !hasIwd && !hasSourceFastFiles && !hasSourceLibrary && hasImageFileIndex)
         {
             return CommandLineParseResult.Failure(
                 "Option '--iwd', '--source-fastfiles', or '--source-library' is required when " +

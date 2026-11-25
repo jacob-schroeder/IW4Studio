@@ -188,16 +188,41 @@ internal static class Iw3Ps3RawFileCompiler
                 ? RewriteScript(scriptContent, name, name == mainName, ownedNamePrefix,
                     fx, models, materials, sounds, splitStaticModelNames, hasVehicleRecipes, factions)
                 : Iw3PcMapConverter.CompileVisionFile(content);
-            result[index] = converted.AsSpan().SequenceEqual(content) ? raw : new RawFileAsset
-            {
-                Name = name,
-                CompressedLen = 0,
-                Len = converted.Length,
-                Buffer = [.. converted, 0]
-            };
+            result[index] = WithContent(raw, content, converted);
         }
         return result;
     }
+
+    internal static RawFileAsset[] CompilePcGameplay(
+        IReadOnlyList<RawFileAsset> rawFiles, string mapName, FactionProfile factions,
+        IReadOnlySet<string> soundNames, bool allowMissingSounds)
+    {
+        string prefix = mapName + "/";
+        var ownedSounds = OwnedNames(soundNames, prefix);
+        bool hasVehicleRecipes = rawFiles.Any(raw => raw.Name == $"maps/mp/{mapName}_vehicles.gsc");
+        return rawFiles.Select(raw =>
+        {
+            if (raw.Name is not { } name || !name.EndsWith(".gsc", StringComparison.OrdinalIgnoreCase))
+                return raw;
+            byte[] content = LogicalBytes(raw);
+            string text = Encoding.Latin1.GetString(content);
+            if (name == $"maps/createfx/{mapName}_fx.gsc")
+                text = ScriptRules.CreateFxHelpers(text);
+            List<Token> tokens = Lex(text);
+            bool main = name == $"maps/mp/{mapName}.gsc";
+            var changes = GameplayReplacements(text, tokens, name, main,
+                prefix, ownedSounds, factions, allowMissingSounds, soundNames);
+            if (main && hasVehicleRecipes)
+                changes.Add(VehicleStartup(text, tokens, prefix));
+            return WithContent(raw, content, ApplyReplacements(text, changes));
+        }).ToArray();
+    }
+
+    private static RawFileAsset WithContent(RawFileAsset raw, byte[] original, byte[] converted) =>
+        converted.AsSpan().SequenceEqual(original) ? raw : new RawFileAsset
+        {
+            Name = raw.Name, CompressedLen = 0, Len = converted.Length, Buffer = [.. converted, 0]
+        };
 
     private static Dictionary<string, string> OwnedNames(
         IReadOnlySet<string> names, string prefix)
@@ -229,38 +254,13 @@ internal static class Iw3Ps3RawFileCompiler
         // inserted namespace and IW4 faction names are ASCII.
         string text = Encoding.Latin1.GetString(content);
         List<Token> tokens = Lex(text);
-        var replacements = new List<Replacement>();
-        foreach ((Token literal, string alias) in ReadSoundReferences(text, tokens, scriptName))
-        {
-            if (!sounds.TryGetValue(ownedNamePrefix + alias, out string? ownedSound))
-                throw new InvalidDataException($"Source map sound alias '{alias}' has no converted provider.");
-            replacements.Add(ReplaceLiteral(literal, ownedSound));
-        }
-        int vehicleStartupCalls = 0;
-        string[] nativeStartup = ["maps", "\\", "mp", "\\", "_load", ":", ":", "main", "(", ")", ";"];
+        var replacements = GameplayReplacements(text, tokens, scriptName, main, ownedNamePrefix, sounds, factions);
+        if (main && hasVehicleRecipes)
+            replacements.Add(VehicleStartup(text, tokens, ownedNamePrefix));
         for (int index = 0; index < tokens.Count; index++)
         {
             Token token = tokens[index];
-            if (main && hasVehicleRecipes && index + nativeStartup.Length <= tokens.Count &&
-                nativeStartup.Select((value, offset) => Is(text, tokens[index + offset], value)).All(matches => matches))
-            {
-                replacements.Add(new Replacement(token.Start, 0, ScriptRules.VehicleStartupCall(ownedNamePrefix)));
-                vehicleStartupCalls++;
-            }
             if (token.Kind != TokenKind.Identifier) continue;
-            if (main && Is(text, token, "game") && index + 6 < tokens.Count &&
-                Is(text, tokens[index + 1], "[") &&
-                Literal(text, tokens[index + 2]) is { } team &&
-                Is(text, tokens[index + 3], "]") &&
-                Is(text, tokens[index + 4], "=") &&
-                Literal(text, tokens[index + 5]) is { } faction &&
-                Is(text, tokens[index + 6], ";"))
-            {
-                string selected = FactionRules.TeamValue(factions, team, faction);
-                if (selected != faction)
-                    replacements.Add(ReplaceLiteral(tokens[index + 5], selected));
-            }
-
             if (index + 3 >= tokens.Count || !Is(text, tokens[index + 1], "(") ||
                 Literal(text, tokens[index + 2]) is not { } assetName ||
                 !(Is(text, tokens[index + 3], ")") || Is(text, tokens[index + 3], ",")))
@@ -281,9 +281,57 @@ internal static class Iw3Ps3RawFileCompiler
             else if (Is(text, token, "loadfx"))
                 throw new InvalidDataException($"Source map asset '{assetName}' has no converted provider.");
         }
-        if (main && hasVehicleRecipes && vehicleStartupCalls != 1)
+        return ApplyReplacements(text, replacements);
+    }
+
+    private static Replacement VehicleStartup(string text, List<Token> tokens, string prefix)
+    {
+        string[] startup = ["maps", "\\", "mp", "\\", "_load", ":", ":", "main", "(", ")", ";"];
+        Token[] calls = tokens.Where((token, index) => index + startup.Length <= tokens.Count &&
+            startup.Select((value, offset) => Is(text, tokens[index + offset], value)).All(match => match))
+            .ToArray();
+        if (calls.Length != 1)
             throw new InvalidDataException("Vehicle recipes require exactly one native map startup call.");
-        if (replacements.Count == 0) return content;
+        return new Replacement(calls[0].Start, 0, ScriptRules.VehicleStartupCall(prefix));
+    }
+
+    private static List<Replacement> GameplayReplacements(string text, List<Token> tokens, string scriptName,
+        bool main, string ownedNamePrefix, IReadOnlyDictionary<string, string> sounds, FactionProfile factions,
+        bool allowMissingSounds = false, IReadOnlySet<string>? nativeSounds = null)
+    {
+        var replacements = new List<Replacement>();
+        foreach ((Token literal, string alias) in ReadSoundReferences(text, tokens, scriptName))
+        {
+            if (!sounds.TryGetValue(ownedNamePrefix + alias, out string? ownedSound))
+            {
+                if (allowMissingSounds || nativeSounds?.Contains(alias) == true) continue;
+                throw new InvalidDataException($"Source map sound alias '{alias}' has no converted provider.");
+            }
+            replacements.Add(ReplaceLiteral(literal, ownedSound));
+        }
+        if (!main) return replacements;
+        for (int index = 0; index + 6 < tokens.Count; index++)
+        {
+            Token token = tokens[index];
+            if (Is(text, token, "game") &&
+                Is(text, tokens[index + 1], "[") &&
+                Literal(text, tokens[index + 2]) is { } team &&
+                Is(text, tokens[index + 3], "]") &&
+                Is(text, tokens[index + 4], "=") &&
+                Literal(text, tokens[index + 5]) is { } faction &&
+                Is(text, tokens[index + 6], ";"))
+            {
+                string selected = FactionRules.TeamValue(factions, team, faction);
+                if (selected != faction)
+                    replacements.Add(ReplaceLiteral(tokens[index + 5], selected));
+            }
+        }
+        return replacements;
+    }
+
+    private static byte[] ApplyReplacements(string text, List<Replacement> replacements)
+    {
+        if (replacements.Count == 0) return Encoding.Latin1.GetBytes(text);
         var output = new StringBuilder(text.Length + replacements.Count * 16);
         int copied = 0;
         foreach (Replacement change in replacements.OrderBy(change => change.Start))

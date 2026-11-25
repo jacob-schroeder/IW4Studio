@@ -66,8 +66,9 @@ module internal DestructibleVehicleRules =
             invalid $"COD4 source recipe '{functionName}' has unsupported control flow."
         body
 
-    let Compile(sourceRecipeText: string, prefix: string,
-                sourceTypes: IReadOnlyCollection<string>) : struct (string * string[] * string[] * string[]) =
+    let CompileWithPrefixes(sourceRecipeText: string, prefix: string, modelPrefix: string,
+                            effectPrefix: string, soundPrefix: string,
+                            sourceTypes: IReadOnlyCollection<string>) : struct (string * string[] * string[] * string[]) =
         if isNull sourceTypes then nullArg (nameof sourceTypes)
         if sourceTypes.Count = 0 then struct ("", [||], [||], [||])
         else
@@ -119,12 +120,21 @@ module internal DestructibleVehicleRules =
                 let asset (kind: string) (expression: string) =
                     let name = stringValue expression
                     if String.IsNullOrEmpty name then invalid $"COD4 vehicle '{sourceType}' has empty {kind} name."
+                    let resolvedName =
+                        if kind = "model" && modelPrefix = "" then name.ToLowerInvariant()
+                        else name
                     match kind with
-                    | "model" -> models.Add name |> ignore
+                    | "model" -> models.Add resolvedName |> ignore
                     | "fx" -> effects.Add name |> ignore
                     | "sound" -> sounds.Add name |> ignore
                     | _ -> invalid $"Unknown vehicle dependency kind '{kind}'."
-                    quote (prefix + name)
+                    let assetPrefix =
+                        match kind with
+                        | "model" -> modelPrefix
+                        | "fx" -> effectPrefix
+                        | "sound" -> soundPrefix
+                        | _ -> invalid $"Unknown vehicle dependency kind '{kind}'."
+                    quote (assetPrefix + resolvedName)
                 script.Append("\r\nregister_").Append(sourceType).Append("()\r\n{\r\n") |> ignore
                 let statements = body.Split(';') |> Array.map (fun item -> item.Trim()) |> Array.filter ((<>) "")
                 if statements.Length = 0 then invalid $"COD4 vehicle '{sourceType}' has no recipe actions."
@@ -173,3 +183,7 @@ module internal DestructibleVehicleRules =
                 script.Append("}\r\n") |> ignore
             let ordered (items: HashSet<string>) = items |> Seq.sortWith (fun a b -> String.CompareOrdinal(a, b)) |> Seq.toArray
             struct (script.ToString(), ordered models, ordered effects, ordered sounds)
+
+    let Compile(sourceRecipeText: string, prefix: string,
+                sourceTypes: IReadOnlyCollection<string>) : struct (string * string[] * string[] * string[]) =
+        CompileWithPrefixes(sourceRecipeText, prefix, prefix, prefix, prefix, sourceTypes)

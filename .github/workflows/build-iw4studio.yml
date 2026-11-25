@@ -36,14 +36,13 @@ jobs:
         id: version
         shell: bash
         run: |
-          version_line="$(sed -n 's:^[[:space:]]*<VersionPrefix>\([^<]*\)</VersionPrefix>[[:space:]]*$:\1:p' apps/IW4Studio/IW4.Studio.Desktop.csproj)"
-          if [[ ! "$version_line" =~ ^[0-9]+\.[0-9]+$ ]]; then
-            echo "Expected one major.minor VersionPrefix in apps/IW4Studio/IW4.Studio.Desktop.csproj." >&2
+          public_version="$(sed -n 's:^[[:space:]]*<VersionPrefix>\([^<]*\)</VersionPrefix>[[:space:]]*$:\1:p' apps/IW4Studio/IW4.Studio.Desktop.csproj)"
+          if [[ ! "$public_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected one major.minor.patch VersionPrefix in apps/IW4Studio/IW4.Studio.Desktop.csproj." >&2
             exit 1
           fi
-          public_version="${version_line}.${GITHUB_RUN_NUMBER}"
-          file_version="${public_version}.${GITHUB_RUN_ATTEMPT}"
-          informational_version="${public_version}+attempt.${GITHUB_RUN_ATTEMPT}.sha.${GITHUB_SHA}"
+          file_version="${public_version}.${GITHUB_RUN_NUMBER}"
+          informational_version="${public_version}+build.${GITHUB_RUN_NUMBER}.attempt.${GITHUB_RUN_ATTEMPT}.sha.${GITHUB_SHA}"
           echo "public_version=$public_version" >> "$GITHUB_OUTPUT"
           echo "file_version=$file_version" >> "$GITHUB_OUTPUT"
           echo "informational_version=$informational_version" >> "$GITHUB_OUTPUT"
@@ -141,7 +140,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PUBLIC_VERSION: ${{ needs.version.outputs.public_version }}
         run: |
-          release_tag="iw4studio-v${PUBLIC_VERSION}"
+          release_tag="iw4studio-v${PUBLIC_VERSION}-build.${GITHUB_RUN_NUMBER}"
           assets=(
             "release-assets/release/iw4studio/win_x64/iw4studio-win_x64.zip"
             "release-assets/release/iw4studio/macos_arm64/iw4studio-macos_arm64.tar.gz"
@@ -150,7 +149,7 @@ jobs:
             gh release upload "$release_tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit "$release_tag" \
               --target "$GITHUB_SHA" \
-              --title "IW4Studio ${PUBLIC_VERSION}" \
+              --title "IW4Studio ${PUBLIC_VERSION} (build ${GITHUB_RUN_NUMBER})" \
               --notes "Automated IW4Studio build from commit ${GITHUB_SHA}." \
               --prerelease \
               --latest=false \
@@ -158,7 +157,7 @@ jobs:
           else
             gh release create "$release_tag" "${assets[@]}" \
               --target "$GITHUB_SHA" \
-              --title "IW4Studio ${PUBLIC_VERSION}" \
+              --title "IW4Studio ${PUBLIC_VERSION} (build ${GITHUB_RUN_NUMBER})" \
               --notes "Automated IW4Studio build from commit ${GITHUB_SHA}." \
               --prerelease \
               --latest=false \

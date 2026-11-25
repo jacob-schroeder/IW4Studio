@@ -1,11 +1,14 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using IW4.Formats.SourceFormat.Material;
 using IW4.Game.Assets;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Assets.Image;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.RawFile;
+using IW4.Game.Assets.MapEnts;
+using IW4.Game.Assets.Sound;
 using IW4.Game.Assets.StringTable;
 using IW4.Game.Assets.TechniqueSet;
 using IW4.Game.Assets.XModel;
@@ -30,7 +33,9 @@ using MapConverter.Game.IW3.PC.Models;
 using MapConverter.Game.IW3.PC.Physics;
 using MapConverter.Game.IW3.PC.Shaders;
 using MapConverter.Game.IW3.PC.Techniques;
+using MapConverter.Game.IW3.PS3.Conversion;
 using MapConverter.Game.IW3.PS3.Images;
+using MapConverter.Game.IW3.PS3.Rules;
 
 namespace MapConverter.Game.IW3.PC.Conversion;
 
@@ -39,6 +44,8 @@ internal sealed record Iw3PcMapConversionResult(
     string MapFastFilePath,
     string LoadFastFilePath,
     string? ImageFilePath,
+    string SoundFilePath,
+    string UiFastFilePath,
     string? SourceProvenancePath,
     int ImageCount,
     int ExternalImageCount,
@@ -782,6 +789,7 @@ internal static class Iw3PcMapConverter
         }
 
         ConversionPaths paths = ValidatePaths(options);
+        int effectiveImageFileIndex = options.ImageFileIndex ?? -1;
         Iw3PcExtractionTools tools = Iw3PcExtractionToolLocator.Find(
             requireUnlinker: paths.SourceLibraryDirectory is null);
         string scratchDirectory = Path.Combine(
@@ -793,6 +801,8 @@ internal static class Iw3PcMapConverter
         string? stagedLoadPath = null;
         string? stagedImagePath = null;
         string? stagedSourcePath = null;
+        string? stagedSoundPath = null;
+        string? stagedUiPath = null;
         try
         {
             Iw3PcExtractionResult extraction =
@@ -821,7 +831,32 @@ internal static class Iw3PcMapConverter
 
             Iw3MapModelReferences modelReferences =
                 Iw3StaticModelNameReader.ReadFromConvertedD3dbsp(
-                    extraction.D3dbspPath);
+                    extraction.D3dbspPath, rewriteEntityProperty: (entity, key, value) =>
+                        extraction.VehicleRecipes.RewriteEntityProperty(entity, key,
+                            EntityRules.TurretPropertyValue(entity, key, value), paths.MapName));
+            bool hasNativeTurret = modelReferences.NamedEntityModelNames
+                .Contains(EntityRules.NativeTurretModel, StringComparer.OrdinalIgnoreCase);
+            string nativeDirectory = Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3");
+            var nativeMaterials = new MaterialSourceCompiler(nativeDirectory);
+            var nativeModels = new ModelSourceCompiler(nativeDirectory, nativeMaterials);
+            foreach (string name in FactionRules.XModelNames(options.Factions, Ps3MapStartupAssets.XModelNames))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                nativeModels.LoadModel(name);
+            }
+            foreach (string name in FactionRules.MaterialNames(options.Factions, Ps3MapStartupAssets.FactionMaterialNames))
+                nativeMaterials.LoadMaterial(name);
+            var nativeDefinitions = new List<BaseAsset>();
+            if (hasNativeTurret)
+                Iw3Ps3MapConverter.AddNativeTurret(nativeDefinitions, nativeDirectory,
+                    nativeModels, nativeMaterials, cancellationToken);
+            nativeDefinitions.AddRange(nativeModels.Assets);
+            nativeDefinitions.AddRange(nativeMaterials.Assets);
+            BaseAsset[] nativeAssets = nativeDefinitions.DistinctBy(AssetKey.FromDefinition).ToArray();
+            XModelAsset[] nativeModelsForMap = nativeAssets.OfType<XModelAsset>().ToArray();
+            HashSet<AssetKey> nativeModelKeys = nativeModelsForMap.Select(AssetKey.FromDefinition).ToHashSet();
+            bool IsNativeModel(string name) => nativeModelKeys.Contains(XModelKey(name));
+
             string[] dynamicModelNames = dynamicEntitySource.Definitions
                 .SelectMany(definitions => definitions)
                 .Select(definition => NormalizeSourceReferenceName(
@@ -833,13 +868,13 @@ internal static class Iw3PcMapConverter
                 .Order(StringComparer.Ordinal)
                 .ToArray();
             ValidateModelCollisionSource(xmodelCollisionSource,
-                dynamicModelNames.Concat(modelReferences.StaticModelNames), mapManifest);
+                dynamicModelNames.Concat(modelReferences.StaticModelNames).Where(name => !IsNativeModel(name)), mapManifest);
             HashSet<string> ownedXModelNames = OwnedNames(
                     mapManifest,
                     "xmodel")
                 .ToHashSet(StringComparer.Ordinal);
             string[] unownedStaticModelNames = modelReferences.StaticModelNames
-                .Where(name => !ownedXModelNames.Contains(name))
+                .Where(name => !ownedXModelNames.Contains(name) && !IsNativeModel(name))
                 .ToArray();
             if (unownedStaticModelNames.Length != 0)
             {
@@ -850,7 +885,7 @@ internal static class Iw3PcMapConverter
             }
             string[] unownedDynamicModelNames = dynamicModelNames
                 .Where(name =>
-                    !ownedXModelNames.Contains(name) &&
+                    !ownedXModelNames.Contains(name) && !IsNativeModel(name) &&
                     !string.Equals(
                         name,
                         MilTntBombMp.Name,
@@ -877,21 +912,26 @@ internal static class Iw3PcMapConverter
                     "The bootstrap XModel closure references its own named image package, " +
                     "which cannot be retained in the converted map.");
             }
-            if (options.ImageFileIndex is { } outputImageFileIndex &&
-                bootstrap?.ReferencedImageFileIndices.Contains(
-                    unchecked((uint)outputImageFileIndex)) == true)
+            if (bootstrap?.ReferencedImageFileIndices.Contains(
+                    unchecked((uint)effectiveImageFileIndex)) == true)
             {
                 throw new InvalidDataException(
                     $"The bootstrap XModel closure references stock imagefile" +
-                    $"{outputImageFileIndex}.pak, which conflicts with the requested " +
+                    $"{effectiveImageFileIndex}.pak, which conflicts with the requested " +
                     "custom imagefile index. Select a different '--imagefile-index'.");
             }
 
+            var vehicleEffects = await Iw3PcEffectCompiler.CaptureAsync(extraction.VehicleRecipes.EffectNames,
+                extraction.SourceLibrary, tools.NativeMapConverterPath, paths.MapInputPath,
+                scratchDirectory, cancellationToken).ConfigureAwait(false);
             string[] importedModelNames = modelReferences.StaticModelNames
                 .Concat(modelReferences.NamedEntityModelNames)
+                .Concat(extraction.VehicleRecipes.ModelNames)
+                .Concat(vehicleEffects.ModelNames)
                 .Concat(dynamicModelNames)
                 .Where(name =>
                     ownedXModelNames.Contains(name) &&
+                    !IsNativeModel(name) &&
                     !string.Equals(
                         name,
                         MilTntBombMp.Name,
@@ -906,6 +946,7 @@ internal static class Iw3PcMapConverter
                 .Concat(dynamicModelNames)
                 .Where(name =>
                     !ownedXModelNames.Contains(name) &&
+                    !IsNativeModel(name) &&
                     !bootstrapModelKeys.Contains(XModelKey(name)))
                 .Distinct(StringComparer.Ordinal)
                 .Select(name => new XModelAsset { Name = "," + name })
@@ -919,7 +960,7 @@ internal static class Iw3PcMapConverter
                 extraction,
                 mapManifest,
                 loadManifest,
-                modelMaterialNames);
+                modelMaterialNames.Concat(vehicleEffects.MaterialNames).Distinct(StringComparer.Ordinal).ToArray());
             InspectMaterials(
                 materialSources,
                 out Dictionary<string, ImageRequirement> imageRequirements,
@@ -932,9 +973,10 @@ internal static class Iw3PcMapConverter
                 [(mapManifest, extraction.MapAssetDirectory), (loadManifest, extraction.LoadAssetDirectory)],
                 paths.IwdInputPath,
                 paths.SourceFastFileDirectory,
-                options.ImageFileIndex,
+                effectiveImageFileIndex,
                 sourceLibrary: extraction.SourceLibrary,
-                ownedAssetNamePrefix: ownedAssetNamePrefix);
+                ownedAssetNamePrefix: ownedAssetNamePrefix,
+                nativeStreamParts: nativeMaterials.ImageStreamPayloads);
 
             TechniqueCompilationGraph techniques = CompileTechniques(
                 extraction,
@@ -958,6 +1000,7 @@ internal static class Iw3PcMapConverter
                     modelReferences.StaticModelNames.ToHashSet(StringComparer.Ordinal));
 
             Dictionary<string, XModelAsset> dynamicXModelsByName = xmodels.Models
+                .Concat(nativeModelsForMap)
                 .Concat(bootstrap?.Models ?? [])
                 .Concat(externalEntityModels)
                 .ToDictionary(
@@ -994,8 +1037,9 @@ internal static class Iw3PcMapConverter
                     mapAssetName,
                     ForceFullbright: false,
                     FragmentProgramUploadCapacity,
-                    xmodels.Models)
+                    [.. xmodels.Models, .. nativeModelsForMap])
                 {
+                    SourceEntities = modelReferences.RewrittenEntities,
                     UseSourceMaterials = true,
                     AvailableMaterials = materials.MapMaterials,
                     Lightmaps = lighting.Lightmaps,
@@ -1009,11 +1053,46 @@ internal static class Iw3PcMapConverter
                 mapManifest,
                 paths.MapName,
                 out bool mapElectricBoxFallbackApplied);
+            if (extraction.VehicleRecipes.Script.Length != 0)
+            {
+                byte[] content = Encoding.Latin1.GetBytes(extraction.VehicleRecipes.Script);
+                mapRawFiles = [.. mapRawFiles, new RawFileAsset
+                {
+                    Name = $"maps/mp/{paths.MapName}_vehicles.gsc",
+                    CompressedLen = 0,
+                    Len = content.Length,
+                    Buffer = [.. content, 0]
+                }];
+            }
             RawFileAsset[] loadRawFiles = CompileRawFiles(
                 extraction.LoadAssetDirectory,
                 loadManifest,
                 paths.LoadName,
                 out bool loadElectricBoxFallbackApplied);
+
+            string soundPrefix = paths.MapName + "/";
+            var effects = vehicleEffects.Compile(soundPrefix, materials.BySourceName,
+                xmodels.Models.ToDictionary(model => model.Name ??
+                    throw new InvalidDataException("Imported XModel has no name."), StringComparer.OrdinalIgnoreCase));
+            var ambientAliases = Iw3Ps3RawFileCompiler.ReadSoundNames(mapRawFiles, ambientOnly: true)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var requiredAliases = Iw3Ps3RawFileCompiler.ReadSoundNames(mapRawFiles)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            requiredAliases.UnionWith(extraction.VehicleRecipes.SoundNames);
+            requiredAliases.UnionWith(vehicleEffects.SoundNames);
+            var entities = mapGraph.NestedAssets.OfType<MapEntsAsset>().Single();
+            var audio = await Iw3PcAudioCompiler.CaptureAsync(extraction.SourceLibrary,
+                tools.NativeMapConverterPath, paths.MapInputPath, paths.IwdInputPath,
+                extraction.MapAssetDirectory, nativeDirectory, soundPrefix, ambientAliases, requiredAliases,
+                D3dbspAssetLinker.ReadEntities(entities.EntityStringBytes.ToArray()), scratchDirectory,
+                cancellationToken, allowMissingSounds: options.AllowMissingSounds).ConfigureAwait(false);
+            var emittedSounds = audio.Assets.OfType<SoundAliasListAsset>()
+                .Select(alias => alias.AliasName ?? throw new InvalidDataException("Compiled sound alias has no name."))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            mapRawFiles = Iw3Ps3RawFileCompiler.CompilePcGameplay(mapRawFiles, paths.MapName,
+                options.Factions, emittedSounds, options.AllowMissingSounds);
+            nativeAssets = nativeAssets.Concat(audio.Assets).OrderBy(IsExternal)
+                .DistinctBy(AssetKey.FromDefinition).ToArray();
 
             BaseAsset[] mapRoots = BuildMapRoots(
                 mapImageNames,
@@ -1025,20 +1104,45 @@ internal static class Iw3PcMapConverter
                 mapGraph,
                 mapRawFiles,
                 mapAssetName);
+            // The linked model and material roots must precede the effects that reference them.
+            mapRoots = [.. AddNativeRoots(mapRoots, nativeAssets), .. effects];
+            var callsignAssets = new List<BaseAsset>();
+            var callsigns = Iw3Ps3MapConverter.AddCallsigns(callsignAssets, nativeDirectory);
+            if (callsigns.ReferencedImageFileIndices.Contains(unchecked((uint)effectiveImageFileIndex)))
+                throw new InvalidDataException(
+                    "Native callsigns reference the selected output image package, which would " +
+                    "overwrite a frozen stock image reference.");
+            mapRoots = AddCallsignRoots(mapRoots, callsignAssets, callsigns.RootKeys);
             BaseAsset[] mapProviderOnly =
             [
                 .. xmodels.ModelSurfs,
-                .. mapGraph.NestedAssets
+                .. mapGraph.NestedAssets,
+                .. nativeAssets.Where(Iw3Ps3MapConverter.IsProviderOnly)
             ];
+            LinkAssetPool callsignProviders = callsigns.Providers.WithoutProviders(
+                mapRoots.Concat(mapProviderOnly)
+                    .Where(asset => !IsExternal(asset) &&
+                        !callsigns.RootKeys.Contains(AssetKey.FromDefinition(asset)))
+                    .Select(AssetKey.FromDefinition));
+            LinkAssetPool allBootstrapProviders = bootstrap is null
+                ? callsignProviders
+                : callsignProviders.WithHighestPrecedencePool(bootstrap.Providers);
+            IReadOnlySet<AssetKey> allBootstrapRootKeys = bootstrap is null
+                ? callsigns.RootKeys
+                : callsigns.RootKeys.Concat(bootstrap.ModelKeys).ToHashSet();
             byte[] mapFastFile = LinkAndPackage(
                 "map",
                 mapRoots,
                 mapProviderOnly,
                 images.StreamReferencesByAsset,
-                bootstrap?.Providers,
-                bootstrapModelKeys);
+                allBootstrapProviders,
+                allBootstrapRootKeys);
 
             byte[] loadFastFile = BuildLoadFastFile(paths.LoadName, loadImageNames, images, loadRawFiles);
+
+            byte[] uiFastFile = LinkAndPackage(MapUiRules.ZoneName(paths.MapName),
+                [MapUiRules.FactionLocalization(paths.MapName, options.Factions)], [],
+                new Dictionary<AssetKey, ImageFileStreamLanguageReferences>());
 
             Directory.CreateDirectory(paths.OutputDirectory);
             RejectExistingOutputs(paths);
@@ -1059,6 +1163,9 @@ internal static class Iw3PcMapConverter
                     imagePackage.Bytes.Span);
             }
 
+            stagedSoundPath = StageOutput(paths.SoundOutputPath, token, audio.SoundPackage);
+            stagedUiPath = StageOutput(paths.UiOutputPath, token, uiFastFile);
+
             if (paths.SourceProvenancePath is not null)
             {
                 Iw3PcSourceLibrary library = extraction.SourceLibrary ??
@@ -1075,33 +1182,38 @@ internal static class Iw3PcMapConverter
                     : (stagedImagePath, paths.ImageOutputPath),
                 stagedSourcePath is null || paths.SourceProvenancePath is null
                     ? null
-                    : (stagedSourcePath, paths.SourceProvenancePath));
+                    : (stagedSourcePath, paths.SourceProvenancePath),
+                (stagedSoundPath, paths.SoundOutputPath), (stagedUiPath, paths.UiOutputPath));
             stagedMapPath = null;
             stagedLoadPath = null;
             stagedImagePath = null;
             stagedSourcePath = null;
+            stagedSoundPath = null;
+            stagedUiPath = null;
 
+            int OwnedMapCount(XAssetType type) =>
+                mapRoots.Count(asset => asset.SerializedAssetType == type && !IsExternal(asset));
             return new Iw3PcMapConversionResult(
                 extraction.BackendDescription,
                 paths.MapOutputPath,
                 paths.LoadOutputPath,
                 images.Package is null ? null : paths.ImageOutputPath,
+                paths.SoundOutputPath, paths.UiOutputPath,
                 paths.SourceProvenancePath,
-                images.OwnedImageCount +
-                    (mapImageNames.Contains(loadImageNames.Single()) ? 1 : 0),
+                OwnedMapCount(XAssetType.Image) + 1,
                 images.AssetsBySourceName.Count - images.OwnedImageCount + 1,
-                techniques.OwnedTechniqueSets.Count,
-                techniques.Shaders.Count,
-                materials.OwnedMaterials.Count + Ps3LoadZoneBuilder.OwnedMaterialCount,
+                OwnedMapCount(XAssetType.Techset),
+                OwnedMapCount(XAssetType.VertexShader) + OwnedMapCount(XAssetType.PixelShader),
+                OwnedMapCount(XAssetType.Material) + Ps3LoadZoneBuilder.OwnedMaterialCount,
                 xmodels.Models.Count,
-                bootstrap?.Models.Count ?? 0,
+                (bootstrap?.Models.Count ?? 0) + nativeModelsForMap.Length,
                 externalEntityModels.Length,
                 dynamicEntities.Count,
                 dynamicEntities.DestroyFxFallbackCount,
                 dynamicEntities.DestroyFxFallbackNames,
                 dynamicEntities.DestroyPiecesFallbackCount,
                 dynamicEntities.DestroyPiecesFallbackNames,
-                mapRawFiles.Length + loadRawFiles.Length,
+                OwnedMapCount(XAssetType.RawFile) + loadRawFiles.Length,
                 mapElectricBoxFallbackApplied || loadElectricBoxFallbackApplied,
                 images.FallbackImageNames);
         }
@@ -1111,6 +1223,8 @@ internal static class Iw3PcMapConverter
             DeleteIfExists(stagedLoadPath);
             DeleteIfExists(stagedImagePath);
             DeleteIfExists(stagedSourcePath);
+            DeleteIfExists(stagedSoundPath);
+            DeleteIfExists(stagedUiPath);
             TryDeleteDirectory(scratchDirectory);
         }
     }
@@ -1124,9 +1238,10 @@ internal static class Iw3PcMapConverter
                 "full conversion includes its bundled gameplay bootstrap automatically.");
         }
         string mapPath = RequireInputFile(options.MapPath, ".ff", "map fastfile");
+        int effectiveImageFileIndex = options.ImageFileIndex ?? -1;
         string loadPath = RequireLoadInput(
             options.LoadPath ?? throw new ArgumentException("A load fastfile is required for full conversion."),
-            mapPath, options.ImageFileIndex);
+            mapPath, effectiveImageFileIndex);
         string mapName = RequireFileStem(mapPath, "map fastfile");
         string loadName = RequireFileStem(loadPath, "load fastfile");
 
@@ -1143,11 +1258,11 @@ internal static class Iw3PcMapConverter
             : RequireInputDirectory(options.SourceLibraryDirectory, "IW3 source library");
         bool hasImageSource = iwdPath is not null ||
             sourceFastFileDirectory is not null || sourceLibraryDirectory is not null;
-        if (hasImageSource != (options.ImageFileIndex is not null))
+        if (hasImageSource && options.ImageFileIndex is null)
         {
             throw new ArgumentException(
-                "An IWD, source library or IW3 PS3 source fastfile directory and imagefile " +
-                "index must be supplied together.");
+                "An IWD, source library or IW3 PS3 source fastfile directory requires " +
+                "an imagefile index.");
         }
         if (options.ImageFileIndex is { } selectedImageIndex &&
             !DbHeaderImageStreamEntry.IsValidPackageFileIndex(unchecked((uint)selectedImageIndex)))
@@ -1162,10 +1277,9 @@ internal static class Iw3PcMapConverter
 
         string mapOutputPath = Path.Combine(outputDirectory, mapName + ".ff");
         string loadOutputPath = Path.Combine(outputDirectory, loadName + ".ff");
-        string? imageOutputPath = options.ImageFileIndex is { } imageIndex
-            ? Path.Combine(outputDirectory, DbHeaderImageStreamEntry.GetPackageFileName(
-                unchecked((uint)imageIndex), mapOutputPath))
-            : null;
+        string imageOutputPath = Path.Combine(outputDirectory,
+            DbHeaderImageStreamEntry.GetPackageFileName(
+                unchecked((uint)effectiveImageFileIndex), mapOutputPath));
         var result = new ConversionPaths(
             mapPath,
             loadPath,
@@ -1178,7 +1292,9 @@ internal static class Iw3PcMapConverter
             mapOutputPath,
             loadOutputPath,
             imageOutputPath,
-            sourceLibraryDirectory is null ? null : Path.Combine(outputDirectory, mapName + ".sources.json"));
+            sourceLibraryDirectory is null ? null : Path.Combine(outputDirectory, mapName + ".sources.json"),
+            Path.Combine(outputDirectory, mapName + "_snd.pak"),
+            Path.Combine(outputDirectory, MapUiRules.ZoneName(mapName) + ".ff"));
         RejectExistingOutputs(result);
         return result;
     }
@@ -1319,7 +1435,8 @@ internal static class Iw3PcMapConverter
         int? imageFileIndex,
         bool useFallbackImages = false,
         Iw3PcSourceLibrary? sourceLibrary = null,
-        string ownedAssetNamePrefix = "")
+        string ownedAssetNamePrefix = "",
+        IReadOnlyDictionary<GfxImageAsset, IReadOnlyList<byte[]>>? nativeStreamParts = null)
     {
         ImageRequirement[] ordered = requirements.Values
             .OrderBy(requirement => requirement.Name, StringComparer.OrdinalIgnoreCase)
@@ -1465,9 +1582,14 @@ internal static class Iw3PcMapConverter
 
         ImageFilePackage? package = null;
         var referencesByAsset = new Dictionary<AssetKey, ImageFileStreamLanguageReferences>();
+        KeyValuePair<GfxImageAsset, IReadOnlyList<byte[]>>[] nativeImages =
+            nativeStreamParts is null ? [] : nativeStreamParts
+                .Where(pair => !UsesMapBuiltinImage(pair.Key, assetsBySourceName))
+                .OrderBy(pair => AssetKey.FromDefinition(pair.Key).NormalizedName,
+                    StringComparer.Ordinal).ToArray();
         if (imageFileIndex is not null)
         {
-            if (sortedFullImages.Length == 0)
+            if (sortedFullImages.Length == 0 && nativeImages.Length == 0)
             {
                 throw new InvalidDataException(
                     "The selected image sources do not supply any material " +
@@ -1477,22 +1599,37 @@ internal static class Iw3PcMapConverter
             Iw3Iwi6StreamedImageCompilation[] streamedImages = sortedFullImages
                 .Where(compilation => compilation.Image.StreamData.Any(part => part.HasStreamingData))
                 .ToArray();
-            if (streamedImages.Length != 0)
+            if (streamedImages.Length != 0 || nativeImages.Length != 0)
             {
-                ReadOnlyMemory<byte>[] payloads = streamedImages
+                AssetKey[] streamImageKeys = streamedImages
+                    .Select(compilation => AssetKey.FromDefinition(compilation.Image))
+                    .Concat(nativeImages.Select(pair => AssetKey.FromDefinition(pair.Key)))
+                    .ToArray();
+                var mapImageKeys = assetsBySourceName.Values.Where(image => !IsExternal(image))
+                    .Select(AssetKey.FromDefinition).ToHashSet();
+                var nativeKeys = new HashSet<AssetKey>();
+                foreach ((GfxImageAsset image, IReadOnlyList<byte[]> parts) in nativeImages)
+                {
+                    AssetKey key = AssetKey.FromDefinition(image);
+                    if (mapImageKeys.Contains(key) || !nativeKeys.Add(key) ||
+                        parts.Count != GfxImageStreamData.EntryCount)
+                        throw new InvalidDataException($"Native turret image {key} conflicts with a map image or has incomplete stream parts.");
+                }
+                var streamPayloads = streamedImages
                     .SelectMany(compilation => compilation.StreamPartPayloads)
+                    .Concat(nativeImages.SelectMany(pair => pair.Value.Select(
+                        part => (ReadOnlyMemory<byte>)part)))
                     .ToArray();
                 package = new ImageFilePackager().Package(
                     unchecked((uint)imageFileIndex.Value),
-                    payloads);
-                for (int imageIndex = 0; imageIndex < streamedImages.Length; imageIndex++)
+                    streamPayloads);
+                for (int imageIndex = 0; imageIndex < streamImageKeys.Length; imageIndex++)
                 {
                     ImageFileStreamReference[] references = package.References
                         .Skip(imageIndex * GfxImageStreamData.EntryCount)
                         .Take(GfxImageStreamData.EntryCount)
                         .ToArray();
-                    referencesByAsset.Add(
-                        AssetKey.FromDefinition(streamedImages[imageIndex].Image),
+                    referencesByAsset.Add(streamImageKeys[imageIndex],
                         new ImageFileStreamLanguageReferences(LanguageMask, references));
                 }
             }
@@ -1719,13 +1856,14 @@ internal static class Iw3PcMapConverter
                     slot.Technique?.PassCount == 2);
             using FileStream stream = File.OpenRead(source.Path);
             Iw3MaterialCompilation compilation = Iw3MaterialCompiler.Compile(
-                modelMaterialNames.Contains(source.SourceName)
-                    ? ownedAssetNamePrefix + source.TargetName
-                    : source.TargetName,
+                source.SourceName,
                 stream,
                 images,
                 requiresRuntimeTechniqueState,
-                techniqueSet);
+                techniqueSet,
+                targetName: modelMaterialNames.Contains(source.SourceName)
+                    ? ownedAssetNamePrefix + source.TargetName
+                    : source.TargetName);
             bySourceName.Add(source.SourceName, compilation.Material);
             map.Add(compilation.Material);
         }
@@ -1752,12 +1890,12 @@ internal static class Iw3PcMapConverter
         }
 
         return new MaterialCompilationGraph(
+            bySourceName,
             Array.AsReadOnly(map.ToArray()),
             Array.AsReadOnly(externalModelMaterials
                 .DistinctBy(AssetKey.FromDefinition)
                 .ToArray()),
-            modelMappings,
-            Array.AsReadOnly(map.ToArray()));
+            modelMappings);
     }
 
     private static RawFileAsset[] CompileRawFiles(
@@ -1964,6 +2102,57 @@ internal static class Iw3PcMapConverter
             $"IW3 rawfile '{ElectricBoxRawFileName}' has an unrecognized " +
             $"runtime FX load. Expected its canonical main() initialization " +
             $"for '{ElectricBoxFxName}'.");
+
+    private static bool UsesMapBuiltinImage(GfxImageAsset image, IReadOnlyDictionary<string, GfxImageAsset> mapImages) =>
+        image.Name is { } name && name.StartsWith('$') &&
+        mapImages.TryGetValue(name, out GfxImageAsset? mapImage) && !IsExternal(mapImage);
+
+    private static BaseAsset[] AddNativeRoots(
+        IReadOnlyList<BaseAsset> mapRoots, IReadOnlyList<BaseAsset> nativeAssets)
+    {
+        var nativeRoots = nativeAssets.Where(asset => !Iw3Ps3MapConverter.IsProviderOnly(asset))
+            .ToDictionary(AssetKey.FromDefinition);
+        var retained = new List<BaseAsset>();
+        foreach (BaseAsset asset in mapRoots)
+        {
+            AssetKey key = AssetKey.FromDefinition(asset);
+            if (!nativeRoots.TryGetValue(key, out BaseAsset? nativeRoot))
+                retained.Add(asset);
+            else if (asset is GfxImageAsset image && image.Name?.StartsWith('$') == true)
+                nativeRoots[key] = image; // Both graphs use the same engine image and its map stream references.
+            // An IW3 weapon can bring its own same-name reticle or FX material.
+            // The replacement weapon binds the IW4 material and its native technique set.
+            else if (nativeRoot is MaterialAsset && !IsExternal(nativeRoot))
+                continue;
+            else if (!ReferenceEquals(asset, nativeRoot) && !IsExternal(asset))
+                throw new InvalidDataException($"Map and native bootstrap both own {key}.");
+        }
+        return [.. nativeRoots.Values.OrderBy(Iw3Ps3MapConverter.RootRank), .. retained];
+    }
+
+    private static BaseAsset[] AddCallsignRoots(
+        IReadOnlyList<BaseAsset> mapRoots, IReadOnlyList<BaseAsset> callsignAssets,
+        IReadOnlySet<AssetKey> ownedCallsignKeys)
+    {
+        var roots = mapRoots.ToDictionary(AssetKey.FromDefinition);
+        foreach (BaseAsset asset in callsignAssets)
+        {
+            AssetKey key = AssetKey.FromDefinition(asset);
+            if (!roots.TryGetValue(key, out BaseAsset? existing))
+            {
+                roots.Add(key, asset);
+                continue;
+            }
+            if (ownedCallsignKeys.Contains(key))
+            {
+                if (!IsExternal(existing))
+                    throw new InvalidDataException($"Map and native callsigns both own {key}.");
+                roots[key] = asset;
+            }
+            // A map-owned definition satisfies a resident callsign reference.
+        }
+        return roots.Values.ToArray();
+    }
 
     private static BaseAsset[] BuildMapRoots(
         IReadOnlySet<string> imageNames,
@@ -2238,24 +2427,15 @@ internal static class Iw3PcMapConverter
         return stagePath;
     }
 
-    private static void PublishOutputs(
-        (string Staged, string Final) map,
-        (string Staged, string Final)? load,
-        (string Staged, string Final)? image,
-        (string Staged, string Final)? source = null)
+    private static void PublishOutputs(params (string Staged, string Final)?[] outputs)
     {
-        var moved = new List<string>(4);
+        var moved = new List<string>(outputs.Length);
         try
         {
-            IEnumerable<(string Staged, string Final)> outputs = [map];
-            if (load is { } loadValue)
-                outputs = outputs.Append(loadValue);
-            if (image is { } imageValue)
-                outputs = outputs.Append(imageValue);
-            if (source is { } sourceValue)
-                outputs = outputs.Append(sourceValue);
-            foreach ((string staged, string final) in outputs)
+            foreach (var output in outputs)
             {
+                if (output is not { } pair) continue;
+                (string staged, string final) = pair;
                 File.Move(staged, final, overwrite: false);
                 moved.Add(final);
             }
@@ -2468,7 +2648,7 @@ internal static class Iw3PcMapConverter
                      paths.MapOutputPath,
                      paths.LoadOutputPath,
                      paths.ImageOutputPath,
-                     paths.SourceProvenancePath
+                     paths.SourceProvenancePath, paths.SoundOutputPath, paths.UiOutputPath
                  }.OfType<string>())
         {
             if (File.Exists(output) || Directory.Exists(output))
@@ -2531,7 +2711,9 @@ internal static class Iw3PcMapConverter
         string MapOutputPath,
         string LoadOutputPath,
         string? ImageOutputPath,
-        string? SourceProvenancePath);
+        string? SourceProvenancePath,
+        string SoundOutputPath,
+        string UiOutputPath);
 
     private sealed record ImageRequirement(
         string Name,
@@ -2567,11 +2749,11 @@ internal static class Iw3PcMapConverter
         IReadOnlyList<MaterialShaderAsset> Shaders);
 
     private sealed record MaterialCompilationGraph(
+        IReadOnlyDictionary<string, MaterialAsset> BySourceName,
         IReadOnlyList<MaterialAsset> MapMaterials,
         IReadOnlyList<MaterialAsset> ExternalModelMaterials,
         IReadOnlyDictionary<string, Iw3XModelMaterialMapping>
-            ModelMappingsBySourceName,
-        IReadOnlyList<MaterialAsset> OwnedMaterials);
+            ModelMappingsBySourceName);
 
     private sealed class OrderedAssetSet
     {

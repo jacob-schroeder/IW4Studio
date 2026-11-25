@@ -71,11 +71,17 @@ internal static class WeaponGraph
     internal static WeaponDef Copy(WeaponDef source)
     {
         ArgumentNullException.ThrowIfNull(source);
+        return Copy(source, source.InternalName);
+    }
+
+    internal static WeaponDef Copy(WeaponDef source, string? overlayDescription)
+    {
+        ArgumentNullException.ThrowIfNull(source);
         return new WeaponDef
         {
             Offset = source.Offset,
             InternalNamePointer = source.InternalNamePointer,
-            InternalName = source.InternalName,
+            InternalName = overlayDescription,
             GunModelsPointer = source.GunModelsPointer,
             GunModelPointers = CopyList(source.GunModelPointers),
             GunModels = CopyList(source.GunModels),

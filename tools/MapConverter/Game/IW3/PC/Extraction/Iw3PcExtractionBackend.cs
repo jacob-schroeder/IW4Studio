@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
+using MapConverter.Game.IW3.PC.Conversion;
 
 namespace MapConverter.Game.IW3.PC.Extraction;
 
@@ -24,7 +25,8 @@ internal sealed record Iw3PcExtractionResult(
     string MapZoneSourcePath,
     string LoadAssetDirectory,
     string LoadZoneSourcePath,
-    Iw3PcSourceLibrary? SourceLibrary);
+    Iw3PcSourceLibrary? SourceLibrary,
+    Iw3PcVehicleRecipes VehicleRecipes);
 
 /// <summary>
 /// Runs the current IW3 PC extraction tools and converts the source map BSP
@@ -127,6 +129,9 @@ internal static class Iw3PcExtractionBackend
             xmodelCollisionPath,
             "The native converter did not produce the expected XModel-collision sidecar");
 
+        Iw3PcVehicleRecipes vehicleRecipes = await Iw3PcVehicleRecipes.ReadAsync(
+            mapFastFilePath, d3dbspPath, mapName, sourceLibrary, cancellationToken).ConfigureAwait(false);
+
         if (sourceLibrary is not null)
         {
             await sourceLibrary.ExtractAsync(
@@ -163,7 +168,8 @@ internal static class Iw3PcExtractionBackend
             mapZoneSourcePath,
             loadAssetDirectory,
             loadZoneSourcePath,
-            sourceLibrary);
+            sourceLibrary,
+            vehicleRecipes);
     }
 
     private static async Task ExtractZoneAssetsAsync(

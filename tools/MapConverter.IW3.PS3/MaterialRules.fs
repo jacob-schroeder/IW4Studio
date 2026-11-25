@@ -87,6 +87,15 @@ module internal MaterialRules =
             Nullable MaterialSortKey.AdditiveBlend
         else Nullable()
 
+    /// The shared IW4 model caster ignores the material's alpha texture.
+    let AlphaTestedCasterFlags(flags: MaterialGameFlags, state: GfxStateBits) =
+        let alphaMask = uint32 GfxStateBits0Flags.AlphaTestDisabled ||| GfxStateBitsEncoding.AlphaTestMask
+        let ge128 = uint32 GfxAlphaTest.GreaterThanOrEqualTo128 <<< GfxStateBitsEncoding.AlphaTestShift
+        if (flags &&& MaterialGameFlags.ShadowCasterRouteMask) = MaterialGameFlags.CastsShadow &&
+           (state.LoadBits[0] &&& alphaMask) = ge128 then
+            (flags &&& ~~~MaterialGameFlags.CastsShadow) ||| MaterialGameFlags.MaterialSpecificShadowCaster
+        else flags
+
     /// Exact native IW4 counterparts use the material-specific shadow route
     /// with a GE128 alpha-tested caster. Preserve each source material's low flags.
     let ShadowFlags(sourceName: string, flags: MaterialGameFlags,
@@ -125,11 +134,10 @@ module internal MaterialRules =
             let state = states[stateIndex]
             if isNull state || isNull state.LoadBits || state.LoadBits.Count < 1 then
                 raise (InvalidDataException($"IW3 PS3 material '{sourceName}' shadow state {stateIndex} has no state bits."))
-            let alphaMask = uint32 GfxStateBits0Flags.AlphaTestDisabled ||| GfxStateBitsEncoding.AlphaTestMask
-            let ge128 = uint32 GfxAlphaTest.GreaterThanOrEqualTo128 <<< GfxStateBitsEncoding.AlphaTestShift
-            if (state.LoadBits[0] &&& alphaMask) <> ge128 then
+            let routed = AlphaTestedCasterFlags(flags, state)
+            if routed = flags then
                 raise (InvalidDataException($"IW3 PS3 material '{sourceName}' shadow state {stateIndex} is not GE128 alpha-tested."))
-            LanguagePrimitives.EnumOfValue<byte, MaterialGameFlags> ((actual &&& 0x3fuy) ||| 0x80uy)
+            routed
 
     let SourceCameraRegion(source: byte, name: string) =
         match source with

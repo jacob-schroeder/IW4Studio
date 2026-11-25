@@ -37,6 +37,52 @@ public sealed class TargetZoneDocument
         return AppendDefinitions([definition])[0];
     }
 
+    internal WorkspaceAssetCatalogEntry AppendReference(
+        WorkspaceAssetCatalogEntry dependency,
+        string serializedName)
+    {
+        ArgumentNullException.ThrowIfNull(dependency);
+        var identity = new TargetZoneRowIdentity(DocumentId, _rows.Count);
+        bool resolved = dependency.ResolvedProvider is not null && dependency.Definition is not null;
+        var entry = new WorkspaceAssetCatalogEntry(
+            identity,
+            resolved
+                ? WorkspaceAssetOrigin.TargetResolvedReference
+                : WorkspaceAssetOrigin.TargetUnresolvedReference,
+            resolved ? WorkspaceAssetAccess.ReadOnly : WorkspaceAssetAccess.ContentUnavailable,
+            resolved
+                ? WorkspaceAssetContentSource.ResolvedProvider
+                : WorkspaceAssetContentSource.Unavailable,
+            dependency.AssetType,
+            serializedName,
+            dependency.NormalizedName,
+            resolved ? dependency.Definition : null,
+            resolvedProvider: resolved ? dependency.ResolvedProvider : null,
+            providerZone: dependency.ProviderZone);
+        _rows.Add(entry);
+        _byIdentity.Add(identity, entry);
+        return entry;
+    }
+
+    internal void ReplaceRow(
+        TargetZoneRowIdentity identity,
+        WorkspaceAssetCatalogEntry replacement)
+    {
+        ArgumentNullException.ThrowIfNull(replacement);
+        if (replacement.TargetRowIdentity != identity ||
+            identity.DocumentId != DocumentId ||
+            identity.SerializedIndex >= _rows.Count ||
+            !_byIdentity.ContainsKey(identity))
+        {
+            throw new ArgumentException(
+                "The replacement must retain an existing target-row identity.",
+                nameof(replacement));
+        }
+
+        _rows[identity.SerializedIndex] = replacement;
+        _byIdentity[identity] = replacement;
+    }
+
     internal IReadOnlyList<WorkspaceAssetCatalogEntry> AppendDefinitions(
         IEnumerable<IW4.Game.Assets.BaseAsset> definitions)
     {

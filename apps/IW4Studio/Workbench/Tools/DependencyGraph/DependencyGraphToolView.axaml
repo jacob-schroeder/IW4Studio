@@ -9,87 +9,80 @@
              mc:Ignorable="d"
              d:DesignWidth="360"
              d:DesignHeight="640">
-  <Grid RowDefinitions="Auto,*">
-    <Border Padding="16,14"
-            Background="{DynamicResource StudioSurfaceSunkenBrush}"
+  <UserControl.Styles>
+    <Style Selector="Line.connector">
+      <Setter Property="StartPoint" Value="0.5,0" />
+      <Setter Property="EndPoint" Value="0.5,17" />
+      <Setter Property="Width" Value="1" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="Stroke" Value="{DynamicResource StudioTextSubtleBrush}" />
+      <Setter Property="StrokeThickness" Value="1" />
+    </Style>
+    <Style Selector="Grid.skipped Line.connector">
+      <Setter Property="StrokeDashArray" Value="1,3" />
+    </Style>
+    <Style Selector="Border.target">
+      <Setter Property="Background" Value="{DynamicResource StudioAccentSecondarySurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.fileName">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="Grid.skipped TextBlock.fileName">
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*" Background="{DynamicResource StudioSurfaceSunkenBrush}">
+    <Border Padding="16,12"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="0,0,0,1">
-      <StackPanel Spacing="4">
-        <TextBlock Text="{Binding Header}"
-                   FontSize="14"
-                   FontWeight="SemiBold"
-                   TextWrapping="Wrap"
+      <StackPanel Spacing="3">
+        <TextBlock Text="Load order" FontSize="16" FontWeight="SemiBold"
                    Foreground="{DynamicResource StudioTextBrush}" />
-        <TextBlock Text="Physical fastfiles considered for the current workspace"
-                   FontSize="9"
-                   Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        <TextBlock Text="{Binding LoadProfile}" FontSize="12"
+                   FontFamily="JetBrains Mono, Menlo, Consolas"
+                   TextTrimming="CharacterEllipsis"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+        <TextBlock Text="{Binding Summary}" FontSize="11"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
       </StackPanel>
     </Border>
 
     <ScrollViewer Grid.Row="1"
                   HorizontalScrollBarVisibility="Disabled"
                   VerticalScrollBarVisibility="Auto">
-      <ItemsControl Margin="16,18"
-                    ItemsSource="{Binding Nodes}">
+      <ItemsControl Margin="16,8" ItemsSource="{Binding Nodes}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="dependencyGraph:DependencyGraphNodeViewModel">
-            <StackPanel>
-              <Border Padding="12"
-                      CornerRadius="7"
-                      Background="{DynamicResource StudioSurfaceSunkenBrush}"
-                      BorderBrush="{DynamicResource StudioBorderBrush}"
-                      BorderThickness="1"
-                      ToolTip.Tip="{Binding PhysicalPath}">
-                <Grid ColumnDefinitions="Auto,10,*">
-                  <materialIcons:MaterialIcon Kind="CheckCircleOutline"
-                                              Width="20"
-                                              Height="20"
-                                              VerticalAlignment="Center"
-                                              IsVisible="{Binding IsLoaded}"
-                                              Foreground="{DynamicResource StudioSuccessBrush}" />
-                  <materialIcons:MaterialIcon Kind="InformationOutline"
-                                              Width="20"
-                                              Height="20"
-                                              VerticalAlignment="Center"
-                                              IsVisible="{Binding IsSkippedOptional}"
-                                              Foreground="{DynamicResource StudioInfoBrush}" />
-                  <StackPanel Grid.Column="2"
-                              Spacing="3">
-                    <TextBlock Text="{Binding FileName}"
-                               FontSize="11"
-                               FontWeight="SemiBold"
-                               TextTrimming="CharacterEllipsis"
-                               IsVisible="{Binding IsLoaded}"
-                               Foreground="{DynamicResource StudioSuccessBrush}" />
-                    <TextBlock Text="{Binding FileName}"
-                               FontSize="11"
-                               FontWeight="SemiBold"
-                               TextTrimming="CharacterEllipsis"
-                               IsVisible="{Binding IsSkippedOptional}"
-                               Foreground="{DynamicResource StudioInfoBrush}" />
-                    <TextBlock Text="{Binding StatusText}"
-                               FontSize="8"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource StudioTextSubtleBrush}" />
-                  </StackPanel>
-                </Grid>
-              </Border>
-
-              <Grid Height="32"
-                    IsVisible="{Binding HasSuccessor}">
-                <Border Width="1"
-                        Height="18"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Top"
-                        Background="{DynamicResource StudioBorderStrongBrush}" />
-                <materialIcons:MaterialIcon Kind="ArrowDown"
-                                            Width="16"
-                                            Height="16"
-                                            HorizontalAlignment="Center"
-                                            VerticalAlignment="Bottom"
-                                            Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            <Grid ColumnDefinitions="20,*" ColumnSpacing="6"
+                  Classes.skipped="{Binding IsSkippedOptional}"
+                  ToolTip.Tip="{Binding PhysicalPath}">
+              <Grid RowDefinitions="17,18,17">
+                <Line Classes="connector" IsVisible="{Binding HasPredecessor}" />
+                <Line Grid.Row="2" Classes="connector" IsVisible="{Binding HasSuccessor}" />
+                <materialIcons:MaterialIcon Grid.RowSpan="3" Kind="CheckCircle"
+                                            Width="20" Height="20" VerticalAlignment="Center"
+                                            IsVisible="{Binding IsLoaded}"
+                                            Foreground="{DynamicResource StudioSuccessBrush}" />
+                <materialIcons:MaterialIcon Grid.RowSpan="3" Kind="MinusCircleOutline"
+                                            Width="20" Height="20" VerticalAlignment="Center"
+                                            IsVisible="{Binding IsSkippedOptional}"
+                                            Foreground="{DynamicResource StudioTextMutedBrush}" />
               </Grid>
-            </StackPanel>
+
+              <Border Grid.Column="1" Classes.target="{Binding IsTarget}"
+                      Margin="0,3" Padding="9,0" BorderThickness="1" CornerRadius="7">
+                <StackPanel Spacing="2" VerticalAlignment="Center">
+                  <TextBlock Classes="fileName" Text="{Binding FileName}" />
+                  <TextBlock Text="{Binding StatusText}" FontSize="11"
+                             Foreground="{DynamicResource StudioTextMutedBrush}" />
+                </StackPanel>
+              </Border>
+            </Grid>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>

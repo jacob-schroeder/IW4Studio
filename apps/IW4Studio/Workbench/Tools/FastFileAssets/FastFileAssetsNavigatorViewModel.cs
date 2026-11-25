@@ -1,66 +1,66 @@
 using IW4.Game.Assets;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Zone;
+using IW4.Runtime.Assets;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
+using IW4.Studio.Desktop.Workbench.Tools.AssetPool;
 using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;
 
-/// <summary>
-/// Searchable, grouped view of the target fastfile's current authored rows.
-/// <see cref="AllRows"/> retains document order as rows are appended or reverted.
-/// </summary>
-public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDisposable
+/// <summary>Category and Contents projection of the live workspace catalog.</summary>
+public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject, IDisposable
 {
     private readonly IWorkbenchSelectionContext _selectionContext;
     private readonly EditorViewModel _editor;
-    private readonly Func<XAssetType, string?, bool>
-        _hasDesktopEditor;
+    private readonly AssetPoolNavigatorSnapshot _assetPool;
+    private readonly IReadOnlyDictionary<long, AssetPoolSlotSnapshot> _slotsByProvider;
     private readonly Func<BaseAsset, TargetZoneRowIdentity?, WorkspaceAssetCatalogEntry> _applyImportedAsset;
-    private IReadOnlyList<FastFileAssetNavigatorRow> _allRows;
-    private string _searchText = string.Empty;
-    private IReadOnlyList<FastFileAssetNavigatorRow> _visibleRows;
+    private readonly Dictionary<(long, XAssetType), AssetExplorerEntryViewModel> _targetsByProvider = [];
+    private readonly Dictionary<long, AssetExplorerEntryViewModel> _dependenciesByProvider = [];
+    private IReadOnlyList<AssetExplorerEntryViewModel> _allRows;
+    private IReadOnlyList<AssetExplorerEntryViewModel> _targetSorted;
+    private IReadOnlyList<AssetExplorerEntryViewModel> _dependenciesSorted;
+    private IReadOnlyList<FastFileContentsRow> _targetContents = [];
+    private IReadOnlyList<FastFileContentsRow> _dependencyContents = [];
+    private IReadOnlyList<FastFileContentsRow> _poolContents = [];
+    private IReadOnlyList<FastFileContentsRow> _categoryRows = [];
+    private IReadOnlyList<FastFileContentsRow> _contentsRows = [];
     private IReadOnlyList<FastFileAssetNavigatorGroup> _groups;
-    private IReadOnlyList<FastFileAssetNavigatorNode> _nodes;
-    private FastFileAssetNavigatorRow? _selectedRow;
-    private FastFileAssetNavigatorNode? _selectedNode;
+    private FastFileAssetContentsScope _contentsScope;
+    private FastFileAssetNavigatorGroup? _selectedCategory;
+    private FastFileContentsRow? _selectedContentsRow;
+    private AssetExplorerEntryViewModel? _selectedRow;
+    private string _contentsSearchText = string.Empty;
     private string _importStatusMessage = string.Empty;
+    private bool _rebuildingCategories;
+    private bool _staticContentsCaptured;
     private bool _disposed;
 
     public FastFileAssetsNavigatorViewModel(
         EditorViewModel editor,
         IWorkbenchSelectionContext selectionContext,
-        Func<XAssetType, string?, bool> hasDesktopEditor,
-        Func<BaseAsset, TargetZoneRowIdentity?, WorkspaceAssetCatalogEntry> applyImportedAsset)
+        Func<BaseAsset, TargetZoneRowIdentity?, WorkspaceAssetCatalogEntry> applyImportedAsset,
+        AssetPoolNavigatorSnapshot assetPool)
     {
         _editor = editor ?? throw new ArgumentNullException(nameof(editor));
-        _selectionContext = selectionContext
-            ?? throw new ArgumentNullException(nameof(selectionContext));
-        _hasDesktopEditor = hasDesktopEditor
-            ?? throw new ArgumentNullException(nameof(hasDesktopEditor));
-        _applyImportedAsset = applyImportedAsset
-            ?? throw new ArgumentNullException(nameof(applyImportedAsset));
-        FastFileAssetsNavigatorSnapshot snapshot =
-            FastFileAssetsNavigatorSnapshot.Capture(
-                _editor.EditingSession.Document,
-                _hasDesktopEditor);
-        _allRows = snapshot.Rows;
-        _visibleRows = _allRows;
-        _groups = BuildGroups(_allRows);
-        _nodes = BuildNodes(_groups);
+        _selectionContext = selectionContext ?? throw new ArgumentNullException(nameof(selectionContext));
+        _applyImportedAsset = applyImportedAsset ?? throw new ArgumentNullException(nameof(applyImportedAsset));
+        _assetPool = assetPool ?? throw new ArgumentNullException(nameof(assetPool));
+        _slotsByProvider = _assetPool.Rows.ToDictionary(slot => slot.ActiveProviderId.Value);
+        _allRows = [];
+        _targetSorted = [];
+        _dependenciesSorted = [];
+        _groups = [];
+        CaptureCatalogRows();
+        RebuildCategories(null);
         _selectionContext.SelectionChanged += SelectionContext_SelectionChanged;
         _editor.EditingSession.TargetRowsChanged += EditingSession_TargetRowsChanged;
     }
 
-    /// <summary>Target rows only, in current authored document order.</summary>
-    public IReadOnlyList<FastFileAssetNavigatorRow> AllRows => _allRows;
-
-    public IReadOnlyList<FastFileAssetNavigatorRow> VisibleRows
-    {
-        get => _visibleRows;
-        private set => SetProperty(ref _visibleRows, value);
-    }
+    /// <summary>Target rows in current authored document order.</summary>
+    public IReadOnlyList<AssetExplorerEntryViewModel> AllRows => _allRows;
 
     public IReadOnlyList<FastFileAssetNavigatorGroup> Groups
     {
@@ -68,58 +68,175 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
         private set => SetProperty(ref _groups, value);
     }
 
-    public IReadOnlyList<FastFileAssetNavigatorNode> Nodes
+    public event EventHandler? ContentsRequested;
+
+    public FastFileAssetContentsScope ContentsScope
     {
-        get => _nodes;
-        private set => SetProperty(ref _nodes, value);
+        get => _contentsScope;
+        set => SetContentsScope(value, requestContents: true);
     }
 
-    public string SearchText
+    private void SetContentsScope(FastFileAssetContentsScope value, bool requestContents)
     {
-        get => _searchText;
+        if (!SetProperty(ref _contentsScope, value, nameof(ContentsScope)))
+            return;
+        OnPropertyChanged(nameof(IsThisFastFileScope));
+        OnPropertyChanged(nameof(IsDependenciesScope));
+        OnPropertyChanged(nameof(IsAssetPoolScope));
+        RebuildCategories(_selectedCategory?.AssetType);
+        if (requestContents)
+            RequestContents();
+    }
+
+    public bool IsThisFastFileScope
+    {
+        get => ContentsScope == FastFileAssetContentsScope.ThisFastFile;
+        set { if (value) ContentsScope = FastFileAssetContentsScope.ThisFastFile; }
+    }
+
+    public bool IsDependenciesScope
+    {
+        get => ContentsScope == FastFileAssetContentsScope.Dependencies;
+        set { if (value) ContentsScope = FastFileAssetContentsScope.Dependencies; }
+    }
+
+    public bool IsAssetPoolScope
+    {
+        get => ContentsScope == FastFileAssetContentsScope.AssetPool;
+        set { if (value) ContentsScope = FastFileAssetContentsScope.AssetPool; }
+    }
+
+    public FastFileAssetNavigatorGroup? SelectedCategory
+    {
+        get => _selectedCategory;
         set
         {
-            value ??= string.Empty;
-            if (!SetProperty(ref _searchText, value))
+            // Ignore the ListBox's transient deselection and stale items on refresh.
+            if (_rebuildingCategories || value is null ||
+                !Groups.Any(group => ReferenceEquals(group, value)))
                 return;
-
-            RebuildProjection();
+            SetSelectedCategory(value);
         }
     }
 
-    public FastFileAssetNavigatorRow? SelectedRow
+    public bool IsAllTypesSelected => SelectedCategory is null;
+
+    public void SelectAllTypes()
+    {
+        if (SelectedCategory is null)
+            RequestContents();
+        else
+            SetSelectedCategory(null);
+    }
+
+    private void SetSelectedCategory(
+        FastFileAssetNavigatorGroup? value,
+        bool requestContents = true)
+    {
+        if (!SetProperty(ref _selectedCategory, value, nameof(SelectedCategory)))
+            return;
+        OnPropertyChanged(nameof(IsAllTypesSelected));
+        if (_contentsSearchText.Length != 0)
+        {
+            _contentsSearchText = string.Empty;
+            OnPropertyChanged(nameof(ContentsSearchText));
+        }
+        RebuildCategoryRows();
+        if (requestContents)
+            RequestContents();
+    }
+
+    public string ContentsSearchText
+    {
+        get => _contentsSearchText;
+        set
+        {
+            value ??= string.Empty;
+            if (SetProperty(ref _contentsSearchText, value))
+                RebuildContentsRows();
+        }
+    }
+
+    public IReadOnlyList<FastFileContentsRow> ContentsRows
+    {
+        get => _contentsRows;
+        private set => SetProperty(ref _contentsRows, value);
+    }
+
+    /// <summary>Single click highlights; OpenContentsRow opens the editor.</summary>
+    public FastFileContentsRow? SelectedContentsRow
+    {
+        get => _selectedContentsRow;
+        set => SetProperty(ref _selectedContentsRow, value);
+    }
+
+    public bool HasContentsRows => ContentsRows.Count != 0;
+    public int TargetContentsCount => _allRows.Count;
+    public int DependencyContentsCount => _dependenciesSorted.Count;
+    public int PoolContentsCount => _poolContents.Count;
+    public string ContentsResultText => $"{ContentsRows.Count:N0} of {_categoryRows.Count:N0}";
+    public string EmptyContentsText =>
+        (ContentsScope switch
+        {
+            FastFileAssetContentsScope.ThisFastFile => TargetContentsCount,
+            FastFileAssetContentsScope.Dependencies => DependencyContentsCount,
+            _ => PoolContentsCount
+        }) == 0
+                ? ContentsScope switch
+                {
+                    FastFileAssetContentsScope.ThisFastFile => "This fastfile has no assets yet.",
+                    FastFileAssetContentsScope.Dependencies => "No dependency assets are loaded.",
+                    _ => "The asset pool has no slots."
+                }
+                : "No asset names match your search.";
+
+    public void RequestContents()
+    {
+        if (!_disposed)
+            ContentsRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void OpenContentsRow(FastFileContentsRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        FastFileContentsRow? live = ContentsRows.FirstOrDefault(candidate =>
+            SameContentsIdentity(candidate, row));
+        if (live is null)
+            return; // A stale row gesture can arrive while the list is replaced.
+        SelectedContentsRow = live;
+        if (live.PoolSlot is { } slot)
+            _selectionContext.Select(slot.ToSelection());
+        else if (live.CatalogEntry is { } catalogEntry)
+            _selectionContext.Select(ToSelection(catalogEntry));
+    }
+
+    internal bool TryOpenPoolRow(XAssetPoolAddress address, XAssetProviderId providerId)
+    {
+        FastFileContentsRow? row = _poolContents.FirstOrDefault(candidate =>
+            candidate.PoolAddress == address &&
+            candidate.PoolSlot?.ActiveProviderId == providerId);
+        if (row?.PoolSlot is not { } slot)
+            return false;
+
+        RevealPoolRow(row);
+        _selectionContext.Select(slot.ToSelection());
+        return true;
+    }
+
+    public AssetExplorerEntryViewModel? SelectedRow
     {
         get => _selectedRow;
         set
         {
-            if (!SetProperty(ref _selectedRow, value))
+            AssetExplorerEntryViewModel? live = value is null ? null :
+                _allRows.FirstOrDefault(row => row.Identity == value.Identity);
+            if (!SetProperty(ref _selectedRow, live))
                 return;
-
-            SelectNodeFor(value);
-            if (value is not null)
-                _selectionContext.Select(value.ToSelection());
-            else
-                _selectionContext.Clear(WorkbenchAssetSelectionSource.FastFileAssets);
-        }
-    }
-
-    public FastFileAssetNavigatorNode? SelectedNode
-    {
-        get => _selectedNode;
-        set
-        {
-            if (!SetProperty(ref _selectedNode, value))
-                return;
-
-            FastFileAssetNavigatorRow? row = value?.Row;
-            if (!ReferenceEquals(_selectedRow, row))
+            if (live is not null)
             {
-                _selectedRow = row;
-                OnPropertyChanged(nameof(SelectedRow));
+                SelectContentsForTarget(live);
+                _selectionContext.Select(ToSelection(live));
             }
-
-            if (row is not null)
-                _selectionContext.Select(row.ToSelection());
             else
                 _selectionContext.Clear(WorkbenchAssetSelectionSource.FastFileAssets);
         }
@@ -134,18 +251,13 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
         {
             if (!SetProperty(ref _importStatusMessage, value))
                 return;
-
             OnPropertyChanged(nameof(HasImportStatus));
         }
     }
 
-    public bool HasImportStatus =>
-        !string.IsNullOrWhiteSpace(ImportStatusMessage);
-
+    public bool HasImportStatus => !string.IsNullOrWhiteSpace(ImportStatusMessage);
     public bool CanAddAssets => AddableAssetTypes.Count != 0;
-
-    public IReadOnlyList<XAssetType> AddableAssetTypes =>
-        _editor.AddableAssetTypes;
+    public IReadOnlyList<XAssetType> AddableAssetTypes => _editor.AddableAssetTypes;
 
     public string? ValidateNewAssetName(
         XAssetType assetType,
@@ -202,15 +314,29 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
             ImportStatusMessage = message;
     }
 
-    private void SelectTargetRow(WorkspaceAssetCatalogEntry entry)
+    private void SelectTargetRow(WorkspaceAssetCatalogEntry entry, bool openEditor = true)
     {
         TargetZoneRowIdentity identity = entry.TargetRowIdentity
-            ?? throw new InvalidDataException(
-                "The asset has no stable target-row identity.");
-        SelectedRow = _allRows
-            .SingleOrDefault(row => row.Identity == identity)
+            ?? throw new InvalidDataException("The asset has no stable target-row identity.");
+        AssetExplorerEntryViewModel row = _allRows.SingleOrDefault(candidate =>
+            candidate.Identity.TargetRowIdentity == identity)
             ?? throw new InvalidDataException(
                 "The fastfile asset navigator did not project the target row.");
+        SelectTargetRow(row, openEditor);
+    }
+
+    private void SelectTargetRow(AssetExplorerEntryViewModel row, bool openEditor = true)
+    {
+        ContentsScope = FastFileAssetContentsScope.ThisFastFile;
+        ContentsSearchText = string.Empty;
+        SelectedCategory = Groups.FirstOrDefault(group =>
+            group.AssetType == CategoryType(row));
+        SelectedContentsRow = ContentsRows.FirstOrDefault(candidate =>
+            candidate.CatalogIdentity == row.Identity);
+        if (openEditor)
+            _selectionContext.Select(ToSelection(row));
+        else
+            RequestContents();
     }
 
     public int? SuggestedD3dbspFragmentProgramUploadCapacity
@@ -254,11 +380,11 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
             imported.TargetRows.FirstOrDefault()?.TargetRowIdentity ??
             throw new InvalidDataException(
                 "The imported D3DBSP did not create a selectable target row.");
-        FastFileAssetNavigatorRow anchor = _allRows
-            .SingleOrDefault(row => row.Identity == anchorIdentity)
+        AssetExplorerEntryViewModel anchor = _allRows
+            .SingleOrDefault(row => row.Identity.TargetRowIdentity == anchorIdentity)
             ?? throw new InvalidDataException(
                 "The fastfile asset navigator did not project the imported D3DBSP group.");
-        SelectedRow = anchor;
+        SelectTargetRow(anchor);
         string discardedLighting = imported.DiscardedLightByteCount == 0
             ? string.Empty
             : $" Discarded {imported.DiscardedLightByteCount:N0} compiled light bytes using the lossy fullbright workaround.";
@@ -295,19 +421,10 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
             ImportStatusMessage = $"RawFile folder import failed: {message}";
     }
 
-    public int VisibleCount => VisibleRows.Count;
-
-    public bool HasRows => VisibleCount > 0;
-
-    public string ResultText => string.IsNullOrWhiteSpace(SearchText)
-        ? $"{TotalCount:N0} target rows"
-        : $"{VisibleCount:N0} of {TotalCount:N0}";
-
     public void Dispose()
     {
         if (_disposed)
             return;
-
         _disposed = true;
         _editor.EditingSession.TargetRowsChanged -= EditingSession_TargetRowsChanged;
         _selectionContext.SelectionChanged -= SelectionContext_SelectionChanged;
@@ -317,106 +434,238 @@ public sealed class FastFileAssetsNavigatorViewModel : ObservableObject, IDispos
     {
         if (_disposed)
             return;
-
-        TargetZoneRowIdentity? selectedIdentity = _selectedRow?.Identity;
-        _allRows = FastFileAssetsNavigatorSnapshot.Capture(
-            _editor.EditingSession.Document,
-            _hasDesktopEditor).Rows;
+        TargetZoneRowIdentity? selectedIdentity = _selectedRow?.Identity.TargetRowIdentity;
+        CaptureCatalogRows();
         _selectedRow = selectedIdentity is { } identity
-            ? _allRows.FirstOrDefault(row => row.Identity == identity)
+            ? _allRows.FirstOrDefault(row => row.Identity.TargetRowIdentity == identity)
             : null;
         if (selectedIdentity is not null && _selectedRow is null)
-        {
-            _selectionContext.Clear(
-                WorkbenchAssetSelectionSource.FastFileAssets);
-        }
+            _selectionContext.Clear(WorkbenchAssetSelectionSource.FastFileAssets);
         OnPropertyChanged(nameof(AllRows));
         OnPropertyChanged(nameof(SelectedRow));
         OnPropertyChanged(nameof(TotalCount));
-        RebuildProjection();
+        OnPropertyChanged(nameof(TargetContentsCount));
+        RebuildCategories(_selectedCategory?.AssetType);
     }
 
-    private void RebuildProjection()
+    private void CaptureCatalogRows()
     {
-        string query = SearchText.Trim();
-        FastFileAssetNavigatorRow[] visible = query.Length == 0
-            ? _allRows.ToArray()
-            : _allRows.Where(row => Matches(row, query)).ToArray();
-        VisibleRows = Array.AsReadOnly(visible);
-        Groups = BuildGroups(visible);
-        Nodes = BuildNodes(Groups);
-        SelectNodeFor(_selectedRow);
-        OnPropertyChanged(nameof(VisibleCount));
-        OnPropertyChanged(nameof(HasRows));
-        OnPropertyChanged(nameof(ResultText));
+        IReadOnlyList<AssetExplorerEntryViewModel> catalog = _editor.CatalogEntries;
+        _allRows = Array.AsReadOnly(catalog.Where(row => row.IsTargetRow).ToArray());
+        _targetSorted = Array.AsReadOnly(_allRows
+            .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(row => row.Identity.TargetRowIdentity?.SerializedIndex ?? int.MaxValue)
+            .ToArray());
+        if (!_staticContentsCaptured)
+        {
+            _dependenciesSorted = Array.AsReadOnly(catalog
+                .Where(row => row.Identity.DependencyIdentity is not null)
+                .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray());
+        }
+        string targetFile = _editor.TargetFileName;
+        _targetsByProvider.Clear();
+        foreach (AssetExplorerEntryViewModel row in _allRows)
+        {
+            if (row.Entry.ResolvedProvider is { } resolved &&
+                (row.Origin != WorkspaceAssetOrigin.TargetOwnedDefinition || resolved.Zone.IsTarget))
+                _targetsByProvider.TryAdd((resolved.ProviderId, row.AssetType), row);
+        }
+        _targetContents = Array.AsReadOnly(_targetSorted.Select(row =>
+        {
+            AssetPoolSlotSnapshot? provider = row.Entry.ResolvedProvider is { } resolved
+                ? _slotsByProvider.GetValueOrDefault(resolved.ProviderId)
+                : null;
+            string sourceHint = row.Entry.IsReferencePlaceholder
+                ? provider is null
+                    ? $"Serialized reference in {targetFile}; no active provider."
+                    : $"Serialized reference in {targetFile}; active provider: {provider.ProviderFileName}."
+                : $"Serialized in {targetFile}.";
+            return new FastFileContentsRow(row, null, targetFile, sourceHint);
+        }).ToArray());
+        if (_staticContentsCaptured)
+            return;
+        _dependencyContents = Array.AsReadOnly(_dependenciesSorted.Select(row =>
+        {
+            long providerId = row.Identity.DependencyIdentity!.Value.ProviderId;
+            _dependenciesByProvider.Add(providerId, row);
+            AssetPoolSlotSnapshot? provider = _slotsByProvider.GetValueOrDefault(providerId);
+            string file = provider?.ProviderFileName ?? "Unknown source";
+            return new FastFileContentsRow(row, null, file,
+                provider is null
+                    ? "The dependency provider has no known physical fastfile."
+                    : file == "Unzoned"
+                        ? "The dependency provider is unzoned; no physical fastfile is known."
+                        : file == "Unknown source"
+                            ? $"Dependency provider {provider.ActiveProviderOwner} has no known physical fastfile."
+                        : $"Dependency provider: {file}.");
+        }).ToArray());
+        _poolContents = Array.AsReadOnly(_assetPool.Rows.Select(slot =>
+        {
+            return new FastFileContentsRow(null, slot, slot.ProviderFileName,
+                slot.ProviderFileName == "Unzoned"
+                    ? "Active pool provider is unzoned; no physical fastfile is known."
+                    : slot.ProviderFileName == "Unknown source"
+                        ? $"Active pool provider {slot.ActiveProviderOwner} has no known physical fastfile."
+                    : $"Active pool provider: {slot.ProviderFileName}.",
+                ResolvePoolCatalogEntry);
+        }).ToArray());
+        _staticContentsCaptured = true;
     }
 
-    private static bool Matches(
-        FastFileAssetNavigatorRow row,
-        string query) =>
-        string.Join(
-                ' ',
-                row.AssetType,
-                row.DisplayName,
-                row.NormalizedName,
-                row.Origin,
-                row.Access,
-                row.ContentSource,
-                row.ProviderZone)
-            .Contains(query, StringComparison.OrdinalIgnoreCase);
+    private AssetExplorerEntryViewModel? ResolvePoolCatalogEntry(AssetPoolSlotSnapshot slot) =>
+        _targetsByProvider.GetValueOrDefault((slot.ActiveProviderId.Value, slot.AssetType))
+        ?? _dependenciesByProvider.GetValueOrDefault(slot.ActiveProviderId.Value);
 
     private void SelectionContext_SelectionChanged(
-        object? sender,
-        WorkbenchSelectionChangedEventArgs args)
+        object? sender, WorkbenchSelectionChangedEventArgs args)
     {
-        FastFileAssetNavigatorRow? desired =
-            args.Current is
-            {
-                Source: WorkbenchAssetSelectionSource.FastFileAssets,
-                Identity.TargetRowIdentity: { } identity
-            }
-                ? _allRows.FirstOrDefault(row => row.Identity == identity)
+        if (args.Current is
+            { Source: WorkbenchAssetSelectionSource.AssetPool,
+              Identity.AssetPoolAddress: { } poolAddress } &&
+            _poolContents.FirstOrDefault(row => row.PoolAddress == poolAddress &&
+                row.PoolSlot?.ActiveProviderId == args.Current.ProviderId) is { } poolRow)
+        {
+            SetProperty(ref _selectedRow, null, nameof(SelectedRow));
+            RevealPoolRow(poolRow);
+            return;
+        }
+        AssetExplorerEntryViewModel? desired = args.Current is
+            { Source: WorkbenchAssetSelectionSource.FastFileAssets,
+              Identity.TargetRowIdentity: { } identity }
+                ? _allRows.FirstOrDefault(row => row.Identity.TargetRowIdentity == identity)
                 : null;
         if (ReferenceEquals(_selectedRow, desired))
             return;
-
         _selectedRow = desired;
         OnPropertyChanged(nameof(SelectedRow));
-        SelectNodeFor(desired);
+        if (desired is not null)
+            SelectContentsForTarget(desired);
     }
 
-    private static IReadOnlyList<FastFileAssetNavigatorGroup> BuildGroups(
-        IEnumerable<FastFileAssetNavigatorRow> rows)
+    private void RevealPoolRow(FastFileContentsRow row)
     {
-        FastFileAssetNavigatorGroup[] groups = rows
-            .GroupBy(row => row.AssetType == XAssetType.RawFile &&
-                IW4.Gsc.Character.CharacterScriptProjection.IsCharacterPath(row.NormalizedName)
-                    ? XAssetType.Character : row.AssetType)
-            .OrderBy(group => group.Key.ToString(), StringComparer.OrdinalIgnoreCase)
-            .Select(group => new FastFileAssetNavigatorGroup(
-                group.Key,
-                Array.AsReadOnly(group
-                    .OrderBy(row => row.DisplayName, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(row => row.SourceIndex)
-                    .ToArray())))
-            .ToArray();
-        return Array.AsReadOnly(groups);
+        if (ContentsScope != FastFileAssetContentsScope.AssetPool)
+            SetContentsScope(FastFileAssetContentsScope.AssetPool, requestContents: false);
+
+        FastFileContentsRow? visible = ContentsRows.FirstOrDefault(candidate =>
+            SameContentsIdentity(candidate, row));
+        if (visible is null)
+        {
+            XAssetType type = CategoryType(row.AssetType, row.NormalizedName);
+            FastFileAssetNavigatorGroup? category = Groups.FirstOrDefault(group =>
+                group.AssetType == type);
+            if (_selectedCategory?.AssetType != type)
+                SetSelectedCategory(category, requestContents: false);
+            else
+                ContentsSearchText = string.Empty;
+            visible = ContentsRows.FirstOrDefault(candidate =>
+                SameContentsIdentity(candidate, row));
+        }
+        SelectedContentsRow = visible;
     }
 
-    private static IReadOnlyList<FastFileAssetNavigatorNode> BuildNodes(
-        IEnumerable<FastFileAssetNavigatorGroup> groups) =>
-        Array.AsReadOnly(groups.Select(FastFileAssetNavigatorNode.ForGroup).ToArray());
-
-    private void SelectNodeFor(FastFileAssetNavigatorRow? row)
+    private void RebuildCategories(XAssetType? preferredType)
     {
-        FastFileAssetNavigatorNode? node = row is null
-            ? null
-            : Nodes.SelectMany(group => group.Children)
-                .FirstOrDefault(candidate => ReferenceEquals(candidate.Row, row));
-        if (ReferenceEquals(_selectedNode, node))
-            return;
+        _rebuildingCategories = true;
+        try
+        {
+            Groups = Array.AsReadOnly(ScopeContentsRows()
+                .GroupBy(row => CategoryType(row.AssetType, row.NormalizedName))
+                .OrderBy(group => group.Key.ToString(), StringComparer.OrdinalIgnoreCase)
+                .Select(group => new FastFileAssetNavigatorGroup(group.Key, group.Count()))
+                .ToArray());
+            FastFileAssetNavigatorGroup? selected = preferredType is { } type
+                ? Groups.FirstOrDefault(group => group.AssetType == type)
+                : null;
+            if (!ReferenceEquals(_selectedCategory, selected))
+            {
+                _selectedCategory = selected;
+                OnPropertyChanged(nameof(SelectedCategory));
+                OnPropertyChanged(nameof(IsAllTypesSelected));
+            }
+            RebuildCategoryRows();
+        }
+        finally
+        {
+            _rebuildingCategories = false;
+        }
+    }
 
-        _selectedNode = node;
-        OnPropertyChanged(nameof(SelectedNode));
+    private void RebuildCategoryRows()
+    {
+        IReadOnlyList<FastFileContentsRow> scopeRows = ScopeContentsRows();
+        _categoryRows = _selectedCategory is { } category
+            ? Array.AsReadOnly(scopeRows.Where(row =>
+                CategoryType(row.AssetType, row.NormalizedName) == category.AssetType).ToArray())
+            : scopeRows;
+        RebuildContentsRows();
+    }
+
+    private void RebuildContentsRows()
+    {
+        FastFileContentsRow? selectedRow = _selectedContentsRow;
+        string query = ContentsSearchText.Trim();
+        ContentsRows = query.Length == 0
+            ? _categoryRows
+            : Array.AsReadOnly(_categoryRows.Where(row =>
+                row.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                row.NormalizedName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                row.AssetType.ToString().Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                row.SourceFile.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray());
+        FastFileContentsRow? selected = selectedRow is not null
+            ? ContentsRows.FirstOrDefault(row => SameContentsIdentity(row, selectedRow))
+            : null;
+        if (!ReferenceEquals(_selectedContentsRow, selected))
+        {
+            _selectedContentsRow = selected;
+            OnPropertyChanged(nameof(SelectedContentsRow));
+        }
+        OnPropertyChanged(nameof(HasContentsRows));
+        OnPropertyChanged(nameof(ContentsResultText));
+        OnPropertyChanged(nameof(EmptyContentsText));
+    }
+
+    private void SelectContentsForTarget(AssetExplorerEntryViewModel row)
+    {
+        if (ContentsScope == FastFileAssetContentsScope.ThisFastFile)
+            SelectedContentsRow = ContentsRows.FirstOrDefault(candidate =>
+                candidate.CatalogIdentity == row.Identity);
+    }
+
+    private IReadOnlyList<FastFileContentsRow> ScopeContentsRows() => ContentsScope switch
+    {
+        FastFileAssetContentsScope.ThisFastFile => _targetContents,
+        FastFileAssetContentsScope.Dependencies => _dependencyContents,
+        FastFileAssetContentsScope.AssetPool => _poolContents,
+        _ => throw new InvalidDataException($"Unknown Contents scope '{ContentsScope}'.")
+    };
+
+    private static bool SameContentsIdentity(FastFileContentsRow left, FastFileContentsRow right) =>
+        left.PoolAddress is { } poolAddress
+            ? right.PoolAddress == poolAddress &&
+              left.PoolSlot?.ActiveProviderId == right.PoolSlot?.ActiveProviderId
+            : left.CatalogIdentity is { } identity && right.CatalogIdentity == identity;
+
+    private static XAssetType CategoryType(AssetExplorerEntryViewModel row) =>
+        CategoryType(row.AssetType, row.NormalizedName);
+
+    private static XAssetType CategoryType(XAssetType type, string normalizedName) =>
+        type == XAssetType.RawFile &&
+        IW4.Gsc.Character.CharacterScriptProjection.IsCharacterPath(normalizedName)
+            ? XAssetType.Character : type;
+
+    private static WorkbenchAssetSelection ToSelection(AssetExplorerEntryViewModel row)
+    {
+        WorkbenchAssetSelectionIdentity identity = row.Identity.TargetRowIdentity is { } target
+            ? WorkbenchAssetSelectionIdentity.ForTargetRow(target)
+            : WorkbenchAssetSelectionIdentity.ForDependency(row.Identity.DependencyIdentity
+                ?? throw new InvalidDataException("The catalog entry has no stable identity."));
+        WorkspaceAssetAccess access = row.Entry.IsGeneratedConfigStringBaseline &&
+            row.Access == WorkspaceAssetAccess.Editable
+                ? WorkspaceAssetAccess.ReadOnly : row.Access;
+        return new WorkbenchAssetSelection(identity, row.AssetType, row.Name,
+            row.NormalizedName, access, row.Origin.ToString(), row.ProviderZone,
+            row.HasUsableEditor);
     }
 }

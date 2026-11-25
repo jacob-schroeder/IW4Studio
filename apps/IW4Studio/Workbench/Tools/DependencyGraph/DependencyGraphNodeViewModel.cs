@@ -10,12 +10,14 @@ public sealed class DependencyGraphNodeViewModel
 {
     internal DependencyGraphNodeViewModel(
         FastFileDependencyNode node,
+        bool hasPredecessor,
         bool hasSuccessor)
     {
         ArgumentNullException.ThrowIfNull(node);
         FileName = node.FileName;
         PhysicalPath = node.PhysicalPath;
         IsTarget = node.IsTarget;
+        HasPredecessor = hasPredecessor;
         HasSuccessor = hasSuccessor;
         Status = node.Status;
     }
@@ -25,6 +27,8 @@ public sealed class DependencyGraphNodeViewModel
     public string PhysicalPath { get; }
 
     public bool IsTarget { get; }
+
+    public bool HasPredecessor { get; }
 
     public bool HasSuccessor { get; }
 
@@ -37,7 +41,7 @@ public sealed class DependencyGraphNodeViewModel
     public string StatusText => Status switch
     {
         DbDependencyRequestLoadStatus.Loaded => IsTarget ? "Target · loaded" : "Loaded",
-        DbDependencyRequestLoadStatus.SkippedOptional => "Optional · not needed",
+        DbDependencyRequestLoadStatus.SkippedOptional => "Optional · skipped",
         _ => throw new ArgumentOutOfRangeException()
     };
 }

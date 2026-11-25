@@ -12,22 +12,27 @@ public sealed class DependencyGraphToolViewModel
     {
         ArgumentNullException.ThrowIfNull(workspace);
 
-        Header = workspace.Document.Request.Mode switch
+        LoadProfile = workspace.Document.Request.Mode switch
         {
-            Isolated => "Single File",
-            ZonePlan plan => $"{plan.ProfileName}.elf Dependencies",
-            _ => "Fastfile Dependencies"
+            ZonePlan plan => $"{plan.ProfileName}.elf",
+            _ => "Single file"
         };
-        FastFileDependencyNode[] nodes = (workspace.DependencyGraph?.Nodes ?? [])
-            .ToArray();
+        var nodes = workspace.DependencyGraph?.Nodes ?? [];
         Nodes = Array.AsReadOnly(nodes
             .Select((node, index) => new DependencyGraphNodeViewModel(
                 node,
-                index < nodes.Length - 1))
+                hasPredecessor: index > 0,
+                hasSuccessor: index < nodes.Count - 1))
             .ToArray());
+
+        Summary = Nodes.Count == 0
+            ? "No fastfiles loaded"
+            : $"{Nodes.Count(node => node.IsLoaded)} loaded · {Nodes.Count(node => node.IsSkippedOptional)} optional";
     }
 
-    public string Header { get; }
+    public string LoadProfile { get; }
+
+    public string Summary { get; }
 
     public IReadOnlyList<DependencyGraphNodeViewModel> Nodes { get; }
 }

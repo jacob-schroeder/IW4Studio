@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using Avalonia.Controls;
 using IW4.Game.Assets;
@@ -60,6 +61,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
     private readonly MenuTextResourceResolver _menuTextResourceResolver;
     private IAssetEditorPropertiesRevealSource? _propertiesRevealSource;
     private readonly ObservableCollection<WorkbenchEditorTabViewModel> _openEditorTabs = [];
+    private bool _hasOpenGscSource;
     private readonly Dictionary<WorkbenchEditorTabKey, WorkbenchEditorTabViewModel>
         _editorTabsByKey = [];
     private int _sourceDumpInProgress;
@@ -143,22 +145,19 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                         assetName,
                         out _);
 
+            AssetPool = AssetPoolNavigatorSnapshot.Capture(
+                workspace,
+                hasDesktopEditor);
             FastFileAssets = new FastFileAssetsNavigatorViewModel(
                 Editor,
                 _selectionContext,
-                hasDesktopEditor,
-                ApplyImportedAsset);
+                ApplyImportedAsset,
+                AssetPool);
             constructionResources.Add(FastFileAssets);
-            AssetPool = new AssetPoolNavigatorViewModel(
-                workspace,
-                _selectionContext,
-                hasDesktopEditor);
-            constructionResources.Add(AssetPool);
             _gscWorkbenchNavigator = new GscWorkbenchNavigator(
                 workspace,
                 _gscWorkspace,
                 FastFileAssets,
-                AssetPool,
                 Editor);
             ImageFilePak = new ImageFilePakToolViewModel(
                 workspace,
@@ -193,7 +192,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
             StudioToolContext toolContext = new(
                 FastFileAssets,
-                AssetPool,
                 ImageFilePak,
                 PackFilePak,
                 ConsoleOutput,
@@ -212,10 +210,11 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             DockLayout = new DockLayoutController(
                 Registrations.Select(registration => registration.Descriptor),
                 new DockLayoutOptions(
-                    new DockRegionSizeLimits(minimum: 240, maximum: 520, initial: 300),
+                    new DockRegionSizeLimits(minimum: 220, maximum: 520, initial: 248),
                     new DockRegionSizeLimits(minimum: 140, maximum: 420, initial: 220),
                     new DockRegionSizeLimits(minimum: 260, maximum: 520, initial: 320)));
 
+            FastFileAssets.ContentsRequested += FastFileAssets_ContentsRequested;
             _selectionContext.SelectionChanged += SelectionContext_SelectionChanged;
             _gscSourceNavigation.NavigationRequested +=
                 GscSourceNavigation_NavigationRequested;
@@ -229,6 +228,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             Editor.EditingSession.TargetRowsChanged += EditingSession_TargetRowsChanged;
             DockLayout.State.Left.PropertyChanged += DockRegion_PropertyChanged;
             DockLayout.State.Bottom.PropertyChanged += DockRegion_PropertyChanged;
+            ((INotifyCollectionChanged)DockLayout.State.Bottom.Tools).CollectionChanged += BottomTools_CollectionChanged;
             DockLayout.State.Right.PropertyChanged += DockRegion_PropertyChanged;
 
             AppendInitialOutput();
@@ -318,10 +318,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         }
     }
 
-    public bool HasOpenEditorTabs => OpenEditorTabs.Count != 0;
-
-    public bool HasNoOpenEditorTabs => !HasOpenEditorTabs;
-
     public WeaponEditorViewModel? SelectedWeaponEditor =>
         SelectedEditorTab?.CatalogEditor?.HostedViewModel as
             WeaponEditorViewModel;
@@ -332,7 +328,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
     public FastFileAssetsNavigatorViewModel FastFileAssets { get; }
 
-    public AssetPoolNavigatorViewModel AssetPool { get; }
+    public AssetPoolNavigatorSnapshot AssetPool { get; }
 
     public ImageFilePakToolViewModel ImageFilePak { get; }
 
@@ -362,7 +358,31 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
     public IReadOnlyList<DockToolState> LeftTools => DockLayout.State.Left.Tools;
 
-    public IReadOnlyList<DockToolState> BottomTools => DockLayout.State.Bottom.Tools;
+    public IReadOnlyList<DockToolState> BottomTools => _hasOpenGscSource
+        ? DockLayout.State.Bottom.Tools
+        : DockLayout.State.Bottom.Tools.Where(tool => !IsGscTool(tool.Id)).ToArray();
+
+    private static bool IsGscTool(string? toolId) =>
+        toolId is StudioToolIds.GscFindings or StudioToolIds.GscUsages;
+
+    private void BottomTools_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs args)
+    {
+        if (!_hasOpenGscSource)
+            OnPropertyChanged(nameof(BottomTools));
+    }
+
+    private void UpdateGscToolVisibility()
+    {
+        bool hasSource = _openEditorTabs.Any(tab =>
+            tab.CatalogEditor?.HostedViewModel is RawFileEditorViewModel { IsGscSource: true });
+        if (hasSource == _hasOpenGscSource)
+            return;
+
+        _hasOpenGscSource = hasSource;
+        if (!hasSource && IsGscTool(BottomActiveToolId))
+            ActivateTool(StudioToolIds.ConsoleOutput);
+        OnPropertyChanged(nameof(BottomTools));
+    }
 
     public IReadOnlyList<DockToolState> RightTools => DockLayout.State.Right.Tools;
 
@@ -382,7 +402,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         IsLeftOpen ? new GridLength(LeftSize) : new GridLength(0);
 
     public GridLength BottomPaneHeight =>
-        IsBottomOpen ? new GridLength(BottomSize) : new GridLength(0);
+        new GridLength(IsBottomOpen ? BottomSize : 36);
 
     public GridLength RightPaneWidth =>
         IsRightOpen ? new GridLength(RightSize) : new GridLength(0);
@@ -465,12 +485,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
     public string SearchResultText => Editor.SearchResultText;
 
-    public string AssetCountText => Editor.AssetCountText;
-
-    public string TargetRowCountText => Editor.TargetRowCountText;
-
-    public string DependencyAssetCountText => Editor.DependencyAssetCountText;
-
     public bool CanSaveAs => Editor.CanSaveAs;
 
     public bool CanDumpSourceAssets =>
@@ -480,6 +494,9 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
     public DockActivationResult ActivateTool(string toolId)
     {
+        if (!_hasOpenGscSource && IsGscTool(toolId))
+            return DockActivationResult.ToolHidden;
+
         DockActivationResult result = DockLayout.ActivateTool(toolId);
         switch (result)
         {
@@ -489,6 +506,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     ConsoleOutputLevel.Debug,
                     "Workbench",
                     $"Opened {_registrationsById[toolId].Descriptor.Title}.");
+                if (toolId == StudioToolIds.FastFileAssets)
+                    ShowContents();
                 break;
             case DockActivationResult.Collapsed:
                 ConsoleOutput.Append(
@@ -499,6 +518,21 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         }
 
         return result;
+    }
+
+    private void FastFileAssets_ContentsRequested(object? sender, EventArgs e) => ShowContents();
+
+    internal void ShowContents()
+    {
+        if (SelectedEditorTab is null)
+            return;
+
+        SetSelectedEditorTab(null);
+        Editor.DeactivateSelection();
+        if (_selectionContext.Current is { } selection)
+            _selectionContext.Clear(selection.Source);
+        else
+            NotifyCenterSelectionChanged();
     }
 
     private void ShowStreamedImages()
@@ -594,11 +628,10 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
 
         _editorTabsByKey.Remove(tab.Key);
         _openEditorTabs.RemoveAt(closingIndex);
+        UpdateGscToolVisibility();
         if (tab.CatalogEditor is { } catalogEditor)
             Editor.CloseEditor(catalogEditor);
         tab.Dispose();
-        OnPropertyChanged(nameof(HasOpenEditorTabs));
-        OnPropertyChanged(nameof(HasNoOpenEditorTabs));
 
         if (!wasSelected)
             return true;
@@ -788,6 +821,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         _disposed = true;
         if (!_gscWorkspaceWarmup.IsCompleted)
             _gscWorkspaceWarmupCancellation.Cancel();
+        FastFileAssets.ContentsRequested -= FastFileAssets_ContentsRequested;
         _selectionContext.SelectionChanged -= SelectionContext_SelectionChanged;
         _gscSourceNavigation.NavigationRequested -=
             GscSourceNavigation_NavigationRequested;
@@ -801,11 +835,11 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         Editor.EditingSession.TargetRowsChanged -= EditingSession_TargetRowsChanged;
         DockLayout.State.Left.PropertyChanged -= DockRegion_PropertyChanged;
         DockLayout.State.Bottom.PropertyChanged -= DockRegion_PropertyChanged;
+        ((INotifyCollectionChanged)DockLayout.State.Bottom.Tools).CollectionChanged -= BottomTools_CollectionChanged;
         DockLayout.State.Right.PropertyChanged -= DockRegion_PropertyChanged;
         _editorDiagnosticsBridge.Dispose();
         _gscUsagesPresenter.Dispose();
         FastFileAssets.Dispose();
-        AssetPool.Dispose();
         ImageFilePak.Dispose();
         PackFilePak.Dispose();
         LivePreview.Dispose();
@@ -908,15 +942,15 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         ConsoleOutput.Append(
             ConsoleOutputLevel.Information,
             "Catalog",
-            $"Indexed {AssetCountText} catalog entries.");
+            $"Indexed {Editor.AssetCountText} catalog entries.");
         ConsoleOutput.Append(
             ConsoleOutputLevel.Information,
             "Catalog",
-            $"Indexed {TargetRowCountText} target rows.");
+            $"Indexed {Editor.TargetRowCountText} target rows.");
         ConsoleOutput.Append(
             ConsoleOutputLevel.Information,
             "Asset Pool",
-            $"Captured {AssetPool.TotalCount:N0} runtime slots at revision {AssetPool.SnapshotRevision:N0}.");
+            $"Captured {AssetPool.Rows.Count:N0} runtime slots at revision {AssetPool.Revision:N0}.");
         ConsoleOutput.Append(
             ConsoleOutputLevel.Information,
             "Workspace",
@@ -1027,8 +1061,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                     streamedSound is null);
             _editorTabsByKey.Add(key, tab);
             _openEditorTabs.Add(tab);
-            OnPropertyChanged(nameof(HasOpenEditorTabs));
-            OnPropertyChanged(nameof(HasNoOpenEditorTabs));
         }
         else
         {
@@ -1041,6 +1073,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             }
         }
 
+        UpdateGscToolVisibility();
         SetSelectedEditorTab(tab);
 
         if (selection.Source == WorkbenchAssetSelectionSource.ImageFilePak)
@@ -1085,11 +1118,11 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             string.Equals(row.NormalizedName, name, StringComparison.OrdinalIgnoreCase));
         if (target is not null)
         {
-            _selectionContext.Select(target.ToSelection());
+            FastFileAssets.SelectedRow = target;
             return;
         }
 
-        var slot = AssetPool.AllRows.FirstOrDefault(row => row.AssetType == type &&
+        var slot = AssetPool.Rows.FirstOrDefault(row => row.AssetType == type &&
             !row.IsReferencePlaceholder &&
             string.Equals(row.NormalizedName, name, StringComparison.OrdinalIgnoreCase));
         if (slot is not null)
@@ -1104,7 +1137,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         if (preset.RuntimeAddress?.AssetPoolAddress is { } address &&
             Workspace.LoadedZone.Context.AssetPool.TryGetSlot(address, out var slot) && slot is not null &&
             ReferenceEquals(slot.ActiveProvider.Asset, preset) &&
-            AssetPool.AllRows.FirstOrDefault(row => row.Address == address &&
+            AssetPool.Rows.FirstOrDefault(row => row.Address == address &&
                 row.ActiveProviderId == slot.ActiveProvider.Id) is { } row)
         {
             _selectionContext.Select(row.ToSelection());
@@ -1155,7 +1188,7 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         return true;
     }
 
-    private void SetSelectedEditorTab(WorkbenchEditorTabViewModel tab)
+    private void SetSelectedEditorTab(WorkbenchEditorTabViewModel? tab)
     {
         if (ReferenceEquals(_selectedEditorTab, tab))
             return;
@@ -1191,18 +1224,6 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         else if (args.PropertyName == nameof(EditorViewModel.SearchResultText))
         {
             OnPropertyChanged(nameof(SearchResultText));
-        }
-        else if (args.PropertyName == nameof(EditorViewModel.AssetCountText))
-        {
-            OnPropertyChanged(nameof(AssetCountText));
-        }
-        else if (args.PropertyName == nameof(EditorViewModel.TargetRowCountText))
-        {
-            OnPropertyChanged(nameof(TargetRowCountText));
-        }
-        else if (args.PropertyName == nameof(EditorViewModel.DependencyAssetCountText))
-        {
-            OnPropertyChanged(nameof(DependencyAssetCountText));
         }
     }
 
@@ -1246,8 +1267,8 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
             return;
         }
 
-        FastFileAssetNavigatorRow? targetRow = FastFileAssets.AllRows
-            .SingleOrDefault(row => row.Identity == targetIdentity);
+        AssetExplorerEntryViewModel? targetRow = FastFileAssets.AllRows
+            .SingleOrDefault(row => row.Identity.TargetRowIdentity == targetIdentity);
         if (targetRow is not null)
             FastFileAssets.SelectedRow = targetRow;
     }

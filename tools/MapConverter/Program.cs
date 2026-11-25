@@ -83,6 +83,8 @@ try
     Console.WriteLine($"load: {result.LoadFastFilePath}");
     if (result.ImageFilePath is not null)
         Console.WriteLine($"imagefile: {result.ImageFilePath}");
+    Console.WriteLine($"soundfile: {result.SoundFilePath}");
+    Console.WriteLine($"ui: {result.UiFastFilePath}");
     if (result.SourceProvenancePath is not null)
         Console.WriteLine($"source-provenance: {result.SourceProvenancePath}");
     Console.WriteLine($"extraction-backend: {result.BackendDescription}");

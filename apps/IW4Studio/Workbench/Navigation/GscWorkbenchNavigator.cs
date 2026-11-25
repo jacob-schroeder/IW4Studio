@@ -3,7 +3,6 @@ using IW4.Gsc.Syntax;
 using IW4.Gsc.Workspace;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.ViewModels;
-using IW4.Studio.Desktop.Workbench.Tools.AssetPool;
 using IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;
 using IW4.Studio.Documents;
 using IW4.Studio.Desktop.Gsc;
@@ -20,14 +19,12 @@ internal sealed class GscWorkbenchNavigator
     private readonly FastFileWorkspace _workspace;
     private readonly GscWorkspaceIndexService _gscWorkspace;
     private readonly FastFileAssetsNavigatorViewModel _fastFileAssets;
-    private readonly AssetPoolNavigatorViewModel _assetPool;
     private readonly EditorViewModel _editor;
 
     internal GscWorkbenchNavigator(
         FastFileWorkspace workspace,
         GscWorkspaceIndexService gscWorkspace,
         FastFileAssetsNavigatorViewModel fastFileAssets,
-        AssetPoolNavigatorViewModel assetPool,
         EditorViewModel editor)
     {
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
@@ -35,7 +32,6 @@ internal sealed class GscWorkbenchNavigator
             ?? throw new ArgumentNullException(nameof(gscWorkspace));
         _fastFileAssets = fastFileAssets
             ?? throw new ArgumentNullException(nameof(fastFileAssets));
-        _assetPool = assetPool ?? throw new ArgumentNullException(nameof(assetPool));
         _editor = editor ?? throw new ArgumentNullException(nameof(editor));
     }
 
@@ -121,8 +117,8 @@ internal sealed class GscWorkbenchNavigator
     private string? SelectAuthoredRawFile(
         GscWorkspaceAuthoredDocument document)
     {
-        FastFileAssetNavigatorRow? targetRow = _fastFileAssets.AllRows
-            .SingleOrDefault(row => row.Identity == document.RowIdentity);
+        AssetExplorerEntryViewModel? targetRow = _fastFileAssets.AllRows
+            .SingleOrDefault(row => row.Identity.TargetRowIdentity == document.RowIdentity);
         if (targetRow is null)
         {
             return "the applied RawFile target row is absent from the " +
@@ -227,8 +223,8 @@ internal sealed class GscWorkbenchNavigator
         TargetZoneRowIdentity targetIdentity = targetEntry.TargetRowIdentity
             ?? throw new InvalidDataException(
                 "A resolved GSC target entry has no target-row identity.");
-        FastFileAssetNavigatorRow? targetRow = _fastFileAssets.AllRows
-            .SingleOrDefault(row => row.Identity == targetIdentity);
+        AssetExplorerEntryViewModel? targetRow = _fastFileAssets.AllRows
+            .SingleOrDefault(row => row.Identity.TargetRowIdentity == targetIdentity);
         if (targetRow is null)
             return "the active RawFile target row is absent from the navigator snapshot.";
 
@@ -246,17 +242,12 @@ internal sealed class GscWorkbenchNavigator
 
     private string? SelectPoolRawFile(GscWorkspaceRawFileSlot slot)
     {
-        AssetPoolSlotSnapshot? poolRow = _assetPool.AllRows.FirstOrDefault(
-            row =>
-                row.Address == slot.Address &&
-                row.ActiveProviderId == slot.ActiveProviderId);
-        if (poolRow is null)
+        if (!_fastFileAssets.TryOpenPoolRow(slot.Address, slot.ActiveProviderId))
         {
             return "the exact active provider is absent from the asset-pool " +
                    "navigator snapshot.";
         }
 
-        _assetPool.SelectedRow = poolRow;
         if (_editor.SelectedEditorHost?.Entry.Entry.ResolvedProvider?.ProviderId !=
             slot.ActiveProviderId.Value)
         {

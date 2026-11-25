@@ -81,6 +81,9 @@ public sealed class ZoneLinkResult
 /// </summary>
 public sealed class ZoneLinker
 {
+    public static bool SupportsExternalReference(XAssetType serializedType) =>
+        ExternalAssetLinkPlan.Supports(serializedType);
+
     private const int XAssetRowSize = 0x08;
     private const int DecodedPageSize = 0x10000;
 

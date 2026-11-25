@@ -192,7 +192,7 @@ internal readonly record struct WorkbenchEditorTabKey(
                     CatalogIdentity: null,
                     SelectionIdentity: null,
                     entry.NormalizedName,
-                    isRuntimePreview);
+                    isRuntimePreview || entry.DependencyIdentity is not null);
             }
 
             return new WorkbenchEditorTabKey(

@@ -75,6 +75,15 @@ public sealed class FastFileDetailsToolViewModel : ObservableObject
 
     public IReadOnlyList<FastFileLanguageOptionViewModel> Languages { get; }
 
+    public string SelectedLanguagesText
+    {
+        get
+        {
+            string names = string.Join(", ", Languages.Where(option => option.IsSelected).Select(option => option.DisplayName));
+            return names.Length == 0 ? "None selected" : names;
+        }
+    }
+
     public string StreamedImageCount { get; }
 
     public bool HasDraftChanges =>
@@ -197,6 +206,7 @@ public sealed class FastFileDetailsToolViewModel : ObservableObject
 
     private void RefreshDraftState()
     {
+        OnPropertyChanged(nameof(SelectedLanguagesText));
         OnPropertyChanged(nameof(HasDraftChanges));
         ApplyCommand.RaiseCanExecuteChanged();
         RevertCommand.RaiseCanExecuteChanged();

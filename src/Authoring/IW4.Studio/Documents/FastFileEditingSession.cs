@@ -36,6 +36,8 @@ public sealed partial class FastFileEditingSession : IDisposable
     private readonly Dictionary<TargetZoneRowIdentity, DraftState> _drafts = [];
     private readonly Dictionary<WorkspaceDependencyAssetIdentity, DraftState> _providerDrafts = [];
     private readonly Dictionary<TargetZoneRowIdentity, long> _addedRows = [];
+    private readonly Dictionary<TargetZoneRowIdentity, long> _addedReferenceRows = [];
+    private readonly Dictionary<TargetZoneRowIdentity, long> _promotedReferenceRows = [];
     // Each group records every provider it requires; the authored subset lets
     // the last consumer withdraw providers managed by the D3DBSP lifecycle.
     private readonly Dictionary<string, IReadOnlySet<AssetKey>>
@@ -2494,6 +2496,8 @@ public sealed partial class FastFileEditingSession : IDisposable
             _surfaceRootOwnerCurrent.Clear();
             WithdrawSavedAuxiliaries();
             _addedRows.Clear();
+            _addedReferenceRows.Clear();
+            _promotedReferenceRows.Clear();
             _savedHeaderMetadata = _revision.HeaderMetadata;
             _savedLanguageMask = _revision.LinkRequest.LanguageMask;
             _savedScriptStrings = _revision.LinkRequest.ScriptStrings;
@@ -2790,15 +2794,47 @@ public sealed partial class FastFileEditingSession : IDisposable
     private void RebuildChangeSet()
     {
         IEnumerable<AssetRowChange> modified = _drafts.Values
-            .Where(state => state.IsChanged && !_addedRows.ContainsKey(state.Identity))
+            .Where(state => state.IsChanged &&
+                !_addedRows.ContainsKey(state.Identity) &&
+                !_addedReferenceRows.ContainsKey(state.Identity) &&
+                !_promotedReferenceRows.ContainsKey(state.Identity))
             .Select(state => state.CreateChange());
         IEnumerable<AssetRowChange> added = _addedRows.Select(value =>
         {
             DraftState state = RequireDraft(value.Key);
             return state.CreateAddedChange(value.Value);
         });
+        IEnumerable<AssetRowChange> addedReferences = _addedReferenceRows.Select(value =>
+        {
+            if (_drafts.TryGetValue(value.Key, out DraftState? promoted))
+                return promoted.CreateAddedChange(value.Value);
+            WorkspaceAssetCatalogEntry entry = Document.GetRow(value.Key);
+            return new AssetRowChange(
+                value.Key,
+                entry.AssetType,
+                entry.OriginalName,
+                entry.Origin,
+                value.Value,
+                value.Value,
+                AssetRowChangeKind.Added);
+        });
+        IEnumerable<AssetRowChange> promotedReferences = _promotedReferenceRows.Select(value =>
+        {
+            WorkspaceAssetCatalogEntry entry = Document.GetRow(value.Key);
+            long lastChangedRevision = _drafts.TryGetValue(value.Key, out DraftState? state) &&
+                state.IsChanged
+                    ? Math.Max(value.Value, state.CreateChange().LastChangedRevision)
+                    : value.Value;
+            return new AssetRowChange(
+                value.Key,
+                entry.AssetType,
+                entry.OriginalName,
+                entry.Origin,
+                value.Value,
+                lastChangedRevision);
+        });
         _changeSet = new AssetChangeSet(
-            modified.Concat(added),
+            modified.Concat(added).Concat(addedReferences).Concat(promotedReferences),
             _providerDrafts.Values.Count(state => state.IsChanged));
     }
 

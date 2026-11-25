@@ -74,6 +74,8 @@ public sealed class WorkspaceAssetCatalogEntry
 
         TargetRowIdentity = targetRowIdentity;
         Origin = origin;
+        IsReferencePlaceholder = origin is WorkspaceAssetOrigin.TargetResolvedReference
+            or WorkspaceAssetOrigin.TargetUnresolvedReference;
         Access = access;
         ContentSource = contentSource;
         AssetType = assetType;
@@ -90,6 +92,7 @@ public sealed class WorkspaceAssetCatalogEntry
     public TargetZoneRowIdentity? TargetRowIdentity { get; }
     public WorkspaceDependencyAssetIdentity? DependencyIdentity { get; }
     public WorkspaceAssetOrigin Origin { get; }
+    public bool IsReferencePlaceholder { get; internal init; }
     public WorkspaceAssetAccess Access { get; }
     public WorkspaceAssetContentSource ContentSource { get; }
     public XAssetType AssetType { get; }
@@ -101,6 +104,8 @@ public sealed class WorkspaceAssetCatalogEntry
     internal WorkspaceAssetProviderZone? ProviderZone { get; }
     public WorkspaceAssetProviderZone? ResolvedProviderZone =>
         ResolvedProvider?.Zone;
+    /// <summary>The physical fastfile supplying the weapon displaced by this patch definition.</summary>
+    public string? OverrideSourceFile { get; internal set; }
     public bool IsGeneratedConfigStringBaseline =>
         AssetType == XAssetType.StringTable &&
         (OriginalName ?? NormalizedName)?.Contains(
@@ -115,11 +120,14 @@ public sealed class WorkspaceAssetCatalog
 {
     private readonly IReadOnlyList<WorkspaceAssetCatalogEntry> _targetEntries;
     private readonly Dictionary<long, WorkspaceAssetCatalogEntry> _editablePoolEntries;
+    private readonly IReadOnlyDictionary<AssetKey, string> _patchWeaponSources;
     private WorkspaceAssetCatalog(
         FastFileDocument document,
         IEnumerable<WorkspaceAssetCatalogEntry> targetEntries,
-        IEnumerable<WorkspaceAssetCatalogEntry> dependencyEntries)
+        IEnumerable<WorkspaceAssetCatalogEntry> dependencyEntries,
+        IReadOnlyDictionary<AssetKey, string> patchWeaponSources)
     {
+        _patchWeaponSources = patchWeaponSources;
         _targetEntries = Array.AsReadOnly(targetEntries.ToArray());
         DependencyEntries = Array.AsReadOnly(dependencyEntries.ToArray());
         Entries = Array.AsReadOnly(_targetEntries.Concat(DependencyEntries).ToArray());
@@ -140,6 +148,7 @@ public sealed class WorkspaceAssetCatalog
     }
     public WorkspaceAssetCatalogEntry? FindEditablePoolEntry(XAssetProviderId providerId) =>
         _editablePoolEntries.GetValueOrDefault(providerId.Value);
+    internal string? GetWeaponOverrideSourceFile(AssetKey key) => _patchWeaponSources.GetValueOrDefault(key);
     public IReadOnlyList<WorkspaceAssetCatalogEntry> TargetEntries => _targetEntries;
     public IReadOnlyList<WorkspaceAssetCatalogEntry> DependencyEntries { get; }
     public IReadOnlyList<WorkspaceAssetCatalogEntry> Entries { get; }
@@ -158,6 +167,12 @@ public sealed class WorkspaceAssetCatalog
         IReadOnlyCollection<XAssetSlot> activeSlots = document.IsBlank
             ? []
             : document.LoadedZone.Context.AssetPool.Slots;
+        var patchWeaponSources = new Dictionary<AssetKey, string>();
+        bool isPatch = !document.IsBlank && string.Equals(Path.GetFileName(document.SourcePath),
+            "patch_mp.ff", StringComparison.OrdinalIgnoreCase);
+        var laterZoneFiles = loadedZones.SkipWhile(zone => !zone.IsTarget).Skip(1)
+            .Where(zone => zone.IsActive)
+            .ToDictionary(zone => zone.LoadResult.Context.ZoneOwner, zone => Path.GetFileName(zone.PhysicalPath));
         var activeSlotsByKey = new Dictionary<AssetKey, XAssetSlot>();
         foreach (XAssetSlot slot in activeSlots)
         {
@@ -165,6 +180,15 @@ public sealed class WorkspaceAssetCatalog
                 CanonicalAssetFamily.FromSerializedType(slot.AssetType),
                 slot.Name);
             activeSlotsByKey.TryAdd(key, slot);
+            if (isPatch && slot.AssetType == XAssetType.Weapon)
+            {
+                // The first full definition wins. Skip patch contributions to find
+                // the provider that would win in the absence of this patch weapon.
+                var fallback = slot.Providers.FirstOrDefault(provider => !provider.IsReferencePlaceholder &&
+                    provider.Owner != document.LoadedZone.Context.ZoneOwner);
+                if (fallback is not null && laterZoneFiles.TryGetValue(fallback.Owner, out string? fileName))
+                    patchWeaponSources.Add(key, fileName);
+            }
         }
 
         ILookup<AssetKey, LinkRoot> rootsByKey = document.InitialLinkRequest.Roots
@@ -246,7 +270,13 @@ public sealed class WorkspaceAssetCatalog
                         sourceRow.HeaderKind,
                         resolvedProvider,
                         activeProviderZone,
-                        targetProvider: shaderProvider),
+                        targetProvider: shaderProvider)
+                    {
+                        OverrideSourceFile = root.SerializedType == XAssetType.Weapon &&
+                            activePoolProvider?.Id == provider?.ProviderId && root.Asset is { } weaponKey
+                                ? patchWeaponSources.GetValueOrDefault(weaponKey)
+                                : null
+                    },
                     LinkRootIntent.External => new WorkspaceAssetCatalogEntry(
                         identity,
                         isResolvedReference
@@ -335,10 +365,13 @@ public sealed class WorkspaceAssetCatalog
                         dependencyIdentity: new WorkspaceDependencyAssetIdentity(
                             document.DocumentId,
                             value.provider.Id.Value),
-                        targetProvider: targetProvider);
+                        targetProvider: targetProvider)
+                    {
+                        IsReferencePlaceholder = value.provider.IsReferencePlaceholder
+                    };
                 })
                 .ToArray();
-        return new WorkspaceAssetCatalog(document, targetEntries, dependencyEntries);
+        return new WorkspaceAssetCatalog(document, targetEntries, dependencyEntries, patchWeaponSources);
     }
 
     private static LinkAssetProvider? FindEditableTargetProvider(

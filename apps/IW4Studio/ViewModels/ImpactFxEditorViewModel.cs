@@ -23,7 +23,8 @@ internal sealed class ImpactFxEditorViewModel : ObservableObject, IAssetEditorSt
     }
 
     internal event Action? Changed;
-    internal string Heading => string.IsNullOrEmpty(_session.Entry.OriginalName) ? "Zone impact table" : _session.Entry.OriginalName;
+    internal string Heading => AssetExplorerEntryViewModel.GetDisplayName(
+        _session.Entry.AssetType, _session.Entry.OriginalName ?? string.Empty);
     internal int Row { get; private set; }
     internal int Slot { get; private set; } = (int)MaterialSurfaceType.Metal;
     internal int RowCount => _working.RowCount;

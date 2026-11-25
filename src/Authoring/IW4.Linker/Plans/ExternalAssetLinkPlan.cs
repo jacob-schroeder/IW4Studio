@@ -96,6 +96,19 @@ internal sealed class ExternalAssetLinkPlan : AssetLinkPlan
 
     internal override LinkStorageSymbol Root { get; }
 
+    internal static bool Supports(XAssetType serializedType)
+    {
+        try
+        {
+            GetShape(serializedType);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
     private static (int RootSize, int NamePointerOffset) GetShape(
         XAssetType serializedType) =>
         serializedType switch

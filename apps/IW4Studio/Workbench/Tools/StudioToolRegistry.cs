@@ -1,5 +1,5 @@
+using Avalonia.Controls;
 using IW4.Studio.Desktop.Workbench.Docking;
-using IW4.Studio.Desktop.Workbench.Tools.AssetPool;
 using IW4.Studio.Desktop.Workbench.Tools.ConsoleOutput;
 using IW4.Studio.Desktop.Workbench.Tools.Diagnostics;
 using IW4.Studio.Desktop.Workbench.Tools.DependencyGraph;
@@ -32,7 +32,7 @@ public static class StudioToolRegistry
             Implemented(
                 Descriptor(
                     StudioToolIds.FastFileAssets,
-                    "Assets in this fastfile",
+                    "Explorer",
                     "FileTreeOutline",
                     10,
                     defaultOpen: true,
@@ -45,22 +45,8 @@ public static class StudioToolRegistry
                 context.FastFileAssets),
             Implemented(
                 Descriptor(
-                    StudioToolIds.AssetPool,
-                    "Assets in asset pool",
-                    "DatabaseOutline",
-                    20,
-                    defaultOpen: false,
-                    DockRegion.Left,
-                    DockRailGroup.LeftTop),
-                new AssetPoolNavigatorView
-                {
-                    DataContext = context.AssetPool
-                },
-                context.AssetPool),
-            Implemented(
-                Descriptor(
                     StudioToolIds.ImageFilePak,
-                    "Imagefile.pak viewer",
+                    "Streamed Images",
                     "ImageMultipleOutline",
                     30,
                     defaultOpen: false,
@@ -74,7 +60,7 @@ public static class StudioToolRegistry
             Implemented(
                 Descriptor(
                     StudioToolIds.PackFilePak,
-                    "Packfile.pak viewer",
+                    "Streamed Sounds",
                     "MusicBoxMultipleOutline",
                     40,
                     defaultOpen: false,
@@ -159,31 +145,31 @@ public static class StudioToolRegistry
             Implemented(
                 Descriptor(
                     StudioToolIds.FastFileDetails,
-                    "Fastfile Details",
+                    "Inspector",
                     "FileDocumentOutline",
                     40,
-                    defaultOpen: false,
+                    defaultOpen: true,
                     DockRegion.Right,
                     DockRailGroup.Right),
-                new FastFileDetailsToolView
+                new TabControl
                 {
-                    DataContext = context.FastFileDetails
+                    Classes = { "studioInspectorTabs" },
+                    Padding = new Avalonia.Thickness(0),
+                    Items =
+                    {
+                        new TabItem
+                        {
+                            Header = "Fastfile",
+                            Content = new FastFileDetailsToolView { DataContext = context.FastFileDetails }
+                        },
+                        new TabItem
+                        {
+                            Header = "Zone",
+                            Content = new ZoneDetailsToolView { DataContext = context.ZoneDetails }
+                        }
+                    }
                 },
-                context.FastFileDetails),
-            Implemented(
-                Descriptor(
-                    StudioToolIds.ZoneDetails,
-                    "Zone Details",
-                    "LayersTripleOutline",
-                    50,
-                    defaultOpen: false,
-                    DockRegion.Right,
-                    DockRailGroup.Right),
-                new ZoneDetailsToolView
-                {
-                    DataContext = context.ZoneDetails
-                },
-                context.ZoneDetails),
+                context),
             Implemented(
                 Descriptor(
                     StudioToolIds.DependencyGraph,

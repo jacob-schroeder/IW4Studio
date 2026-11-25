@@ -95,6 +95,24 @@ internal static class Iw3Ps3AudioCompiler
             throw new InvalidDataException("Missing COD4 PS3 LoadedSounds: " +
                 string.Join(", ", missingLoaded.Order(StringComparer.Ordinal)));
 
+        return Emit(bootstrapDirectory, ownedPrefix, ambientAliases, mapOwnedAliases,
+            sharedAliases, captured, source => source.LoadedPayload ??
+                (source.LoadedSoundName is { } loadedName
+                    ? loadedPayloads[loadedName]
+                    : ReadPackage(sourceDirectory, source)), token);
+
+        static bool Usable(Iw3Ps3SourceSound sound) => sound.Rows.Count != 0 &&
+            sound.Rows.All(row => row.LoadedPayload is { Length: > 0 } ||
+                row.LoadedSoundName is not null ||
+                row.PackageIndex != 0 && row.PackageLength > 0);
+    }
+
+    internal static (IReadOnlyList<BaseAsset> Assets, byte[] SoundPackage) Emit(
+        string bootstrapDirectory, string ownedPrefix, IReadOnlySet<string> ambientAliases,
+        IReadOnlySet<string> mapOwnedAliases, IReadOnlySet<string> sharedAliases,
+        IReadOnlyDictionary<string, Iw3Ps3SourceSound> captured,
+        Func<Iw3Ps3SourceSoundRow, byte[]> readPayload, CancellationToken token)
+    {
         var exchange = new SoundAliasListExchange();
         var donors = new[] { "ambient_airport_tarmac_l", "ambient_airport_tarmac_r", "emt_fly_loop" }
             .ToDictionary(name => name, name => exchange.Link(bootstrapDirectory, name).Aliases[0],
@@ -123,10 +141,7 @@ internal static class Iw3Ps3AudioCompiler
                 .ToDictionary(name => name, _ => new List<SndAlias>(sound.Rows.Count), StringComparer.Ordinal);
             foreach (Iw3Ps3SourceSoundRow source in sound.Rows)
             {
-                byte[] payload = source.LoadedPayload ??
-                    (source.LoadedSoundName is { } loadedName
-                        ? loadedPayloads[loadedName]
-                        : ReadPackage(sourceDirectory, source));
+                byte[] payload = readPayload(source);
                 if (!payload.AsSpan().StartsWith("ID3"u8))
                     throw new NotSupportedException($"COD4 PS3 sound '{sound.Name}' is not an ID3 MP3 payload.");
                 StreamedSound stream = package.AddPayload(payload);
@@ -194,10 +209,6 @@ internal static class Iw3Ps3AudioCompiler
         definitions.AddRange(nativeDependencies.Values);
         return (definitions, package.ToArray());
 
-        static bool Usable(Iw3Ps3SourceSound sound) => sound.Rows.Count != 0 &&
-            sound.Rows.All(row => row.LoadedPayload is { Length: > 0 } ||
-                row.LoadedSoundName is not null ||
-                row.PackageIndex != 0 && row.PackageLength > 0);
     }
 
     private static byte[] ReadPackage(string sourceDirectory, Iw3Ps3SourceSoundRow source)

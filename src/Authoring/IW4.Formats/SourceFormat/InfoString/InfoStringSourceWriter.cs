@@ -40,14 +40,14 @@ internal sealed class InfoStringSourceWriter(string prefix)
         AddBoolean(key, value != 0);
 
     public void AddFloat(string key, float value) =>
-        Set(key, FormatFloat(value, key));
+        Set(key, FormatFloat(value, key), isFloat: true);
 
     public void AddMilesPerHour(string key, float inchesPerSecond)
     {
         RequireFinite(inchesPerSecond, key);
         float milesPerHour = inchesPerSecond / 17.6f;
         RequireFinite(milesPerHour, key);
-        Set(key, milesPerHour.ToString("F6", CultureInfo.InvariantCulture));
+        Set(key, milesPerHour.ToString("F6", CultureInfo.InvariantCulture), isFloat: true);
     }
 
     public void AddMilliseconds(string key, int milliseconds)
@@ -100,7 +100,7 @@ internal sealed class InfoStringSourceWriter(string prefix)
                 $"{field} value {value} has no IW4 source-format name.");
         }
 
-        Set(key, names[value]);
+        Set(key, names[value], names);
     }
 
     public void Write(TextWriter writer)
@@ -190,7 +190,30 @@ internal sealed class InfoStringSourceWriter(string prefix)
             $"{field} requires {expectedCount} materialized values but has {actualCount}.");
     }
 
-    private void Set(string key, string value)
+    internal string? GetEditedValue(string key, string value)
+    {
+        if (!_fieldIndices.TryGetValue(key, out int index))
+            throw new InvalidDataException($"Unknown {prefix} field '{key}'.");
+
+        Field original = _fields[index];
+        if (string.Equals(original.Value, value, StringComparison.Ordinal))
+            return null;
+        // Equivalent spellings of an exported, rounded float retain the original native precision.
+        if (original.IsFloat &&
+            float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed) &&
+            parsed == float.Parse(original.Value, CultureInfo.InvariantCulture))
+            return null;
+        if (original.EnumNames is not { } names)
+            return value;
+        for (int i = 0; i < names.Count; i++)
+        {
+            if (string.Equals(names[i], value, StringComparison.OrdinalIgnoreCase))
+                return original.Value == names[i] ? null : i.ToString(CultureInfo.InvariantCulture);
+        }
+        throw new InvalidDataException($"Invalid value '{value}' for {prefix} field '{key}'.");
+    }
+
+    private void Set(string key, string value, IReadOnlyList<string>? enumNames = null, bool isFloat = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentNullException.ThrowIfNull(value);
@@ -202,12 +225,12 @@ internal sealed class InfoStringSourceWriter(string prefix)
 
         if (_fieldIndices.TryGetValue(key, out int index))
         {
-            _fields[index] = new Field(key, value);
+            _fields[index] = new Field(key, value, enumNames, isFloat);
             return;
         }
 
         _fieldIndices.Add(key, _fields.Count);
-        _fields.Add(new Field(key, value));
+        _fields.Add(new Field(key, value, enumNames, isFloat));
     }
 
     private static string FormatFloat(float value, string field)
@@ -225,5 +248,5 @@ internal sealed class InfoStringSourceWriter(string prefix)
         }
     }
 
-    private sealed record Field(string Key, string Value);
+    private sealed record Field(string Key, string Value, IReadOnlyList<string>? EnumNames, bool IsFloat);
 }

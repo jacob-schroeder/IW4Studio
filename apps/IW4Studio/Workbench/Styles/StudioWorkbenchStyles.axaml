@@ -93,13 +93,13 @@
 
   <!-- Rider-like tool-window launchers on the left and right rails. -->
   <Style Selector="ToggleButton.studioToolRailButton">
-    <Setter Property="Width" Value="38" />
-    <Setter Property="Height" Value="38" />
-    <Setter Property="MinWidth" Value="38" />
-    <Setter Property="MinHeight" Value="38" />
-    <Setter Property="Margin" Value="4,2" />
-    <Setter Property="Padding" Value="8" />
-    <Setter Property="CornerRadius" Value="7" />
+    <Setter Property="Width" Value="32" />
+    <Setter Property="Height" Value="32" />
+    <Setter Property="MinWidth" Value="32" />
+    <Setter Property="MinHeight" Value="32" />
+    <Setter Property="Margin" Value="8,3" />
+    <Setter Property="Padding" Value="6" />
+    <Setter Property="CornerRadius" Value="4" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
     <Setter Property="Background" Value="Transparent" />
@@ -161,7 +161,7 @@
     <Setter Property="MinWidth" Value="26" />
     <Setter Property="MinHeight" Value="26" />
     <Setter Property="Padding" Value="5" />
-    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="CornerRadius" Value="4" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
     <Setter Property="Background" Value="Transparent" />
@@ -210,14 +210,14 @@
     </Setter>
     <Setter Property="MinHeight" Value="27" />
     <Setter Property="Padding" Value="10,4" />
-    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="CornerRadius" Value="4" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderBrush" Value="Transparent" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
-    <Setter Property="FontSize" Value="10" />
+    <Setter Property="FontSize" Value="12" />
   </Style>
 
   <Style Selector="ToggleButton.studioDockTab:pointerover">
@@ -265,9 +265,9 @@
         </Grid>
       </ControlTemplate>
     </Setter>
-    <Setter Property="MinWidth" Value="128" />
+    <Setter Property="MinWidth" Value="112" />
     <Setter Property="MaxWidth" Value="260" />
-    <Setter Property="Height" Value="38" />
+    <Setter Property="Height" Value="32" />
     <Setter Property="Padding" Value="10,0,5,0" />
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     <Setter Property="VerticalContentAlignment" Value="Stretch" />
@@ -454,6 +454,27 @@
     <Setter Property="BorderBrush" Value="{DynamicResource StudioFocusBrush}" />
   </Style>
 
+  <!-- Explorer and Contents use the same single-line selection and focus treatment. -->
+  <Style Selector="ListBox.studioAssetList > ListBoxItem">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter Content="{TemplateBinding Content}"
+                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                          Background="{TemplateBinding Background}"
+                          BorderBrush="{TemplateBinding BorderBrush}"
+                          BorderThickness="{TemplateBinding BorderThickness}"
+                          CornerRadius="{TemplateBinding CornerRadius}"
+                          Padding="{TemplateBinding Padding}"
+                          HorizontalContentAlignment="Stretch"
+                          VerticalContentAlignment="Center" />
+      </ControlTemplate>
+    </Setter>
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="Margin" Value="0" />
+    <Setter Property="Padding" Value="7,0" />
+    <Setter Property="CornerRadius" Value="4" />
+  </Style>
+
   <!-- Shared two-column metadata treatment for right-side tools. -->
   <Style Selector="TextBlock.propertyLabel">
     <Setter Property="VerticalAlignment" Value="Top" />
@@ -467,5 +488,25 @@
     <Setter Property="VerticalAlignment" Value="Top" />
     <Setter Property="FontSize" Value="10" />
     <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+  </Style>
+
+  <!-- The Inspector has its own compact tabs and larger readable metadata. -->
+  <Style Selector="TabControl.studioInspectorTabs">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Background" Value="{DynamicResource StudioSidebarBrush}" />
+  </Style>
+  <Style Selector="TabControl.studioInspectorTabs TabItem">
+    <Setter Property="Height" Value="32" />
+    <Setter Property="MinHeight" Value="32" />
+    <Setter Property="Padding" Value="12,4" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="UserControl.studioInspectorDetails TextBlock.propertyLabel">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="LineHeight" Value="15" />
+  </Style>
+  <Style Selector="UserControl.studioInspectorDetails TextBlock.propertyValue">
+    <Setter Property="FontSize" Value="12" />
   </Style>
 </Styles>

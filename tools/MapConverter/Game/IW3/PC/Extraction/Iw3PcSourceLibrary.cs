@@ -34,6 +34,7 @@ internal sealed class Iw3PcSourceLibrary
     private readonly List<ExportedFile> _exportedFiles = [];
     private readonly Dictionary<string, IReadOnlyList<string>> _imageSources = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IReadOnlyList<string>> _soundSources = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _capturedSoundDefinitions = new(StringComparer.Ordinal);
     private readonly List<string> _deferredSoundPaths = [];
     private int _exportSequence;
 
@@ -49,6 +50,123 @@ internal sealed class Iw3PcSourceLibrary
     }
 
     internal IReadOnlyList<string> IwdPaths { get; }
+
+    internal void RecordMissingSound(string path)
+    {
+        if (!_deferredSoundPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
+            _deferredSoundPaths.Add(path);
+    }
+
+    internal void RecordSoundPayloadSource(string path, string archive)
+    {
+        if (!_soundSources.ContainsKey(path))
+            _soundSources.Add(path, [archive]);
+    }
+
+    internal async Task<string> ResolveSoundFastFileAsync(string mapFF, string alias, CancellationToken token)
+    {
+        var errors = new SortedSet<string>(StringComparer.Ordinal);
+        Node? node = await ResolveNamedAsync(_closures[ExistingPath(mapFF, directory: false)].Root,
+            "sound", alias.ToLowerInvariant(), $"script sound:{alias}", errors, token).ConfigureAwait(false);
+        if (node is null || errors.Count != 0)
+            throw new InvalidDataException(string.Join("\n", errors));
+        if (node.Source.IsPs3)
+            throw new NotSupportedException($"PC sound '{alias}' resolves to a PS3 fastfile.");
+        _capturedSoundDefinitions[alias] = node.Source.Path;
+        return node.Source.Path;
+    }
+
+    internal async Task<IReadOnlyList<(string Name, string FastFilePath, int RecordId)>>
+        ResolveExternalLoadedSoundsAsync(string mapFF, IReadOnlyCollection<string> aliases, CancellationToken token)
+    {
+        Source root = _closures[ExistingPath(mapFF, directory: false)].Root;
+        var errors = new SortedSet<string>(StringComparer.Ordinal);
+        var selected = new Dictionary<string, (string Name, string FastFilePath, int RecordId)>(StringComparer.OrdinalIgnoreCase);
+        foreach (string alias in aliases)
+        {
+            Node? sound = await ResolveNamedAsync(root, "sound", alias.ToLowerInvariant(),
+                $"vehicle sound:{alias}", errors, token).ConfigureAwait(false);
+            if (sound is null) continue;
+            foreach (int id in sound.Asset.Dependencies)
+            {
+                CatalogAsset dependency = sound.Source.Records[id];
+                if (dependency.Type != "loadedsound" || !dependency.IsReference) continue;
+                Node? provider = await ResolveNamedAsync(sound.Source, dependency.Type, dependency.Key,
+                    $"vehicle sound:{alias} -> loadedsound:{dependency.Name}", errors, token).ConfigureAwait(false);
+                if (provider is null) continue;
+                if (provider.Source.IsPs3)
+                    throw new NotSupportedException($"PC loaded sound '{dependency.Name}' resolves to a PS3 fastfile.");
+                await VerifyHashAsync(provider.Source.Path, provider.Source.Sha256, token).ConfigureAwait(false);
+                selected.TryAdd(dependency.Key, (dependency.Name, provider.Source.Path, provider.Asset.Id));
+            }
+        }
+        if (errors.Count != 0)
+            throw new InvalidDataException("IW3 loaded sound resolution failed:\n" +
+                string.Join("\n", errors.Select(error => "- " + error)));
+        return selected.Values.OrderBy(value => value.Name, StringComparer.Ordinal).ToArray();
+    }
+
+    internal async Task<(string FastFile, int RecordId)> ResolveRawFileAsync(
+        string mapFF, string name, CancellationToken token)
+    {
+        var errors = new SortedSet<string>(StringComparer.Ordinal);
+        Node? node = await ResolveNamedAsync(_closures[ExistingPath(mapFF, directory: false)].Root,
+            "rawfile", name.ToLowerInvariant(), $"shared script:{name}", errors, token).ConfigureAwait(false);
+        if (node is null || errors.Count != 0)
+            throw new InvalidDataException(string.Join("\n", errors));
+        if (node.Source.IsPs3)
+            throw new NotSupportedException($"PC script '{name}' resolves to a PS3 fastfile.");
+        return (node.Source.Path, node.Asset.Id);
+    }
+
+    internal async Task<byte[]> ReadRawFileAsync(string mapFF, string name, CancellationToken token)
+    {
+        (string fastFile, int recordId) = await ResolveRawFileAsync(mapFF, name, token).ConfigureAwait(false);
+        Source source = _sources.Single(source => PathComparer.Equals(source.Path, fastFile));
+        await VerifyHashAsync(source.Path, source.Sha256, token).ConfigureAwait(false);
+        string selection = Path.Combine(_scratchDirectory, $"source-script-{_exportSequence++:D6}.json");
+        string output = Path.Combine(_scratchDirectory, $"source-script-{_exportSequence++:D6}");
+        RejectExisting(selection);
+        RejectExisting(output);
+        await File.WriteAllBytesAsync(selection, JsonSerializer.SerializeToUtf8Bytes(new[] { recordId }), token)
+            .ConfigureAwait(false);
+        await Iw3PcExtractionBackend.RunToolAsync("IW3 shared vehicle recipe extraction", _nativePath,
+            _scratchDirectory, ["--extract-assets", fastFile, selection, output], token).ConfigureAwait(false);
+        await VerifyHashAsync(source.Path, source.Sha256, token).ConfigureAwait(false);
+        return await File.ReadAllBytesAsync(Path.Combine(output, name), token).ConfigureAwait(false);
+    }
+
+    internal async Task IncludeMapVehicleAssetsAsync(string mapFF,
+        IReadOnlyCollection<string> modelNames, IReadOnlyCollection<string> effectNames,
+        CancellationToken token)
+    {
+        Closure closure = _closures[ExistingPath(mapFF, directory: false)];
+        var errors = new SortedSet<string>(StringComparer.Ordinal);
+        var pending = new Queue<(Node Node, string Chain)>();
+        foreach ((string type, string name) in modelNames.Select(name => ("xmodel", name))
+                     .Concat(effectNames.Select(name => ("fx", name)))
+                     .Distinct())
+        {
+            string chain = $"vehicle recipe {type}:{name}";
+            Node? node = await ResolveNamedAsync(closure.Root, type, name.ToLowerInvariant(),
+                chain, errors, token).ConfigureAwait(false);
+            if (node is not null)
+                pending.Enqueue((node, chain + $" ['{node.Source.Path}']"));
+        }
+        await ExpandClosureAsync(closure, pending, errors, token).ConfigureAwait(false);
+        if (errors.Count != 0)
+            throw new InvalidDataException("IW3 vehicle asset resolution failed:\n" +
+                string.Join("\n", errors.Select(error => "- " + error)));
+    }
+
+    internal string EffectSourcePath(string mapFF, string name)
+    {
+        Closure closure = _closures[ExistingPath(mapFF, directory: false)];
+        if (!_selectedDefinitions.TryGetValue(("fx", name.ToLowerInvariant()), out Node? selected) ||
+            !closure.Nodes.Contains(selected))
+            throw new InvalidDataException($"Vehicle effect '{name}' has no resolved source definition.");
+        return selected.Source.Path;
+    }
 
     internal static async Task<Iw3PcSourceLibrary> ResolveAsync(
         string nativePath,
@@ -267,7 +385,7 @@ internal sealed class Iw3PcSourceLibrary
     {
         SourceLibrary = _libraryDirectory,
         CatalogBoundary = "Loaded named IW3 assets and their recorded dependencies; not the serialized XAsset root table. " +
-            "Resolved source availability does not imply successful IW4 conversion. Streamed sounds are resolved but not converted.",
+            "Resolved source availability does not imply successful IW4 conversion. Captured audio aliases and payloads are listed separately.",
         FastFiles = _sources.Select(source => new
         {
             source.Path, source.Sha256, source.Role,
@@ -319,11 +437,13 @@ internal sealed class Iw3PcSourceLibrary
                 Path = pair.Key, Sources = pair.Value,
                 Requesters = SoundRequesterProvenance(pair.Key),
             }),
+        CapturedSoundDefinitions = _capturedSoundDefinitions.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => new { Name = pair.Key, SourceFastFile = pair.Value }),
         StreamedSoundTodos = _deferredSoundPaths.Order(StringComparer.Ordinal)
             .Select(path => new
             {
                 Path = path, Status = "TODO",
-                Reason = "Missing source sound payload; sound payloads remain unconverted.",
+                Reason = "Missing source sound payload.",
                 Requesters = SoundRequesterProvenance(path),
             }),
     }, new JsonSerializerOptions { WriteIndented = true });
@@ -359,6 +479,12 @@ internal sealed class Iw3PcSourceLibrary
                 pending.Enqueue((provider, chain + $" -> '{provider.Source.Path}'"));
         }
 
+        await ExpandClosureAsync(closure, pending, errors, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ExpandClosureAsync(Closure closure, Queue<(Node Node, string Chain)> pending,
+        SortedSet<string> errors, CancellationToken cancellationToken)
+    {
         while (pending.TryDequeue(out var item))
         {
             cancellationToken.ThrowIfCancellationRequested();

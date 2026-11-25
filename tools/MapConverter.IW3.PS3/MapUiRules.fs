@@ -58,10 +58,13 @@ module internal MapUiRules =
             raise (InvalidDataException($"COD4 StringEd source requires exactly one English value for '{key}'."))
         values[0]
 
+    let FactionLocalization(mapName: string, factions: FactionProfile) =
+        LocalizeAsset(Name = mapName + "_factions", Value = FactionRules.ProfileName factions)
+
     let Localizations(mapName: string, title: string, description: string, factions: FactionProfile) =
         [| LocalizeAsset(Name = mapName, Value = title)
            LocalizeAsset(Name = mapName + "_desc", Value = description)
-           LocalizeAsset(Name = mapName + "_factions", Value = FactionRules.ProfileName factions) |]
+           FactionLocalization(mapName, factions) |]
 
     /// Frontend previews must be resident before the map or its named PAK is
     /// loaded. Retain PS3 pixels and use the native custom-UI image profile.

@@ -7,6 +7,7 @@ using IW4.Game.Assets.Material;
 using IW4.Game.Assets.TechniqueSet;
 using MapConverter.Game.IW3.PC.Images;
 using MapConverter.Game.IW3.PC.Techniques;
+using MapConverter.Game.IW3.PS3.Rules;
 
 namespace MapConverter.Game.IW3.PC.Materials;
 
@@ -651,12 +652,14 @@ internal static class Iw3MaterialCompiler
     }
 
     internal static Iw3MaterialCompilation Compile(
-        string assetName,
+        string sourceName,
         Stream json,
         IReadOnlyDictionary<string, GfxImageAsset> images,
         bool requiresRuntimeTechniqueState,
-        MaterialTechniqueSetAsset? resolvedTechniqueSet)
+        MaterialTechniqueSetAsset? resolvedTechniqueSet,
+        string? targetName = null)
     {
+        string assetName = targetName ?? sourceName;
         ValidateInputs(assetName, json);
         ArgumentNullException.ThrowIfNull(images);
 
@@ -688,6 +691,12 @@ internal static class Iw3MaterialCompiler
             byte atlasRows = sourceInspection.TextureAtlasRowCount;
             byte atlasColumns = sourceInspection.TextureAtlasColumnCount;
             MaterialGameFlags gameFlags = sourceInspection.GameFlags;
+            if (sourceName == "mc/mtl_lightdrygrass" && techniqueSetName == "mc_ambient_t0c0")
+            {
+                byte depthState = stateEntries[(int)MaterialTechniqueType.BuildShadowmapDepth].StateBitsIndex;
+                if (depthState != byte.MaxValue)
+                    gameFlags = MaterialRules.AlphaTestedCasterFlags(gameFlags, stateBits[depthState]);
+            }
             byte sortKey = RequireByte(root, "sortKey", "sortKey");
             if (sortKey >= 0x40)
             {

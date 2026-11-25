@@ -6,7 +6,8 @@ public enum DockActivationResult
     Switched,
     Collapsed,
     ToolNotFound,
-    ToolNotImplemented
+    ToolNotImplemented,
+    ToolHidden
 }
 
 public enum DockMoveResult

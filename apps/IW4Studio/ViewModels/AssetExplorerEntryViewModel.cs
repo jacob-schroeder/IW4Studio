@@ -51,7 +51,9 @@ public sealed class AssetExplorerEntryViewModel
         Identity = AssetExplorerItemIdentity.From(entry);
         HasBackendAdapter = hasBackendAdapter;
         HasDesktopView = hasDesktopView;
-        Name = entry.OriginalName ?? StructuralRowName(entry.Origin);
+        Name = entry.OriginalName is { } wireName
+            ? GetDisplayName(entry.AssetType, wireName)
+            : StructuralRowName(entry.Origin);
         NormalizedName = entry.NormalizedName ?? string.Empty;
         AssetType = entry.AssetType;
         Origin = entry.Origin;
@@ -76,6 +78,7 @@ public sealed class AssetExplorerEntryViewModel
         Description = BuildDescription(entry, ResolutionBadge, EditorBadge);
         ToolTipText = string.Join(
             Environment.NewLine,
+            entry.OriginalName == string.Empty ? $"{Name} (empty serialized name)" : Name,
             $"Type: {AssetType}",
             $"Origin: {Origin}",
             $"Access: {AccessBadge}",
@@ -99,6 +102,16 @@ public sealed class AssetExplorerEntryViewModel
     public string NormalizedName { get; }
 
     public string ProviderZone { get; }
+
+    public string? OverrideHint => Entry.OverrideSourceFile is { } file
+        ? $"Overrides the weapon from {file}."
+        : null;
+
+    public string PlaceholderHint => Entry.ContentSource == WorkspaceAssetContentSource.ResolvedProvider
+        ? string.IsNullOrEmpty(ProviderZone)
+            ? "External reference. A matching definition is loaded."
+            : $"External reference. The definition is supplied by {ProviderZone}."
+        : "External reference. No matching definition is loaded.";
 
     public bool HasBackendAdapter { get; }
 
@@ -135,6 +148,9 @@ public sealed class AssetExplorerEntryViewModel
 
     public bool IsTargetRow => Identity.TargetRowIdentity is not null;
 
+    internal static string GetDisplayName(XAssetType type, string wireName) =>
+        type == XAssetType.ImpactFx && wireName.Length == 0 ? "Zone impact table" : wireName;
+
     private static string StructuralRowName(WorkspaceAssetOrigin origin) => origin switch
     {
         WorkspaceAssetOrigin.NullRow => "<null row>",
@@ -160,6 +176,7 @@ public sealed class AssetExplorerEntryViewModel
             ? "DEPENDENCY CONTENT"
             : $"RESOLVED · {providerZone}",
         WorkspaceAssetOrigin.TargetUnresolvedReference => "UNRESOLVED CONTENT",
+        WorkspaceAssetOrigin.DependencyOnly when entry.IsReferencePlaceholder => "UNRESOLVED CONTENT",
         WorkspaceAssetOrigin.DependencyOnly => string.IsNullOrEmpty(providerZone)
             ? "DEPENDENCY CONTENT"
             : $"DEPENDENCY · {providerZone}",

@@ -25,6 +25,7 @@ public sealed class WorkbenchAssetSelectionRouter
     private readonly TargetZoneDocument? _targetDocument;
     private readonly IReadOnlyDictionary<TargetZoneRowIdentity, WorkspaceAssetCatalogEntry>
         _targetRows;
+    private readonly IReadOnlyDictionary<WorkspaceDependencyAssetIdentity, WorkspaceAssetCatalogEntry> _dependencies;
     private readonly IReadOnlyDictionary<long, WorkspaceAssetCatalogEntry[]>
         _entriesByProvider;
     private readonly IReadOnlyDictionary<(XAssetType Type, string Name), WorkspaceAssetCatalogEntry[]>
@@ -54,6 +55,8 @@ public sealed class WorkbenchAssetSelectionRouter
         _targetRows = catalog.TargetEntries
             .Where(entry => entry.TargetRowIdentity is not null)
             .ToDictionary(entry => entry.TargetRowIdentity!.Value);
+        _dependencies = catalog.DependencyEntries.ToDictionary(entry =>
+            entry.DependencyIdentity ?? throw new InvalidDataException("Dependency entry has no provider identity."));
         _entriesByProvider = catalog.Entries
             .Where(entry => entry.ResolvedProvider is not null)
             .GroupBy(entry => entry.ResolvedProvider!.ProviderId)
@@ -98,6 +101,13 @@ public sealed class WorkbenchAssetSelectionRouter
                     OpensCatalogEditor: true,
                     UnavailableReason: null)
                 : Unavailable("The selected target row is not present in this workspace catalog.");
+        }
+
+        if (selection.Identity.DependencyIdentity is { } dependency)
+        {
+            return _dependencies.TryGetValue(dependency, out var dependencyEntry)
+                ? new WorkbenchAssetSelectionRoute(dependencyEntry, true, null)
+                : Unavailable("The selected dependency is not present in this workspace catalog.");
         }
 
         if (selection.Source == WorkbenchAssetSelectionSource.AssetPool &&

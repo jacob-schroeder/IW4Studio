@@ -78,19 +78,21 @@ public readonly record struct WorkbenchAssetSelectionIdentity
         TargetZoneRowIdentity? targetRowIdentity,
         XAssetPoolAddress? assetPoolAddress,
         WorkbenchStreamedImageIdentity? streamedImageIdentity,
-        WorkbenchStreamedSoundIdentity? streamedSoundIdentity)
+        WorkbenchStreamedSoundIdentity? streamedSoundIdentity,
+        WorkspaceDependencyAssetIdentity? dependencyIdentity = null)
     {
         int populatedIdentityCount =
             (targetRowIdentity is null ? 0 : 1) +
             (assetPoolAddress is null ? 0 : 1) +
             (streamedImageIdentity is null ? 0 : 1) +
-            (streamedSoundIdentity is null ? 0 : 1);
+            (streamedSoundIdentity is null ? 0 : 1) +
+            (dependencyIdentity is null ? 0 : 1);
         if (source == WorkbenchAssetSelectionSource.None ||
             populatedIdentityCount != 1 ||
             source switch
             {
                 WorkbenchAssetSelectionSource.FastFileAssets =>
-                    targetRowIdentity is null,
+                    targetRowIdentity is null && dependencyIdentity is null,
                 WorkbenchAssetSelectionSource.AssetPool =>
                     assetPoolAddress is null,
                 WorkbenchAssetSelectionSource.ImageFilePak =>
@@ -101,11 +103,12 @@ public readonly record struct WorkbenchAssetSelectionIdentity
             })
         {
             throw new ArgumentException(
-                "A workbench selection must identify exactly one source-compatible target row, asset-pool slot, streamed image, or streamed sound.");
+                "A workbench selection must identify exactly one source-compatible target row, dependency, asset-pool slot, streamed image, or streamed sound.");
         }
 
         Source = source;
         TargetRowIdentity = targetRowIdentity;
+        DependencyIdentity = dependencyIdentity;
         AssetPoolAddress = assetPoolAddress;
         StreamedImageIdentity = streamedImageIdentity;
         StreamedSoundIdentity = streamedSoundIdentity;
@@ -114,6 +117,8 @@ public readonly record struct WorkbenchAssetSelectionIdentity
     public WorkbenchAssetSelectionSource Source { get; }
 
     public TargetZoneRowIdentity? TargetRowIdentity { get; }
+
+    public WorkspaceDependencyAssetIdentity? DependencyIdentity { get; }
 
     public XAssetPoolAddress? AssetPoolAddress { get; }
 
@@ -131,6 +136,15 @@ public readonly record struct WorkbenchAssetSelectionIdentity
             assetPoolAddress: null,
             streamedImageIdentity: null,
             streamedSoundIdentity: null);
+
+    public static WorkbenchAssetSelectionIdentity ForDependency(WorkspaceDependencyAssetIdentity identity) =>
+        new(
+            WorkbenchAssetSelectionSource.FastFileAssets,
+            targetRowIdentity: null,
+            assetPoolAddress: null,
+            streamedImageIdentity: null,
+            streamedSoundIdentity: null,
+            dependencyIdentity: identity);
 
     public static WorkbenchAssetSelectionIdentity ForAssetPoolSlot(
         XAssetPoolAddress address) =>

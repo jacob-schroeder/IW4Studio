@@ -32,6 +32,11 @@ public sealed partial class StudioWorkbenchView : UserControl
         };
     }
 
+    private void ContentsTab_Click(object? sender, RoutedEventArgs e)
+    {
+        (DataContext as StudioWorkbenchViewModel)?.ShowContents();
+    }
+
     private void ToolButton_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control { Tag: string toolId } ||
@@ -405,16 +410,23 @@ public sealed partial class StudioWorkbenchView : UserControl
             DockRegion.Right => RightToolItems,
             _ => throw new ArgumentOutOfRangeException(nameof(region))
         };
-        int count = viewModel.DockLayout.State.Region(region).Tools.Count;
+        IReadOnlyList<DockToolState> visibleTools = region == DockRegion.Bottom
+            ? viewModel.BottomTools
+            : viewModel.DockLayout.State.Region(region).Tools;
+        int count = visibleTools.Count;
         if (count == 0)
             return 0;
 
         double height = Math.Max(rail.Bounds.Height, count * 42d);
         double y = Math.Clamp(e.GetPosition(rail).Y, 0, height);
-        return Math.Clamp(
+        int visibleIndex = Math.Clamp(
             (int)Math.Round(y / height * count),
             0,
             count);
+        // Dock positions include tools currently hidden from this rail.
+        return visibleIndex == count
+            ? visibleTools[^1].Position + 1
+            : visibleTools[visibleIndex].Position;
     }
 
     private static bool ContainsPointer(

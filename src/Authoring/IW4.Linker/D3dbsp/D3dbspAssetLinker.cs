@@ -41,6 +41,7 @@ public sealed record D3dbspLinkRequest(
     public IReadOnlyList<GfxLightmapArray> Lightmaps { get; init; } = [];
     public GfxImageAsset? OutdoorImage { get; init; }
     public IReadOnlyList<float> OutdoorLookupMatrix { get; init; } = [];
+    public byte[]? SourceEntities { get; init; }
     public IReadOnlySet<string> RuntimeEntityPropertiesToRemove { get; init; } =
         new HashSet<string>(StringComparer.Ordinal);
 
@@ -191,8 +192,10 @@ public static class D3dbspAssetLinker
         int sunPrimaryLightIndex = D3dbspPrimaryLightCodec.GetLastSunPrimaryLightIndex(
             comWorld.PrimaryLights);
 
+        ReadOnlySpan<byte> entityLump = request.SourceEntities is { } rewrittenEntities
+            ? rewrittenEntities : file.GetRequiredData(D3dbspLumpType.Entities);
         byte[] sourceEntities = D3dbspMapEntsCodec.RemoveEntityProperties(
-            file.GetRequiredData(D3dbspLumpType.Entities), request.RuntimeEntityPropertiesToRemove);
+            entityLump, request.RuntimeEntityPropertiesToRemove);
         int discardedLightByteCount = ValidateSourceProfile(
             file,
             forceFullbright);

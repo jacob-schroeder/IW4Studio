@@ -57,7 +57,7 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
 
     public string Navigator => _selection?.Source switch
     {
-        WorkbenchAssetSelectionSource.FastFileAssets => "Fastfile Assets",
+        WorkbenchAssetSelectionSource.FastFileAssets => "Explorer",
         WorkbenchAssetSelectionSource.AssetPool => "Asset Pool",
         WorkbenchAssetSelectionSource.ImageFilePak =>
             "Imagefile.pak Viewer",
@@ -92,6 +92,8 @@ public sealed class PropertiesToolViewModel : ObservableObject, IDisposable
     {
         { TargetRowIdentity: { } target } =>
             $"Target row #{target.SerializedIndex:N0}",
+        { DependencyIdentity: { } dependency } =>
+            $"Dependency provider #{dependency.ProviderId:N0}",
         { AssetPoolAddress: { } address } =>
             $"Pool slot {address.Slot:N0} · " +
             $"0x{unchecked((uint)address.RawValue):X8}",

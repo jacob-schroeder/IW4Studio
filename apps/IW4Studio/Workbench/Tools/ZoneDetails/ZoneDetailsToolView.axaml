@@ -5,31 +5,32 @@
              xmlns:zoneDetails="using:IW4.Studio.Desktop.Workbench.Tools.ZoneDetails"
              x:Class="IW4.Studio.Desktop.Workbench.Tools.ZoneDetails.ZoneDetailsToolView"
              x:DataType="zoneDetails:ZoneDetailsToolViewModel"
+             Classes="studioInspectorDetails"
              mc:Ignorable="d"
              d:DesignWidth="360"
              d:DesignHeight="700">
   <Grid RowDefinitions="Auto,Auto,*">
-    <StackPanel Margin="16,16,16,14"
-                Spacing="14">
-      <StackPanel Spacing="5">
+    <StackPanel Margin="12"
+                Spacing="8">
+      <StackPanel Spacing="4">
         <TextBlock Text="{Binding ZoneName}"
-                   FontSize="16"
+                   FontSize="14"
                    FontWeight="SemiBold"
                    TextWrapping="Wrap"
                    Foreground="{DynamicResource StudioTextBrush}" />
         <TextBlock Text="DECODED TARGET ZONE"
-                   FontSize="9"
+                   FontSize="11"
                    FontWeight="Bold"
                    LetterSpacing="0.7"
                    Foreground="{DynamicResource StudioTextSubtleBrush}" />
       </StackPanel>
 
       <Border Padding="12"
-              CornerRadius="7"
+              CornerRadius="6"
               Background="{DynamicResource StudioSurfaceSunkenBrush}"
               BorderBrush="{DynamicResource StudioBorderBrush}"
               BorderThickness="1">
-        <Grid RowDefinitions="Auto,10,Auto"
+        <Grid RowDefinitions="Auto,8,Auto"
               ColumnDefinitions="116,*">
           <TextBlock Text="Script strings" Classes="propertyLabel" />
           <TextBlock Grid.Column="1"
@@ -45,28 +46,28 @@
 
       <StackPanel Spacing="8">
         <TextBlock Text="BLOCK STREAMS"
-                   FontSize="9"
+                   FontSize="11"
                    FontWeight="Bold"
                    LetterSpacing="0.8"
                    Foreground="{DynamicResource StudioTextSubtleBrush}" />
         <ItemsControl ItemsSource="{Binding BlockStreams}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="zoneDetails:ZoneBlockStreamViewModel">
-              <Grid Margin="0,0,0,6"
-                    ColumnDefinitions="82,*,Auto"
+              <Grid Margin="0,0,0,8"
+                    ColumnDefinitions="Auto,*,Auto"
                     ColumnSpacing="8">
                 <TextBlock Text="{Binding TypeName}"
-                           FontSize="9"
+                           FontSize="12"
                            FontWeight="SemiBold"
                            Foreground="{DynamicResource StudioTextBrush}" />
                 <TextBlock Grid.Column="1"
                            Text="{Binding SizeText}"
-                           FontSize="9"
+                           FontSize="12"
                            HorizontalAlignment="Right"
                            Foreground="{DynamicResource StudioTextMutedBrush}" />
                 <TextBlock Grid.Column="2"
                            Text="{Binding HexSizeText}"
-                           FontSize="8"
+                           FontSize="11"
                            FontFamily="Consolas"
                            Foreground="{DynamicResource StudioTextSubtleBrush}" />
               </Grid>
@@ -77,30 +78,31 @@
     </StackPanel>
 
     <Border Grid.Row="1"
-            Padding="16,10"
+            Padding="12,8"
             Background="{DynamicResource StudioSurfaceSunkenBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="0,1">
       <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
         <TextBlock Text="SCRIPT STRINGS"
                    VerticalAlignment="Center"
-                   FontSize="9"
+                   FontSize="11"
                    FontWeight="Bold"
                    LetterSpacing="0.8"
                    Foreground="{DynamicResource StudioTextSubtleBrush}" />
         <TextBlock Grid.Column="1"
                    Text="{Binding ScriptStringCount}"
                    VerticalAlignment="Center"
-                   FontSize="9"
+                   FontSize="11"
                    Foreground="{DynamicResource StudioTextMutedBrush}" />
-        <Button Grid.Column="2" Content="…" Width="28" MinHeight="24" Padding="0"
+        <Button Grid.Column="2" Content="…" Width="28" MinHeight="28" Padding="0"
+                FontSize="12" CornerRadius="4"
                 ToolTip.Tip="Edit script strings" AutomationProperties.Name="Edit script strings"
                 Click="EditScriptStrings_Click" />
       </Grid>
     </Border>
 
     <ListBox Grid.Row="2"
-             Margin="10,6,10,10"
+             Margin="12,8,12,12"
              ItemsSource="{Binding ScriptStrings}"
              Classes="studioOutputList">
       <ListBox.ItemTemplate>
@@ -109,12 +111,12 @@
                 ColumnSpacing="8">
             <TextBlock Text="{Binding Index, StringFormat='{}{0:N0}'}"
                        HorizontalAlignment="Right"
-                       FontSize="8"
+                       FontSize="11"
                        FontFamily="Consolas"
                        Foreground="{DynamicResource StudioTextSubtleBrush}" />
             <TextBlock Grid.Column="1"
                        Text="{Binding Value}"
-                       FontSize="9"
+                       FontSize="12"
                        TextWrapping="Wrap"
                        Foreground="{DynamicResource StudioTextBrush}" />
           </Grid>

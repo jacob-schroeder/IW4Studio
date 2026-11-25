@@ -114,23 +114,21 @@ public sealed partial class WeaponDraft
     }
 
     /// <summary>
-    /// Replaces all editable nested-definition values. Identity, padding, and fixed
+    /// Replaces all editable nested-definition values. Padding and fixed
     /// collection shapes cannot change. Only changed semantic cells shed provenance.
     /// </summary>
     public void SetDefinitionValues(WeaponDef value)
     {
         ArgumentNullException.ThrowIfNull(value);
         WeaponDef current = RequireDefinition();
-        if (!StringEquals(current.InternalName, value.InternalName))
-            throw new InvalidOperationException("Weapon definition identity is read-only.");
         EnsureDefinitionCollectionShapes(current, value);
         WeaponFiniteMutation.Ensure(current, value, nameof(value));
 
         WeaponDef replacement = new()
         {
             Offset = current.Offset,
-            InternalNamePointer = current.InternalNamePointer,
-            InternalName = current.InternalName,
+            InternalNamePointer = XStringIfUnchanged(current.InternalName, value.InternalName, current.InternalNamePointer),
+            InternalName = value.InternalName,
             GunModelsPointer = current.GunModelsPointer,
             GunModelPointers = PreserveProviderPointers(current.GunModels, value.GunModels, current.GunModelPointers),
             GunModels = CopyList(value.GunModels),
@@ -220,7 +218,12 @@ public sealed partial class WeaponDraft
     private WeaponDef RequireDefinition() => Definition ??
         throw new InvalidOperationException("The Weapon has no nested definition.");
 
-    private static WeaponVariantDef CopyVariantWithDefinition(WeaponVariantDef value, WeaponDef definition) => new()
+    private static WeaponVariantDef CopyVariantWithDefinition(
+        WeaponVariantDef value,
+        WeaponDef definition,
+        bool? replaceAccuracyGraph = null,
+        IReadOnlyList<IW4.Game.Math.Vec2>? graph = null,
+        string? graphName = null) => new()
     {
         Offset = value.Offset,
         InternalNamePointer = value.InternalNamePointer,
@@ -257,12 +260,20 @@ public sealed partial class WeaponDraft
         AmmoDropStockMax = value.AmmoDropStockMax,
         AdsDofStart = value.AdsDofStart,
         AdsDofEnd = value.AdsDofEnd,
-        AiVsAiAccuracyGraphKnotCount = value.AiVsAiAccuracyGraphKnotCount,
-        AiVsPlayerAccuracyGraphKnotCount = value.AiVsPlayerAccuracyGraphKnotCount,
-        AiVsAiAccuracyGraphKnotsPointer = value.AiVsAiAccuracyGraphKnotsPointer,
-        AiVsAiAccuracyGraphKnots = CopyList(value.AiVsAiAccuracyGraphKnots),
-        AiVsPlayerAccuracyGraphKnotsPointer = value.AiVsPlayerAccuracyGraphKnotsPointer,
-        AiVsPlayerAccuracyGraphKnots = CopyList(value.AiVsPlayerAccuracyGraphKnots),
+        AiVsAiAccuracyGraphKnotCount = replaceAccuracyGraph == true
+            ? checked((ushort)(graph ?? []).Count) : value.AiVsAiAccuracyGraphKnotCount,
+        AiVsPlayerAccuracyGraphKnotCount = replaceAccuracyGraph == false
+            ? checked((ushort)(graph ?? []).Count) : value.AiVsPlayerAccuracyGraphKnotCount,
+        AiVsAiAccuracyGraphKnotsPointer = replaceAccuracyGraph == true
+            ? graphName is null ? default : new XPointer<IW4.Game.Math.Vec2[]>(-1)
+            : value.AiVsAiAccuracyGraphKnotsPointer,
+        AiVsAiAccuracyGraphKnots = replaceAccuracyGraph == true
+            ? CopyList(graph ?? []) : CopyList(value.AiVsAiAccuracyGraphKnots),
+        AiVsPlayerAccuracyGraphKnotsPointer = replaceAccuracyGraph == false
+            ? graphName is null ? default : new XPointer<IW4.Game.Math.Vec2[]>(-1)
+            : value.AiVsPlayerAccuracyGraphKnotsPointer,
+        AiVsPlayerAccuracyGraphKnots = replaceAccuracyGraph == false
+            ? CopyList(graph ?? []) : CopyList(value.AiVsPlayerAccuracyGraphKnots),
         MotionTracker = value.MotionTracker,
         Enhanced = value.Enhanced,
         DpadIconShowsAmmo = value.DpadIconShowsAmmo,

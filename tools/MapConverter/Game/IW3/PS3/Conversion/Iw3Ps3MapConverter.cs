@@ -180,34 +180,11 @@ internal static class Iw3Ps3MapConverter
         var references = package.References.ToDictionary(pair => pair.Key, pair => pair.Value.Single());
         definitions.AddRange(images.Compiled.Select(image => image.Image));
         BaseAsset[] unique = definitions.DistinctBy(AssetKey.FromDefinition).ToArray();
-        bool ProviderOnly(BaseAsset asset) => asset.SerializedAssetType is
-            XAssetType.XModelSurfs or XAssetType.PhysPreset or XAssetType.PhysCollmap or
-            XAssetType.Tracer or XAssetType.SndCurve or XAssetType.LoadedSound;
-        BaseAsset[] providerOnly = unique.Where(ProviderOnly).ToArray();
+        BaseAsset[] providerOnly = unique.Where(IsProviderOnly).ToArray();
         // As in the PC conversion path, explicit dependency roots must precede
         // their owners so the target fastfile can keep every root inline.
-        BaseAsset[] roots = unique.Where(asset => !ProviderOnly(asset))
-            .OrderBy(asset => asset.SerializedAssetType switch
-            {
-                XAssetType.Image => 0,
-                XAssetType.PixelShader or XAssetType.VertexShader => 1,
-                XAssetType.Techset => 2,
-                XAssetType.Material => 3,
-                XAssetType.XModel => 4,
-                XAssetType.Fx => 5,
-                XAssetType.Sound => 6,
-                XAssetType.Weapon => 15,
-                XAssetType.LightDef => 6,
-                XAssetType.MapEnts => 7,
-                XAssetType.ComMap => 8,
-                XAssetType.GameMapMp => 9,
-                XAssetType.FxMap => 10,
-                XAssetType.GfxMap => 11,
-                XAssetType.ColMapMp => 12,
-                XAssetType.StringTable => 13,
-                XAssetType.RawFile => 14,
-                _ => throw new InvalidDataException($"Unsupported PS3 output root type {asset.SerializedAssetType}.")
-            }).ToArray();
+        BaseAsset[] roots = unique.Where(asset => !IsProviderOnly(asset))
+            .OrderBy(RootRank).ToArray();
         // Keep the native callsign imagefile references frozen. Map-owned images
         // still use the named package, and authored bootstrap assets take precedence.
         LinkAssetPool callsignProviders = callsigns.Providers.WithoutProviders(unique
@@ -255,7 +232,8 @@ internal static class Iw3Ps3MapConverter
         return new RawFileAsset { Name = name, Len = content.Length - 1, Buffer = content };
     }
 
-    private static (LinkAssetPool Providers, IReadOnlySet<AssetKey> RootKeys) AddCallsigns(
+    internal static (LinkAssetPool Providers, IReadOnlySet<AssetKey> RootKeys,
+        IReadOnlySet<uint> ReferencedImageFileIndices) AddCallsigns(
         List<BaseAsset> definitions, string bootstrapDirectory)
     {
         using var source = new FastFileDocumentService().Open(new FastFileDocumentOpenRequest(
@@ -274,10 +252,37 @@ internal static class Iw3Ps3MapConverter
             definitions.Add(asset);
             if (root.Intent == LinkRootIntent.Owned) owned.Add(key);
         }
-        return (source.InitialLinkRequest.Assets, owned);
+        return (source.InitialLinkRequest.Assets, owned,
+            source.LoadedZone.Header.ImageStreamEntries.Where(entry => !entry.IsEmpty)
+                .Select(entry => entry.FileIndex).ToHashSet());
     }
 
-    private static void AddNativeTurret(List<BaseAsset> definitions, string bootstrapDirectory,
+    internal static bool IsProviderOnly(BaseAsset asset) => asset.SerializedAssetType is
+        XAssetType.XModelSurfs or XAssetType.PhysPreset or XAssetType.PhysCollmap or
+        XAssetType.Tracer or XAssetType.SndCurve or XAssetType.LoadedSound;
+
+    internal static int RootRank(BaseAsset asset) => asset.SerializedAssetType switch
+    {
+        XAssetType.Image => 0,
+        XAssetType.PixelShader or XAssetType.VertexShader => 1,
+        XAssetType.Techset => 2,
+        XAssetType.Material => 3,
+        XAssetType.XModel => 4,
+        XAssetType.Fx => 5,
+        XAssetType.Sound or XAssetType.LightDef => 6,
+        XAssetType.MapEnts => 7,
+        XAssetType.ComMap => 8,
+        XAssetType.GameMapMp => 9,
+        XAssetType.FxMap => 10,
+        XAssetType.GfxMap => 11,
+        XAssetType.ColMapMp => 12,
+        XAssetType.StringTable => 13,
+        XAssetType.RawFile => 14,
+        XAssetType.Weapon => 15,
+        _ => throw new InvalidDataException($"Unsupported PS3 output root type {asset.SerializedAssetType}.")
+    };
+
+    internal static void AddNativeTurret(List<BaseAsset> definitions, string bootstrapDirectory,
         ModelSourceCompiler models, MaterialSourceCompiler materials, CancellationToken token)
     {
         var linked = new Dictionary<AssetKey, BaseAsset>();

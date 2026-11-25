@@ -1,6 +1,7 @@
 using IW4.Game.Zone;
 using IW4.Runtime.Assets;
 using IW4.Runtime.Database;
+using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
 using IW4.Studio.Documents;
 
@@ -23,6 +24,7 @@ public sealed record AssetPoolSlotSnapshot
         long activeProviderRegistrationSequence,
         bool isReferencePlaceholder,
         string? providerZone,
+        string providerFileName,
         bool hasEditor,
         bool canEdit)
     {
@@ -36,6 +38,7 @@ public sealed record AssetPoolSlotSnapshot
         ActiveProviderRegistrationSequence = activeProviderRegistrationSequence;
         IsReferencePlaceholder = isReferencePlaceholder;
         ProviderZone = providerZone;
+        ProviderFileName = providerFileName;
         HasEditor = hasEditor;
         CanEdit = canEdit;
     }
@@ -66,6 +69,8 @@ public sealed record AssetPoolSlotSnapshot
 
     public string? ProviderZone { get; }
 
+    public string ProviderFileName { get; }
+
     public bool HasEditor { get; }
     public bool CanEdit { get; }
 
@@ -88,101 +93,6 @@ public sealed record AssetPoolSlotSnapshot
             ProviderZone,
             hasEditor: HasEditor && !IsReferencePlaceholder,
             providerId: ActiveProviderId);
-}
-
-public sealed record AssetPoolNavigatorGroup(
-    XAssetType AssetType,
-    IReadOnlyList<AssetPoolSlotSnapshot> Rows)
-{
-    public string Name => AssetType.ToString();
-
-    public int Count => Rows.Count;
-}
-
-public sealed record AssetPoolNavigatorZoneGroup(
-    string Name,
-    IReadOnlyList<AssetPoolNavigatorGroup> AssetTypes)
-{
-    public int Count => AssetTypes.Sum(group => group.Count);
-}
-
-public enum AssetPoolNavigatorNodeKind
-{
-    Zone,
-    AssetType,
-    Asset
-}
-
-/// <summary>
-/// Zone → asset type → named asset projection used by the pool tree.
-/// </summary>
-public sealed class AssetPoolNavigatorNode
-{
-    private AssetPoolNavigatorNode(
-        string name,
-        string detail,
-        string trailingText,
-        AssetPoolNavigatorNodeKind kind,
-        IReadOnlyList<AssetPoolNavigatorNode> children,
-        AssetPoolSlotSnapshot? row)
-    {
-        Name = name;
-        Detail = detail;
-        TrailingText = trailingText;
-        Kind = kind;
-        Children = children;
-        Row = row;
-    }
-
-    public string Name { get; }
-
-    public string Detail { get; }
-
-    public string TrailingText { get; }
-
-    public AssetPoolNavigatorNodeKind Kind { get; }
-
-    public bool IsZone => Kind == AssetPoolNavigatorNodeKind.Zone;
-
-    public bool IsAssetType => Kind == AssetPoolNavigatorNodeKind.AssetType;
-
-    public bool IsAsset => Kind == AssetPoolNavigatorNodeKind.Asset;
-
-    public IReadOnlyList<AssetPoolNavigatorNode> Children { get; }
-
-    public AssetPoolSlotSnapshot? Row { get; }
-
-    internal static AssetPoolNavigatorNode ForZone(
-        AssetPoolNavigatorZoneGroup zone) =>
-        new(
-            zone.Name,
-            $"{zone.Count:N0} {(zone.Count == 1 ? "asset" : "assets")} · {zone.AssetTypes.Count:N0} {(zone.AssetTypes.Count == 1 ? "type" : "types")}",
-            zone.Count.ToString("N0"),
-            AssetPoolNavigatorNodeKind.Zone,
-            Array.AsReadOnly(zone.AssetTypes.Select(ForAssetType).ToArray()),
-            row: null);
-
-    private static AssetPoolNavigatorNode ForAssetType(
-        AssetPoolNavigatorGroup group) =>
-        new(
-            group.Name,
-            string.Empty,
-            group.Count.ToString("N0"),
-            AssetPoolNavigatorNodeKind.AssetType,
-            Array.AsReadOnly(group.Rows.Select(ForRow).ToArray()),
-            row: null);
-
-    private static AssetPoolNavigatorNode ForRow(
-        AssetPoolSlotSnapshot row) =>
-        new(
-            row.DisplayName,
-            row.HasFallbackProviders
-                ? $"{row.ProviderCount:N0} providers"
-                : $"slot {row.SlotIndex:N0}",
-            row.AddressText,
-            AssetPoolNavigatorNodeKind.Asset,
-            Array.Empty<AssetPoolNavigatorNode>(),
-            row);
 }
 
 /// <summary>
@@ -217,18 +127,22 @@ public sealed class AssetPoolNavigatorSnapshot
         {
             XAssetProviderContribution provider = slot.ActiveProvider;
             string? zoneName = null;
+            string providerFileName = "Unzoned";
             if (!provider.Owner.IsNone)
             {
-                zoneName = workspace.LoadedZones
-                    .FirstOrDefault(zone => zone.LoadResult.Context.ZoneOwner == provider.Owner)
-                    ?.LogicalZoneName ?? provider.Owner.ToString();
+                WorkspaceZone? zone = workspace.LoadedZones
+                    .FirstOrDefault(candidate => candidate.LoadResult.Context.ZoneOwner == provider.Owner);
+                zoneName = zone?.LogicalZoneName ?? provider.Owner.ToString();
+                providerFileName = zone is null
+                    ? "Unknown source"
+                    : Path.GetFileName(zone.PhysicalPath);
             }
 
             bool hasEditor = hasDesktopEditor(slot.AssetType, slot.Name);
             return new AssetPoolSlotSnapshot(
                 slot.Address,
                 slot.AssetType,
-                slot.Name,
+                AssetExplorerEntryViewModel.GetDisplayName(slot.AssetType, slot.Name),
                 XAssetStableIdentity.NormalizeLookupName(slot.Name),
                 slot.Providers.Count,
                 provider.Id,
@@ -236,6 +150,7 @@ public sealed class AssetPoolNavigatorSnapshot
                 provider.RegistrationSequence,
                 provider.IsReferencePlaceholder,
                 zoneName,
+                providerFileName,
                 hasEditor,
                 hasEditor && !provider.IsReferencePlaceholder &&
                 workspace.AssetCatalog.FindEditablePoolEntry(provider.Id)?.AssetType == slot.AssetType);

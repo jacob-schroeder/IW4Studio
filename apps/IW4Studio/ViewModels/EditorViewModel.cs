@@ -422,7 +422,7 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         }
         else if (hostEntry.HasUsableEditor &&
                  (editorHost.StructuralInspector is not null ||
-                  editorHost.Entry.Identity != hostEntry.Identity ||
+                  !ReferenceEquals(editorHost.Entry.Entry, hostEntry.Entry) ||
                   surfaceDefinitionOverride is not null &&
                   !ReferenceEquals(
                       editorHost.Surface.Definition,
@@ -491,6 +491,7 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
 
         return _allEntries
             .Where(entry =>
+                (selectedEntry.IsTargetRow || !entry.IsTargetRow) &&
                 EditorHostKey.TryGetD3dbspName(entry, out string? candidateName) &&
                 string.Equals(candidateName, normalizedName, StringComparison.Ordinal))
             .OrderBy(entry => entry.HasUsableEditor ? 0 : 1)
@@ -614,7 +615,7 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
                 ? new EditorHostKey(
                     Identity: null,
                     normalizedName,
-                    isRuntimePreview)
+                    isRuntimePreview || !entry.IsTargetRow)
                 : new EditorHostKey(
                     entry.Identity,
                     D3dbspNormalizedName: null,
