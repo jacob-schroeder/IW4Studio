@@ -76,6 +76,7 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
     }
 
     public event EventHandler? ContentsRequested;
+    internal event EventHandler<WorkbenchAssetSelection>? AssetOpenedFromContents;
 
     internal FastFileEditingSession EditingSession => _editor.EditingSession;
     internal int ApplyPackageImport(
@@ -226,9 +227,9 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
             return; // A stale row gesture can arrive while the list is replaced.
         SelectedContentsRow = live;
         if (live.PoolSlot is { } slot)
-            OpenSelection(slot.ToSelection());
+            OpenFromContents(slot.ToSelection());
         else if (live.CatalogEntry is { } catalogEntry)
-            OpenSelection(ToSelection(catalogEntry));
+            OpenFromContents(ToSelection(catalogEntry));
     }
 
     internal void OpenCatalogEntry(WorkspaceAssetCatalogEntry entry)
@@ -368,7 +369,7 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
         SelectedContentsRow = ContentsRows.FirstOrDefault(candidate =>
             candidate.CatalogIdentity == row.Identity);
         if (openEditor)
-            OpenSelection(ToSelection(row));
+            OpenFromContents(ToSelection(row));
         else
             RequestContents();
     }
@@ -639,6 +640,12 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
         OnPropertyChanged(nameof(ContentsTitle));
         OnPropertyChanged(nameof(SearchPrompt));
         RebuildContentsRows();
+    }
+
+    private void OpenFromContents(WorkbenchAssetSelection selection)
+    {
+        OpenSelection(selection);
+        AssetOpenedFromContents?.Invoke(this, selection);
     }
 
     private void OpenSelection(WorkbenchAssetSelection selection)

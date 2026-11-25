@@ -147,6 +147,8 @@ internal sealed class LinkAssetFreezeContext
     private readonly Dictionary<LinkStorageSymbol, List<LinkStorageSymbol>>
         _authoredTechniquePassTables = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<(string? Name, string Routing), LinkStorageTarget> _authoredSpeakerMaps = [];
+    private readonly Dictionary<object, List<LinkStorageTarget>> _authoredMeshGeometry =
+        new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<LinkStorageSymbol, LinkStorageView>
         _authoredStorageBaselines = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<ImportSymbolKey, LinkStorageSymbol>
@@ -204,6 +206,7 @@ internal sealed class LinkAssetFreezeContext
         _authoredAliasCells.Clear();
         _authoredTechniquePassTables.Clear();
         _authoredSpeakerMaps.Clear();
+        _authoredMeshGeometry.Clear();
         _authoredStorageBaselines.Clear();
         _capturedStorageIdentities.Clear();
         _capturedAllocations.Clear();
@@ -216,6 +219,29 @@ internal sealed class LinkAssetFreezeContext
         if (_authoredSpeakerMaps.TryGetValue(key, out LinkStorageTarget existing))
             return existing;
         _authoredSpeakerMaps.Add(key, target);
+        return target;
+    }
+
+    internal LinkStorageTarget ShareAuthoredMeshGeometry(object identity, LinkStorageTarget target)
+    {
+        EnsureOpen();
+        ArgumentNullException.ThrowIfNull(identity);
+        LinkStorageDefinition candidate = target.View.Storage.Definition;
+        if (!_authoredMeshGeometry.TryGetValue(identity, out List<LinkStorageTarget>? shared))
+        {
+            shared = [];
+            _authoredMeshGeometry.Add(identity, shared);
+        }
+        foreach (LinkStorageTarget existing in shared)
+        {
+            LinkStorageDefinition frozen = existing.View.Storage.Definition;
+            if (frozen.Block == candidate.Block &&
+                frozen.ByteLength == candidate.ByteLength &&
+                frozen.Alignment == candidate.Alignment &&
+                frozen.SourceTemplate.Span.SequenceEqual(candidate.SourceTemplate.Span))
+                return existing;
+        }
+        shared.Add(target);
         return target;
     }
 
@@ -1881,6 +1907,16 @@ internal sealed class LinkAssetFreezeScope
         // A disk-authored alias has no captured storage identity. Its direct
         // pointer can reuse an identical speaker map anywhere in this pool.
         return _context.ShareAuthoredSpeakerMap(name, target);
+    }
+
+    public LinkStorageTarget ShareAuthoredMeshGeometry(
+        XPointerReference pointer, object identity, LinkStorageTarget target)
+    {
+        if (_resolver is not null || _importedDefinition.StagingAddress is not null ||
+            pointer.CellAddress is not null || pointer.Type != PointerType.Null)
+            return target;
+
+        return _context.ShareAuthoredMeshGeometry(identity, target);
     }
 
     public LinkStorageSymbol FreezeProviderName(

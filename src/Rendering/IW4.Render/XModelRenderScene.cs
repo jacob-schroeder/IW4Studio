@@ -2,6 +2,7 @@ using IW4.Render.Techniques;
 using System.Numerics;
 using IW4.Render.Execution;
 using IW4.Render.Materials;
+using IW4.Render.Assets;
 
 namespace IW4.Render;
 
@@ -13,7 +14,9 @@ public sealed class XModelRenderScene
         int defaultLodIndex,
         RenderBounds bounds,
         IReadOnlyList<XModelRenderBone> bones,
-        IReadOnlyList<string> diagnostics)
+        IReadOnlyList<string> diagnostics,
+        RenderAssetLookup? materialPreviewLookup = null,
+        long materialPreviewAssetPoolRevision = -1)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(lods);
@@ -26,6 +29,8 @@ public sealed class XModelRenderScene
         Bounds = bounds;
         Bones = Array.AsReadOnly(bones.ToArray());
         Diagnostics = Array.AsReadOnly(diagnostics.ToArray());
+        MaterialPreviewLookup = materialPreviewLookup;
+        MaterialPreviewAssetPoolRevision = materialPreviewAssetPoolRevision;
     }
 
     public string Name { get; }
@@ -39,6 +44,10 @@ public sealed class XModelRenderScene
     public IReadOnlyList<XModelRenderBone> Bones { get; }
 
     public IReadOnlyList<string> Diagnostics { get; }
+
+    internal RenderAssetLookup? MaterialPreviewLookup { get; }
+
+    internal long MaterialPreviewAssetPoolRevision { get; }
 }
 
 public sealed class XModelRenderLod

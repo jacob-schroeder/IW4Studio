@@ -27,7 +27,8 @@ public sealed class FxSpritePreview
         _materials = effect.Materials.Distinct(StringComparer.Ordinal).ToArray();
         HasDrawableElements = _materials.Length != 0;
         Notice = string.Join("; ", notices);
-        PreviewBounds = EstimateBounds(effect);
+        PreviewBounds = EstimateBounds(effect, out RenderBounds focusBounds);
+        FocusBounds = focusBounds;
         _clock.Start();
     }
 
@@ -40,6 +41,7 @@ public sealed class FxSpritePreview
         HasDrawableElements = prototype.HasDrawableElements;
         Notice = prototype.Notice;
         PreviewBounds = prototype.PreviewBounds;
+        FocusBounds = prototype.FocusBounds;
         _clock.Start();
     }
 
@@ -72,6 +74,7 @@ public sealed class FxSpritePreview
     private double TimelineMilliseconds => _clock.Elapsed.TotalMilliseconds + _timelineOffsetMilliseconds;
     public IReadOnlyList<string> Materials => _materials;
     public (Vector3 Min, Vector3 Max) PreviewBounds { get; }
+    internal RenderBounds FocusBounds { get; }
 
     public FxSpritePreview CreateInstance() => new(this, Origin, _orientation);
 
@@ -98,26 +101,31 @@ public sealed class FxSpritePreview
         var exchange = new FxExchange();
         return LoadGraph(assetName, origin, orientation,
             name => exchange.Link(sourceDirectory, name),
-            name => FxModelPreviewGeometry.Load(sourceDirectory, name));
+            name => FxModelPreviewGeometry.Load(sourceDirectory, name),
+            includeSimplifiedMaterialNotice: true);
     }
 
     public static FxSpritePreview Load(FxEffectDefAsset effect, Vector3 origin, Matrix4x4 orientation,
         Func<string, FxEffectDefAsset> resolveEffect,
-        Func<string, IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)>> resolveModel)
+        Func<string, IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)>> resolveModel,
+        int? selectedElementIndex = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(effect.Name);
         return LoadGraph(effect.Name, origin, orientation,
-            name => name == effect.Name ? effect : resolveEffect(name), resolveModel);
+            name => name == effect.Name ? effect : resolveEffect(name), resolveModel,
+            selectedElementIndex);
     }
 
     private static FxSpritePreview LoadGraph(string assetName, Vector3 origin, Matrix4x4 orientation,
         Func<string, FxEffectDefAsset> resolveEffect,
-        Func<string, IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)>> resolveModel)
+        Func<string, IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)>> resolveModel,
+        int? selectedElementIndex = null,
+        bool includeSimplifiedMaterialNotice = false)
     {
         var cache = new Dictionary<string, EffectNode>(StringComparer.Ordinal);
         var modelCache = new Dictionary<string, IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)>>(StringComparer.Ordinal);
         var notices = new HashSet<string>(StringComparer.Ordinal);
-        EffectNode LoadEffect(string name, HashSet<string> ancestry)
+        EffectNode LoadEffect(string name, HashSet<string> ancestry, bool root = false)
         {
             if (cache.TryGetValue(name, out EffectNode? cached)) return cached;
             if (ancestry.Count >= 4 || !ancestry.Add(name))
@@ -130,6 +138,8 @@ public sealed class FxSpritePreview
             var elements = new List<ElementNode>();
             for (int index = 0; index < effect.ElemDefs.Count; index++)
             {
+                if (root && selectedElementIndex is { } selected && index != selected)
+                    continue;
                 FxElemDef element = effect.ElemDefs[index];
                 if (index >= effect.ElemDefCountLooping + effect.ElemDefCountOneShot)
                 {
@@ -202,7 +212,7 @@ public sealed class FxSpritePreview
                 if (visuals.Count != element.VisualCount)
                     notices.Add($"incomplete {element.ElemType} visual array");
                 if (visuals.Count == 0) continue;
-                elements.Add(new ElementNode(element, index < effect.ElemDefCountLooping, visuals));
+                elements.Add(new ElementNode(index, element, index < effect.ElemDefCountLooping, visuals));
             }
             ancestry.Remove(name);
             double loopingLife = effect.MsecLoopingLife == int.MaxValue
@@ -211,11 +221,11 @@ public sealed class FxSpritePreview
             cache.Add(name, node);
             return node;
         }
-        EffectNode root = LoadEffect(assetName, new HashSet<string>(StringComparer.Ordinal));
-        if (root.Materials.Any())
-            notices.Add("authoring approximation; lighting and soft intersections may differ in game");
+        EffectNode root = LoadEffect(assetName, new HashSet<string>(StringComparer.Ordinal), root: true);
         if (root.Elements.Any(node => node.Definition.ElemType is FxElemType.Cloud or FxElemType.SparkCloud))
             notices.Add("cloud and spark-cloud shapes are editor approximations");
+        if (root.Materials.Any() && includeSimplifiedMaterialNotice)
+            notices.Add("Particle lighting and soft intersections are approximated.");
         return new FxSpritePreview(root, origin, orientation, notices);
     }
 
@@ -223,15 +233,37 @@ public sealed class FxSpritePreview
         bool applyDistanceFade = false) =>
         Sample(eye, Origin, _orientation, MaximumSprites, applyDistanceFade);
 
+    public IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)> Sample(
+        Vector3 eye, out float materialTimeSeconds,
+        bool applyDistanceFade = false)
+    {
+        double time = SampleTimeMilliseconds();
+        materialTimeSeconds = (float)(time / 1000d);
+        return SampleAtTime(eye, Origin, _orientation, MaximumSprites,
+            applyDistanceFade, variationSeed: 0, time);
+    }
+
     public IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)> Sample(Vector3 eye, Vector3 origin,
         Matrix4x4 orientation, int maximumSprites, bool applyDistanceFade = false,
-        uint variationSeed = 0)
+        uint variationSeed = 0) =>
+        SampleAtTime(eye, origin, orientation, maximumSprites,
+            applyDistanceFade, variationSeed, SampleTimeMilliseconds());
+
+    private double SampleTimeMilliseconds()
     {
-        int budget = Math.Clamp(maximumSprites, 0, MaximumSprites) * 6;
-        if (budget == 0 || !HasDrawableElements || IsFinished) return [];
         double time = TimelineMilliseconds;
         if (Repeat && !IsLooping && _effect.DurationMilliseconds > 0)
             time %= _effect.DurationMilliseconds;
+        return time;
+    }
+
+    private IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)> SampleAtTime(
+        Vector3 eye, Vector3 origin, Matrix4x4 orientation, int maximumSprites,
+        bool applyDistanceFade, uint variationSeed, double time)
+    {
+        int budget = Math.Clamp(maximumSprites, 0, MaximumSprites) * 6;
+        if (budget == 0 || !HasDrawableElements ||
+            (!IsLooping && !Repeat && time >= _effect.DurationMilliseconds)) return [];
         var batches = new Dictionary<string, List<FxPreviewVertex>>(StringComparer.Ordinal);
         SampleEffect(_effect, time, eye, origin, orientation, Mix(0x46585052u ^ variationSeed),
             applyDistanceFade, batches, ref budget);
@@ -266,14 +298,14 @@ public sealed class FxSpritePreview
             {
                 FxSpawnDefOneShot spawn = element.Spawn.OneShotCount;
                 long count = spawn.Base + (long)(spawn.Amplitude *
-                    Random(parentSeed, (uint)(elementIndex + 31)));
+                    Random(parentSeed, (uint)(node.Index + 31)));
                 first = 0;
                 last = Math.Clamp(count, 0, MaximumSequencesPerElement);
             }
             int elementBudget = Math.Max(6, budget / (effect.Elements.Count - elementIndex));
             for (long sequence = first; sequence < last && elementBudget >= 3 && budget >= 3; sequence++)
             {
-                uint seed = Mix(parentSeed ^ ((uint)(elementIndex + 1) * 0x9e3779b9u) ^
+                uint seed = Mix(parentSeed ^ ((uint)(node.Index + 1) * 0x9e3779b9u) ^
                     ((uint)(sequence + 1) * 0x85ebca6bu));
                 double birth = sequence * (double)interval;
                 birth += SampleRange(element.SpawnDelayMsec.Base, element.SpawnDelayMsec.Amplitude,
@@ -386,7 +418,11 @@ public sealed class FxSpritePreview
                 Vector3 position = center + Vector3.TransformNormal(vertex.Position * scale, rotation);
                 Vector3 normal = Vector3.TransformNormal(vertex.Normal, rotation);
                 if (normal.LengthSquared() > 0.0001f) normal = Vector3.Normalize(normal);
-                output.Add(new FxPreviewVertex(position, normal, vertex.Uv, vertex.Color * color));
+                Vector3 tangent = vertex.HasTangent
+                    ? Vector3.Normalize(Vector3.TransformNormal(vertex.Tangent, rotation))
+                    : default;
+                output.Add(new FxPreviewVertex(position, normal, vertex.Uv, vertex.Color * color,
+                    tangent, vertex.HasTangent, vertex.PositionW));
             }
             budget -= triangles * 3;
             if (budget < 3) break;
@@ -409,28 +445,90 @@ public sealed class FxSpritePreview
             Matrix4x4.CreateRotationY(angles.X) * Matrix4x4.CreateRotationZ(angles.Y) * orientation;
     }
 
-    private static (Vector3 Min, Vector3 Max) EstimateBounds(EffectNode effect)
+    private static (Vector3 Min, Vector3 Max) EstimateBounds(EffectNode effect, out RenderBounds focusBounds)
     {
-        // Frame the visible animation once at load time. Peak speed times lifetime
-        // greatly overestimates curved motion and leaves small fires lost in space.
+        // The map camera uses the travel envelope. The asset editor focuses on the
+        // strongest visible moment, so a few falling shards cannot pull it off the burst.
         Vector3 min = new(-8), max = new(8);
         double window = double.IsPositiveInfinity(effect.DurationMilliseconds)
             ? BoundsSampleWindowMilliseconds : effect.DurationMilliseconds;
-        for (int frame = 1; frame <= 24; frame++)
+        double interval = window / 25;
+        double focusWeight = 0;
+        var framePoints = new List<(Vector3 Position, float Weight)>();
+        var focusPoints = new List<(Vector3 Position, float Weight)>();
+        for (int frame = 0; frame <= 24; frame++)
         {
+            // Include the opening burst even when a long-lived layer dominates the duration.
+            double time = frame == 0 ? Math.Min(32, interval * 0.5) : frame * interval;
             int budget = MaximumSprites * 6;
             var batches = new Dictionary<string, List<FxPreviewVertex>>(StringComparer.Ordinal);
-            SampleEffect(effect, frame * (window / 25), new Vector3(128, -128, 96),
+            SampleEffect(effect, time, new Vector3(128, -128, 96),
                 Vector3.Zero, Matrix4x4.Identity, Mix(0x46585052u), false, batches, ref budget);
-            foreach (FxPreviewVertex vertex in batches.Values.SelectMany(vertices => vertices))
+            framePoints.Clear();
+            double frameWeight = 0;
+            foreach (var vertices in batches.Values)
             {
-                if (vertex.Color.W < 0.1f || !float.IsFinite(vertex.Position.X) ||
-                    !float.IsFinite(vertex.Position.Y) || !float.IsFinite(vertex.Position.Z)) continue;
-                min = Vector3.Min(min, vertex.Position);
-                max = Vector3.Max(max, vertex.Position);
+                for (int i = 0; i < vertices.Count; i += 3)
+                {
+                    var a = vertices[i];
+                    var b = vertices[i + 1];
+                    var c = vertices[i + 2];
+                    if (frame != 0)
+                    {
+                        IncludeTravelVertex(a);
+                        IncludeTravelVertex(b);
+                        IncludeTravelVertex(c);
+                    }
+                    float area = Vector3.Cross(b.Position - a.Position, c.Position - a.Position).Length();
+                    float weight = area * (a.Color.W + b.Color.W + c.Color.W) / 3f;
+                    if (!float.IsFinite(weight) || weight <= 0) continue;
+                    frameWeight += 3d * weight;
+                    framePoints.Add((a.Position, weight));
+                    framePoints.Add((b.Position, weight));
+                    framePoints.Add((c.Position, weight));
+                }
+            }
+            // Prefer the earlier burst when later samples have similar visible area.
+            if (frameWeight > focusWeight * 1.2)
+            {
+                focusWeight = frameWeight;
+                (focusPoints, framePoints) = (framePoints, focusPoints);
             }
         }
-        return (min - new Vector3(8), max + new Vector3(8));
+        var travel = (Min: min - new Vector3(8), Max: max + new Vector3(8));
+        focusBounds = new RenderBounds(travel.Min, travel.Max);
+        if (focusPoints.Count > 0)
+        {
+            var x = FocusRange(p => p.X);
+            var y = FocusRange(p => p.Y);
+            var z = FocusRange(p => p.Z);
+            focusBounds = new RenderBounds(new(x.Min, y.Min, z.Min), new(x.Max, y.Max, z.Max));
+        }
+        return travel;
+
+        void IncludeTravelVertex(FxPreviewVertex vertex)
+        {
+            if (vertex.Color.W < 0.1f || !float.IsFinite(vertex.Position.X) ||
+                !float.IsFinite(vertex.Position.Y) || !float.IsFinite(vertex.Position.Z)) return;
+            min = Vector3.Min(min, vertex.Position);
+            max = Vector3.Max(max, vertex.Position);
+        }
+
+        (float Min, float Max) FocusRange(Func<Vector3, float> axis)
+        {
+            // Frame the middle 90% of visible area on each axis.
+            focusPoints.Sort((a, b) => axis(a.Position).CompareTo(axis(b.Position)));
+            double tail = focusWeight * 0.05;
+            double accumulated = 0;
+            int first = 0;
+            while (first < focusPoints.Count - 1 && accumulated + focusPoints[first].Weight <= tail)
+                accumulated += focusPoints[first++].Weight;
+            accumulated = 0;
+            int last = focusPoints.Count - 1;
+            while (last > first && accumulated + focusPoints[last].Weight <= tail)
+                accumulated += focusPoints[last--].Weight;
+            return (axis(focusPoints[first].Position), axis(focusPoints[last].Position));
+        }
     }
 
     private static double CalculateDuration(IReadOnlyList<ElementNode> elements, double loopingLife)
@@ -679,12 +777,14 @@ public sealed class FxSpritePreview
         Vector3 d = type == FxElemType.Tail ? center - right : center - right + up;
         if (!batches.TryGetValue(material, out List<FxPreviewVertex>? vertices))
             batches.Add(material, vertices = []);
+        // FX code-mesh cards wind clockwise when viewed from the normal.
+        // Keep the atlas UV attached to each corner when emitting the triangles.
         vertices.Add(new FxPreviewVertex(a, forward, new Vector2(uv.X, uv.W), color));
-        vertices.Add(new FxPreviewVertex(b, forward, new Vector2(uv.Z, uv.W), color));
-        vertices.Add(new FxPreviewVertex(c, forward, new Vector2(uv.Z, uv.Y), color));
-        vertices.Add(new FxPreviewVertex(a, forward, new Vector2(uv.X, uv.W), color));
-        vertices.Add(new FxPreviewVertex(c, forward, new Vector2(uv.Z, uv.Y), color));
         vertices.Add(new FxPreviewVertex(d, forward, new Vector2(uv.X, uv.Y), color));
+        vertices.Add(new FxPreviewVertex(c, forward, new Vector2(uv.Z, uv.Y), color));
+        vertices.Add(new FxPreviewVertex(c, forward, new Vector2(uv.Z, uv.Y), color));
+        vertices.Add(new FxPreviewVertex(b, forward, new Vector2(uv.Z, uv.W), color));
+        vertices.Add(new FxPreviewVertex(a, forward, new Vector2(uv.X, uv.W), color));
     }
 
     private static void SampleVisual(FxElemDef element, float normalizedLife,
@@ -717,7 +817,7 @@ public sealed class FxSpritePreview
 
     private sealed record VisualNode(string? Material,
         IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)>? Model, EffectNode? Child);
-    private sealed record ElementNode(FxElemDef Definition, bool Looping, IReadOnlyList<VisualNode> Visuals);
+    private sealed record ElementNode(int Index, FxElemDef Definition, bool Looping, IReadOnlyList<VisualNode> Visuals);
     private sealed record EffectNode(IReadOnlyList<ElementNode> Elements,
         double DurationMilliseconds, double LoopingLifeMilliseconds)
     {

@@ -1,10 +1,13 @@
 namespace MapConverter.Game.IW3.PS3.Rules
 
 open System
+open System.Buffers.Binary
+open System.Collections.Generic
 open System.IO
 open System.Globalization
 open IW4.Game.Assets.GfxMap
 open IW4.Game.Assets.XModel
+open IW4.Game.Codecs.XModel
 
 module internal ModelRules =
     let private splitStaticModel (nameFirstPart: bool) (model: XModelAsset) : XModelAsset array =
@@ -118,3 +121,103 @@ module internal ModelRules =
 
     /// Keep the complete source XModel available to nonstatic consumers.
     let SplitStaticModelForImport (model: XModelAsset) = splitStaticModel true model
+
+    /// Reuse only byte-identical packed vertices within each rigid bone list.
+    let CompactRigidSurface (source: XSurface) : XSurface =
+        if isNull source then nullArg (nameof source)
+
+        let stride = XSurfaceVertexCodec.StreamStride
+        if source.Deformed || source.VertListCount = 0 ||
+           source.VertListCount <> source.VertList.Count ||
+           source.Verts0.Count <> int source.VertCount * stride ||
+           source.Verts1.Count <> source.Verts0.Count ||
+           source.TriIndices.Count <> int source.TriCount * 3 then
+            source
+        else
+            let mutable valid = true
+            let mutable vertexEnd = 0
+            let mutable triangleEnd = 0
+            for rigid in source.VertList do
+                if isNull rigid then
+                    valid <- false
+                else
+                    let vertexStart = vertexEnd
+                    vertexEnd <- vertexEnd + int rigid.VertCount
+                    if int rigid.TriOffset <> triangleEnd || vertexEnd > int source.VertCount ||
+                       triangleEnd + int rigid.TriCount > int source.TriCount then
+                        valid <- false
+                    else
+                        triangleEnd <- triangleEnd + int rigid.TriCount
+                        for index in int rigid.TriOffset * 3 .. triangleEnd * 3 - 1 do
+                            let vertex = int source.TriIndices[index]
+                            if vertex < vertexStart || vertex >= vertexEnd then
+                                valid <- false
+
+            if not valid || vertexEnd <> int source.VertCount ||
+               triangleEnd <> int source.TriCount then
+                source
+            else
+                let verts0 = Array.zeroCreate<byte> source.Verts0.Count
+                let verts1 = Array.zeroCreate<byte> source.Verts1.Count
+                let remap = Array.zeroCreate<uint16> (int source.VertCount)
+                let rigidLists = Array.zeroCreate<XRigidVertList> source.VertListCount
+                let packed = Array.zeroCreate<byte> (stride * 2)
+                let readWord offset =
+                    BinaryPrimitives.ReadUInt64BigEndian(ReadOnlySpan<byte>(packed, offset, 8))
+                let mutable nextVertex = 0
+                let mutable sourceVertex = 0
+                for listIndex in 0 .. rigidLists.Length - 1 do
+                    let rigid = source.VertList[listIndex]
+                    let firstVertex = nextVertex
+                    let vertexByBytes = Dictionary<struct (uint64 * uint64 * uint64 * uint64), uint16>()
+                    let lastSourceVertex = sourceVertex + int rigid.VertCount
+                    while sourceVertex < lastSourceVertex do
+                        let sourceByte = sourceVertex * stride
+                        for offset in 0 .. stride - 1 do
+                            packed[offset] <- source.Verts0[sourceByte + offset]
+                            packed[stride + offset] <- source.Verts1[sourceByte + offset]
+                        let key = struct (readWord 0, readWord 8, readWord 16, readWord 24)
+                        let mutable matchIndex = 0us
+                        if not (vertexByBytes.TryGetValue(key, &matchIndex)) then
+                            matchIndex <- uint16 nextVertex
+                            nextVertex <- nextVertex + 1
+                            let targetByte = int matchIndex * stride
+                            Array.Copy(packed, 0, verts0, targetByte, stride)
+                            Array.Copy(packed, stride, verts1, targetByte, stride)
+                            vertexByBytes.Add(key, matchIndex)
+                        remap[sourceVertex] <- matchIndex
+                        sourceVertex <- sourceVertex + 1
+                    rigidLists[listIndex] <- XRigidVertList(
+                        BoneOffset = rigid.BoneOffset,
+                        VertCount = uint16 (nextVertex - firstVertex),
+                        TriOffset = rigid.TriOffset,
+                        TriCount = rigid.TriCount,
+                        CollisionTreePointer = rigid.CollisionTreePointer,
+                        CollisionTree = rigid.CollisionTree)
+
+                if nextVertex = int source.VertCount then
+                    source
+                else
+                    let indices = source.TriIndices |> Seq.map (fun index -> remap[int index]) |> Seq.toArray
+                    let byteCount = nextVertex * stride
+                    XSurface(
+                        TileMode = source.TileMode,
+                        DeformedRaw = source.DeformedRaw,
+                        StreamFlags = source.StreamFlags,
+                        Pad03 = source.Pad03,
+                        VertCount = uint16 nextVertex,
+                        TriCount = source.TriCount,
+                        TriIndicesPointer = source.TriIndicesPointer,
+                        TriIndices = indices,
+                        VertexInfo = source.VertexInfo,
+                        Verts0Pointer = source.Verts0Pointer,
+                        Verts0 = Array.sub verts0 0 byteCount,
+                        Vb0 = source.Vb0,
+                        Verts1Pointer = source.Verts1Pointer,
+                        Verts1 = Array.sub verts1 0 byteCount,
+                        Vb1 = source.Vb1,
+                        VertListCount = source.VertListCount,
+                        VertListPointer = source.VertListPointer,
+                        VertList = rigidLists,
+                        IndexBuffer = source.IndexBuffer,
+                        PartBits = source.PartBits)

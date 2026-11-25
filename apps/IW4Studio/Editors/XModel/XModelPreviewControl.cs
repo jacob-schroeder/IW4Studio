@@ -308,7 +308,7 @@ public sealed class XModelPreviewControl : OpenGlControlBase
             try
             {
                 XModelViewerUploadResult uploadResult =
-                    renderer.Upload(lod);
+                    renderer.Upload(lod, Scene);
                 PublishRendererStatus(
                     lod?.LodIndex ?? -1,
                     uploadResult,

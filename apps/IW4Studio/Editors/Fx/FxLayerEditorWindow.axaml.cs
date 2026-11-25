@@ -271,7 +271,7 @@ public sealed partial class FxLayerEditorWindow : Window
     {
         try
         {
-            Preview.SetEffect(_session.Workspace, _document.Effect);
+            _ = Preview.SetEffectAsync(_session.Workspace, _document.Effect);
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or
             UnauthorizedAccessException or ArgumentException)

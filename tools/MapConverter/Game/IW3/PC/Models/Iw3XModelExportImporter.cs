@@ -615,7 +615,7 @@ internal static class Iw3XModelExportImporter
                 modelName,
                 lodIndex,
                 allowBlended: metadata.IsAnimated);
-            document = NormalizeIw3CornerNormals(
+            document = NormalizeIw3Corners(
                 document,
                 modelName,
                 lodIndex);
@@ -794,7 +794,7 @@ internal static class Iw3XModelExportImporter
         }
     }
 
-    private static XModelExportDocument NormalizeIw3CornerNormals(
+    private static XModelExportDocument NormalizeIw3Corners(
         XModelExportDocument document,
         string modelName,
         int lodIndex)
@@ -900,7 +900,11 @@ internal static class Iw3XModelExportImporter
                 $"{triangleIndex} corner {cornerIndex} has no finite normal " +
                 "direction.");
         }
-        return corner with { Normal = Vector3.Normalize(corner.Normal) };
+        return corner with
+        {
+            Normal = Vector3.Normalize(corner.Normal),
+            Color = Iw3PcModelRules.DecodeExportVertexColor(corner.Color)
+        };
     }
 
     private static void ValidateCompiledSurfaces(

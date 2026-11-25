@@ -1919,6 +1919,9 @@ internal static class Iw3PcMapConverter
             if (name.StartsWith("vision/", StringComparison.OrdinalIgnoreCase) &&
                 name.EndsWith(".vision", StringComparison.OrdinalIgnoreCase))
                 content = CompileVisionFile(content);
+            else if (name.StartsWith("shock/", StringComparison.OrdinalIgnoreCase) &&
+                     name.EndsWith(".shock", StringComparison.OrdinalIgnoreCase))
+                content = CompileShellShockFile(content);
             if (electricBoxFallbackApplied && string.Equals(
                     name,
                     ElectricBoxRawFileName,
@@ -1951,9 +1954,30 @@ internal static class Iw3PcMapConverter
         return result.ToArray();
     }
 
+    private static byte[] CompileShellShockFile(byte[] content)
+    {
+        string text = Encoding.Latin1.GetString(content);
+        var assigned = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        int position = 0;
+        while (position < text.Length)
+        {
+            string field = ReadDvarToken(text, ref position, out _);
+            if (field.Length == 0)
+                break;
+            assigned[field] = ReadDvarToken(text, ref position, out _, allowLineBreaks: false);
+            while (position < text.Length && text[position] is not ('\n' or '\0'))
+                position++;
+        }
+
+        string[] missing = SoundRules.MissingShellShockVolumes(assigned);
+        if (missing.Length == 0)
+            return content;
+        string newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        return [.. Encoding.ASCII.GetBytes(string.Join(newline, missing) + newline), .. content];
+    }
+
     internal static byte[] CompileVisionFile(byte[] content)
     {
-        const int maxTokenLength = 1023;
         // IW3 ignores these five fields. IW4 recognizes them, but supplies
         // IW3-compatible film/light defaults when they are absent instead.
         // Latin1 keeps offsets and untouched bytes exact, including comments.
@@ -1963,7 +1987,7 @@ internal static class Iw3PcMapConverter
         int position = 0, copied = 0;
         while (position < text.Length)
         {
-            string field = ReadToken(out int start).ToLowerInvariant();
+            string field = ReadDvarToken(text, ref position, out int start).ToLowerInvariant();
             if (field.Length == 0)
                 break;
             bool remove = field is "r_filmdesaturationdark" or "r_filmmediumtint" or
@@ -1978,7 +2002,7 @@ internal static class Iw3PcMapConverter
                 // Source-recognized fields consume one value token before
                 // skipping the line. Successfully assigned duplicates instead
                 // skip the raw line, without parsing its comments or quotes.
-                string value = ReadToken(out _, allowLineBreaks: false);
+                string value = ReadDvarToken(text, ref position, out _, allowLineBreaks: false);
                 bool valid;
                 if (field is "r_glow" or "r_filmenable" or "r_filminvert")
                     valid = Regex.IsMatch(value, @"\A[ \t\r\n\v\f]*[+-]?[0-9]");
@@ -2015,62 +2039,63 @@ internal static class Iw3PcMapConverter
             return content;
         output.Append(text, copied, text.Length - copied);
         return Encoding.Latin1.GetBytes(output.ToString());
+    }
 
-        string ReadToken(out int start, bool allowLineBreaks = true)
+    private static string ReadDvarToken(string text, ref int position, out int start, bool allowLineBreaks = true)
+    {
+        const int maxTokenLength = 1023;
+        int originalPosition = position;
+        while (position < text.Length && text[position] != '\0')
         {
-            int originalPosition = position;
-            while (position < text.Length && text[position] != '\0')
+            if (text[position] <= ' ')
             {
-                if (text[position] <= ' ')
+                if (!allowLineBreaks && text[position] == '\n')
                 {
-                    if (!allowLineBreaks && text[position] == '\n')
-                    {
-                        position = originalPosition;
-                        start = position;
-                        return string.Empty;
-                    }
+                    position = originalPosition;
+                    start = position;
+                    return string.Empty;
+                }
+                position++;
+                continue;
+            }
+            if (text.AsSpan(position).StartsWith("//"))
+            {
+                while (position < text.Length && text[position] is not ('\n' or '\0'))
                     position++;
-                    continue;
-                }
-                if (text.AsSpan(position).StartsWith("//"))
-                {
-                    while (position < text.Length && text[position] is not ('\n' or '\0'))
-                        position++;
-                    continue;
-                }
-                if (text.AsSpan(position).StartsWith("/*"))
-                {
-                    int end = text.IndexOf("*/", position + 2, StringComparison.Ordinal);
-                    int nul = text.IndexOf('\0', position + 2);
-                    position = nul >= 0 && (end < 0 || nul < end) ? nul :
-                        end < 0 ? text.Length : end + 2;
-                    continue;
-                }
-                break;
+                continue;
             }
-            start = position;
-            if (position == text.Length || text[position] == '\0')
-                return string.Empty;
-            if (text[position] != '"')
+            if (text.AsSpan(position).StartsWith("/*"))
             {
-                while (position < text.Length && text[position] > ' ')
-                    position++;
-                return text.Substring(start, Math.Min(position - start, maxTokenLength));
+                int end = text.IndexOf("*/", position + 2, StringComparison.Ordinal);
+                int nul = text.IndexOf('\0', position + 2);
+                position = nul >= 0 && (end < 0 || nul < end) ? nul :
+                    end < 0 ? text.Length : end + 2;
+                continue;
             }
-            position++;
-            var token = new StringBuilder();
-            while (position < text.Length && text[position] != '\0')
-            {
-                char next = text[position++];
-                if (next == '"')
-                    break;
-                if (next == '\\' && position < text.Length && text[position] is '"' or '\\')
-                    next = text[position++];
-                if (token.Length < maxTokenLength)
-                    token.Append(next);
-            }
-            return token.ToString();
+            break;
         }
+        start = position;
+        if (position == text.Length || text[position] == '\0')
+            return string.Empty;
+        if (text[position] != '"')
+        {
+            while (position < text.Length && text[position] > ' ')
+                position++;
+            return text.Substring(start, Math.Min(position - start, maxTokenLength));
+        }
+        position++;
+        var token = new StringBuilder();
+        while (position < text.Length && text[position] != '\0')
+        {
+            char next = text[position++];
+            if (next == '"')
+                break;
+            if (next == '\\' && position < text.Length && text[position] is '"' or '\\')
+                next = text[position++];
+            if (token.Length < maxTokenLength)
+                token.Append(next);
+        }
+        return token.ToString();
     }
 
     private static byte[] DisableElectricBoxInitialization(byte[] content)

@@ -2,7 +2,6 @@ using IW4.Game.Assets.TechniqueSet;
 using IW4.Render.Assets;
 using IW4.Render.OpenGl.Presentation;
 using IW4.Render.OpenGl.Shaders;
-using IW4.Render.SceneBuilding;
 using IW4.Render.Scheduling.Lifecycle;
 
 namespace IW4.Render.OpenGl.FloatZ;
@@ -21,12 +20,11 @@ internal sealed record MapRenderOpenGlNormalCameraFloatZProgramSources(
 internal static class MapRenderOpenGlNormalCameraFloatZProgramResolver
 {
     public static MapRenderOpenGlNormalCameraFloatZProgramSources Resolve(
-        MapRenderWorldSceneSource source)
+        RenderAssetLookup lookup,
+        long revision)
     {
-        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(lookup);
 
-        long revision = source.AssetPoolRevisionAtConstruction;
-        RenderAssetLookup lookup = source.AssetLookup;
         if (!lookup.HasCanonicalAssetPoolRevision(revision))
         {
             throw new InvalidOperationException(

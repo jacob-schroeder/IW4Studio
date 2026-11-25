@@ -221,6 +221,7 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
                     new DockRegionSizeLimits(minimum: 260, maximum: 520, initial: 320)));
 
             FastFileAssets.ContentsRequested += FastFileAssets_ContentsRequested;
+            FastFileAssets.AssetOpenedFromContents += FastFileAssets_AssetOpenedFromContents;
             FastFileAssets.PropertyChanged += ContentsSelectionChanged;
             editingSession.AppliedAssetsChanged += DependencyAssetsChanged;
             _selectionContext.SelectionChanged += SelectionContext_SelectionChanged;
@@ -531,6 +532,15 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
     }
 
     private void FastFileAssets_ContentsRequested(object? sender, EventArgs e) => ShowContents();
+
+    private void FastFileAssets_AssetOpenedFromContents(object? sender, WorkbenchAssetSelection selection)
+    {
+        if (SelectedEditorTab is { HostedView: not null } tab && Equals(tab.Selection, selection))
+        {
+            CollapseRegion(DockRegion.Left);
+            CollapseRegion(DockRegion.Right);
+        }
+    }
 
     internal void ShowContents()
     {
@@ -868,6 +878,7 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
         if (!_gscWorkspaceWarmup.IsCompleted)
             _gscWorkspaceWarmupCancellation.Cancel();
         FastFileAssets.ContentsRequested -= FastFileAssets_ContentsRequested;
+        FastFileAssets.AssetOpenedFromContents -= FastFileAssets_AssetOpenedFromContents;
         FastFileAssets.PropertyChanged -= ContentsSelectionChanged;
         Editor.EditingSession.AppliedAssetsChanged -= DependencyAssetsChanged;
         CancelDependencyBuild();

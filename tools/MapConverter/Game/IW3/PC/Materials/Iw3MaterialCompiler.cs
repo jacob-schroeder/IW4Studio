@@ -691,7 +691,9 @@ internal static class Iw3MaterialCompiler
             byte atlasRows = sourceInspection.TextureAtlasRowCount;
             byte atlasColumns = sourceInspection.TextureAtlasColumnCount;
             MaterialGameFlags gameFlags = sourceInspection.GameFlags;
-            if (sourceName == "mc/mtl_lightdrygrass" && techniqueSetName == "mc_ambient_t0c0")
+            // IW3 PC draws static-model shadows with the surface's own material.
+            // On IW4 PS3 a shared opaque caster would discard its alpha test.
+            if (GetModelTechniqueFamily(techniqueSetName) is not null)
             {
                 byte depthState = stateEntries[(int)MaterialTechniqueType.BuildShadowmapDepth].StateBitsIndex;
                 if (depthState != byte.MaxValue)

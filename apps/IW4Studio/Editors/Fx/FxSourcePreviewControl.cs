@@ -9,24 +9,27 @@ using Avalonia.OpenGL;
 using Avalonia.OpenGL.Controls;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using IW4.Formats.SourceFormat.Material;
 using IW4.Game.Assets.Fx;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.Image;
 using IW4.Game.Assets.XModel;
 using IW4.Game.Zone;
+using IW4.Render;
+using IW4.Render.OpenGl.XModel;
+using IW4.Render.SceneBuilding;
 using IW4.Render.Textures;
+using IW4.Render.Transforms;
+using IW4.Studio.Desktop.Persistence;
 using IW4.Studio.Desktop.Rendering;
-using IW4.Studio.Desktop.Workbench.Composition;
 using IW4.Studio.Documents;
 using IW4.Render.EditorPreview;
-using IW4.Render.OpenGl;
 using Silk.NET.OpenGL;
-using TextureTarget = Silk.NET.OpenGL.TextureTarget;
 
 namespace IW4.Studio.Desktop.Editors.Fx;
 
-/// <summary>Workspace FX audition using the same sampler and blend states as Radiant.</summary>
+/// <summary>Plays sampled FX geometry with material passes from the active workspace.</summary>
 public sealed class FxSourcePreviewControl : UserControl, IDisposable
 {
     private readonly FxSourceViewport _viewport = new();
@@ -36,7 +39,21 @@ public sealed class FxSourcePreviewControl : UserControl, IDisposable
     private readonly TextBlock _status = new() { Opacity = .7, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
     private int _revision;
     private bool _disposed;
+    private bool _loading;
+    private CancellationTokenSource? _loadCancellation;
     private int _statusQueued;
+    private bool _showEditorTabHints;
+
+    public bool ShowEditorTabHints
+    {
+        get => _showEditorTabHints;
+        set
+        {
+            if (_showEditorTabHints == value) return;
+            _showEditorTabHints = value;
+            UpdateControls();
+        }
+    }
 
     public FxSourcePreviewControl()
     {
@@ -51,9 +68,9 @@ public sealed class FxSourcePreviewControl : UserControl, IDisposable
         _viewport.BindInput(inputSurface);
         layout.Children.Add(controls); layout.Children.Add(footer); layout.Children.Add(scene);
         Content = layout;
-        _pause.Click += (_, _) => { if (_viewport.Preview is { } p) p.SetPaused(!p.IsPaused); _viewport.Refresh(); };
-        _replay.Click += (_, _) => { if (_viewport.Preview is { } p) { p.Restart(); p.SetPaused(false); } _viewport.Refresh(); };
-        _repeat.IsCheckedChanged += (_, _) => { if (_viewport.Preview is { } p) p.Repeat = _repeat.IsChecked == true; _viewport.Refresh(); };
+        _pause.Click += (_, _) => { if (_viewport.Preview is { } p) p.SetPaused(!p.IsPaused); _viewport.Refresh(); UpdateControls(); };
+        _replay.Click += (_, _) => { if (_viewport.Preview is { } p) { p.Restart(); p.SetPaused(false); } _viewport.Refresh(); UpdateControls(); };
+        _repeat.IsCheckedChanged += (_, _) => { if (_viewport.Preview is { } p) p.Repeat = _repeat.IsChecked == true; _viewport.Refresh(); UpdateControls(); };
         frame.Click += (_, _) => _viewport.Frame();
         _viewport.StateChanged += () =>
         {
@@ -67,12 +84,23 @@ public sealed class FxSourcePreviewControl : UserControl, IDisposable
         UpdateControls();
     }
 
-    public async void SetEffect(FastFileWorkspace workspace, FxEffectDefAsset effect)
+    public async Task SetEffectAsync(
+        FastFileWorkspace workspace,
+        FxEffectDefAsset effect,
+        bool repeatOneShots = false,
+        int? selectedElementIndex = null)
     {
         if (_disposed) return;
         int revision = ++_revision;
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        _loadCancellation = cancellation;
+        CancellationToken token = cancellation.Token;
         string assetName = effect.Name ?? "";
-        _status.Text = "Loading preview…";
+        _loading = true;
+        _viewport.SetPreview(null, null, "", assetName);
+        UpdateControls();
         try
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
@@ -80,91 +108,57 @@ public sealed class FxSourcePreviewControl : UserControl, IDisposable
             long poolRevision = pool.Revision;
             var result = await Task.Run(() =>
             {
+                token.ThrowIfCancellationRequested();
                 FxSpritePreview preview = FxSpritePreview.Load(effect, Vector3.Zero, Matrix4x4.Identity,
                     name => pool.TryResolve(XAssetType.Fx, name, out FxEffectDefAsset? child) && child is not null
                         ? child : throw new InvalidDataException($"Effect '{name}' is not loaded."),
                     name => pool.TryResolve(XAssetType.XModel, name, out XModelAsset? model) && model is not null
                         ? FxModelPreviewGeometry.FromModel(model)
-                        : throw new InvalidDataException($"Model '{name}' is not loaded."));
+                        : throw new InvalidDataException($"Model '{name}' is not loaded."),
+                    selectedElementIndex);
                 preview.SetPaused(true);
-                var materials = new Dictionary<string, FxPreviewMaterial>(StringComparer.Ordinal);
-                var notices = new List<string>();
-                if (!string.IsNullOrEmpty(preview.Notice)) notices.Add(preview.Notice);
-                foreach (string name in preview.Materials)
-                {
-                    try
-                    {
-                        FxPreviewMaterial? material = FxPreviewMaterial.Load(workspace, name);
-                        if (material is null) notices.Add("Heat distortion is omitted from this preview.");
-                        else materials.Add(name, material);
-                    }
-                    catch (Exception ex) when (IsSourceError(ex)) { notices.Add($"{name}: {ex.Message}"); }
-                }
-                if (pool.Revision != poolRevision)
-                    throw new InvalidOperationException("Assets changed while loading the preview. Reopen the editor to refresh.");
-                return (preview, materials, notice: string.Join("; ", notices));
-            });
+                XModelRenderScene? scene = preview.HasDrawableElements
+                    ? new FxMaterialSceneBuilder().Build(
+                        preview.Materials,
+                        WorkspaceRenderAssetSource.Create(workspace, "FX playback materials"),
+                        new WorkspaceGfxImagePayloadResolver(workspace), token)
+                    : null;
+                token.ThrowIfCancellationRequested();
+                return (preview, scene);
+            }, token);
             if (_disposed || revision != _revision) return;
             if (pool.Revision != poolRevision)
                 throw new InvalidOperationException("Assets changed while loading the preview. Reopen the editor to refresh.");
-            _repeat.IsChecked = false;
-            _viewport.SetPreview(result.preview, result.materials, result.notice, assetName);
-            result.preview.Restart(); result.preview.SetPaused(false);
+            _loading = false;
+            result.preview.Repeat = repeatOneShots;
+            _viewport.SetPreview(result.preview, result.scene, result.preview.Notice ?? "", assetName, selectedElementIndex);
+            _repeat.IsChecked = repeatOneShots;
             UpdateControls();
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex) when (IsSourceError(ex))
         {
             if (_disposed || revision != _revision) return;
-            _viewport.SetPreview(null, new Dictionary<string, FxPreviewMaterial>(), ex.Message, assetName);
+            _loading = false;
+            _viewport.SetPreview(null, null, ex.Message, assetName);
             UpdateControls();
+        }
+        finally
+        {
+            if (ReferenceEquals(_loadCancellation, cancellation))
+                _loadCancellation = null;
+            cancellation.Dispose();
         }
     }
 
     internal static Task<Bitmap?> LoadMaterialBitmapAsync(FastFileWorkspace workspace, string materialName) =>
         Task.Run(() =>
         {
-            FxPreviewMaterial? material = FxPreviewMaterial.Load(workspace, materialName);
-            if (material is null) return null;
-            unsafe
-            {
-                fixed (byte* pixels = material.Pixels)
-                    return new Bitmap(Avalonia.Platform.PixelFormat.Rgba8888, AlphaFormat.Unpremul,
-                        (nint)pixels, new PixelSize(material.Width, material.Height), new Avalonia.Vector(96, 96),
-                        checked(material.Width * 4));
-            }
-        });
-
-    public void Clear() { ++_revision; _viewport.SetPreview(null, new Dictionary<string, FxPreviewMaterial>(), "", ""); UpdateControls(); }
-    public void Dispose() { if (_disposed) return; _disposed = true; Clear(); }
-    private void UpdateControls()
-    {
-        FxSpritePreview? p = _viewport.Preview;
-        _pause.IsEnabled = p is { HasDrawableElements: true, IsFinished: false };
-        _pause.Content = p?.IsPaused == true ? "Resume" : "Pause";
-        _replay.IsEnabled = p is { HasDrawableElements: true };
-        _replay.Content = p?.IsLooping == true ? "Restart" : "Replay";
-        _repeat.IsVisible = p is { IsLooping: false };
-        _status.Text = p is null ? "Preview unavailable" : !p.HasDrawableElements ? "No supported visual layers" :
-            p.IsFinished ? "Finished · Replay to watch again" : p.IsPaused ? "Paused" : "Right-drag to orbit · scroll to zoom";
-        if (_viewport.Notice.Length > 0) _status.Text += " · Limited preview";
-        ToolTip.SetTip(_status, _viewport.Notice.Length > 0 ? _viewport.Notice : _status.Text);
-    }
-
-    private static bool IsSourceError(Exception ex) => ex is IOException or InvalidDataException or UnauthorizedAccessException or
-        JsonException or ArgumentException or NotSupportedException or InvalidOperationException or OverflowException or
-        KeyNotFoundException or FormatException;
-
-    private sealed record FxPreviewMaterial(MaterialSurfaceState Surface, int Width, int Height, byte[] Pixels)
-    {
-        internal static FxPreviewMaterial? Load(FastFileWorkspace workspace, string name)
-        {
             var pool = workspace.LoadedZone.Context.AssetPool;
-            if (!pool.TryResolve(XAssetType.Material, name, out MaterialAsset? material) || material is null)
-                throw new InvalidDataException($"Material '{name}' is not loaded.");
-            // Use the canonical source projection so both editors interpret the same native state.
+            if (!pool.TryResolve(XAssetType.Material, materialName, out MaterialAsset? material) || material is null)
+                throw new InvalidDataException($"Material '{materialName}' is not loaded.");
+            if (material.Info.SortKey == MaterialSortKey.Distortion) return null;
             using var json = JsonDocument.Parse(new MaterialExchange().ToJson(material));
-            MaterialSurfaceState surface = MaterialSurfaceState.Read(json.RootElement);
-            if (surface.SortKey == (int)MaterialSortKey.Distortion) return null;
             JsonElement texture = json.RootElement.GetProperty("textures").EnumerateArray().FirstOrDefault(t =>
                 t.TryGetProperty("name", out var n) && n.GetString() == "colorMap");
             if (texture.ValueKind != JsonValueKind.Object || !texture.TryGetProperty("image", out var imageName) ||
@@ -176,32 +170,138 @@ public sealed class FxSourcePreviewControl : UserControl, IDisposable
             if (!GfxImagePreviewDecoder.TryDecodeBestAvailable(image, new WorkspaceGfxImagePayloadResolver(workspace),
                 out GfxImagePreviewSnapshot? decoded, out string reason) || decoded is null)
                 throw new InvalidDataException(reason);
-            byte[] pixels = decoded.GetRgbaBytesCopy();
-            RsxTextureSwizzleDecoder.Decode(RsxTextureCommandBuilder.FromImage(image)).ApplyToRgba(pixels);
-            return new(surface, decoded.Width, decoded.Height, pixels);
-        }
+            byte[] rgba = decoded.GetRgbaBytesCopy();
+            RsxTextureSwizzleDecoder.Decode(RsxTextureCommandBuilder.FromImage(image)).ApplyToRgba(rgba);
+            unsafe
+            {
+                fixed (byte* pixels = rgba)
+                    return new Bitmap(Avalonia.Platform.PixelFormat.Rgba8888, AlphaFormat.Unpremul,
+                        (nint)pixels, new PixelSize(decoded.Width, decoded.Height), new Avalonia.Vector(96, 96),
+                        checked(decoded.Width * 4));
+            }
+        });
+
+    public void Clear()
+    {
+        ++_revision;
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+        _loadCancellation = null;
+        _loading = false;
+        _viewport.SetPreview(null, null, "", "");
+        UpdateControls();
     }
+    public void Dispose() { if (_disposed) return; _disposed = true; Clear(); }
+    private void UpdateControls()
+    {
+        FxSpritePreview? p = _viewport.Preview;
+        bool canPlay = _viewport.Failure.Length == 0 && p is { HasDrawableElements: true } &&
+            _viewport.MaterialCount > 0;
+        bool pauseEnabled = canPlay && p is { IsFinished: false };
+        if (_pause.IsEnabled != pauseEnabled) _pause.IsEnabled = pauseEnabled;
+        string pauseLabel = p?.IsPaused == true ? "Resume" : "Pause";
+        if (!Equals(_pause.Content, pauseLabel)) _pause.Content = pauseLabel;
+        if (_replay.IsEnabled != canPlay) _replay.IsEnabled = canPlay;
+        string replayLabel = p?.IsLooping == true ? "Restart" : "Replay";
+        if (!Equals(_replay.Content, replayLabel)) _replay.Content = replayLabel;
+        bool repeatVisible = p is { IsLooping: false };
+        if (_repeat.IsVisible != repeatVisible) _repeat.IsVisible = repeatVisible;
+        string status;
+        if (_loading || _viewport.PreparingMaterials) status = "Preparing FX materials…";
+        else if (_viewport.Failure.Length > 0) status = $"Preview unavailable: {_viewport.Failure}";
+        else if (p is null) status = _viewport.Notice.Length > 0 ? _viewport.Notice : "Preview unavailable";
+        else if (!p.HasDrawableElements) status = NoDrawableStatus(p.Notice);
+        else if (_viewport.MaterialCount == 0) status = "No material pass could draw this effect.";
+        else
+        {
+            status = p.IsFinished ? "Finished · Replay to watch again" :
+                p.IsPaused ? "Paused" : "Right-drag to orbit · scroll to zoom";
+            if (_viewport.BlockedMaterials > 0)
+                status += $" · {_viewport.MaterialCount} of {p.Materials.Count} materials ready";
+            if (_viewport.FrameIssues.Count > 0)
+                status += " · Some particles could not draw";
+            if (_viewport.Notice.Length > 0)
+                status += " · " + _viewport.Notice.Split(';', 2)[0];
+        }
+        if (_status.Text != status) _status.Text = status;
+        string tip = string.Join("\n", new[] { _viewport.Failure, _viewport.MaterialDetails, _viewport.Notice }
+            .Concat(_viewport.FrameIssues).Where(message => message.Length > 0));
+        if (tip.Length == 0) tip = status;
+        if (!Equals(ToolTip.GetTip(_status), tip)) ToolTip.SetTip(_status, tip);
+    }
+
+    private string NoDrawableStatus(string? notice)
+    {
+        if (notice?.Contains("Sound elements omitted", StringComparison.Ordinal) == true)
+            return "Sound has no canvas preview" + (_showEditorTabHints ? " · See Visual / Audio" : "");
+        if (!string.IsNullOrWhiteSpace(notice))
+            return $"No drawable layers: {notice.Split(';')[0].Trim()}";
+        return "No drawable layers";
+    }
+
+    internal static bool IsSourceError(Exception ex) => ex is IOException or InvalidDataException or UnauthorizedAccessException or
+        JsonException or ArgumentException or NotSupportedException or InvalidOperationException or OverflowException or
+        KeyNotFoundException or FormatException;
 
     private sealed class FxSourceViewport : OpenGlControlBase
     {
         private GL? _gl;
-        private uint _program, _vao, _buffer;
-        private readonly Dictionary<string, uint> _textures = new(StringComparer.Ordinal);
-        private IReadOnlyDictionary<string, FxPreviewMaterial> _materials = new Dictionary<string, FxPreviewMaterial>();
-        private bool _reloadTextures;
+        private SilkXModelViewerRenderer? _renderer;
+        private XModelRenderScene? _scene;
+        private bool _uploadRequired;
+        private bool _startPlaybackAfterUpload;
+        private Visual[] _ancestors = [];
+        private bool _attached;
+        private const float VerticalFieldOfView = .85f;
+        private const float FrameFill = .82f;
         private string _assetName = "";
+        private int? _framedLayer;
+        private bool _autoFrame = true;
         private float _yaw = -.9f, _pitch = .2f, _distance = 256;
         private Vector3 _target;
         private Point _last;
         private IPointer? _pointer;
         internal FxSpritePreview? Preview { get; private set; }
         internal string Notice { get; private set; } = "";
+        internal string Failure { get; private set; } = "";
+        internal int MaterialCount { get; private set; }
+        internal int BlockedMaterials { get; private set; }
+        internal string MaterialDetails { get; private set; } = "";
+        internal IReadOnlyList<string> FrameIssues { get; private set; } = [];
+        internal bool PreparingMaterials => _scene is not null && _uploadRequired && Failure.Length == 0;
         internal event Action? StateChanged;
 
         internal FxSourceViewport()
         {
             Focusable = true;
-            SizeChanged += (_, _) => Refresh();
+            SizeChanged += (_, _) =>
+            {
+                if (_autoFrame) Frame();
+                else Refresh();
+            };
+        }
+
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+            _attached = true;
+            _ancestors = this.GetVisualAncestors().Prepend(this).ToArray();
+            foreach (Visual visual in _ancestors) visual.PropertyChanged += VisibilityChanged;
+            Refresh();
+        }
+
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            _attached = false;
+            foreach (Visual visual in _ancestors) visual.PropertyChanged -= VisibilityChanged;
+            _ancestors = [];
+            base.OnDetachedFromVisualTree(e);
+        }
+
+        private void VisibilityChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+        {
+            if (e.Property == IsVisibleProperty && _ancestors.All(visual => visual.IsVisible))
+                RequestNextFrameRendering();
         }
 
         internal void BindInput(Control surface)
@@ -215,147 +315,165 @@ public sealed class FxSourcePreviewControl : UserControl, IDisposable
             surface.PointerMoved += (_, e) =>
             {
                 if (_pointer != e.Pointer) return;
+                _autoFrame = false;
                 Point p = e.GetPosition(this); _yaw -= (float)(p.X - _last.X) * .008f;
                 _pitch = Math.Clamp(_pitch + (float)(p.Y - _last.Y) * .008f, -1.5f, 1.5f);
                 _last = p; Refresh(); e.Handled = true;
             };
             surface.PointerReleased += (_, e) => { if (_pointer == e.Pointer) { _pointer = null; e.Pointer.Capture(null); } };
             surface.PointerCaptureLost += (_, _) => _pointer = null;
-            surface.PointerWheelChanged += (_, e) => { _distance = Math.Clamp(_distance * MathF.Exp((float)-e.Delta.Y * .12f), .1f, 1_000_000); Refresh(); e.Handled = true; };
+            surface.PointerWheelChanged += (_, e) =>
+            {
+                _autoFrame = false;
+                _distance = Math.Clamp(_distance * MathF.Exp((float)-e.Delta.Y * .12f), .1f, 1_000_000);
+                Refresh();
+                e.Handled = true;
+            };
         }
 
-        internal void SetPreview(FxSpritePreview? preview, IReadOnlyDictionary<string, FxPreviewMaterial> materials,
-            string notice, string assetName)
+        internal void SetPreview(FxSpritePreview? preview, XModelRenderScene? scene,
+            string notice, string assetName, int? selectedLayer = null)
         {
             Preview?.SetPaused(true);
-            bool frame = _assetName != assetName || Preview is null;
-            _assetName = assetName; Preview = preview; _materials = materials; Notice = notice;
-            _reloadTextures = true;
+            bool frame = preview is not null && (_autoFrame || _assetName != assetName || _framedLayer != selectedLayer);
+            if (preview is not null || assetName.Length == 0)
+            {
+                _assetName = assetName;
+                _framedLayer = selectedLayer;
+            }
+            Preview = preview;
+            _scene = scene;
+            Notice = notice;
+            MaterialCount = BlockedMaterials = 0;
+            MaterialDetails = "";
+            FrameIssues = [];
+            if (_renderer is not null) Failure = "";
+            _uploadRequired = true;
+            _startPlaybackAfterUpload = preview is not null;
             if (frame) Frame();
-            Refresh();
+            else Refresh();
         }
-        internal void Refresh() { RequestNextFrameRendering(); StateChanged?.Invoke(); }
+        internal void Refresh()
+        {
+            if (_attached && IsEffectivelyVisible)
+                RequestNextFrameRendering();
+        }
+        private Vector3 EyeDirection => new(
+            MathF.Cos(_pitch) * MathF.Cos(_yaw), MathF.Cos(_pitch) * MathF.Sin(_yaw), MathF.Sin(_pitch));
+
         internal void Frame()
         {
-            if (Preview is { } p)
+            _autoFrame = true;
+            _yaw = -.9f;
+            _pitch = .2f;
+            if (Preview is { } preview && Bounds.Width > 0 && Bounds.Height > 0)
             {
-                _target = (p.PreviewBounds.Min + p.PreviewBounds.Max) / 2;
-                _distance = Math.Max(16, Vector3.Distance(p.PreviewBounds.Min, p.PreviewBounds.Max) * 1.5f);
+                var focus = preview.FocusBounds;
+                _target = focus.Center;
+                var half = (focus.Max - focus.Min) * .5f;
+                Vector3 towardEye = EyeDirection;
+                Vector3 right = Vector3.Normalize(Vector3.Cross(Vector3.UnitZ, towardEye));
+                Vector3 up = Vector3.Cross(towardEye, right);
+                float halfHeight = MathF.Tan(VerticalFieldOfView / 2) * FrameFill;
+                float halfWidth = halfHeight * (float)(Bounds.Width / Bounds.Height);
+
+                // Fit each corner in perspective, including its distance toward the camera.
+                _distance = .1f;
+                for (int corner = 0; corner < 8; corner++)
+                {
+                    Vector3 offset = new((corner & 1) == 0 ? -half.X : half.X,
+                        (corner & 2) == 0 ? -half.Y : half.Y, (corner & 4) == 0 ? -half.Z : half.Z);
+                    float fitX = MathF.Abs(Vector3.Dot(offset, right)) / halfWidth;
+                    float fitY = MathF.Abs(Vector3.Dot(offset, up)) / halfHeight;
+                    _distance = MathF.Max(_distance, Vector3.Dot(offset, towardEye) + MathF.Max(fitX, fitY));
+                }
             }
-            _yaw = -.9f; _pitch = .2f; Refresh();
+            Refresh();
         }
 
-        protected override unsafe void OnOpenGlInit(GlInterface glInterface)
+        protected override void OnOpenGlInit(GlInterface gl)
         {
-            _gl = GL.GetApi(glInterface.GetProcAddress);
             try
             {
-                string header = _gl.GetStringS(StringName.Version).Contains("OpenGL ES", StringComparison.Ordinal)
-                    ? "#version 300 es\nprecision highp float;\n" : "#version 150\n";
-                _program = CreateProgram(_gl, header);
-                _vao = _gl.GenVertexArray(); _buffer = _gl.GenBuffer();
-                _gl.BindVertexArray(_vao); _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _buffer);
-                uint stride = (uint)sizeof(FxPreviewVertex);
-                _gl.EnableVertexAttribArray(0); _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, (void*)0);
-                _gl.EnableVertexAttribArray(1); _gl.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, (void*)24);
-                _gl.EnableVertexAttribArray(2); _gl.VertexAttribPointer(2, 4, VertexAttribPointerType.Float, false, stride, (void*)32);
-                _gl.BindVertexArray(0); _reloadTextures = true;
+                _gl = GL.GetApi(gl.GetProcAddress);
+                _renderer = new SilkXModelViewerRenderer(_gl, OpenGlProgramBinaryCachePath.GetDirectory());
+                _uploadRequired = true;
+                Failure = "";
             }
-            catch (Exception ex) when (IsSourceError(ex)) { Notice = ex.Message; Release(); StateChanged?.Invoke(); }
-        }
-        protected override void OnOpenGlDeinit(GlInterface gl) => Release();
-        protected override void OnOpenGlLost()
-        {
-            _textures.Clear(); _program = _vao = _buffer = 0; _gl = null; _reloadTextures = true;
-        }
-        private void Release()
-        {
-            if (_gl is { } gl)
+            catch (Exception error) when (IsSourceError(error))
             {
-                foreach (uint texture in _textures.Values) gl.DeleteTexture(texture);
-                if (_buffer != 0) gl.DeleteBuffer(_buffer);
-                if (_vao != 0) gl.DeleteVertexArray(_vao);
-                if (_program != 0) gl.DeleteProgram(_program);
-                gl.Dispose();
+                Failure = error.Message;
             }
-            _textures.Clear(); _gl = null; _program = _vao = _buffer = 0;
+            StateChanged?.Invoke();
         }
-        protected override unsafe void OnOpenGlRender(GlInterface glInterface, int framebuffer)
+
+        protected override void OnOpenGlDeinit(GlInterface gl)
         {
-            if (_gl is not { } gl || _program == 0) return;
+            _renderer?.Dispose();
+            ReleaseContext();
+        }
+
+        protected override void OnOpenGlLost() => ReleaseContext();
+
+        private void ReleaseContext()
+        {
+            _renderer = null;
+            _gl?.Dispose();
+            _gl = null;
+            _uploadRequired = true;
+        }
+
+        protected override void OnOpenGlRender(GlInterface gl, int framebuffer)
+        {
+            if (_renderer is not { } renderer || Failure.Length > 0) return;
             try
             {
-                if (_reloadTextures)
+                if (_uploadRequired)
                 {
-                    foreach (uint texture in _textures.Values) gl.DeleteTexture(texture);
-                    _textures.Clear(); _reloadTextures = false;
-                }
-                float scaling = (float)(TopLevel.GetTopLevel(this)?.RenderScaling ?? 1);
-                uint width = (uint)Math.Max(1, Bounds.Width * scaling), height = (uint)Math.Max(1, Bounds.Height * scaling);
-                gl.BindFramebuffer(FramebufferTarget.Framebuffer, (uint)framebuffer);
-                gl.Viewport(0, 0, width, height); gl.DepthMask(true);
-                gl.ClearColor(.07f, .08f, .095f, 1); gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-                if (Preview is not { } preview) return;
-                Vector3 eye = _target + _distance * new Vector3(MathF.Cos(_pitch) * MathF.Cos(_yaw), MathF.Cos(_pitch) * MathF.Sin(_yaw), MathF.Sin(_pitch));
-                Matrix4x4 vp = Matrix4x4.CreateLookAt(eye, _target, Vector3.UnitZ) *
-                    Matrix4x4.CreatePerspectiveFieldOfView(.85f, (float)width / height, Math.Max(.01f, _distance / 10_000), Math.Max(4096, _distance * 20));
-                gl.UseProgram(_program); gl.BindVertexArray(_vao); gl.BindBuffer(BufferTargetARB.ArrayBuffer, _buffer);
-                gl.UniformMatrix4(gl.GetUniformLocation(_program, "uViewProjection"), 1, false, (float*)&vp);
-                gl.ActiveTexture(TextureUnit.Texture0); gl.Uniform1(gl.GetUniformLocation(_program, "uTexture"), 0);
-                int alpha = gl.GetUniformLocation(_program, "uAlphaTest"), premultiply = gl.GetUniformLocation(_program, "uPremultiplyAlpha");
-                foreach (var (name, vertices) in preview.Sample(eye))
-                {
-                    if (!_materials.TryGetValue(name, out var material)) continue;
-                    if (!_textures.TryGetValue(name, out uint texture))
+                    _uploadRequired = false;
+                    var prepared = renderer.UploadFxMaterials(_scene);
+                    MaterialCount = prepared.ExecutableGroupCount;
+                    BlockedMaterials = prepared.BlockedGroupCount;
+                    MaterialDetails = string.Join("\n", prepared.Diagnostics);
+                    if (_startPlaybackAfterUpload && MaterialCount > 0 && Preview is { } ready)
                     {
-                        texture = gl.GenTexture(); _textures.Add(name, texture);
-                        gl.BindTexture(TextureTarget.Texture2D, texture); gl.BindBuffer(BufferTargetARB.PixelUnpackBuffer, 0);
-                        gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1); gl.PixelStore(PixelStoreParameter.UnpackRowLength, 0);
-                        fixed (byte* data = material.Pixels)
-                            gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba8, (uint)material.Width, (uint)material.Height,
-                                0, Silk.NET.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, data);
-                        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
-                        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-                        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
-                        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
-                        gl.GenerateMipmap(TextureTarget.Texture2D);
+                        ready.Restart();
+                        ready.SetPaused(false);
+                        _startPlaybackAfterUpload = false;
                     }
-                    MaterialPreviewDrawing.Apply(gl, material.Surface, alpha, premultiply, -1);
-                    gl.Disable(EnableCap.CullFace); gl.BindTexture(TextureTarget.Texture2D, texture);
-                    fixed (FxPreviewVertex* data = vertices)
-                        gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(FxPreviewVertex)), data, BufferUsageARB.DynamicDraw);
-                    gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)vertices.Length);
+                    StateChanged?.Invoke();
                 }
-                gl.DepthMask(true); gl.Disable(EnableCap.Blend); gl.Disable(EnableCap.PolygonOffsetFill);
-                gl.BindVertexArray(0); gl.UseProgram(0);
-                StateChanged?.Invoke();
-                if (preview.IsPlaying) RequestNextFrameRendering();
-            }
-            catch (Exception ex) when (IsSourceError(ex)) { Preview?.SetPaused(true); Notice = ex.Message; StateChanged?.Invoke(); }
-        }
 
-        private static uint CreateProgram(GL gl, string header)
-        {
-            const string vertex = "in vec3 aPosition; in vec2 aUv; in vec4 aColor; uniform mat4 uViewProjection; out vec2 uv; out vec4 color; void main(){ uv=aUv; color=aColor; gl_Position=uViewProjection*vec4(aPosition,1.0); }";
-            const string fragment = "in vec2 uv; in vec4 color; uniform sampler2D uTexture; uniform int uAlphaTest; uniform bool uPremultiplyAlpha; out vec4 fragmentColor; void main(){ vec4 c=texture(uTexture,uv)*color; if((uAlphaTest==1 && c.a<=0.0)||(uAlphaTest==2 && c.a>=128.0/255.0)||(uAlphaTest==3 && c.a<128.0/255.0)) discard; fragmentColor=vec4(uPremultiplyAlpha ? c.rgb*c.a : c.rgb,c.a); }";
-            uint v = 0, f = 0, program = 0;
-            try
-            {
-                v = Compile(ShaderType.VertexShader, vertex); f = Compile(ShaderType.FragmentShader, fragment);
-                program = gl.CreateProgram(); gl.AttachShader(program, v); gl.AttachShader(program, f);
-                gl.BindAttribLocation(program, 0, "aPosition"); gl.BindAttribLocation(program, 1, "aUv"); gl.BindAttribLocation(program, 2, "aColor");
-                gl.LinkProgram(program); gl.GetProgram(program, ProgramPropertyARB.LinkStatus, out int linked);
-                if (linked == 0) throw new InvalidOperationException(gl.GetProgramInfoLog(program));
-                return program;
+                double scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1d;
+                int width = Math.Max(1, (int)(Bounds.Width * scale));
+                int height = Math.Max(1, (int)(Bounds.Height * scale));
+                Vector3 eye = _target + _distance * EyeDirection;
+                Vector3 forward = RenderCoordinateConverter.GameToRenderPosition(-EyeDirection);
+                var camera = new RenderCamera(RenderCoordinateConverter.GameToRenderPosition(eye),
+                    MathF.Atan2(forward.X, -forward.Z), MathF.Asin(Math.Clamp(forward.Y, -1f, 1f)),
+                    VerticalFieldOfView, MathF.Max(.01f, _distance / 10_000), MathF.Max(4096, _distance * 20));
+                float materialTime = 0;
+                IReadOnlyList<(string Material, FxPreviewVertex[] Vertices)> batches =
+                    MaterialCount > 0 && Preview is { } active ? active.Sample(eye, out materialTime) : [];
+                var issues = renderer.RenderFx(framebuffer, width, height, camera, materialTime, batches);
+                if (batches.Count > 0 && !FrameIssues.SequenceEqual(issues))
+                {
+                    FrameIssues = issues;
+                    StateChanged?.Invoke();
+                }
+                if (MaterialCount > 0 && Preview is { } preview)
+                {
+                    if (preview.IsPlaying && _attached && IsEffectivelyVisible)
+                        RequestNextFrameRendering();
+                    else if (preview.IsFinished)
+                        StateChanged?.Invoke();
+                }
             }
-            catch { if (program != 0) gl.DeleteProgram(program); throw; }
-            finally { if (v != 0) gl.DeleteShader(v); if (f != 0) gl.DeleteShader(f); }
-            uint Compile(ShaderType type, string source)
+            catch (Exception error) when (IsSourceError(error))
             {
-                uint shader = gl.CreateShader(type); gl.ShaderSource(shader, header + source); gl.CompileShader(shader);
-                gl.GetShader(shader, ShaderParameterName.CompileStatus, out int compiled);
-                if (compiled != 0) return shader;
-                string error = gl.GetShaderInfoLog(shader); gl.DeleteShader(shader); throw new InvalidOperationException(error);
+                Preview?.SetPaused(true);
+                Failure = error.Message;
+                StateChanged?.Invoke();
             }
         }
     }

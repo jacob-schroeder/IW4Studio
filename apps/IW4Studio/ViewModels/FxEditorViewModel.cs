@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using IW4.Game.Assets;
 using IW4.Game.Assets.Fx;
@@ -14,6 +15,7 @@ using IW4.Render.EditorPreview;
 using IW4.Render.SceneBuilding;
 using IW4.Runtime.Assets.Sound;
 using IW4.Studio.Desktop.Editors;
+using IW4.Studio.Desktop.Editors.Fx;
 using IW4.Studio.Desktop.Rendering;
 using IW4.Studio.Documents;
 
@@ -47,6 +49,11 @@ public sealed class FxEditorViewModel
     private FxPreviewFrame? _previewFrame;
     private string _selectedVisualBuildStatus = string.Empty;
     private string? _selectedVisualRendererStatus;
+    private bool _visualInspectorActive;
+    private Bitmap? _selectedMaterialTexture;
+    private int _visualGeneration;
+    private bool _textureRequested;
+    private string? _textureLoadFailure;
     private long _visualSceneCacheRevision = -1;
     private double _currentMilliseconds;
     private double _playbackStartMilliseconds;
@@ -164,7 +171,7 @@ public sealed class FxEditorViewModel
             SelectedElement = selectedElement;
         foreach (string property in new[]
         {
-            nameof(Name), nameof(LoopingLifeText), nameof(LoopingCount), nameof(OneShotCount),
+            nameof(Effect), nameof(Name), nameof(LoopingLifeText), nameof(LoopingCount), nameof(OneShotCount),
             nameof(EmissionCount), nameof(ElementCount), nameof(ElementCountText), nameof(GroupCountText),
             nameof(RootProperties), nameof(SelectedElement), nameof(SelectedElementIndex),
             nameof(HasSelectedElement), nameof(SelectedElementTitle), nameof(SelectedElementSummary),
@@ -175,6 +182,9 @@ public sealed class FxEditorViewModel
             nameof(VisibleInstanceCountText), nameof(PreviewStatus), nameof(CanPlay), nameof(CanRestart)
         }) OnPropertyChanged(property);
     }
+
+    internal FxEffectDefAsset Effect => _effect;
+    internal FastFileWorkspace? Workspace => _workspace;
 
     public string Name { get; private set; } = string.Empty;
 
@@ -295,19 +305,6 @@ public sealed class FxEditorViewModel
         ? "Select an element to see its renderer fidelity."
         : SelectedElement.PreviewRepresentation;
 
-    public string RendererScopeText =>
-        "The sandbox uses a fixed editor seed and deterministic hash rather " +
-        "than the engine random table. It evaluates root birth timing, " +
-        "delay/lifetime ranges, " +
-        "spawn offsets, velocity/gravity motion, and color/alpha/size/scale/" +
-        "rotation samples. It renders billboard color cards and explicit " +
-        "debug glyphs for specialized engine systems. The Visual / Audio " +
-        "tab separately executes the selected Material's editor camera-color " +
-        "shader/texture graph, renders selected XModels through their authored " +
-        "camera-color material passes, and offers manual Sound alias playback; " +
-        "those dependencies are inspected at the origin rather than emitted " +
-        "inside the sandbox.";
-
     public IReadOnlyList<FxVisualDependencyViewModel>
         SelectedVisualDependencies => _selectedVisualDependencies;
 
@@ -358,34 +355,100 @@ public sealed class FxEditorViewModel
 
     public bool HasSelectedSoundPreview => SelectedSoundPreview is not null;
 
+    public Bitmap? SelectedMaterialTexture => _selectedMaterialTexture;
+    public bool HasSelectedMaterialTexture => _selectedMaterialTexture is not null;
+    public bool ShowsSelectedVisualCameraHint =>
+        HasSelectedVisualScene && _selectedVisualRendererStatus is null;
+
     public bool ShowsSelectedVisualEmptyState =>
-        !HasSelectedVisualScene && !HasSelectedSoundPreview;
+        !ShowsSelectedVisualCameraHint && !HasSelectedMaterialTexture && !HasSelectedSoundPreview;
 
-    public string SelectedVisualStatus =>
-        !string.IsNullOrWhiteSpace(_selectedVisualRendererStatus)
-            ? _selectedVisualRendererStatus
-            : _selectedVisualBuildStatus;
-
-    public bool HasSelectedVisualRendererFailure =>
-        !string.IsNullOrWhiteSpace(_selectedVisualRendererStatus);
-
-    public void ReportSelectedVisualRendererStatus(string? message)
+    public string SelectedVisualStatus
     {
-        string? normalized = !HasSelectedVisualScene ||
-            string.IsNullOrWhiteSpace(message)
-            ? null
-            : message;
-        if (string.Equals(
-                _selectedVisualRendererStatus,
-                normalized,
-                StringComparison.Ordinal))
+        get
         {
+            if (HasSelectedMaterialTexture) return "Color texture · material preview unavailable";
+            if (_selectedVisualRendererStatus is not null) return "Material pass unavailable";
+            if (SelectedVisualScene is { } scene)
+                return SelectedVisualDependency?.Kind == FxVisualDependencyKind.Material
+                    ? "Material shader on preview sphere" : scene.Lods.Count == 1 ? "Model · 1 LOD" : $"Model · {scene.Lods.Count} LODs";
+            return _selectedVisualBuildStatus;
+        }
+    }
+
+    public string SelectedVisualDetails
+    {
+        get
+        {
+            string details = _selectedVisualRendererStatus ?? _selectedVisualBuildStatus;
+            return _textureLoadFailure is null ? details : $"{details} Color texture: {_textureLoadFailure}";
+        }
+    }
+
+    internal void SetVisualInspectorActive(bool active)
+    {
+        if (_disposed || _visualInspectorActive == active) return;
+        _visualInspectorActive = active;
+        RefreshSelectedVisualProjection();
+    }
+
+    internal void ReportSelectedVisualRendererStatus(string? diagnostic)
+    {
+        if (_disposed || !_visualInspectorActive || !HasSelectedVisualScene ||
+            _selectedVisualRendererStatus == diagnostic) return;
+        _selectedVisualRendererStatus = diagnostic;
+        if (diagnostic is null)
+            ResetMaterialTexture();
+        else
+            RequestMaterialTexture();
+        NotifySelectedVisualProjectionChanged();
+    }
+
+    private void RequestMaterialTexture()
+    {
+        if (_textureRequested || _workspace is not { IsBlank: false } workspace ||
+            SelectedVisualDependency is not { Material.Info.Name: { Length: > 0 } materialName })
+            return;
+        _textureRequested = true;
+        _ = LoadMaterialTextureAsync(workspace, materialName, _visualGeneration);
+    }
+
+    private async Task LoadMaterialTextureAsync(FastFileWorkspace workspace, string name, int generation)
+    {
+        Bitmap? bitmap;
+        try
+        {
+            bitmap = await FxSourcePreviewControl.LoadMaterialBitmapAsync(workspace, name);
+        }
+        catch (Exception error) when (FxSourcePreviewControl.IsSourceError(error))
+        {
+            if (_visualGeneration == generation)
+            {
+                _textureLoadFailure = error.Message;
+                OnPropertyChanged(nameof(SelectedVisualDetails));
+            }
             return;
         }
+        if (generation != _visualGeneration)
+        {
+            bitmap?.Dispose();
+            return;
+        }
+        _selectedMaterialTexture = bitmap;
+        NotifySelectedVisualProjectionChanged();
+    }
 
-        _selectedVisualRendererStatus = normalized;
-        OnPropertyChanged(nameof(SelectedVisualStatus));
-        OnPropertyChanged(nameof(HasSelectedVisualRendererFailure));
+    private void ResetMaterialTexture()
+    {
+        ++_visualGeneration;
+        _textureRequested = false;
+        _textureLoadFailure = null;
+        var previous = _selectedMaterialTexture;
+        _selectedMaterialTexture = null;
+        if (previous is null) return;
+        OnPropertyChanged(nameof(SelectedMaterialTexture));
+        OnPropertyChanged(nameof(HasSelectedMaterialTexture));
+        previous.Dispose();
     }
 
     public double CurrentMilliseconds
@@ -481,6 +544,7 @@ public sealed class FxEditorViewModel
             return;
 
         _disposed = true;
+        ResetMaterialTexture();
         _playbackTimer.Stop();
         _playbackTimer.Tick -= PlaybackTimer_Tick;
         ReplaceSelectedSoundPreview(null);
@@ -514,12 +578,18 @@ public sealed class FxEditorViewModel
 
     private void RefreshSelectedVisualProjection()
     {
+        ResetMaterialTexture();
         _selectedVisualScene = null;
         _selectedVisualRendererStatus = null;
         ReplaceSelectedSoundPreview(null);
 
-        FxVisualDependencyViewModel? dependency =
-            SelectedVisualDependency;
+        if (!_visualInspectorActive)
+        {
+            _selectedVisualBuildStatus = string.Empty;
+            NotifySelectedVisualProjectionChanged();
+            return;
+        }
+        FxVisualDependencyViewModel? dependency = SelectedVisualDependency;
         if (dependency is null)
         {
             _selectedVisualBuildStatus =
@@ -533,7 +603,7 @@ public sealed class FxEditorViewModel
             return;
         }
 
-        if (_workspace is null || _imagePayloads is null)
+        if (_workspace is not { IsBlank: false } || _imagePayloads is null)
         {
             _selectedVisualBuildStatus =
                 $"{dependency.KindText} '{dependency.AssetName}' cannot be " +
@@ -567,6 +637,7 @@ public sealed class FxEditorViewModel
                 $"failed: {exception.Message}";
         }
 
+        if (!HasSelectedVisualScene) RequestMaterialTexture();
         NotifySelectedVisualProjectionChanged();
     }
 
@@ -692,9 +763,7 @@ public sealed class FxEditorViewModel
             sound,
             resolver,
             unavailableReason));
-        _selectedVisualBuildStatus =
-            "Manual Sound alias preview · audio is never started by FX " +
-            "timeline playback or scrubbing.";
+        _selectedVisualBuildStatus = "Choose a sound variant and press Play.";
     }
 
     private MaterialAsset ResolveCurrentMaterial(MaterialAsset material)
@@ -772,7 +841,10 @@ public sealed class FxEditorViewModel
         OnPropertyChanged(nameof(HasSelectedVisualScene));
         OnPropertyChanged(nameof(ShowsSelectedVisualEmptyState));
         OnPropertyChanged(nameof(SelectedVisualStatus));
-        OnPropertyChanged(nameof(HasSelectedVisualRendererFailure));
+        OnPropertyChanged(nameof(SelectedVisualDetails));
+        OnPropertyChanged(nameof(SelectedMaterialTexture));
+        OnPropertyChanged(nameof(HasSelectedMaterialTexture));
+        OnPropertyChanged(nameof(ShowsSelectedVisualCameraHint));
     }
 
     private static IReadOnlyList<BaseAsset> CaptureInlineMaterialAssets(
@@ -1232,37 +1304,24 @@ public sealed class FxElementViewModel
         FxElemType type,
         FxElementGroup group)
     {
-        string prefix = group == FxElementGroup.Emission
-            ? "Not root-scheduled. "
-            : string.Empty;
-        return prefix + (type switch
+        if (group == FxElementGroup.Emission)
+            return "Emission layers need a parent event to spawn.";
+        return type switch
         {
-            FxElemType.SpriteBillboard =>
-                "Simulated birth, motion, and visual curves; drawn as a camera-facing color card. The selected Material can be rendered separately with its authored shader and textures; FX atlas-frame UVs are not applied to the sandbox card.",
-            FxElemType.SpriteOriented =>
-                "Simulated birth, motion, and visual curves; drawn as an oriented-card proxy. The selected Material can be inspected separately; the complete engine orientation and atlas path is not active.",
-            FxElemType.Tail =>
-                "Simulated birth, motion, and visual curves; drawn as a velocity-aligned tail proxy.",
-            FxElemType.Trail =>
-                "Timeline marker plus stored trail-profile glyph. Runtime trail-point spawning, sweep topology, and scrolling are not simulated.",
-            FxElemType.Cloud or FxElemType.SparkCloud =>
-                "Type-colored cloud proxy. The specialized particle-cloud pool and material pipeline are not executed.",
-            FxElemType.SparkFountain =>
-                "Spark-fountain glyph using the compiled element timing; collision clusters and the extended trajectory simulation are not executed.",
-            FxElemType.Model =>
-                "Model-box proxy in the sandbox. The selected XModel can be rendered separately with its authored materials and textures; model physics and per-particle placement are not active.",
-            FxElemType.OmniLight =>
-                "Wire-sphere light proxy colored from the visual curve; it does not inject illumination into a scene.",
-            FxElemType.SpotLight =>
-                "Wire-cone light proxy colored from the visual curve; it does not inject illumination into a scene.",
-            FxElemType.Sound =>
-                "Speaker marker in the sandbox. The selected Sound alias can be played manually and is never auto-played by the FX timeline.",
-            FxElemType.Decal =>
-                "Planar decal marker in the sandbox. Each selected decal Material can be inspected on the preview sphere; projection still requires a receiver surface and collision context.",
-            FxElemType.Runner =>
-                "Nested-FX marker only. Recursive runner execution requires asset resolution plus cycle and depth guards.",
-            _ => "Unknown element type rendered as a diagnostic marker."
-        });
+            FxElemType.SpriteBillboard => "Camera-facing cards show particle timing, size, and color.",
+            FxElemType.SpriteOriented => "Oriented cards show particle timing, size, and color.",
+            FxElemType.Tail => "Tail markers follow the particle’s velocity.",
+            FxElemType.Trail => "Trail markers show the stored cross section.",
+            FxElemType.Cloud or FxElemType.SparkCloud => "Markers show the cloud’s timing and position.",
+            FxElemType.SparkFountain => "Markers show the fountain’s position and timing.",
+            FxElemType.Model => "Boxes trace the movement of each model instance.",
+            FxElemType.OmniLight => "Spheres show the light’s position and color.",
+            FxElemType.SpotLight => "Cones show the light’s direction and color.",
+            FxElemType.Sound => "Speaker markers show where the sound starts. Listen in Visual / Audio.",
+            FxElemType.Decal => "Planes show decal placement. Inspect the material in Visual / Audio.",
+            FxElemType.Runner => "Markers show where each child effect starts.",
+            _ => "Markers show the compiled element’s position and timing."
+        };
     }
 }
 

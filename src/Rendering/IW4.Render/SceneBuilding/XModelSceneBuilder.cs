@@ -120,7 +120,9 @@ public sealed class XModelSceneBuilder
             defaultLodIndex: 0,
             surface.Bounds,
             bones: [],
-            diagnostics);
+            diagnostics,
+            materialPreviewLookup: lookup,
+            materialPreviewAssetPoolRevision: poolRevision);
     }
 
     public XModelRenderScene Build(

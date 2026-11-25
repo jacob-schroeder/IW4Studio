@@ -176,6 +176,9 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
             alignment: 16,
             freeze,
             $"{fieldPath}.Verts0");
+        if (verts0 is { } verts0Storage)
+            verts0 = freeze.ShareAuthoredMeshGeometry(
+                surface.Verts0Pointer.Untyped, surface.Verts0, verts0Storage);
         LinkStorageTarget? verts1 = ResolveBytes(
             surface.Verts1Pointer.Untyped,
             surface.Verts1,
@@ -186,6 +189,9 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
             alignment: 16,
             freeze,
             $"{fieldPath}.Verts1");
+        if (verts1 is { } verts1Storage)
+            verts1 = freeze.ShareAuthoredMeshGeometry(
+                surface.Verts1Pointer.Untyped, surface.Verts1, verts1Storage);
         LinkStorageTarget? rigid = ResolveRigidTable(surface, freeze, $"{fieldPath}.VertList");
         LinkStorageTarget? triangles = ResolveUshorts(
             surface.TriIndicesPointer.Untyped,
@@ -197,6 +203,9 @@ internal sealed class XModelSurfsLinkPlan : AssetLinkPlan
             alignment: 16,
             freeze,
             $"{fieldPath}.TriIndices");
+        if (triangles is { } triangleStorage)
+            triangles = freeze.ShareAuthoredMeshGeometry(
+                surface.TriIndicesPointer.Untyped, surface.TriIndices, triangleStorage);
 
         if (surface.TriIndices.Any(index => index >= surface.VertCount))
             throw new InvalidDataException($"{fieldPath}.TriIndices contains an out-of-range vertex index.");

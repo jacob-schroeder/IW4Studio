@@ -1,5 +1,6 @@
 using System.Numerics;
 using IW4.Render.Execution;
+using IW4.Render.Assets;
 using IW4.Render.OpenGl.Presentation;
 using IW4.Render.OpenGl.Programs;
 using IW4.Render.SceneBuilding;
@@ -92,25 +93,39 @@ internal sealed unsafe class
         MapRenderWorldSceneSource source,
         MapRenderOpenGlProgramCache programs,
         MapRenderOpenGlPresentationErrorMonitor errorMonitor)
+        : this(gl, state,
+            (source ?? throw new ArgumentNullException(nameof(source)))
+                .AssetLookup,
+            source.AssetPoolRevisionAtConstruction, programs, errorMonitor)
+    {
+    }
+
+    internal SilkMapRenderOpenGlNormalCameraFloatZBackend(
+        GL gl,
+        SilkOpenGlStateShadow state,
+        RenderAssetLookup lookup,
+        long assetPoolRevision,
+        MapRenderOpenGlProgramCache programs,
+        MapRenderOpenGlPresentationErrorMonitor errorMonitor)
     {
         _gl = gl ?? throw new ArgumentNullException(nameof(gl));
         _state = state ?? throw new ArgumentNullException(nameof(state));
-        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(lookup);
         ArgumentNullException.ThrowIfNull(programs);
         _errorMonitor = errorMonitor ??
             throw new ArgumentNullException(nameof(errorMonitor));
         _ownerThreadId = Environment.CurrentManagedThreadId;
         _sources =
             MapRenderOpenGlNormalCameraFloatZProgramResolver.Resolve(
-                source);
+                lookup, assetPoolRevision);
         if (_sources.AssetPoolRevision !=
-                source.AssetPoolRevisionAtConstruction ||
-            !source.AssetLookup.HasCanonicalAssetPoolRevision(
+                assetPoolRevision ||
+            !lookup.HasCanonicalAssetPoolRevision(
                 _sources.AssetPoolRevision))
         {
             throw new ArgumentException(
                 "FloatZ programs do not belong to the scene's canonical asset revision.",
-                nameof(source));
+                nameof(lookup));
         }
 
         _rawDepthViewProgram = programs.GetOrCompile(
@@ -210,10 +225,29 @@ internal sealed unsafe class
         EditorPresentationFrame frame,
         float zNear)
     {
-        EnsureUsableOnOwnerThread();
         ArgumentNullException.ThrowIfNull(frame);
-        if (frame.SceneTarget.Extent.LogicalWidth != _sceneWidth ||
-            frame.SceneTarget.Extent.LogicalHeight != _sceneHeight ||
+        return Execute(
+            frame.FrameRevision,
+            frame.SceneTarget.Extent.LogicalWidth,
+            frame.SceneTarget.Extent.LogicalHeight,
+            frame.SceneTarget.Binding.Resource.DepthStencilTextureHandle,
+            zNear,
+            () => RestoreSceneTarget(frame));
+    }
+
+    internal MapRenderOpenGlProcessedFloatZFrame Execute(
+        long frameRevision,
+        int sceneWidth,
+        int sceneHeight,
+        uint depthStencilTexture,
+        float zNear,
+        Action restoreSceneTarget)
+    {
+        EnsureUsableOnOwnerThread();
+        ArgumentNullException.ThrowIfNull(restoreSceneTarget);
+        if (frameRevision < 0 || depthStencilTexture == 0 ||
+            sceneWidth != _sceneWidth ||
+            sceneHeight != _sceneHeight ||
             _floatZWidth <= 0 ||
             _floatZHeight <= 0)
         {
@@ -256,8 +290,7 @@ internal sealed unsafe class
             _state.BindSampler(0, 0);
             _state.BindTexture(
                 TextureTarget.Texture2DMultisample,
-                frame.SceneTarget.Binding.Resource
-                    .DepthStencilTextureHandle);
+                depthStencilTexture);
             _state.BindVertexArray(_vertexArray);
             _gl.DrawArrays(PrimitiveType.Triangles, 0, 3);
 
@@ -307,7 +340,7 @@ internal sealed unsafe class
         {
             _errorMonitor.BeginStage(
                 "scene target restore after FloatZ");
-            RestoreSceneTarget(frame);
+            restoreSceneTarget();
         }
 
         // Do not stamp the reusable target-8 allocation with this frame's
@@ -319,7 +352,7 @@ internal sealed unsafe class
         _errorMonitor.BeginStage(
             "outside default normal-camera presentation");
         return new MapRenderOpenGlProcessedFloatZFrame(
-            frame.FrameRevision,
+            frameRevision,
             _processedFloatZTexture,
             _pointClampSampler);
     }

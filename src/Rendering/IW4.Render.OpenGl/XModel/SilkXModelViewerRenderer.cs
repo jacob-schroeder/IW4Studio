@@ -7,6 +7,11 @@ using IW4.Render.Execution;
 using IW4.Render.Lighting;
 using IW4.Render.Materials;
 using IW4.Render.OpenGl.Programs;
+using IW4.Render.OpenGl.FloatZ;
+using IW4.Render.OpenGl.Presentation;
+using IW4.Render.OpenGl.Diagnostics;
+using IW4.Render.Assets;
+using IW4.Render.Scheduling.Lifecycle;
 using IW4.Render.Shaders;
 using IW4.Render.Textures;
 using IW4.Render.Transforms;
@@ -51,7 +56,7 @@ public sealed class XModelViewerUploadResult
 /// The caller owns the current context and invokes this object only while
 /// that context is current.
 /// </summary>
-public sealed unsafe class SilkXModelViewerRenderer : IDisposable
+public sealed unsafe partial class SilkXModelViewerRenderer : IDisposable
 {
     private const int TextureUnitCount = 16;
     private const int ViewerReflectionEnvironmentSize = 32;
@@ -90,6 +95,17 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     private bool _hasAppliedAnimationPose;
     private uint _neutralModelLightingAtlas;
     private uint _viewerReflectionEnvironment;
+    private MapRenderOpenGlProgramCache? _floatZPrograms;
+    private MapRenderOpenGlPresentationErrorMonitor? _floatZErrors;
+    private SilkMapRenderOpenGlNormalCameraFloatZBackend? _floatZ;
+    private RenderAssetLookup? _floatZLookup;
+    private long _floatZAssetPoolRevision;
+    private MapRenderOpenGlProcessedFloatZFrame? _currentProcessedFloatZFrame;
+    private uint _floatZSceneDepth;
+    private uint _floatZSceneFramebuffer;
+    private int _floatZSceneWidth;
+    private int _floatZSceneHeight;
+    private long _frameRevision;
     private bool? _viewerReflectionEnvironmentStudioEnabled;
     private bool _disposed;
 
@@ -141,7 +157,15 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         }
     }
 
-    public XModelViewerUploadResult Upload(XModelRenderLod? lod)
+    public XModelViewerUploadResult Upload(
+        XModelRenderLod? lod,
+        XModelRenderScene? scene = null) =>
+        Upload(lod, scene, allowFloatZFailure: false);
+
+    private XModelViewerUploadResult Upload(
+        XModelRenderLod? lod,
+        XModelRenderScene? scene,
+        bool allowFloatZFailure)
     {
         ThrowIfDisposed();
         DeleteUploadedResources();
@@ -190,6 +214,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 if (!TryPrepareGroup(
                         surface,
                         packets,
+                        scene?.MaterialPreviewLookup is not null,
                         out PreparedPass[] prepared,
                         out string? blocker))
                 {
@@ -243,10 +268,21 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                         ? ["viewerReflectionEnvironment"]
                         : [];
                 if (prepared.Any(pass =>
-                        pass.RuntimeSamplerRequirements.Length != 0))
+                        pass.RuntimeSamplerRequirements.Any(requirement =>
+                            requirement.ResourceKind ==
+                                ShaderRuntimeSamplerResourceKind.ModelLightingAtlas)))
                 {
                     viewerInputs = viewerInputs
                         .Append("nativeViewerModelLightingEntry7168")
+                        .ToArray();
+                }
+                if (prepared.Any(pass =>
+                        pass.RuntimeSamplerRequirements.Any(requirement =>
+                            requirement.ResourceKind ==
+                                ShaderRuntimeSamplerResourceKind.ProcessedFloatZ)))
+                {
+                    viewerInputs = viewerInputs
+                        .Append("sameFrameProcessedFloatZ")
                         .ToArray();
                 }
                 if (viewerInputs.Length != 0)
@@ -256,6 +292,64 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                         string.Join(',', viewerInputs));
                 }
                 executableGroups++;
+            }
+            if (_drawGroups.Any(group => group.AuthoredPasses.Any(draw =>
+                draw.RuntimeSamplerRequirements.Any(requirement =>
+                    requirement.ResourceKind ==
+                        ShaderRuntimeSamplerResourceKind.ProcessedFloatZ))))
+            {
+                try
+                {
+                    if (scene?.MaterialPreviewLookup is not { } lookup ||
+                        !lookup.HasCanonicalAssetPoolRevision(
+                            scene.MaterialPreviewAssetPoolRevision))
+                    {
+                        throw new InvalidOperationException(
+                            "Material preview FloatZ requires its active canonical asset revision.");
+                    }
+                    CreateFloatZBackend(
+                        lookup,
+                        scene.MaterialPreviewAssetPoolRevision);
+                }
+                catch (Exception exception) when (
+                    allowFloatZFailure &&
+                    exception is not OutOfMemoryException)
+                {
+                    string reason = exception.Message;
+                    try
+                    {
+                        DeleteFloatZResources();
+                    }
+                    catch (Exception cleanupFailure) when (
+                        cleanupFailure is not OutOfMemoryException)
+                    {
+                        reason += $"; cleanup: {cleanupFailure.Message}";
+                    }
+                    for (int index = _drawGroups.Count - 1;
+                         index >= 0;
+                         index--)
+                    {
+                        MapRenderEditorDrawGroup<AuthoredDraw> group =
+                            _drawGroups[index];
+                        if (!group.AuthoredPasses.Any(draw =>
+                                draw.RuntimeSamplerRequirements.Any(
+                                    requirement =>
+                                        requirement.ResourceKind ==
+                                            ShaderRuntimeSamplerResourceKind
+                                                .ProcessedFloatZ)))
+                        {
+                            continue;
+                        }
+                        foreach (AuthoredDraw draw in group.AuthoredPasses)
+                            DeleteAuthoredDraw(draw);
+                        _drawGroups.RemoveAt(index);
+                        executableGroups--;
+                        blockedGroups++;
+                        diagnostics.Add(
+                            $"{group.AuthoredPasses[0].Surface.MaterialName}: " +
+                            $"processedFloatZ unavailable: {reason}");
+                    }
+                }
             }
         }
         catch
@@ -346,8 +440,15 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             OpenGlDerivedMatrixPolicy.CreatePreviewFromCamera(
                 camera,
                 aspect);
+        ClipSpaceLookupCodeConstants clipSpaceLookup =
+            FrameDirectCodeConstants.ProduceClipSpaceLookup(
+                width, height, 0, 0, width, height);
+        ShaderConstantValue zNearConstant =
+            FrameDirectCodeConstants.ProduceZNearValue(
+                camera.NearPlane);
         ApplyViewerReflectionEnvironment(studioEnvironmentEnabled);
         EstablishFrameState(framebuffer, width, height, useCheckerboard);
+        _currentProcessedFloatZFrame = null;
         if (useCheckerboard)
             DrawCheckerboard();
         if (showWireframe)
@@ -366,34 +467,21 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 _drawGroups,
                 camera.Position,
                 camera.Forward);
+        long frameRevision = checked(++_frameRevision);
+        if (_floatZ is not null)
+            BuildProcessedFloatZ(framebuffer, width, height,
+                camera.NearPlane, frameRevision);
         foreach (MapRenderEditorDrawGroup<AuthoredDraw> group in
                  sortedDrawGroups)
         {
-            int groupId = group.AuthoredPasses[0].GroupId;
             foreach (AuthoredDraw draw in group.AuthoredPasses)
             {
-                if (!_authoredMaterials.TryApplyRenderState(
-                        draw.State,
-                        stencilTargetContract: null,
-                        out string? stateBlocker))
-                {
-                    throw new InvalidOperationException(
-                        $"Preflighted XModel authored group {groupId} lost its render-state contract: {stateBlocker}");
-                }
-                _state.UseProgram(draw.Program.Handle);
-                if (!_authoredMaterials.TryApplyConstantBindings(
-                        draw.ConstantBindings,
-                        matrices,
-                        materialTimeSeconds,
-                        static (_, _) => null,
-                        out string? constantBlocker))
-                {
-                    throw new InvalidOperationException(
-                        $"Preflighted XModel authored group {groupId} lost its constant contract: {constantBlocker}");
-                }
-                _authoredMaterials.BindMaterialSamplers(
-                    draw.MaterialSamplerBindings);
-                BindRuntimeSamplers(draw.RuntimeSamplerRequirements);
+                BindAuthoredPass(
+                    draw,
+                    matrices,
+                    materialTimeSeconds,
+                    clipSpaceLookup,
+                    zNearConstant);
                 _state.BindVertexArray(draw.VertexArray);
                 _gl.DrawElements(
                     PrimitiveType.Triangles,
@@ -427,6 +515,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     private bool TryPrepareGroup(
         XModelRenderSurface surface,
         IReadOnlyList<XModelRenderAuthoredPass> packets,
+        bool materialPreviewFloatZAvailable,
         out PreparedPass[] prepared,
         out string? blocker)
     {
@@ -446,6 +535,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             if (!TryPreparePass(
                     surface,
                     packet,
+                    materialPreviewFloatZAvailable,
                     out PreparedPass? pass,
                     out string? passBlocker))
             {
@@ -463,6 +553,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
     private bool TryPreparePass(
         XModelRenderSurface surface,
         XModelRenderAuthoredPass packet,
+        bool materialPreviewFloatZAvailable,
         out PreparedPass? prepared,
         out string? blocker)
     {
@@ -525,6 +616,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 .ToArray();
         if (!TryValidateRuntimeSamplerRequirements(
                 runtimeSamplerRequirements,
+                materialPreviewFloatZAvailable,
                 out blocker))
         {
             return false;
@@ -563,7 +655,12 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                  FrameDirectCodeConstants
                      .StaticModelBaseLightingCoordsRowIndex or
                  FrameDirectCodeConstants
-                     .StaticModelLightProbeAmbientRowIndex))
+                     .StaticModelLightProbeAmbientRowIndex or
+                 FrameDirectCodeConstants
+                     .ClipSpaceLookupScaleRowIndex or
+                 FrameDirectCodeConstants
+                     .ClipSpaceLookupOffsetRowIndex or
+                 FrameDirectCodeConstants.ZNearRowIndex))
             .ToArray();
         if (unsupportedDynamicRows.Length != 0)
         {
@@ -592,8 +689,11 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
             .CodePixelConstantPatchPlans
             .Where(patch =>
                 directPlan.IsDynamicSourceRow(patch.CodeIndex) &&
-                patch.CodeIndex !=
-                    FrameDirectCodeConstants.GameTimeRowIndex)
+                patch.CodeIndex is not
+                    (FrameDirectCodeConstants.GameTimeRowIndex or
+                     FrameDirectCodeConstants.ClipSpaceLookupScaleRowIndex or
+                     FrameDirectCodeConstants.ClipSpaceLookupOffsetRowIndex or
+                     FrameDirectCodeConstants.ZNearRowIndex))
             .Select(patch => patch.CodeIndex)
             .Distinct()
             .Order()
@@ -673,6 +773,7 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
 
     private static bool TryValidateRuntimeSamplerRequirements(
         IReadOnlyList<ShaderRuntimeSamplerRequirement> requirements,
+        bool materialPreviewFloatZAvailable,
         out string? blocker)
     {
         blocker = null;
@@ -684,6 +785,18 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 blocker =
                     $"RUNTIME_SAMPLER_DEST_{requirement.Destination}_OUT_OF_RANGE";
                 return false;
+            }
+            if (materialPreviewFloatZAvailable &&
+                requirement.ResourceKind ==
+                    ShaderRuntimeSamplerResourceKind.ProcessedFloatZ &&
+                requirement.Status ==
+                    ShaderRuntimeSamplerRequirementStatus.SameRevisionTextureRequired &&
+                requirement.CodeSamplerArgument ==
+                    MaterialTextureSource.ProcessedFloatZ &&
+                string.Equals(requirement.ResourceIdentity,
+                    "processedFloatZ", StringComparison.Ordinal))
+            {
+                continue;
             }
             if (requirement.ResourceKind !=
                     ShaderRuntimeSamplerResourceKind
@@ -889,7 +1002,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                         ? ToGlTextureTarget(source.Target)
                         : TextureTarget.TextureCubeMap))
                 .ToArray();
-            if (prepared.RuntimeSamplerRequirements.Length > 0 &&
+            if (prepared.RuntimeSamplerRequirements.Any(requirement =>
+                    requirement.ResourceKind ==
+                        ShaderRuntimeSamplerResourceKind.ModelLightingAtlas) &&
                 _neutralModelLightingAtlas == 0)
             {
                 _neutralModelLightingAtlas =
@@ -1268,7 +1383,12 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         }
     }
 
-    private void EstablishFrameState(int framebuffer, int width, int height, bool useCheckerboard)
+    private void EstablishFrameState(
+        int framebuffer,
+        int width,
+        int height,
+        bool useCheckerboard,
+        Vector3? background = null)
     {
         _state.InvalidateAll();
         _state.EstablishKnownTextureBaseline(TextureUnitCount);
@@ -1290,7 +1410,9 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         _gl.DepthRange(
             OpenGlRsxClipSpaceLowering.SceneDepthRange.Minimum,
             OpenGlRsxClipSpaceLowering.SceneDepthRange.Maximum);
-        if (useCheckerboard)
+        if (background is { } clearColor)
+            _gl.ClearColor(clearColor.X, clearColor.Y, clearColor.Z, 1f);
+        else if (useCheckerboard)
             _gl.ClearColor(0.52f, 0.52f, 0.52f, 1f);
         else
             _gl.ClearColor(0.20f, 0.21f, 0.23f, 1f);
@@ -1358,6 +1480,25 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         foreach (ShaderRuntimeSamplerRequirement requirement in
                  requirements)
         {
+            if (requirement.ResourceKind ==
+                ShaderRuntimeSamplerResourceKind.ProcessedFloatZ)
+            {
+                MapRenderOpenGlProcessedFloatZFrame publication =
+                    _currentProcessedFloatZFrame ??
+                    throw new InvalidOperationException(
+                        "The current material preview has no processed FloatZ publication.");
+                if (publication.FrameRevision != _frameRevision)
+                {
+                    throw new InvalidOperationException(
+                        "The material preview processed FloatZ publication is stale.");
+                }
+                _state.ActiveTexture(requirement.Destination);
+                _state.BindSampler(requirement.Destination,
+                    publication.SamplerHandle);
+                _state.BindTexture(TextureTarget.Texture2D,
+                    publication.TextureHandle);
+                continue;
+            }
             if (_neutralModelLightingAtlas == 0)
             {
                 throw new InvalidOperationException(
@@ -1369,6 +1510,48 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
                 TextureTarget.Texture3D,
                 _neutralModelLightingAtlas);
         }
+    }
+
+    private void BindAuthoredPass(
+        AuthoredDraw draw,
+        DerivedMatrixState matrices,
+        float materialTimeSeconds,
+        ClipSpaceLookupCodeConstants clipSpaceLookup,
+        ShaderConstantValue zNearConstant)
+    {
+        if (!_authoredMaterials.TryApplyRenderState(
+                draw.State,
+                stencilTargetContract: null,
+                out string? stateBlocker))
+        {
+            throw new InvalidOperationException(
+                $"Preflighted authored group {draw.GroupId} lost its render-state contract: {stateBlocker}");
+        }
+        _state.UseProgram(draw.Program.Handle);
+        if (!_authoredMaterials.TryApplyConstantBindings(
+                draw.ConstantBindings,
+                matrices,
+                materialTimeSeconds,
+                (sourceRow, _) => sourceRow switch
+                {
+                    FrameDirectCodeConstants
+                        .ClipSpaceLookupScaleRowIndex =>
+                        clipSpaceLookup.Scale,
+                    FrameDirectCodeConstants
+                        .ClipSpaceLookupOffsetRowIndex =>
+                        clipSpaceLookup.Offset,
+                    FrameDirectCodeConstants.ZNearRowIndex =>
+                        zNearConstant,
+                    _ => null
+                },
+                out string? constantBlocker))
+        {
+            throw new InvalidOperationException(
+                $"Preflighted authored group {draw.GroupId} lost its constant contract: {constantBlocker}");
+        }
+        _authoredMaterials.BindMaterialSamplers(
+            draw.MaterialSamplerBindings);
+        BindRuntimeSamplers(draw.RuntimeSamplerRequirements);
     }
 
     private uint GetOrCreateTexture(Texture texture)
@@ -1935,6 +2118,8 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
 
     private void DeleteUploadedResources()
     {
+        ClearFxMaterialResources();
+        DeleteFloatZResources();
         foreach (MapRenderEditorDrawGroup<AuthoredDraw> group in
                  _drawGroups)
         {
@@ -1960,6 +2145,138 @@ public sealed unsafe class SilkXModelViewerRenderer : IDisposable
         DeleteWireframe(_collisionWireframe);
         _collisionWireframe = default;
         _state.InvalidateAll();
+    }
+
+    private void DeleteFloatZResources()
+    {
+        _currentProcessedFloatZFrame = null;
+        _floatZ?.Dispose();
+        _floatZ = null;
+        _floatZLookup = null;
+        _floatZPrograms?.Dispose();
+        _floatZPrograms = null;
+        if (_floatZSceneFramebuffer != 0)
+            _gl.DeleteFramebuffer(_floatZSceneFramebuffer);
+        _floatZSceneFramebuffer = 0;
+        if (_floatZSceneDepth != 0)
+        {
+            _state.ForgetTextureBinding(_floatZSceneDepth);
+            _gl.DeleteTexture(_floatZSceneDepth);
+        }
+        _floatZSceneDepth = 0;
+        _floatZSceneWidth = 0;
+        _floatZSceneHeight = 0;
+        MapRenderOpenGlPresentationErrorMonitor? errors = _floatZErrors;
+        _floatZErrors = null;
+        errors?.Dispose();
+    }
+
+    private void CreateFloatZBackend(
+        RenderAssetLookup lookup,
+        long assetPoolRevision)
+    {
+        _floatZPrograms = new MapRenderOpenGlProgramCache(
+            new SilkMapRenderOpenGlProgramCompiler(
+                _gl,
+                "iw4-xmodel-material-preview/context-owned",
+                OpenGlSharedProgramCache.LinkProfileIdentity));
+        _floatZErrors = new MapRenderOpenGlPresentationErrorMonitor(
+            new SilkMapRenderOpenGlPresentationErrorApi(_gl));
+        _floatZ = new SilkMapRenderOpenGlNormalCameraFloatZBackend(
+            _gl,
+            _state,
+            lookup,
+            assetPoolRevision,
+            _floatZPrograms,
+            _floatZErrors);
+        _floatZLookup = lookup;
+        _floatZAssetPoolRevision = assetPoolRevision;
+        _floatZSceneDepth = _gl.GenTexture();
+        _floatZSceneFramebuffer = _gl.GenFramebuffer();
+        if (_floatZSceneDepth == 0 || _floatZSceneFramebuffer == 0)
+        {
+            throw new InvalidOperationException(
+                "OpenGL did not allocate the material preview depth target.");
+        }
+    }
+
+    private void BuildProcessedFloatZ(
+        int framebuffer,
+        int width,
+        int height,
+        float zNear,
+        long frameRevision,
+        Action? drawOpaqueDepth = null)
+    {
+        MapRenderEditorPreviewNormalCameraRecipe recipe =
+            MapRenderEditorPreviewNormalCameraRecipe.Current;
+        if (_floatZLookup is null ||
+            !_floatZLookup.HasCanonicalAssetPoolRevision(
+                _floatZAssetPoolRevision))
+        {
+            throw new InvalidOperationException(
+                "Material preview FloatZ lost its canonical asset revision.");
+        }
+        if (_floatZSceneWidth != width || _floatZSceneHeight != height)
+        {
+            _state.ActiveTexture(0);
+            _state.BindTexture(TextureTarget.Texture2DMultisample,
+                _floatZSceneDepth);
+            _gl.TexImage2DMultisample(
+                TextureTarget.Texture2DMultisample,
+                checked((uint)recipe.GetTarget(
+                    MapRenderNormalCameraTargetKind.Scene)
+                    .Ps3SurfaceSampleCount),
+                InternalFormat.Depth24Stencil8,
+                checked((uint)width),
+                checked((uint)height),
+                true);
+            _state.BindFramebuffer(FramebufferTarget.Framebuffer,
+                _floatZSceneFramebuffer);
+            _gl.FramebufferTexture2D(
+                FramebufferTarget.DrawFramebuffer,
+                FramebufferAttachment.DepthStencilAttachment,
+                TextureTarget.Texture2DMultisample,
+                _floatZSceneDepth,
+                0);
+            _gl.DrawBuffer(DrawBufferMode.None);
+            _gl.ReadBuffer(ReadBufferMode.None);
+            GLEnum status = _gl.CheckFramebufferStatus(
+                FramebufferTarget.DrawFramebuffer);
+            if (status != GLEnum.FramebufferComplete)
+            {
+                throw new InvalidOperationException(
+                    $"Material preview depth framebuffer is incomplete: {status}.");
+            }
+            _floatZSceneWidth = width;
+            _floatZSceneHeight = height;
+        }
+        _state.BindFramebuffer(FramebufferTarget.Framebuffer,
+            _floatZSceneFramebuffer);
+        _gl.DrawBuffer(DrawBufferMode.None);
+        _state.SetEnabled(EnableCap.ScissorTest, false);
+        _state.DepthMask(true);
+        _gl.ClearDepth(recipe.SceneTargetClear.Depth);
+        _gl.Clear(ClearBufferMask.DepthBufferBit);
+        drawOpaqueDepth?.Invoke();
+        _floatZ!.Resize(width, height);
+        _currentProcessedFloatZFrame = _floatZ.Execute(
+            frameRevision,
+            width,
+            height,
+            _floatZSceneDepth,
+            zNear,
+            () =>
+            {
+                _state.BindFramebuffer(
+                    FramebufferTarget.Framebuffer,
+                    checked((uint)framebuffer));
+                _gl.DrawBuffer(framebuffer == 0
+                    ? DrawBufferMode.Back
+                    : DrawBufferMode.ColorAttachment0);
+                _state.Viewport(0, 0, width, height);
+                _state.SetEnabled(EnableCap.Dither, true);
+            });
     }
 
     private void DeleteViewerOwnedPrograms()

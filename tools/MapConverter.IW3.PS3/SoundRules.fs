@@ -2,6 +2,7 @@ namespace MapConverter.Game.IW3.PS3.Rules
 
 open System
 open System.Collections.Generic
+open System.Globalization
 open IW4.Game.Assets.Material
 open IW4.Game.Assets.Sound
 
@@ -11,6 +12,22 @@ type internal ScriptSoundAliasArgument =
     | Optional = 2
 
 module internal SoundRules =
+    /// All ten common_mp shock profiles mix these IW4 channels at the levels
+    /// of the paired IW3 channels. default.shock sets all four to 0.1.
+    let MissingShellShockVolumes (assigned: IReadOnlyDictionary<string, string>) =
+        [| for channel, source in [ "ambdist1", "element"; "ambdist2", "element"
+                                    "explosiveimpact", "bulletimpact"; "local3", "local2" ] do
+               let field = "bg_shock_volume_" + channel
+               if not (assigned.ContainsKey field) then
+                   let volume =
+                       match assigned.TryGetValue("bg_shock_volume_" + source) with
+                       | true, text ->
+                           match Single.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture) with
+                           | true, value when Single.IsFinite value -> text
+                           | _ -> "0.1"
+                       | _ -> "0.1"
+                   yield field + " \"" + volume + "\"" |]
+
     /// Native runtime names whose definitions belong to the map fastfile.
     let NativeRuntimeAliases() =
         [| yield "ui_pulse_text_type"

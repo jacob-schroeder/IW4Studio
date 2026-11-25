@@ -3,6 +3,7 @@ using System.Numerics;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Assets.XModel;
 using IW4.Formats.XModel;
+using MapConverter.Game.IW3.PS3.Rules;
 
 namespace MapConverter.Game.IW3.PC.Models;
 
@@ -43,10 +44,10 @@ internal static class Iw3RigidSurfaceCompiler
             .ToArray();
         if (reconstructedTriangles.Length == 0)
         {
-            return XModelExportLodCompiler.Compile(
+            return CompactRigidSurfaces(XModelExportLodCompiler.Compile(
                 rigidPartitions,
                 boneCount,
-                compileCollisionTrees);
+                compileCollisionTrees));
         }
 
         if (!TryCalculateTangents(
@@ -130,11 +131,11 @@ internal static class Iw3RigidSurfaceCompiler
                 "The imported LOD surface count exceeds the XModel byte limit " +
                 "after retaining source-reconstructed tangent triangles.");
         }
-        return new XModelExportLodCompileResult(
+        return CompactRigidSurfaces(new XModelExportLodCompileResult(
             Array.AsReadOnly(surfaces.ToArray()),
             Array.AsReadOnly(materialIndices.ToArray()),
             Array.AsReadOnly(partBits),
-            []);
+            []));
     }
 
     internal static XModelExportLodCompileResult CoalesceStaticSurfaces(
@@ -274,6 +275,17 @@ internal static class Iw3RigidSurfaceCompiler
             Array.AsReadOnly(materialIndices.ToArray()),
             compiled.PartBits,
             []);
+    }
+
+    private static XModelExportLodCompileResult CompactRigidSurfaces(
+        XModelExportLodCompileResult compiled)
+    {
+        if (!compiled.IsSuccess)
+            return compiled;
+        XSurface[] surfaces = compiled.Surfaces.Select(ModelRules.CompactRigidSurface).ToArray();
+        return surfaces.SequenceEqual(compiled.Surfaces, ReferenceEqualityComparer.Instance)
+            ? compiled
+            : compiled with { Surfaces = Array.AsReadOnly(surfaces) };
     }
 
     private static XModelExportDocument? SelectRegularTriangles(
