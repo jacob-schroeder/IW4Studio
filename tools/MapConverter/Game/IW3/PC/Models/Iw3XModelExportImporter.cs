@@ -9,6 +9,7 @@ using IW4.Game.Assets.XModel;
 using IW4.Game.Math;
 using IW4.Formats.XModel;
 using IW4.Game.ScriptStrings;
+using MapConverter.Game.IW3.PS3.Rules;
 
 namespace MapConverter.Game.IW3.PC.Models;
 
@@ -18,7 +19,8 @@ internal sealed record Iw3XModelMaterialMapping(
 
 internal sealed record Iw3XModelExportImportResult(
     IReadOnlyList<XModelAsset> Models,
-    IReadOnlyList<XModelSurfsAsset> ModelSurfs);
+    IReadOnlyList<XModelSurfsAsset> ModelSurfs,
+    IReadOnlyDictionary<string, XModelAsset[]> StaticPartsBySourceName);
 
 /// <summary>
 /// Converts an explicit set of IW3 OpenAssetTools XModel exports to
@@ -58,10 +60,12 @@ internal static class Iw3XModelExportImporter
         var importedModels = new List<XModelAsset>(requestedModels.Count);
         var importedModelSurfs = new List<XModelSurfsAsset>();
         var seenModelSurfsNames = new HashSet<string>(StringComparer.Ordinal);
+        var seenOutputModelNames = requestedModels.Select(model => model.Name).ToHashSet(StringComparer.Ordinal);
+        var staticPartsBySourceName = new Dictionary<string, XModelAsset[]>(StringComparer.Ordinal);
 
         foreach (RequestedXModel requestedModel in requestedModels)
         {
-            importedModels.Add(ImportModel(
+            XModelAsset model = ImportModel(
                 fullExportRoot,
                 requestedModel.Name,
                 requestedModel.Metadata,
@@ -69,12 +73,36 @@ internal static class Iw3XModelExportImporter
                 collisionSourcesByModelName.GetValueOrDefault(requestedModel.Name),
                 seenModelSurfsNames,
                 importedModelSurfs,
-                staticModelNames.Contains(requestedModel.Name)));
+                staticModelNames.Contains(requestedModel.Name),
+                out bool needsStaticSplit);
+            importedModels.Add(model);
+            if (!needsStaticSplit)
+                continue;
+
+            XModelAsset[] parts = ModelRules.SplitStaticModelForImport(model);
+            if (parts.Length < 2)
+                throw new InvalidDataException($"Static XModel '{requestedModel.Name}' was not split.");
+            staticPartsBySourceName.Add(requestedModel.Name, parts);
+            foreach (XModelAsset part in parts)
+            {
+                if (part.Name is not { } partName || !seenOutputModelNames.Add(partName))
+                    throw new InvalidDataException($"Generated static XModel name '{part.Name}' is not unique.");
+                foreach (XModelLodInfo lod in part.Lods.Take(part.NumLods))
+                {
+                    XModelSurfsAsset surfs = lod.ModelSurfs ??
+                        throw new InvalidDataException($"Generated static XModel '{partName}' has no LOD surfaces.");
+                    if (surfs.Name is not { } surfsName || !seenModelSurfsNames.Add(surfsName))
+                        throw new InvalidDataException($"Generated XModelSurfs name '{surfs.Name}' is not unique.");
+                    importedModelSurfs.Add(surfs);
+                }
+                importedModels.Add(part);
+            }
         }
 
         return new Iw3XModelExportImportResult(
             Array.AsReadOnly(importedModels.ToArray()),
-            Array.AsReadOnly(importedModelSurfs.ToArray()));
+            Array.AsReadOnly(importedModelSurfs.ToArray()),
+            staticPartsBySourceName);
     }
 
     internal static IReadOnlyList<string> ReadReferencedMaterialNames(
@@ -114,8 +142,10 @@ internal static class Iw3XModelExportImporter
         Iw3XModelCollisionSource? collisionSource,
         ISet<string> seenModelSurfsNames,
         ICollection<XModelSurfsAsset> modelSurfsDestination,
-        bool forStaticWorld)
+        bool forStaticWorld,
+        out bool needsStaticSplit)
     {
+        needsStaticSplit = false;
         var lods = new List<XModelLodInfo>(4);
         var materials = new List<MaterialAsset?>();
         var invHighMipRadius = new List<ushort>();
@@ -228,6 +258,7 @@ internal static class Iw3XModelExportImporter
                     modelName,
                     lodIndex,
                     allowDeformed: false);
+                needsStaticSplit |= compiled.Surfaces.Count > GfxStaticModelDrawInst.MaxLodSurfaceCount;
             }
 
             int nextSurfaceIndex = checked(surfaceIndex + compiled.Surfaces.Count);

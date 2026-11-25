@@ -14,6 +14,25 @@ module internal TechniqueRules =
     let private invalid message = raise (InvalidDataException message)
     let private hash (bytes: byte[]) = Convert.ToHexStringLower(SHA256.HashData bytes)
 
+    let ExportedSourceGraphEqual
+        (leftName: string, rightName: string, leftFiles: string array, rightFiles: string array,
+         contentsEqual: Func<string, bool>) : bool =
+        let isTechniqueFile (path: string) =
+            path.EndsWith(".techset", StringComparison.Ordinal) ||
+            path.EndsWith(".tech", StringComparison.Ordinal) ||
+            path.EndsWith(".cso", StringComparison.Ordinal)
+        let graphPaths files =
+            files |> Array.filter isTechniqueFile
+                  |> Array.sortWith (fun left right -> StringComparer.Ordinal.Compare(left, right))
+        let left = graphPaths leftFiles
+        let right = graphPaths rightFiles
+        let setPath (name: string) = "techsets/" + name.Replace('\\', '/') + ".techset"
+        if left.Length = 0 || not (Array.contains (setPath leftName) left) then
+            invalid $"Extracted technique set '{leftName}' has no matching .techset file."
+        if right.Length = 0 || not (Array.contains (setPath rightName) right) then
+            invalid $"Extracted technique set '{rightName}' has no matching .techset file."
+        left = right && Array.forall (fun path -> contentsEqual.Invoke(path)) left
+
     // IW4's 37 console target slots map to the 26 retained IW3 PS3 slots.
     let private sourceSlots =
         [| 0; 1; 2; -1; 4; 5; 5; 6; 6; 7; 7; 8; 8; 9; 9; 10; 10; 11; 11

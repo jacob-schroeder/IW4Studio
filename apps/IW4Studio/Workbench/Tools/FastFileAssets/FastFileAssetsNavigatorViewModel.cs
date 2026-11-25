@@ -59,6 +59,7 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
         _targetSorted = [];
         _dependenciesSorted = [];
         _groups = [];
+        LocalizeTable = new LocalizeTableViewModel(editor.EditingSession);
         CaptureCatalogRows();
         RebuildCategories(null);
         _selectionContext.SelectionChanged += SelectionContext_SelectionChanged;
@@ -131,6 +132,11 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
         }
     }
 
+    public LocalizeTableViewModel LocalizeTable { get; }
+    public bool IsLocalizeTable => SelectedCategory?.AssetType == XAssetType.Localize;
+    public string ContentsTitle => IsLocalizeTable ? "Localize" : "Assets";
+    public string SearchPrompt => IsLocalizeTable ? "Search keys or values…" : "Search asset names…";
+
     public bool IsAllTypesSelected => SelectedCategory is null;
 
     public void SelectAllTypes()
@@ -187,6 +193,9 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
     public int DependencyContentsCount => _dependenciesSorted.Count;
     public int PoolContentsCount => _poolContents.Count;
     public string ContentsResultText => $"{ContentsRows.Count:N0} of {_categoryRows.Count:N0}";
+    public string LocalizeResultText => ContentsRows.Count == _categoryRows.Count
+        ? ContentsRows.Count == 1 ? "1 string" : $"{ContentsRows.Count:N0} strings"
+        : $"{ContentsResultText} strings";
     public string EmptyContentsText =>
         (ContentsScope switch
         {
@@ -200,7 +209,7 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
                     FastFileAssetContentsScope.Dependencies => "No dependency assets are loaded.",
                     _ => "The asset pool has no slots."
                 }
-                : "No asset names match your search.";
+                : IsLocalizeTable ? "No matching strings." : "No asset names match your search.";
 
     public void RequestContents()
     {
@@ -217,9 +226,9 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
             return; // A stale row gesture can arrive while the list is replaced.
         SelectedContentsRow = live;
         if (live.PoolSlot is { } slot)
-            _selectionContext.Select(slot.ToSelection());
+            OpenSelection(slot.ToSelection());
         else if (live.CatalogEntry is { } catalogEntry)
-            _selectionContext.Select(ToSelection(catalogEntry));
+            OpenSelection(ToSelection(catalogEntry));
     }
 
     internal void OpenCatalogEntry(WorkspaceAssetCatalogEntry entry)
@@ -227,7 +236,7 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
         var identity = AssetExplorerItemIdentity.From(entry);
         var row = _editor.CatalogEntries.FirstOrDefault(candidate => candidate.Identity == identity);
         if (row is not null)
-            _selectionContext.Select(ToSelection(row));
+            OpenSelection(ToSelection(row));
         else if (entry.DependencyIdentity is { } provider && _slotsByProvider.TryGetValue(provider.ProviderId, out var slot))
             TryOpenPoolRow(slot.Address, slot.ActiveProviderId);
     }
@@ -241,7 +250,7 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
             return false;
 
         RevealPoolRow(row);
-        _selectionContext.Select(slot.ToSelection());
+        OpenSelection(slot.ToSelection());
         return true;
     }
 
@@ -325,6 +334,9 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
 
         WorkspaceAssetCatalogEntry entry = _applyImportedAsset(definition, replaceRow);
         SelectTargetRow(entry);
+        // Replacing source changes the value without replacing the catalog row.
+        if (replaceRow.HasValue && type == XAssetType.Localize && SelectedContentsRow is { } imported)
+            LocalizeTable.SetRows([imported]);
         ImportStatusMessage = replaceRow is null
             ? $"Imported {entry.OriginalName}."
             : $"Replaced {entry.OriginalName} from source.";
@@ -356,7 +368,7 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
         SelectedContentsRow = ContentsRows.FirstOrDefault(candidate =>
             candidate.CatalogIdentity == row.Identity);
         if (openEditor)
-            _selectionContext.Select(ToSelection(row));
+            OpenSelection(ToSelection(row));
         else
             RequestContents();
     }
@@ -621,6 +633,79 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
             ? Array.AsReadOnly(scopeRows.Where(row =>
                 CategoryType(row.AssetType, row.NormalizedName) == category.AssetType).ToArray())
             : scopeRows;
+        if (IsLocalizeTable)
+            LocalizeTable.SetRows(_categoryRows);
+        OnPropertyChanged(nameof(IsLocalizeTable));
+        OnPropertyChanged(nameof(ContentsTitle));
+        OnPropertyChanged(nameof(SearchPrompt));
+        RebuildContentsRows();
+    }
+
+    private void OpenSelection(WorkbenchAssetSelection selection)
+    {
+        if (Equals(_selectionContext.Current, selection) && TryRevealLocalize(selection))
+            return;
+        _selectionContext.Select(selection);
+    }
+
+    internal bool TryRevealLocalize(WorkbenchAssetSelection selection)
+    {
+        if (selection.AssetType != XAssetType.Localize)
+            return false;
+        FastFileContentsRow? row;
+        FastFileAssetContentsScope scope;
+        if (selection.Identity.AssetPoolAddress is { } address)
+        {
+            scope = FastFileAssetContentsScope.AssetPool;
+            row = _poolContents.FirstOrDefault(r => r.PoolAddress == address &&
+                r.PoolSlot?.ActiveProviderId == selection.ProviderId);
+        }
+        else if (selection.Identity.TargetRowIdentity is { } target)
+        {
+            scope = FastFileAssetContentsScope.ThisFastFile;
+            row = _targetContents.FirstOrDefault(r => r.CatalogIdentity?.TargetRowIdentity == target);
+        }
+        else if (selection.Identity.DependencyIdentity is { } dependency)
+        {
+            scope = FastFileAssetContentsScope.Dependencies;
+            row = _dependencyContents.FirstOrDefault(r => r.CatalogIdentity?.DependencyIdentity == dependency);
+        }
+        else
+            return false;
+        if (row is null)
+            return false;
+
+        SetContentsScope(scope, requestContents: false);
+        SetSelectedCategory(Groups.First(g => g.AssetType == XAssetType.Localize), requestContents: false);
+        if (!ContentsRows.Contains(row))
+            ContentsSearchText = string.Empty;
+        SelectedContentsRow = row;
+        if (row.Localize is { IsLongValue: true } longValue)
+            LocalizeTable.Expand(longValue);
+        RequestContents();
+        return true;
+    }
+
+    internal void ApplyLocalizeChanges()
+    {
+        try
+        {
+            int count = LocalizeTable.ApplyAll();
+            if (count != 0)
+                ImportStatusMessage = count == 1 ? "Applied 1 Localize change." : $"Applied {count:N0} Localize changes.";
+            RebuildContentsRows();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or
+            ArgumentException or NotSupportedException or OverflowException)
+        {
+            LocalizeTable.SetRows(_categoryRows);
+            ImportStatusMessage = ex.Message;
+        }
+    }
+
+    internal void DiscardLocalizeChanges()
+    {
+        LocalizeTable.DiscardAll();
         RebuildContentsRows();
     }
 
@@ -630,8 +715,9 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
         string query = ContentsSearchText.Trim();
         ContentsRows = query.Length == 0
             ? _categoryRows
-            : Array.AsReadOnly(_categoryRows.Where(row =>
-                row.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            : Array.AsReadOnly(_categoryRows.Where(row => IsLocalizeTable
+                ? LocalizeTable.MatchesSearch(row, query)
+                : row.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 row.NormalizedName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 row.AssetType.ToString().Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 row.SourceFile.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray());
@@ -645,6 +731,7 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
         }
         OnPropertyChanged(nameof(HasContentsRows));
         OnPropertyChanged(nameof(ContentsResultText));
+        OnPropertyChanged(nameof(LocalizeResultText));
         OnPropertyChanged(nameof(EmptyContentsText));
     }
 

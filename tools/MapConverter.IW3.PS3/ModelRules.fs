@@ -7,7 +7,7 @@ open IW4.Game.Assets.GfxMap
 open IW4.Game.Assets.XModel
 
 module internal ModelRules =
-    let SplitStaticModel (model: XModelAsset) : XModelAsset array =
+    let private splitStaticModel (nameFirstPart: bool) (model: XModelAsset) : XModelAsset array =
         if isNull model then nullArg (nameof model)
 
         let activeLods = model.Lods |> Seq.truncate (int model.NumLods) |> Seq.toArray
@@ -49,7 +49,9 @@ module internal ModelRules =
             // staticmodels06 established that each part needs its own inline BoneInfo allocation.
             [| for first in 0 .. limit .. mesh.Surfaces.Count - 1 do
                    let partNumber = first / limit
-                   let suffix = if partNumber = 0 then "" else "__iw4_part" + partNumber.ToString(CultureInfo.InvariantCulture)
+                   let suffix =
+                       if partNumber = 0 && not nameFirstPart then ""
+                       else "__iw4_part" + partNumber.ToString(CultureInfo.InvariantCulture)
                    let count = min limit (mesh.Surfaces.Count - first)
                    let surfaces = [| for index in first .. first + count - 1 -> mesh.Surfaces[index] |]
                    let partBits = Array.zeroCreate<uint32> 6
@@ -111,3 +113,8 @@ module internal ModelRules =
                        MemUsage = model.MemUsage,
                        PhysPreset = model.PhysPreset,
                        PhysCollmap = model.PhysCollmap) |]
+
+    let SplitStaticModel (model: XModelAsset) = splitStaticModel false model
+
+    /// Keep the complete source XModel available to nonstatic consumers.
+    let SplitStaticModelForImport (model: XModelAsset) = splitStaticModel true model

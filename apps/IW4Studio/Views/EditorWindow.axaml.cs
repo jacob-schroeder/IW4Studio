@@ -693,6 +693,7 @@ public sealed partial class EditorWindow : Window
 
         int changedItemCount = checked(
             workbench.OpenEditorTabs.Count(tab => tab.IsDirty && tab.CatalogEditor?.HostedViewModel is not ShaderEditorViewModel) +
+            workbench.FastFileAssets.LocalizeTable.PendingCount +
             (workbench.FastFileDetails.HasDraftChanges ? 1 : 0));
         return changedItemCount == 0
             ? SupplementalUnsavedChanges.Clean

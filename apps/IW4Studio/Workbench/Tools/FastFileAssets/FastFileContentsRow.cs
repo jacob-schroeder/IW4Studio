@@ -5,8 +5,9 @@ using IW4.Studio.Desktop.Workbench.Tools.AssetPool;
 namespace IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;
 
 /// <summary>One Contents row, retaining the catalog or stable pool-slot identity.</summary>
-public sealed class FastFileContentsRow
+public sealed class FastFileContentsRow : ObservableObject
 {
+    private LocalizeTableRowViewModel? _localize;
     private readonly AssetExplorerEntryViewModel? _catalogEntry;
     private readonly Func<AssetPoolSlotSnapshot, AssetExplorerEntryViewModel?>? _resolvePoolCatalogEntry;
 
@@ -29,6 +30,11 @@ public sealed class FastFileContentsRow
             ? resolve(slot)
             : _catalogEntry;
     public AssetPoolSlotSnapshot? PoolSlot { get; }
+    public LocalizeTableRowViewModel? Localize
+    {
+        get => _localize;
+        internal set => SetProperty(ref _localize, value);
+    }
     public AssetExplorerItemIdentity? CatalogIdentity => PoolSlot is null ? CatalogEntry?.Identity : null;
     public XAssetPoolAddress? PoolAddress => PoolSlot?.Address;
     public string Name => PoolSlot?.DisplayName ?? CatalogEntry?.Name ?? string.Empty;

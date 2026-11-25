@@ -152,13 +152,6 @@ internal static class Iw3RigidSurfaceCompiler
             .GroupBy(value => (value.Material, value.Surface.TileMode,
                 value.Surface.StreamFlags, value.Surface.Pad03))
             .ToArray();
-        if (groups.Length > GfxStaticModelDrawInst.MaxLodSurfaceCount)
-        {
-            return Failure(
-                $"The static LOD needs {groups.Length} incompatible material/stream groups; " +
-                $"the native draw limit is {GfxStaticModelDrawInst.MaxLodSurfaceCount} surfaces.");
-        }
-
         var surfaces = new List<XSurface>(groups.Length);
         var materialIndices = new List<int>(groups.Length);
         foreach (var group in groups)

@@ -124,7 +124,8 @@ internal static partial class D3dbspGfxCodec
         bool useSourceMaterials = false,
         GfxImageAsset? outdoorImage = null,
         IReadOnlyList<float>? outdoorLookupMatrix = null,
-        IReadOnlyDictionary<string, float>? materialDisplacements = null)
+        IReadOnlyDictionary<string, float>? materialDisplacements = null,
+        int[]? staticModelDrawStarts = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
         ArgumentNullException.ThrowIfNull(file);
@@ -479,7 +480,7 @@ internal static partial class D3dbspGfxCodec
         (GfxWorldDpvsPlanes dpvsPlanes, GfxCell[] cells, GfxCellTree[] cellTrees, ushort[] sortedSurfaceIndices) =
             canonicalCell is null
                 ? DecodeRenderSpatial(file, sourceSurfaceIndices.AsSpan(0, staticSurfaceCount),
-                    surfaceBounds, reflectionProbeImages.Count, staticModelInstances)
+                    surfaceBounds, reflectionProbeImages.Count, staticModelInstances, staticModelDrawStarts)
                 : (new GfxWorldDpvsPlanes { CellCount = 1, Nodes = [1] },
                     [canonicalCell],
                     [new GfxCellTree

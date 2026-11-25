@@ -31,6 +31,8 @@ public sealed record D3dbspLinkRequest(
     public bool UseSourceMaterials { get; init; }
     public bool UseCompiledLighting { get; init; }
     public bool UseStaticModelCollisionTree { get; init; }
+    public IReadOnlyDictionary<string, XModelAsset[]> StaticModelRenderParts { get; init; } =
+        new Dictionary<string, XModelAsset[]>(StringComparer.Ordinal);
     public IReadOnlySet<string> StaticScriptModelNames { get; init; } = new HashSet<string>(StringComparer.Ordinal);
     public IReadOnlyList<MaterialAsset> AvailableMaterials { get; init; } = [];
     public IReadOnlyDictionary<AssetKey, GfxImageAsset> AvailableImages { get; init; } =
@@ -224,12 +226,14 @@ public static class D3dbspAssetLinker
         (
             IReadOnlyList<GfxStaticModelInst> gfxStaticModelInstances,
             IReadOnlyList<GfxStaticModelDrawInst> gfxStaticModelDrawInstances,
+            int[]? staticModelDrawStarts,
             IReadOnlyList<ClipStaticModel> clipStaticModels,
             IReadOnlyList<SModelAabbNode> clipStaticModelNodes,
             IReadOnlyList<XModelAsset> xmodelReferences) =
                 BuildStaticModels(
                     staticModelEntities,
                     request.AvailableXModels,
+                    request.StaticModelRenderParts,
                     reflectionProbeOrigins,
                     comWorld.PrimaryLightCount,
                     request.UseStaticModelCollisionTree);
@@ -438,7 +442,8 @@ public static class D3dbspAssetLinker
             useSourceMaterials: request.UseSourceMaterials,
             outdoorImage: request.OutdoorImage,
             outdoorLookupMatrix: request.OutdoorLookupMatrix,
-            materialDisplacements: request.MaterialDisplacements);
+            materialDisplacements: request.MaterialDisplacements,
+            staticModelDrawStarts: staticModelDrawStarts);
 
         var fxWorld = new FxWorldAsset
         {
@@ -708,11 +713,13 @@ public static class D3dbspAssetLinker
     private static (
         IReadOnlyList<GfxStaticModelInst> GfxInstances,
         IReadOnlyList<GfxStaticModelDrawInst> GfxDrawInstances,
+        int[]? DrawStarts,
         IReadOnlyList<ClipStaticModel> ClipModels,
         IReadOnlyList<SModelAabbNode> ClipNodes,
         IReadOnlyList<XModelAsset> XModelReferences) BuildStaticModels(
             IReadOnlyList<D3dbspStaticModelEntity> sourceModels,
             IReadOnlyList<XModelAsset> availableXModels,
+            IReadOnlyDictionary<string, XModelAsset[]> renderParts,
             IReadOnlyList<GfxReflectionProbe> reflectionProbes,
             int primaryLightCount,
             bool useStaticModelCollisionTree)
@@ -757,8 +764,9 @@ public static class D3dbspAssetLinker
                 names + ".");
         }
 
-        var gfxInstances = new GfxStaticModelInst[sourceModels.Count];
-        var gfxDrawInstances = new GfxStaticModelDrawInst[sourceModels.Count];
+        var gfxInstances = new List<GfxStaticModelInst>(sourceModels.Count);
+        var gfxDrawInstances = new List<GfxStaticModelDrawInst>(sourceModels.Count);
+        int[]? drawStarts = renderParts.Count == 0 ? null : new int[sourceModels.Count + 1];
         var clipModels = new List<ClipStaticModel>(sourceModels.Count);
         var usedXModelKeys = new HashSet<AssetKey>();
         var xmodelReferences = new List<XModelAsset>();
@@ -775,50 +783,69 @@ public static class D3dbspAssetLinker
                     GroundLighting = new GfxColor(0)
                 };
             }
-            ValidateStaticModel(source, xmodel, index, primaryLightCount, reflectionProbes.Count);
-
+            renderParts.TryGetValue(key.NormalizedName, out XModelAsset[]? parts);
+            ValidateStaticModel(source, xmodel, index, primaryLightCount, reflectionProbes.Count,
+                validateDrawLimit: parts is null);
+            // Use the original model for placement, lighting and collision. Only its render rows are split.
             Bounds renderBounds = TransformBounds(
                 xmodel.Bounds,
                 source,
                 $"Static model {index} render bounds");
             Vec3 lightingOrigin = source.LightingOrigin ?? renderBounds.MidPoint;
-            gfxInstances[index] = new GfxStaticModelInst
+            var instance = new GfxStaticModelInst
             {
                 Bounds = renderBounds,
                 LightingOrigin = lightingOrigin
             };
-            gfxDrawInstances[index] = new GfxStaticModelDrawInst
+            var placement = new GfxPackedPlacement
             {
-                Placement = new GfxPackedPlacement
-                {
-                    Origin = [source.Origin.X, source.Origin.Y, source.Origin.Z],
-                    PackedAxis = source.PackedAxis,
-                    Scale = source.Scale
-                },
-                Model = xmodel,
-                CullDist = source.CullDistance ?? CalculateCullDistance(xmodel, source.Scale, index),
-                LightingHandle = 0,
-                ReflectionProbeIndex = source.ReflectionProbeIndex ?? SelectReflectionProbe(
-                    reflectionProbes,
-                    lightingOrigin,
-                    index),
-                PrimaryLightIndex = source.PrimaryLightIndex,
-                Flags = source.Flags,
-                FirstMaterialSkinIndex = 0,
-                GroundLighting = source.GroundLighting
+                Origin = [source.Origin.X, source.Origin.Y, source.Origin.Z],
+                PackedAxis = source.PackedAxis,
+                Scale = source.Scale
             };
+            ushort cull = source.CullDistance ?? CalculateCullDistance(xmodel, source.Scale, index);
+            byte probe = source.ReflectionProbeIndex ?? SelectReflectionProbe(reflectionProbes, lightingOrigin, index);
+            if (parts is not null)
+            {
+                if (parts.Length == 0 || gfxInstances.Count + parts.Length > ushort.MaxValue)
+                    throw new InvalidDataException($"Invalid number of static draw parts for '{source.ModelName}'.");
+                foreach (XModelAsset part in parts)
+                {
+                    ValidateStaticModel(source, part, index, primaryLightCount, reflectionProbes.Count);
+                    AddDraw(part);
+                }
+            }
+            else
+            {
+                AddDraw(xmodel);
+            }
+            if (drawStarts is not null)
+                drawStarts[index + 1] = gfxDrawInstances.Count;
+
+            void AddDraw(XModelAsset model)
+            {
+                gfxInstances.Add(instance);
+                gfxDrawInstances.Add(new GfxStaticModelDrawInst
+                {
+                    Placement = placement, Model = model, CullDist = cull, ReflectionProbeIndex = probe,
+                    PrimaryLightIndex = source.PrimaryLightIndex, Flags = source.Flags, GroundLighting = source.GroundLighting
+                });
+                AddReference(AssetKey.FromDefinition(model));
+            }
 
             if (xmodel.CollLod != byte.MaxValue && xmodel.NumCollSurfs > 0)
                 clipModels.Add(CreateClipStaticModel(source, xmodel, index));
 
-            if (usedXModelKeys.Add(key))
-            {
-                xmodelReferences.Add(new XModelAsset
-                {
-                    Name = "," + key.NormalizedName
-                });
-            }
+            AddReference(key);
         }
+
+        void AddReference(AssetKey key)
+        {
+            if (usedXModelKeys.Add(key))
+                xmodelReferences.Add(new XModelAsset { Name = "," + key.NormalizedName });
+        }
+        if (gfxInstances.Count > ushort.MaxValue)
+            throw new InvalidDataException($"Expanded static model count {gfxInstances.Count} exceeds the IW4 index range.");
 
         if (clipModels.Count > ushort.MaxValue)
         {
@@ -844,8 +871,9 @@ public static class D3dbspAssetLinker
                 }];
         }
         return (
-            Array.AsReadOnly(gfxInstances),
-            Array.AsReadOnly(gfxDrawInstances),
+            gfxInstances.AsReadOnly(),
+            gfxDrawInstances.AsReadOnly(),
+            drawStarts,
             clipModels.AsReadOnly(),
             clipNodes,
             xmodelReferences.AsReadOnly());
@@ -991,7 +1019,8 @@ public static class D3dbspAssetLinker
         XModelAsset xmodel,
         int index,
         int primaryLightCount,
-        int reflectionProbeCount)
+        int reflectionProbeCount,
+        bool validateDrawLimit = true)
     {
         if (source.Axis.Count != 3 || source.PackedAxis.Count != 3)
         {
@@ -1047,7 +1076,7 @@ public static class D3dbspAssetLinker
         {
             XModelLodInfo lod = xmodel.Lods[lodIndex] ??
                 throw new InvalidDataException($"XModel '{xmodel.Name}' active LOD {lodIndex} is null.");
-            if (lod.NumSurfs > GfxStaticModelDrawInst.MaxLodSurfaceCount)
+            if (validateDrawLimit && lod.NumSurfs > GfxStaticModelDrawInst.MaxLodSurfaceCount)
             {
                 throw new InvalidDataException(
                     $"Static XModel '{xmodel.Name}' LOD {lodIndex} has {lod.NumSurfs} surfaces; " +

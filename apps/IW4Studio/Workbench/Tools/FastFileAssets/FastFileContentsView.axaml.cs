@@ -3,6 +3,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using IW4.Game.Assets;
 using IW4.Game.Zone;
@@ -99,6 +100,10 @@ public sealed partial class FastFileContentsView : UserControl
 
     private void ContentsList_DoubleTapped(object? sender, TappedEventArgs e)
     {
+        if (DataContext is FastFileAssetsNavigatorViewModel { IsLocalizeTable: true } &&
+            IsValueControl(e.Source))
+            return;
+
         FastFileContentsRow? row = (e.Source as Control)?
             .GetSelfAndVisualAncestors()
             .OfType<Control>()
@@ -107,14 +112,15 @@ public sealed partial class FastFileContentsView : UserControl
             .FirstOrDefault();
         if (row is not null && DataContext is FastFileAssetsNavigatorViewModel viewModel)
         {
-            viewModel.OpenContentsRow(row);
+            OpenRow(viewModel, row);
             e.Handled = true;
         }
     }
 
     private void ContentsList_KeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key is not Key.Enter)
+        if (e.Key is not Key.Enter ||
+            DataContext is FastFileAssetsNavigatorViewModel { IsLocalizeTable: true } && IsValueControl(e.Source))
             return;
 
         OpenSelectedRow();
@@ -125,8 +131,54 @@ public sealed partial class FastFileContentsView : UserControl
     {
         if (DataContext is FastFileAssetsNavigatorViewModel viewModel &&
             ContentsList.SelectedItem is FastFileContentsRow row)
-            viewModel.OpenContentsRow(row);
+            OpenRow(viewModel, row);
     }
+
+    private static bool IsValueControl(object? source) => source is Control control &&
+        control.GetSelfAndVisualAncestors().Any(ancestor => ancestor is TextBox or Button);
+
+    private void OpenRow(FastFileAssetsNavigatorViewModel navigator, FastFileContentsRow row)
+    {
+        navigator.OpenContentsRow(row);
+        if (navigator.IsLocalizeTable && navigator.SelectedContentsRow is { } selected)
+            FocusLocalizeValue(selected);
+    }
+
+    internal void FocusNextInlineValue()
+    {
+        if (DataContext is not FastFileAssetsNavigatorViewModel navigator ||
+            navigator.SelectedContentsRow is not { } selected)
+            return;
+        int index = ContentsList.Items.IndexOf(selected);
+        if (index < 0)
+            return;
+        for (int i = index + 1; i < navigator.ContentsRows.Count; i++)
+        {
+            var next = navigator.ContentsRows[i];
+            if (next.Localize?.ShowInlineInput == true)
+            {
+                navigator.SelectedContentsRow = next;
+                FocusLocalizeValue(next);
+                return;
+            }
+        }
+    }
+
+    private void FocusLocalizeValue(FastFileContentsRow row)
+    {
+        ContentsList.ScrollIntoView(row);
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (ContentsList.SelectedItem == row && ContentsList.ContainerFromItem(row) is { } item)
+                item.GetVisualDescendants().OfType<LocalizeTableRowView>().FirstOrDefault()?.FocusValue();
+        }, DispatcherPriority.Loaded);
+    }
+
+    private void ApplyLocalize_Click(object? sender, RoutedEventArgs e) =>
+        (DataContext as FastFileAssetsNavigatorViewModel)?.ApplyLocalizeChanges();
+
+    private void DiscardLocalize_Click(object? sender, RoutedEventArgs e) =>
+        (DataContext as FastFileAssetsNavigatorViewModel)?.DiscardLocalizeChanges();
 
     private async void ExportAssetMenuItem_Click(object? sender, RoutedEventArgs e)
     {

@@ -577,7 +577,8 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
             ? _openEditorTabs.Where(tab =>
                 tab.CatalogEditor?.Entry.Identity.TargetRowIdentity == identity).ToArray()
             : [];
-        if (affectedTabs.Any(tab => tab.IsDirty))
+        if (affectedTabs.Any(tab => tab.IsDirty) ||
+            replaceRow is { } target && FastFileAssets.LocalizeTable.HasPendingEdit(target))
         {
             throw new InvalidOperationException(
                 "Apply or revert the asset's unapplied editor changes before replacing it.");
@@ -612,7 +613,7 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
                     CanonicalAssetFamily.FromSerializedType(entry.AssetType),
                     name));
         }).ToArray();
-        if (affectedTabs.Any(tab => tab.IsDirty))
+        if (affectedTabs.Any(tab => tab.IsDirty) || FastFileAssets.LocalizeTable.HasPendingReplacement(replacing))
         {
             throw new InvalidOperationException(
                 "Apply or revert unapplied editor changes before replacing package assets.");
@@ -1016,6 +1017,9 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
             NotifyCenterSelectionChanged();
             return;
         }
+
+        if (FastFileAssets.TryRevealLocalize(selection))
+            return;
 
         WorkbenchAssetSelectionRoute? route =
             selection.Source is

@@ -5,6 +5,7 @@ using System.Text.Json;
 using MapConverter.Game.IW3.PC.Conversion;
 using MapConverter.Game.IW3.PC.Images;
 using MapConverter.Game.IW3.PS3.Extraction;
+using MapConverter.Game.IW3.PS3.Rules;
 
 namespace MapConverter.Game.IW3.PC.Extraction;
 
@@ -29,8 +30,8 @@ internal sealed class Iw3PcSourceLibrary
     private readonly List<Source> _sources = [];
     private readonly Dictionary<(string Type, string Key), List<Node>> _providers = [];
     private readonly Dictionary<string, Closure> _closures = new(PathComparer);
-    private readonly Dictionary<(string Type, string Key), Node> _selectedDefinitions = [];
     private readonly Dictionary<(Node Left, Node Right), bool> _definitionComparisons = [];
+    private readonly Dictionary<Node, IReadOnlyDictionary<string, string>> _techniqueExports = [];
     private readonly List<ExportedFile> _exportedFiles = [];
     private readonly Dictionary<string, IReadOnlyList<string>> _imageSources = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IReadOnlyList<string>> _soundSources = new(StringComparer.OrdinalIgnoreCase);
@@ -162,8 +163,7 @@ internal sealed class Iw3PcSourceLibrary
     internal string EffectSourcePath(string mapFF, string name)
     {
         Closure closure = _closures[ExistingPath(mapFF, directory: false)];
-        if (!_selectedDefinitions.TryGetValue(("fx", name.ToLowerInvariant()), out Node? selected) ||
-            !closure.Nodes.Contains(selected))
+        if (!closure.SelectedDefinitions.TryGetValue(("fx", name.ToLowerInvariant()), out Node? selected))
             throw new InvalidDataException($"Vehicle effect '{name}' has no resolved source definition.");
         return selected.Source.Path;
     }
@@ -295,7 +295,8 @@ internal sealed class Iw3PcSourceLibrary
         rootFF = ExistingPath(rootFF, directory: false);
         if (!_closures.TryGetValue(rootFF, out Closure? closure))
             throw new ArgumentException($"'{rootFF}' is not a resolved map or load fastfile.", nameof(rootFF));
-        Node[] ps3Definitions = OrderedNodes(closure.Nodes.Where(node => node.Source.IsPs3)).ToArray();
+        Node[] definitions = OrderedNodes(closure.SelectedDefinitions.Values).ToArray();
+        Node[] ps3Definitions = definitions.Where(node => node.Source.IsPs3).ToArray();
         if (ps3Definitions.Length != 0)
         {
             throw new NotSupportedException(
@@ -308,26 +309,13 @@ internal sealed class Iw3PcSourceLibrary
         if (Directory.EnumerateFileSystemEntries(assetDirectory).Any())
             throw new IOException($"Source extraction directory must be empty: '{assetDirectory}'.");
 
-        foreach (IGrouping<Source, Node> group in closure.Nodes
+        foreach (IGrouping<Source, Node> group in definitions
                      .GroupBy(node => node.Source).OrderBy(group => group.Key.Path, StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
             Source source = group.Key;
-            await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
-            string exportName = $"source-export-{_exportSequence++:D6}";
-            string selectionPath = Path.Combine(_scratchDirectory, exportName + ".json");
-            string exportDirectory = Path.Combine(_scratchDirectory, exportName);
-            RejectExisting(selectionPath);
-            RejectExisting(exportDirectory);
-            await File.WriteAllBytesAsync(selectionPath,
-                JsonSerializer.SerializeToUtf8Bytes(group.Select(node => node.Asset.Id).Order().ToArray()),
+            string exportDirectory = await ExportRecordsAsync(source, group.Select(node => node.Asset.Id).Order().ToArray(),
                 cancellationToken).ConfigureAwait(false);
-            await Iw3PcExtractionBackend.RunToolAsync(
-                $"IW3 selected source extraction '{source.Path}'", _nativePath, _scratchDirectory,
-                ["--extract-assets", source.Path, selectionPath, exportDirectory], cancellationToken).ConfigureAwait(false);
-            await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
-            if (!Directory.Exists(exportDirectory))
-                throw new InvalidDataException($"Source extraction did not create '{exportDirectory}'.");
 
             foreach (string file in EnumerateExportFiles(exportDirectory).Order(StringComparer.Ordinal))
             {
@@ -369,8 +357,7 @@ internal sealed class Iw3PcSourceLibrary
         }
 
         RejectExisting(manifestPath);
-        Iw3ZoneManifest.Write(manifestPath, OrderedNodes(closure.Nodes)
-            .DistinctBy(node => (node.Asset.Type, node.Asset.Key))
+        Iw3ZoneManifest.Write(manifestPath, definitions
             .Select(node => new Iw3ZoneManifestEntry(node.Asset.Type, node.Asset.Name, IsReference: false)));
     }
 
@@ -492,7 +479,7 @@ internal sealed class Iw3PcSourceLibrary
             if (!closure.Nodes.Add(node))
                 continue;
             var key = (node.Asset.Type, node.Asset.Key);
-            if (_selectedDefinitions.TryGetValue(key, out Node? previous) &&
+            if (closure.SelectedDefinitions.TryGetValue(key, out Node? previous) &&
                 !await CompareDefinitionsAsync(previous, node, item.Chain, errors, cancellationToken).ConfigureAwait(false))
             {
                 errors.Add($"Conflicting concrete definitions for {key.Type}:{key.Key}: " +
@@ -501,7 +488,7 @@ internal sealed class Iw3PcSourceLibrary
             }
             else
             {
-                _selectedDefinitions.TryAdd(key, node);
+                closure.SelectedDefinitions.TryAdd(key, node);
             }
 
             foreach (int id in node.Asset.Dependencies)
@@ -615,21 +602,35 @@ internal sealed class Iw3PcSourceLibrary
             left.Asset.StreamedSounds.Length != 0 || right.Asset.StreamedSounds.Length != 0)
             return false;
 
-        Source[] sources = new[] { left.Source, right.Source }.Distinct().ToArray();
-        foreach (Source source in sources)
-            await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
-        string result = await Iw3PcExtractionBackend.RunToolAsync(
-            $"IW3 source comparison {left.Asset.Type}:{left.Asset.Name}", _nativePath, _scratchDirectory,
-            ["--compare-assets", left.Source.Path, left.Asset.Id.ToString(CultureInfo.InvariantCulture),
-                right.Source.Path, right.Asset.Id.ToString(CultureInfo.InvariantCulture)], cancellationToken).ConfigureAwait(false);
-        foreach (Source source in sources)
-            await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
-        bool localEqual = result.Trim() switch
+        bool localEqual;
+        if (left.Asset.Type == "techniqueset")
         {
-            "true" => true,
-            "false" => false,
-            _ => throw new InvalidDataException($"Invalid source comparison result for {left.Asset.Type}:{left.Asset.Name}."),
-        };
+            IReadOnlyDictionary<string, string> leftFiles =
+                await ExportTechniqueSetAsync(left, cancellationToken).ConfigureAwait(false);
+            IReadOnlyDictionary<string, string> rightFiles =
+                await ExportTechniqueSetAsync(right, cancellationToken).ConfigureAwait(false);
+            localEqual = TechniqueRules.ExportedSourceGraphEqual(
+                left.Asset.Name, right.Asset.Name, leftFiles.Keys.ToArray(), rightFiles.Keys.ToArray(),
+                path => FilesEqual(leftFiles[path], rightFiles[path]));
+        }
+        else
+        {
+            Source[] sources = new[] { left.Source, right.Source }.Distinct().ToArray();
+            foreach (Source source in sources)
+                await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
+            string result = await Iw3PcExtractionBackend.RunToolAsync(
+                $"IW3 source comparison {left.Asset.Type}:{left.Asset.Name}", _nativePath, _scratchDirectory,
+                ["--compare-assets", left.Source.Path, left.Asset.Id.ToString(CultureInfo.InvariantCulture),
+                    right.Source.Path, right.Asset.Id.ToString(CultureInfo.InvariantCulture)], cancellationToken).ConfigureAwait(false);
+            foreach (Source source in sources)
+                await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
+            localEqual = result.Trim() switch
+            {
+                "true" => true,
+                "false" => false,
+                _ => throw new InvalidDataException($"Invalid source comparison result for {left.Asset.Type}:{left.Asset.Name}."),
+            };
+        }
         if (!localEqual)
             return false;
 
@@ -662,6 +663,43 @@ internal sealed class Iw3PcSourceLibrary
         static CatalogAsset[] Dependencies(Node node) => node.Asset.Dependencies.Select(id => node.Source.Records[id])
             .OrderBy(asset => asset.Type, StringComparer.Ordinal).ThenBy(asset => asset.Key, StringComparer.Ordinal)
             .ThenBy(asset => asset.Id).ToArray();
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> ExportTechniqueSetAsync(
+        Node node, CancellationToken cancellationToken)
+    {
+        if (_techniqueExports.TryGetValue(node, out IReadOnlyDictionary<string, string>? cached))
+        {
+            await VerifyHashAsync(node.Source.Path, node.Source.Sha256, cancellationToken).ConfigureAwait(false);
+            return cached;
+        }
+
+        string exportDirectory = await ExportRecordsAsync(node.Source, [node.Asset.Id], cancellationToken)
+            .ConfigureAwait(false);
+        var files = EnumerateExportFiles(exportDirectory).ToDictionary(
+            path => Path.GetRelativePath(exportDirectory, path).Replace(Path.DirectorySeparatorChar, '/'),
+            path => path, StringComparer.Ordinal);
+        _techniqueExports.Add(node, files);
+        return files;
+    }
+
+    private async Task<string> ExportRecordsAsync(Source source, int[] recordIds, CancellationToken cancellationToken)
+    {
+        await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
+        string exportName = $"source-export-{_exportSequence++:D6}";
+        string selectionPath = Path.Combine(_scratchDirectory, exportName + ".json");
+        string exportDirectory = Path.Combine(_scratchDirectory, exportName);
+        RejectExisting(selectionPath);
+        RejectExisting(exportDirectory);
+        await File.WriteAllBytesAsync(selectionPath,
+            JsonSerializer.SerializeToUtf8Bytes(recordIds), cancellationToken).ConfigureAwait(false);
+        await Iw3PcExtractionBackend.RunToolAsync(
+            $"IW3 selected source extraction '{source.Path}'", _nativePath, _scratchDirectory,
+            ["--extract-assets", source.Path, selectionPath, exportDirectory], cancellationToken).ConfigureAwait(false);
+        await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
+        if (!Directory.Exists(exportDirectory))
+            throw new InvalidDataException($"Source extraction did not create '{exportDirectory}'.");
+        return exportDirectory;
     }
 
     private static IOrderedEnumerable<Node> OrderedNodes(IEnumerable<Node> nodes) => nodes
@@ -854,6 +892,7 @@ internal sealed class Iw3PcSourceLibrary
         internal Source Root { get; } = root;
         internal HashSet<Node> Nodes { get; } = [];
         internal HashSet<Dependency> Edges { get; } = [];
+        internal Dictionary<(string Type, string Key), Node> SelectedDefinitions { get; } = [];
     }
 
     private sealed class ExportedFile(string rootFastFile, string relativePath, string sha256)

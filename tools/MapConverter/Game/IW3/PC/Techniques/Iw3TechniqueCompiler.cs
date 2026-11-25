@@ -316,8 +316,16 @@ internal sealed class Iw3TechniqueCompiler
                 $"{passPath} shader name '{source.ProgramName}' resolves outside the extracted shader directory.");
         }
 
-        Iw3ShaderCompilation compilation = _shaderCompiler.Compile(source, programPath,
-            signedNormalInputMask, decodedTexCoordInputMask);
+        Iw3ShaderCompilation compilation;
+        try
+        {
+            compilation = _shaderCompiler.Compile(source, programPath,
+                signedNormalInputMask, decodedTexCoordInputMask);
+        }
+        catch (InvalidDataException error)
+        {
+            throw new InvalidDataException($"{passPath} shader '{source.ProgramName}': {error.Message}", error);
+        }
         MaterialShaderKind expectedKind = source.Stage == Iw3ShaderStage.Vertex
             ? MaterialShaderKind.Vertex
             : MaterialShaderKind.Pixel;

@@ -143,7 +143,8 @@ internal static partial class D3dbspGfxCodec
             ReadOnlySpan<int> sourceSurfaceIndices,
             IReadOnlyList<GfxSurfaceBounds> surfaceBounds,
             int reflectionProbeCount,
-            IReadOnlyList<GfxStaticModelInst> staticModels)
+            IReadOnlyList<GfxStaticModelInst> staticModels,
+            int[]? drawStarts)
     {
         ReadOnlySpan<byte> cellsData = file.GetRequiredData(D3dbspLumpType.Cells);
         int cellCount = GetElementCount(cellsData, DiskCellSize, "render cell");
@@ -157,7 +158,7 @@ internal static partial class D3dbspGfxCodec
         ReadOnlySpan<byte> header = reader.Take(12);
         int planeCount = ReadSpatialCount(header, ushort.MaxValue - cellCount, "render plane");
         int nodeCount = ReadSpatialCount(header[4..], reader.Remaining / sizeof(ushort), "render node word");
-        int authoredModelCount = ReadSpatialCount(header[8..], staticModels.Count, "authored static model");
+        int authoredModelCount = ReadSpatialCount(header[8..], drawStarts?.Length - 1 ?? staticModels.Count, "authored static model");
         ReadOnlySpan<byte> planeData = reader.Take(planeCount * DpvsPlane.SerializedSize);
         var planes = new DpvsPlane[planeCount];
         for (int index = 0; index < planes.Length; index++)
@@ -188,7 +189,8 @@ internal static partial class D3dbspGfxCodec
             sortedSurfaceIndices[slot] = checked((ushort)surfaceIndexBySource[index]);
         }
 
-        List<ushort>[] addedModels = AssignAddedRenderModels(nodes, planes, cellCount, authoredModelCount, staticModels);
+        int authoredDrawCount = drawStarts?[authoredModelCount] ?? authoredModelCount;
+        List<ushort>[] addedModels = AssignAddedRenderModels(nodes, planes, cellCount, authoredDrawCount, staticModels);
         var cells = new GfxCell[cellCount];
         var cellTrees = new GfxCellTree[cellCount];
         for (int index = 0; index < cellCount; index++)
@@ -218,7 +220,7 @@ internal static partial class D3dbspGfxCodec
             cellTrees[index] = new GfxCellTree
             {
                 AabbTrees = ReadSpatialCellTrees(reader.Take(treeCount * DiskSpatialTreeSize), treeCount,
-                    modelIndices, addedModels[index], sortedSurfaceIndices, surfaceBounds, staticModels, index)
+                    modelIndices, addedModels[index], sortedSurfaceIndices, surfaceBounds, staticModels, index, drawStarts)
             };
             var portals = new GfxPortal[portalCount];
             for (int portalIndex = 0; portalIndex < portals.Length; portalIndex++)
@@ -318,16 +320,38 @@ internal static partial class D3dbspGfxCodec
         ushort[] sortedSurfaceIndices,
         IReadOnlyList<GfxSurfaceBounds> surfaceBounds,
         IReadOnlyList<GfxStaticModelInst> staticModels,
-        int cellIndex)
+        int cellIndex,
+        int[]? drawStarts)
     {
         if (treeCount == 0)
             throw new InvalidDataException($"Render cell {cellIndex} has no root AABB.");
 
-        var rootModels = new ushort[authoredModels.Length + addedModels.Count];
+        // Disk nodes share slices of the cell's original model list. Expand each slice
+        // through the same prefix table so every part retains its authored visibility.
+        int[]? expandedOffsets = null;
+        if (drawStarts is not null)
+        {
+            expandedOffsets = new int[authoredModels.Length + 1];
+            for (int i = 0; i < authoredModels.Length; i++)
+            {
+                int source = authoredModels[i];
+                expandedOffsets[i + 1] = checked(expandedOffsets[i] + (drawStarts[source + 1] - drawStarts[source]));
+            }
+        }
+        int authoredDrawCount = expandedOffsets?[^1] ?? authoredModels.Length;
+        var rootModels = new ushort[checked(authoredDrawCount + addedModels.Count)];
         if (rootModels.Length > GfxAabbTree.MaxIndexCount)
             throw new InvalidDataException($"Render cell {cellIndex} exceeds the PS3 AABB model-list limit.");
-        authoredModels.CopyTo(rootModels, 0);
-        addedModels.CopyTo(rootModels, authoredModels.Length);
+        if (drawStarts is null)
+            authoredModels.CopyTo(rootModels, 0);
+        else
+        {
+            int output = 0;
+            foreach (int source in authoredModels)
+                for (int draw = drawStarts[source]; draw < drawStarts[source + 1]; draw++)
+                    rootModels[output++] = checked((ushort)draw);
+        }
+        addedModels.CopyTo(rootModels, authoredDrawCount);
 
         int rootChildren = BinaryPrimitives.ReadUInt16LittleEndian(data[24..]);
         int insertion = treeCount;
@@ -362,6 +386,11 @@ internal static partial class D3dbspGfxCodec
                 throw new InvalidDataException($"{path} exceeds the PS3 AABB surface-list limit.");
             if (index == 0 && (modelStart != 0 || modelCount != authoredModels.Length))
                 throw new InvalidDataException($"{path} does not reference the whole root model list.");
+            if (expandedOffsets is not null)
+            {
+                modelCount = expandedOffsets[modelStart + modelCount] - expandedOffsets[modelStart];
+                modelStart = expandedOffsets[modelStart];
+            }
             if (childCount == 0 ? childOffset != 0 : childOffset == 0)
                 throw new InvalidDataException($"{path} has an invalid child offset.");
 
@@ -419,7 +448,7 @@ internal static partial class D3dbspGfxCodec
             {
                 Bounds = bounds.ToBounds($"Render cell {cellIndex} added models"),
                 SModelIndexCount = checked((ushort)addedModels.Count),
-                SModelIndexes = new ArraySegment<ushort>(rootModels, authoredModels.Length, addedModels.Count)
+                SModelIndexes = new ArraySegment<ushort>(rootModels, authoredDrawCount, addedModels.Count)
             };
         }
         return trees;

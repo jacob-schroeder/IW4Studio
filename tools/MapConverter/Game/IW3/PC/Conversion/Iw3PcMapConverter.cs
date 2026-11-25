@@ -1040,6 +1040,7 @@ internal static class Iw3PcMapConverter
                     [.. xmodels.Models, .. nativeModelsForMap])
                 {
                     SourceEntities = modelReferences.RewrittenEntities,
+                    StaticModelRenderParts = xmodels.StaticPartsBySourceName,
                     UseSourceMaterials = true,
                     AvailableMaterials = materials.MapMaterials,
                     Lightmaps = lighting.Lightmaps,

@@ -1,0 +1,97 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:local="using:IW4.Studio.Desktop.Workbench.Tools.FastFileAssets"
+             x:Class="IW4.Studio.Desktop.Workbench.Tools.FastFileAssets.LocalizeTableRowView"
+             x:DataType="local:LocalizeTableRowViewModel">
+  <UserControl.Styles>
+    <Style Selector="Button.rowAction">
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="Padding" Value="4,2" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+    </Style>
+    <Style Selector="TextBox.value">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceSunkenBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="TextBox.value:focus-within">
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioFocusBrush}" />
+    </Style>
+  </UserControl.Styles>
+  <StackPanel Margin="0,3">
+    <Grid ColumnDefinitions="4*,6*" ColumnSpacing="10">
+      <Grid ColumnDefinitions="22,*,Auto" ColumnSpacing="4">
+        <Button Classes="rowAction" Width="22" Padding="2" Click="ToggleValue_Click"
+                IsEnabled="{Binding IsContentAvailable}" ToolTip.Tip="Expand or collapse value"
+                AutomationProperties.Name="{Binding Key, StringFormat='Expand or collapse {0}'}">
+          <Grid>
+            <icons:MaterialIcon Kind="ChevronRight" Width="16" Height="16" IsVisible="{Binding !IsExpanded}" />
+            <icons:MaterialIcon Kind="ChevronDown" Width="16" Height="16" IsVisible="{Binding IsExpanded}"
+                                Foreground="{DynamicResource StudioAccentBrush}" />
+          </Grid>
+        </Button>
+        <TextBlock Grid.Column="1" Text="{Binding Key}" ToolTip.Tip="{Binding Key}"
+                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" FontSize="12" />
+        <Button Grid.Column="2" Classes="rowAction" IsVisible="{Binding HasPendingChange}"
+                Click="Undo_Click" ToolTip.Tip="Discard this edit"
+                AutomationProperties.Name="{Binding Key, StringFormat='Discard edit to {0}'}">
+          <icons:MaterialIcon Kind="Undo" Width="14" Height="14" Foreground="{DynamicResource StudioAccentBrush}" />
+        </Button>
+      </Grid>
+      <Grid Grid.Column="1" IsVisible="{Binding ShowInlineInput}">
+        <TextBox x:Name="InlineValue" Classes="value" Height="28" MinHeight="28" Padding="7,2,25,2"
+                 VerticalContentAlignment="Center" AcceptsReturn="True" TextWrapping="NoWrap"
+                 AutomationProperties.Name="{Binding Key, StringFormat='Value for {0}'}"
+                 Text="{Binding ValueInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <icons:MaterialIcon Kind="PencilOutline" Width="12" Height="12" Margin="0,0,8,0"
+                            HorizontalAlignment="Right" VerticalAlignment="Center" IsHitTestVisible="False"
+                            Foreground="{DynamicResource StudioTextSubtleBrush}" />
+      </Grid>
+      <Button Grid.Column="1" Classes="rowAction" Padding="7,2" HorizontalContentAlignment="Stretch"
+              IsVisible="{Binding ShowPreview}" IsEnabled="{Binding IsContentAvailable}"
+              AutomationProperties.Name="{Binding Key, StringFormat='Show full value for {0}'}"
+              Click="ToggleValue_Click" ToolTip.Tip="{Binding SourceFile}">
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+          <TextBlock Text="{Binding ValuePreview}" VerticalAlignment="Center" FontSize="12"
+                     TextTrimming="CharacterEllipsis" Foreground="{DynamicResource StudioTextBrush}" />
+          <TextBlock Grid.Column="1" Text="{Binding LineCountText}" VerticalAlignment="Center"
+                     FontSize="11" Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <icons:MaterialIcon Grid.Column="2" Kind="LockOutline" Width="12" Height="12"
+                              IsVisible="{Binding !IsEditable}" Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </Grid>
+      </Button>
+    </Grid>
+    <Border IsVisible="{Binding IsExpanded}" BorderThickness="2,0,0,0"
+            BorderBrush="{DynamicResource StudioAccentSecondaryBrush}" Padding="9,2,0,3" Margin="9,4,0,1">
+      <Grid RowDefinitions="Auto,Auto" RowSpacing="5">
+        <TextBox x:Name="FullValue" Classes="value" MinHeight="76" MaxHeight="220" Padding="8,6"
+                 AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="{Binding !IsEditable}"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 AutomationProperties.Name="{Binding Key, StringFormat='Full value for {0}'}"
+                 Text="{Binding ValueInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <TextBlock FontSize="11" Foreground="{DynamicResource StudioTextMutedBrush}"
+                     IsVisible="{Binding HasPlaceholderText}" TextWrapping="Wrap"
+                     Text="{Binding PlaceholderText, StringFormat='Placeholders  {0}'}" />
+          <TextBlock Grid.Column="1" IsVisible="{Binding IsEditable}" Text="Enter inserts a line break"
+                     FontSize="11" Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Grid.Column="1" IsVisible="{Binding !IsEditable}" Text="{Binding SourceFile}"
+                     FontSize="11" Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </Grid>
+      </Grid>
+    </Border>
+    <TextBlock IsVisible="{Binding HasPlaceholderWarning}" Margin="26,2,0,2" TextWrapping="Wrap"
+               Text="The placeholders differ from the applied value." FontSize="11"
+               Foreground="{DynamicResource StudioWarningBrush}" />
+    <TextBlock IsVisible="{Binding HasExternalChange}" Margin="26,2,0,2" TextWrapping="Wrap"
+               Text="The source value changed. Discard this edit to load it." FontSize="11"
+               Foreground="{DynamicResource StudioWarningBrush}" />
+  </StackPanel>
+</UserControl>

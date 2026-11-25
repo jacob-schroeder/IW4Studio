@@ -4,13 +4,77 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:converters="using:Avalonia.Data.Converters"
+             xmlns:workbench="using:IW4.Studio.Desktop.Workbench.Composition"
              xmlns:fastfileAssets="using:IW4.Studio.Desktop.Workbench.Tools.FastFileAssets"
              x:Class="IW4.Studio.Desktop.Workbench.Tools.FastFileAssets.FastFileContentsView"
              x:DataType="fastfileAssets:FastFileAssetsNavigatorViewModel"
              mc:Ignorable="d"
              d:DesignWidth="1100"
              d:DesignHeight="760">
+  <UserControl.Resources>
+    <DataTemplate x:Key="AssetRowTemplate" x:DataType="fastfileAssets:FastFileContentsRow">
+      <Grid ColumnDefinitions="16,5*,2*,3*" ColumnSpacing="8">
+        <materialIcons:MaterialIcon Kind="FileCodeOutline"
+                                    Width="16"
+                                    Height="16"
+                                    VerticalAlignment="Center"
+                                    Foreground="{DynamicResource StudioAccentBrush}" />
+        <DockPanel Grid.Column="1">
+          <Border DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"
+                  IsVisible="{Binding IsReferencePlaceholder}"
+                  ToolTip.Tip="{Binding PlaceholderHint}"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioBorderStrongBrush}" BorderThickness="1"
+                  CornerRadius="4" Padding="5,1">
+            <TextBlock Text="Placeholder" FontSize="11"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Border>
+          <Border DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"
+                  IsVisible="{Binding HasOverride}"
+                  ToolTip.Tip="{Binding OverrideHint}"
+                  Background="{DynamicResource StudioSurfaceSunkenBrush}"
+                  BorderBrush="{DynamicResource StudioAccentSecondaryBrush}" BorderThickness="1"
+                  CornerRadius="4" Padding="5,1">
+            <TextBlock Text="Override" FontSize="11"
+                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+          </Border>
+          <TextBlock Text="{Binding Name}" ToolTip.Tip="{Binding ToolTipText}"
+                     VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource StudioTextBrush}" />
+        </DockPanel>
+        <TextBlock Grid.Column="2"
+                   Text="{Binding AssetType}"
+                   VerticalAlignment="Center"
+                   FontSize="11"
+                   TextTrimming="CharacterEllipsis"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+        <TextBlock Grid.Column="3"
+                   Text="{Binding SourceFile}"
+                   ToolTip.Tip="{Binding SourceHint}"
+                   VerticalAlignment="Center"
+                   FontSize="11"
+                   TextTrimming="CharacterEllipsis"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
+      </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="LocalizeRowTemplate" x:DataType="fastfileAssets:FastFileContentsRow">
+      <fastfileAssets:LocalizeTableRowView DataContext="{Binding Localize}" />
+    </DataTemplate>
+  </UserControl.Resources>
   <UserControl.Styles>
+    <Style Selector="ListBox.contentsRows">
+      <Setter Property="ItemTemplate" Value="{StaticResource AssetRowTemplate}" />
+    </Style>
+    <Style Selector="ListBox.contentsRows.localizeRows">
+      <Setter Property="AutoScrollToSelectedItem" Value="True" />
+      <Setter Property="ItemTemplate" Value="{StaticResource LocalizeRowTemplate}" />
+    </Style>
+    <Style Selector="TextBox.contentsSearch">
+      <Setter Property="Padding" Value="8,4" />
+    </Style>
+    <Style Selector="TextBox.localizeSearch">
+      <Setter Property="Padding" Value="30,4,8,4" />
+    </Style>
     <Style Selector="ToggleButton.contentsScopeButton">
       <Setter Property="MinHeight" Value="28" />
       <Setter Property="Padding" Value="8,3" />
@@ -69,7 +133,7 @@
           </ToggleButton>
         </StackPanel>
         <Grid ColumnDefinitions="*,Auto">
-          <TextBlock Text="Assets"
+          <TextBlock Text="{Binding ContentsTitle}"
                      VerticalAlignment="Center"
                      FontSize="14"
                      FontWeight="SemiBold"
@@ -107,13 +171,22 @@
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="0,0,0,1">
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-        <TextBox Text="{Binding ContentsSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                 MinHeight="32"
-                 Padding="8,4"
-                 CornerRadius="4"
-                 PlaceholderText="Search asset names…"
-                 FontSize="12" />
-        <TextBlock Grid.Column="1"
+        <Grid>
+          <TextBox Text="{Binding ContentsSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   MinHeight="32" CornerRadius="4" FontSize="12"
+                   Classes="contentsSearch" Classes.localizeSearch="{Binding IsLocalizeTable}"
+                   PlaceholderText="{Binding SearchPrompt}" AutomationProperties.Name="{Binding SearchPrompt}" />
+          <materialIcons:MaterialIcon Kind="Magnify" Width="16" Height="16" Margin="8,0"
+                                      IsVisible="{Binding IsLocalizeTable}" IsHitTestVisible="False"
+                                      HorizontalAlignment="Left" VerticalAlignment="Center"
+                                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </Grid>
+        <StackPanel Grid.Column="1" IsVisible="{Binding IsLocalizeTable}" VerticalAlignment="Center">
+          <TextBlock IsVisible="{Binding IsThisFastFileScope}" FontSize="11" MaxWidth="130" TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource StudioTextMutedBrush}" ToolTip.Tip="Target fastfile languages"
+                     Text="{Binding $parent[workbench:StudioWorkbenchView].((workbench:StudioWorkbenchViewModel)DataContext).FastFileDetails.SelectedLanguagesText}" />
+        </StackPanel>
+        <TextBlock Grid.Column="1" IsVisible="{Binding !IsLocalizeTable}"
                    Text="{Binding ContentsResultText}"
                    VerticalAlignment="Center"
                    FontSize="11"
@@ -129,7 +202,7 @@
                TextWrapping="Wrap"
                Foreground="{DynamicResource StudioTextSubtleBrush}" />
 
-    <Grid x:Name="AssetTable" Grid.Row="3" RowDefinitions="Auto,*" ContextRequested="Contents_ContextRequested">
+    <Grid x:Name="AssetTable" Grid.Row="3" RowDefinitions="Auto,*,Auto" ContextRequested="Contents_ContextRequested">
       <Grid.ContextFlyout>
         <MenuFlyout>
           <MenuItem x:Name="OpenContentsMenuItem" Header="Open" Click="OpenContentsMenuItem_Click" />
@@ -160,7 +233,7 @@
                     Click="ImportPackageMenuItem_Click" />
         </MenuFlyout>
       </Grid.ContextFlyout>
-      <Border Padding="12,4"
+      <Border IsVisible="{Binding !IsLocalizeTable}" Padding="12,4"
               Background="{DynamicResource StudioSurfaceSunkenBrush}"
               BorderBrush="{DynamicResource StudioBorderBrush}"
               BorderThickness="0,0,0,1">
@@ -173,64 +246,27 @@
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
         </Grid>
       </Border>
+      <Border IsVisible="{Binding IsLocalizeTable}" Padding="12,5"
+              Background="{DynamicResource StudioSurfaceSunkenBrush}"
+              BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="0,0,0,1">
+        <Grid ColumnDefinitions="4*,6*" ColumnSpacing="10">
+          <TextBlock Text="Key" Margin="26,0,0,0" FontSize="11" FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+          <TextBlock Grid.Column="1" Text="Value" Margin="7,0,0,0" FontSize="11" FontWeight="SemiBold"
+                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </Grid>
+      </Border>
       <ListBox x:Name="ContentsList"
                Grid.Row="1"
-               Classes="studioOutputList studioAssetList"
+               Classes="studioOutputList studioAssetList contentsRows"
+               Classes.localizeRows="{Binding IsLocalizeTable}"
                Margin="4"
                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                ItemsSource="{Binding ContentsRows}"
                SelectedItem="{Binding SelectedContentsRow, Mode=TwoWay}"
                SelectionMode="Multiple"
                DoubleTapped="ContentsList_DoubleTapped"
-               KeyDown="ContentsList_KeyDown">
-        <ListBox.ItemTemplate>
-          <DataTemplate x:DataType="fastfileAssets:FastFileContentsRow">
-            <Grid ColumnDefinitions="16,5*,2*,3*" ColumnSpacing="8">
-              <materialIcons:MaterialIcon Kind="FileCodeOutline"
-                                          Width="16"
-                                          Height="16"
-                                          VerticalAlignment="Center"
-                                          Foreground="{DynamicResource StudioAccentBrush}" />
-              <DockPanel Grid.Column="1">
-                <Border DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"
-                        IsVisible="{Binding IsReferencePlaceholder}"
-                        ToolTip.Tip="{Binding PlaceholderHint}"
-                        Background="{DynamicResource StudioSurfaceSunkenBrush}"
-                        BorderBrush="{DynamicResource StudioBorderStrongBrush}" BorderThickness="1"
-                        CornerRadius="4" Padding="5,1">
-                  <TextBlock Text="Placeholder" FontSize="11"
-                             Foreground="{DynamicResource StudioTextMutedBrush}" />
-                </Border>
-                <Border DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"
-                        IsVisible="{Binding HasOverride}"
-                        ToolTip.Tip="{Binding OverrideHint}"
-                        Background="{DynamicResource StudioSurfaceSunkenBrush}"
-                        BorderBrush="{DynamicResource StudioAccentSecondaryBrush}" BorderThickness="1"
-                        CornerRadius="4" Padding="5,1">
-                  <TextBlock Text="Override" FontSize="11"
-                             Foreground="{DynamicResource StudioTextMutedBrush}" />
-                </Border>
-                <TextBlock Text="{Binding Name}" ToolTip.Tip="{Binding ToolTipText}"
-                           VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis"
-                           Foreground="{DynamicResource StudioTextBrush}" />
-              </DockPanel>
-              <TextBlock Grid.Column="2"
-                         Text="{Binding AssetType}"
-                         VerticalAlignment="Center"
-                         FontSize="11"
-                         TextTrimming="CharacterEllipsis"
-                         Foreground="{DynamicResource StudioTextMutedBrush}" />
-              <TextBlock Grid.Column="3"
-                         Text="{Binding SourceFile}"
-                         ToolTip.Tip="{Binding SourceHint}"
-                         VerticalAlignment="Center"
-                         FontSize="11"
-                         TextTrimming="CharacterEllipsis"
-                         Foreground="{DynamicResource StudioTextMutedBrush}" />
-            </Grid>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
+               KeyDown="ContentsList_KeyDown" />
       <StackPanel Grid.Row="1"
                   IsVisible="{Binding !HasContentsRows}"
                   Margin="24"
@@ -246,6 +282,23 @@
                    FontSize="12"
                    Foreground="{DynamicResource StudioTextMutedBrush}" />
       </StackPanel>
+      <Border Grid.Row="2" IsVisible="{Binding IsLocalizeTable}" Padding="12,7"
+              BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="0,1,0,0">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="10">
+            <TextBlock Text="{Binding LocalizeTable.PendingCount, StringFormat='{}{0:N0} pending'}"
+                       IsVisible="{Binding LocalizeTable.HasPendingChanges}" VerticalAlignment="Center"
+                       FontSize="11" Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <Button Classes="contentsAction" Content="Discard" Click="DiscardLocalize_Click"
+                    IsVisible="{Binding LocalizeTable.HasPendingChanges}" />
+            <Button Classes="contentsAction primary" Content="Apply changes" Click="ApplyLocalize_Click"
+                    ToolTip.Tip="Apply pending string edits to this fastfile for Save As"
+                    IsEnabled="{Binding LocalizeTable.HasPendingChanges}" />
+          </StackPanel>
+          <TextBlock Text="{Binding LocalizeResultText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                     Margin="0,0,8,0" FontSize="11" Foreground="{DynamicResource StudioTextSubtleBrush}" />
+        </DockPanel>
+      </Border>
     </Grid>
   </Grid>
 </UserControl>

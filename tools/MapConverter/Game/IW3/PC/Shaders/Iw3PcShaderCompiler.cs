@@ -1392,8 +1392,64 @@ internal sealed class Iw3PcShaderCompiler
                 !constants.TryGetValue(sign.Groups[1].Value, out float[]? signValues) ||
                 !signValues.SequenceEqual(new[] { 32f, -2f, -15f, 1f }) ||
                 Tail(3) != $"ADD {value}.zw, {value}, -{mantissa};" ||
-                Tail(6) != $"MAD {value}.zw, {value}, {mantissa}.xyxy, {value};" ||
-                Tail(7) != $"EX2 {mantissa}.x, {value}.x;" ||
+                Tail(6) != $"MAD {value}.zw, {value}, {mantissa}.xyxy, {value};")
+                throw Invalid();
+
+            // Scrolling programs write the decoded XY lanes through either a
+            // separate output temporary or the unpack temporary itself. Keep
+            // the original scroll offset and any unrelated live lanes.
+            string? scrollResult = null;
+            string? scrollLane = null;
+            string? scrollOffset = null;
+            int scrollConsumed = 12 + extraFractionInstructions;
+            Match scrollExponent = Regex.Match(Tail(7), $@"^EX2 (?<result>r\d+)\.w, {value}\.x;$");
+            if (scrollExponent.Success)
+            {
+                string result = scrollExponent.Groups["result"].Value;
+                Match scroll = Regex.Match(Tail(10),
+                    $@"^MAD {result}\.y, {value}\.w, {value}\.x, -(c\d+)\.z;$");
+                if (result == value || result == mantissa || !scroll.Success ||
+                    Tail(8) != $"EX2 {value}.x, {value}.y;" ||
+                    Tail(9) != $"MUL {result}.x, {value}.z, {result}.w;" ||
+                    !Regex.IsMatch(Tail(11), $@"^MOV o\w*\.xyz, {result};$") ||
+                    !AreUnpackUsesEquivalent(lines, instructions, start + scrollConsumed, value, "xyzw", false) ||
+                    !AreUnpackUsesEquivalent(lines, instructions, start + scrollConsumed, mantissa, "xyzw", false) ||
+                    !AreUnpackUsesEquivalent(lines, instructions, start + scrollConsumed, result, "w", false))
+                    throw Invalid();
+                scrollResult = result;
+                scrollLane = "y";
+                scrollOffset = scroll.Groups[1].Value;
+            }
+            else
+            {
+                Match inlineScroll = Regex.Match(Tail(10),
+                    $@"^MAD {value}\.z, {value}\.w, {value}\.y, -(c\d+)\.z;$");
+                if (inlineScroll.Success)
+                {
+                    if (Tail(7) != $"EX2 {value}.x, {value}.x;" ||
+                        Tail(8) != $"EX2 {value}.y, {value}.y;" ||
+                        Tail(9) != $"MUL {value}.x, {value}.z, {value}.x;" ||
+                        !Regex.IsMatch(Tail(11), $@"^MOV o\w*\.xy, {value}\.xzzw;$") ||
+                        !AreUnpackUsesEquivalent(lines, instructions, start + scrollConsumed, value, "yw", false) ||
+                        !AreUnpackUsesEquivalent(lines, instructions, start + scrollConsumed, mantissa, "xyzw", false))
+                        throw Invalid();
+                    scrollResult = value;
+                    scrollLane = "z";
+                    scrollOffset = inlineScroll.Groups[1].Value;
+                }
+            }
+            if (scrollResult is not null)
+            {
+                if (fractionTemporary is not null &&
+                    !AreUnpackUsesEquivalent(lines, instructions, start + scrollConsumed, fractionTemporary, "xy", false))
+                    throw Invalid();
+                lines[instructions[start]] = $"MOV {scrollResult}.x, {alias}.x;";
+                lines[instructions[start + 1]] = $"ADD {scrollResult}.{scrollLane}, {alias}.y, -{scrollOffset}.z;";
+                for (int index = 2; index < 11 + extraFractionInstructions; index++)
+                    lines[instructions[start + index]] = string.Empty;
+                continue;
+            }
+            if (Tail(7) != $"EX2 {mantissa}.x, {value}.x;" ||
                 Tail(8) != $"EX2 {mantissa}.y, {value}.y;")
                 throw Invalid();
 

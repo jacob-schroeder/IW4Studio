@@ -31,7 +31,7 @@ public sealed partial class FastFileContentsView
     private void OpenContentsMenuItem_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is FastFileAssetsNavigatorViewModel viewModel && _contextContentsRow is { } row)
-            viewModel.OpenContentsRow(row);
+            OpenRow(viewModel, row);
     }
 
     private void CopyWeapon_Click(object? sender, RoutedEventArgs e) =>
