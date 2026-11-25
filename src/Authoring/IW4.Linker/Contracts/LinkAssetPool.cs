@@ -296,27 +296,31 @@ public sealed class LinkAssetProvider
         CancellationToken cancellationToken)
     {
         var dependencies = new List<(XAssetType Type, string Name, string Field)>();
-        void Add(AssetDependency dependency)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            dependencies.Add((
-                dependency.SerializedType,
-                dependency.Key.NormalizedName,
-                dependency.FieldPath));
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        Plan.VisitReferences(
-            Add,
-            Add,
-            _ => { },
-            cancellationToken: cancellationToken);
+        VisitNativeDependencies(dependency => dependencies.Add((
+            dependency.SerializedType, dependency.Key.NormalizedName, dependency.FieldPath)), cancellationToken);
         foreach (var dependency in _namedDependencies)
         {
             cancellationToken.ThrowIfCancellationRequested();
             dependencies.Add(dependency);
         }
         return dependencies.AsReadOnly();
+    }
+
+    /// <summary>Native link references and whether each carries its own external provider claim.</summary>
+    public IReadOnlyList<(XAssetType Type, string Name, string Field, bool HasExternalClaim)> CaptureNativeDependencies(
+        CancellationToken cancellationToken)
+    {
+        var dependencies = new List<(XAssetType, string, string, bool)>();
+        VisitNativeDependencies(dependency => dependencies.Add((
+            dependency.SerializedType, dependency.Key.NormalizedName, dependency.FieldPath,
+            dependency.ExternalSerializedName is not null)), cancellationToken);
+        return dependencies.AsReadOnly();
+    }
+
+    private void VisitNativeDependencies(Action<AssetDependency> visit, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Plan.VisitReferences(visit, visit, _ => { }, cancellationToken: cancellationToken);
     }
 
     // Snapshot semantic names that the native plan writes as XStrings without
@@ -438,6 +442,13 @@ public sealed class LinkAssetPool
     }
 
     public IReadOnlyList<LinkAssetProvider> Providers => _providers;
+
+    /// <summary>Retains selected frozen providers and their captured storage identities.</summary>
+    public LinkAssetPool ForKeys(IEnumerable<AssetKey> keys)
+    {
+        var selected = keys.ToHashSet();
+        return new LinkAssetPool(_providers.Where(provider => selected.Contains(provider.Key)), _identityCatalog);
+    }
 
     /// <summary>
     /// Places an already-frozen provider pool before this pool without

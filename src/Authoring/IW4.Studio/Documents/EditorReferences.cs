@@ -64,6 +64,9 @@ public sealed partial class FastFileEditingSession
                 return CurrentDefinitionForEntry(target) as T;
             }
 
+            if (_packageDefinitions.TryGetValue(PackageKey(type, normalized), out var packaged))
+                return packaged as T;
+
             if (Workspace.IsBlank || !Workspace.LoadedZone.Context.AssetPool.TryResolve(type, normalized, out T? asset) ||
                 asset?.RuntimeAddress?.AssetPoolAddress is not { } address ||
                 !Workspace.LoadedZone.Context.AssetPool.TryGetSlot(address, out var slot) ||

@@ -2367,4 +2367,5 @@ internal sealed class LinkAssetFreezeScope
 
 internal readonly record struct LinkStorageTarget(
     LinkStorageView View,
-    bool CanMaterializeRoot);
+    bool CanMaterializeRoot,
+    LinkStorageSymbol? StandaloneValue = null);

@@ -54,6 +54,17 @@ public sealed class TechsetExchange
 
     public MaterialTechniqueSetAsset Link(string sourceDirectory, string assetName)
     {
+        var exchange = new TechniqueExchange();
+        return Link(sourceDirectory, assetName, name => exchange.Link(sourceDirectory, name));
+    }
+
+    /// <summary>Reads a set while sharing technique definitions supplied by the caller.</summary>
+    public MaterialTechniqueSetAsset Link(
+        string sourceDirectory,
+        string assetName,
+        Func<string, MaterialTechniqueAsset> loadTechnique)
+    {
+        ArgumentNullException.ThrowIfNull(loadTechnique);
         string name = SourceOutput.NormalizeOwnedAssetName(assetName, "Techset");
         string path = NativeSourcePath.Resolve(
             sourceDirectory, "techsets", name, ".techset.json");
@@ -68,7 +79,6 @@ public sealed class TechsetExchange
         if (document.Techniques is null || document.Techniques.Length != count)
             throw new InvalidDataException($"Techset '{name}' requires {count} technique slots.");
 
-        var exchange = new TechniqueExchange();
         var techniques = new Dictionary<string, MaterialTechniqueAsset>(StringComparer.Ordinal);
         var slots = new MaterialTechniqueSlot[count];
         for (int index = 0; index < count; index++)
@@ -81,7 +91,8 @@ public sealed class TechsetExchange
                     techniqueName, $"Techset '{name}' slot {index} technique");
                 if (!techniques.TryGetValue(referencedName, out technique))
                 {
-                    technique = exchange.Link(sourceDirectory, referencedName);
+                    technique = loadTechnique(referencedName) ??
+                        throw new InvalidDataException($"Techset '{name}' technique '{referencedName}' did not resolve.");
                     techniques.Add(referencedName, technique);
                 }
             }

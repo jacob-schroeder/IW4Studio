@@ -1,6 +1,7 @@
 using IW4.Game.Assets;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Zone;
+using IW4.Linker.Contracts;
 using IW4.Runtime.Assets;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Selection;
@@ -17,6 +18,8 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
     private readonly AssetPoolNavigatorSnapshot _assetPool;
     private readonly IReadOnlyDictionary<long, AssetPoolSlotSnapshot> _slotsByProvider;
     private readonly Func<BaseAsset, TargetZoneRowIdentity?, WorkspaceAssetCatalogEntry> _applyImportedAsset;
+    private readonly Func<AssetPackageImportPreview,
+        IReadOnlyDictionary<AssetKey, AssetPackageConflictChoice>, int> _applyPackageImport;
     private readonly Dictionary<(long, XAssetType), AssetExplorerEntryViewModel> _targetsByProvider = [];
     private readonly Dictionary<long, AssetExplorerEntryViewModel> _dependenciesByProvider = [];
     private IReadOnlyList<AssetExplorerEntryViewModel> _allRows;
@@ -42,11 +45,14 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
         EditorViewModel editor,
         IWorkbenchSelectionContext selectionContext,
         Func<BaseAsset, TargetZoneRowIdentity?, WorkspaceAssetCatalogEntry> applyImportedAsset,
+        Func<AssetPackageImportPreview,
+            IReadOnlyDictionary<AssetKey, AssetPackageConflictChoice>, int> applyPackageImport,
         AssetPoolNavigatorSnapshot assetPool)
     {
         _editor = editor ?? throw new ArgumentNullException(nameof(editor));
         _selectionContext = selectionContext ?? throw new ArgumentNullException(nameof(selectionContext));
         _applyImportedAsset = applyImportedAsset ?? throw new ArgumentNullException(nameof(applyImportedAsset));
+        _applyPackageImport = applyPackageImport ?? throw new ArgumentNullException(nameof(applyPackageImport));
         _assetPool = assetPool ?? throw new ArgumentNullException(nameof(assetPool));
         _slotsByProvider = _assetPool.Rows.ToDictionary(slot => slot.ActiveProviderId.Value);
         _allRows = [];
@@ -69,6 +75,12 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
     }
 
     public event EventHandler? ContentsRequested;
+
+    internal FastFileEditingSession EditingSession => _editor.EditingSession;
+    internal int ApplyPackageImport(
+        AssetPackageImportPreview preview,
+        IReadOnlyDictionary<AssetKey, AssetPackageConflictChoice> choices) =>
+        _applyPackageImport(preview, choices);
 
     public FastFileAssetContentsScope ContentsScope
     {

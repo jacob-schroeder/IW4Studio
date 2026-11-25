@@ -69,6 +69,7 @@ public sealed class AssetDependencyListItemViewModel
 public sealed class AssetDependenciesToolViewModel : ObservableObject
 {
     private readonly Action<WorkspaceAssetCatalogEntry> _openAsset;
+    private readonly FastFileEditingSession _editingSession;
     private WorkspaceAssetCatalogEntry? _selection;
     private IReadOnlyList<AssetDependencyRelation> _usedBy = [];
     private IReadOnlyList<AssetDependencyRelation> _uses = [];
@@ -76,12 +77,21 @@ public sealed class AssetDependenciesToolViewModel : ObservableObject
     private bool _isUsedByScope = true;
     private bool _isLoading;
     private string _errorMessage = string.Empty;
+    private string _packageStatusMessage = string.Empty;
 
-    public AssetDependenciesToolViewModel(Action<WorkspaceAssetCatalogEntry> openAsset) =>
+    public AssetDependenciesToolViewModel(
+        Action<WorkspaceAssetCatalogEntry> openAsset,
+        FastFileEditingSession editingSession)
+    {
         _openAsset = openAsset ?? throw new ArgumentNullException(nameof(openAsset));
+        _editingSession = editingSession ?? throw new ArgumentNullException(nameof(editingSession));
+    }
+
+    internal FastFileEditingSession EditingSession => _editingSession;
 
     public WorkspaceAssetCatalogEntry? Selection => _selection;
     public bool HasSelection => _selection is not null;
+    public bool CanExportPackage => _selection is not null;
     public bool HasNoSelection => !HasSelection;
     public string AssetName => _selection switch
     {
@@ -96,6 +106,17 @@ public sealed class AssetDependenciesToolViewModel : ObservableObject
     public bool IsLoading => _isLoading;
     public bool HasError => _errorMessage.Length != 0;
     public string ErrorMessage => _errorMessage;
+    public string PackageStatusMessage
+    {
+        get => _packageStatusMessage;
+        private set
+        {
+            if (SetProperty(ref _packageStatusMessage, value))
+                OnPropertyChanged(nameof(HasPackageStatus));
+        }
+    }
+    public bool HasPackageStatus => PackageStatusMessage.Length != 0;
+    internal void ReportPackageStatus(string message) => PackageStatusMessage = message;
     public int UsedByCount => _usedBy.Count;
     public int UsesCount => _uses.Count;
     public bool IsUsedByScope
@@ -133,6 +154,7 @@ public sealed class AssetDependenciesToolViewModel : ObservableObject
             return;
 
         _selection = selection;
+        PackageStatusMessage = string.Empty;
         _usedBy = [];
         _uses = [];
         if (selection is null)
@@ -214,6 +236,7 @@ public sealed class AssetDependenciesToolViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(Selection));
         OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(CanExportPackage));
         OnPropertyChanged(nameof(HasNoSelection));
         OnPropertyChanged(nameof(AssetName));
         OnPropertyChanged(nameof(AssetType));

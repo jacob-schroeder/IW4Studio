@@ -197,6 +197,17 @@ public sealed class ZoneLinker
                 request.ScriptStrings);
     }
 
+    /// <summary>Orders explicit provider roots before their first native use for a merged workspace.</summary>
+    public static ZoneLinkRequest ProjectDependencyRootOrder(ZoneLinkRequest request)
+    {
+        ResolvedLinkGraph graph = ResolveGraph(request);
+        var ordered = new List<LinkRoot>(request.Roots.Count);
+        AssetRow[] rows = BuildAssetRows(request.Roots, graph.Roots, graph.DependencyClosure, ordered);
+        ValidateAssetRowPublicationOrder(rows, graph.DependencyClosure);
+        return ordered.SequenceEqual(request.Roots) ? request : new ZoneLinkRequest(request.Assets,
+            ordered, request.LanguageMask, request.SelectedLanguageMask, request.ScriptStrings);
+    }
+
     public ZoneLinkResult Link(ZoneLinkRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -834,7 +845,8 @@ public sealed class ZoneLinker
     private static AssetRow[] BuildAssetRows(
         IReadOnlyList<LinkRoot> roots,
         IReadOnlyList<ResolvedRoot> resolvedRoots,
-        IReadOnlyDictionary<DependencyEdge, ProviderBinding> dependencyClosure)
+        IReadOnlyDictionary<DependencyEdge, ProviderBinding> dependencyClosure,
+        List<LinkRoot>? projectedOrder = null)
     {
         var explicitRootIndex = new Dictionary<ProviderSymbol, int>();
         for (int index = 0; index < resolvedRoots.Count; index++)
@@ -862,10 +874,17 @@ public sealed class ZoneLinker
         var plannedStorage = new HashSet<LinkStorageSymbol>(
             ReferenceEqualityComparer.Instance);
         for (int index = 0; index < roots.Count; index++)
+            PlanRoot(index);
+
+        return rows.ToArray();
+
+        void PlanRoot(int index)
         {
             LinkRoot root = roots[index];
             if (resolvedRoots[index].Provider is { } provider)
             {
+                if (projectedOrder is not null && rowProviders.Contains(provider.Symbol))
+                    return;
                 PlanDependencies(provider, index);
                 if (!rowProviders.Add(provider.Symbol))
                 {
@@ -888,9 +907,8 @@ public sealed class ZoneLinker
                     resolvedRoots[index].OpaqueHeader,
                     $"root '{root.EntryId}'"));
             }
+            projectedOrder?.Add(root);
         }
-
-        return rows.ToArray();
 
         void PlanDependencies(ProviderBinding provider, int currentRootIndex)
         {
@@ -922,8 +940,17 @@ public sealed class ZoneLinker
                 if (explicitRootIndex.TryGetValue(
                         target.Symbol,
                         out int targetRootIndex) &&
-                    targetRootIndex > currentRootIndex)
+                    targetRootIndex != currentRootIndex)
                 {
+                    if (projectedOrder is not null)
+                    {
+                        if (activeProviders.Contains(target.Symbol))
+                            throw new InvalidDataException($"Native provider roots form a cycle at {target.Key}.");
+                        PlanRoot(targetRootIndex);
+                        return;
+                    }
+                    if (targetRootIndex < currentRootIndex)
+                        return;
                     throw new InvalidDataException(
                         $"Root '{roots[currentRootIndex].EntryId}' reaches provider " +
                         $"{target.Key} before its later root " +

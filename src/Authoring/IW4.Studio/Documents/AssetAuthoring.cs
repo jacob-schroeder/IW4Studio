@@ -167,14 +167,14 @@ public sealed class AssetAuthoringAdapterRegistry
     public AssetEditorSurface CreateSurface(
         FastFileEditingSession session,
         WorkspaceAssetCatalogEntry entry) =>
-        CreateSurface(session, entry, entry.Definition, entry.Access);
+        CreateSurface(session, entry, CurrentSurfaceDefinition(session, entry), entry.Access);
 
     public AssetEditorSurface CreateReadOnlySurface(
         FastFileEditingSession session,
         WorkspaceAssetCatalogEntry entry,
         BaseAsset? definition = null)
     {
-        definition ??= entry.Definition;
+        definition ??= CurrentSurfaceDefinition(session, entry);
         if (definition is not null &&
             definition.SerializedAssetType != entry.AssetType)
         {
@@ -189,6 +189,11 @@ public sealed class AssetAuthoringAdapterRegistry
             definition,
             WorkspaceAssetAccess.ReadOnly);
     }
+
+    private static BaseAsset? CurrentSurfaceDefinition(FastFileEditingSession session, WorkspaceAssetCatalogEntry entry) =>
+        entry is { AssetType: XAssetType.Techset, Origin: WorkspaceAssetOrigin.TargetOwnedDefinition,
+            Access: WorkspaceAssetAccess.Editable, TargetRowIdentity: { } id, HasDefinition: true }
+            ? session.CaptureCurrentDefinition(id) : entry.Definition;
 
     private AssetEditorSurface CreateSurface(
         FastFileEditingSession session,
@@ -233,31 +238,29 @@ public sealed class AssetAuthoringAdapterRegistry
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         BaseAsset definition = NewAssetDefinitionFactory.Create(type, name);
-        IAssetAuthoringAdapter adapter =
-            TryGetAdapter(type, out IAssetAuthoringAdapter? registered)
-                ? registered!
-                : new DetachedNewAssetAdapter(definition);
-        return session.AddAsset(definition, adapter);
+        return session.AddAsset(definition, AdapterForNewDefinition(definition));
     }
 
+    internal IAssetAuthoringAdapter AdapterForNewDefinition(BaseAsset definition) =>
+        _adapters.GetValueOrDefault(definition.SerializedAssetType) ?? new DetachedDefinitionAdapter(definition);
+
     /// <summary>
-    /// Retains a detached new definition in the editing session when no rich
+    /// Retains a detached definition in the editing session when no rich
     /// authoring adapter exists. It is deliberately never registered and has
     /// no writable surface, so unsupported pre-existing rows remain read-only.
     /// </summary>
-    private sealed class DetachedNewAssetAdapter : IAssetAuthoringAdapter
+    private sealed class DetachedDefinitionAdapter : IAssetAuthoringAdapter
     {
-        private readonly BaseAsset _definition;
+        private readonly BaseAsset _original;
 
-        public DetachedNewAssetAdapter(BaseAsset definition)
+        public DetachedDefinitionAdapter(BaseAsset definition)
         {
-            _definition = definition ?? throw new ArgumentNullException(
-                nameof(definition));
+            _original = definition;
             AssetType = definition.SerializedAssetType;
         }
 
         public XAssetType AssetType { get; }
-        public Type DraftType => _definition.GetType();
+        public Type DraftType => _original.GetType();
 
         public object CreateDraft(BaseAsset definition) =>
             RequireDefinition(definition);
@@ -278,13 +281,12 @@ public sealed class AssetAuthoringAdapterRegistry
 
         private BaseAsset RequireDefinition(object value)
         {
-            if (!ReferenceEquals(value, _definition))
-            {
-                throw new InvalidDataException(
-                    $"The new {AssetType} adapter received another definition.");
-            }
-
-            return _definition;
+            if (ReferenceEquals(value, _original))
+                return _original;
+            if (_original is MaterialTechniqueSetAsset && value is MaterialTechniqueSetAsset set &&
+                AssetKey.FromDefinition(set) == AssetKey.FromDefinition(_original))
+                return set;
+            throw new InvalidDataException($"The {AssetType} draft must retain its target identity.");
         }
     }
 }

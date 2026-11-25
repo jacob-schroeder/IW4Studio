@@ -525,25 +525,38 @@ internal sealed class Iw3PcShaderCompiler
             .Select(match => int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture)).ToHashSet();
         int scratch = Enumerable.Range(0, 32).FirstOrDefault(register => !occupied.Contains(register), -1);
         int lowered = 0;
-        for (int index = 0; index + 8 < instructions.Length; index++)
+        for (int index = 0; index + 7 < instructions.Length; index++)
         {
-            Match homogeneous = Regex.Match(lines[instructions[index]].Trim(),
-                @"^MAD (R\d+), v\[vertex\.position\]\.xyzx, (c\[\d+\])\.([xyzw]{4}), \2\.([xyzw]{4});$");
-            if (!homogeneous.Success || !constants.TryGetValue(homogeneous.Groups[2].Value, out float[]? values) ||
-                values.Length != 4 || !homogeneous.Groups[3].Value.Select(lane => values["xyzw".IndexOf(lane)])
-                    .SequenceEqual(new float[] { 1, 1, 1, 0 }) ||
-                !homogeneous.Groups[4].Value.Select(lane => values["xyzw".IndexOf(lane)])
-                    .SequenceEqual(new float[] { 0, 0, 0, 1 }))
-                continue;
+            const string position = "v[vertex.position]";
+            string first = lines[instructions[index]].Trim();
+            bool usesPositionW = first.StartsWith("DP4 ", StringComparison.Ordinal) &&
+                first.Contains(", " + position + ", ", StringComparison.Ordinal);
+            string input = position;
+            int firstDot = index;
+            if (!usesPositionW)
+            {
+                Match homogeneous = Regex.Match(first,
+                    @"^MAD (R\d+), v\[vertex\.position\]\.xyzx, (c\[\d+\])\.([xyzw]{4}), \2\.([xyzw]{4});$");
+                if (!homogeneous.Success || !constants.TryGetValue(homogeneous.Groups[2].Value, out float[]? values) ||
+                    values.Length != 4 || !homogeneous.Groups[3].Value.Select(lane => values["xyzw".IndexOf(lane)])
+                        .SequenceEqual(new float[] { 1, 1, 1, 0 }) ||
+                    !homogeneous.Groups[4].Value.Select(lane => values["xyzw".IndexOf(lane)])
+                        .SequenceEqual(new float[] { 0, 0, 0, 1 }))
+                    continue;
+                input = homogeneous.Groups[1].Value;
+                firstDot++;
+            }
 
-            Match[] dots = Enumerable.Range(1, 8).Select(offset => Regex.Match(lines[instructions[index + offset]].Trim(),
-                @"^DP4 (R\d+|result\.position)\.([xyzw]), (R\d+), c\[(\d+)\];$")).ToArray();
+            if (firstDot + 7 >= instructions.Length)
+                continue;
+            Match[] dots = Enumerable.Range(0, 8).Select(offset => Regex.Match(lines[instructions[firstDot + offset]].Trim(),
+                @"^DP4 (R\d+|result\.position)\.([xyzw]), (R\d+|v\[vertex\.position\]), c\[(\d+)\];$")).ToArray();
             if (dots.Any(dot => !dot.Success))
                 continue;
-            string input = homogeneous.Groups[1].Value;
             string world = dots[0].Groups[1].Value;
             string output = dots[4].Groups[1].Value;
             if (!Regex.IsMatch(world, @"^R\d+$") || world == input || output == world ||
+                (usesPositionW && output != "result.position") ||
                 dots.Take(4).Select(dot => dot.Groups[2].Value).Distinct().Count() != 4 ||
                 dots.Skip(4).Select(dot => dot.Groups[2].Value).Distinct().Count() != 4)
                 continue;
@@ -562,28 +575,28 @@ internal sealed class Iw3PcShaderCompiler
             if (scratch < 0)
                 throw new InvalidDataException("The shader has no free temporary for native world-position arithmetic.");
 
-            // Native IW4 world passes accumulate Y, X, Z, then translation;
-            // the projection accumulates Y, X, Z, W. DP4's different reduction
-            // order moves coplanar overlays across the native surface's depth.
-            // CTAB still uploads transposed rows: use each row's scalar lanes.
+            // Match native Y, X, Z, W accumulation for coplanar depth.
+            // COD4 PS3 vertcol_simple_tools (0x4d0..0x550) weights translation by input W.
+            // Only the explicit (x,y,z,1) construction permits a plain ADD.
+            // Work in PC dot-product rows here; LowerNativeWorldMatrix adapts the world layout.
             for (int dotIndex = 0; dotIndex < dots.Length; dotIndex++)
             {
                 Match dot = dots[dotIndex];
                 string lane = dot.Groups[2].Value;
                 string destination = dot.Groups[1].Value + "." + lane;
                 string constant = "c[" + dot.Groups[4].Value + "]";
-                string source = dotIndex < 4 ? "v[vertex.position]" : world;
+                string source = dotIndex < 4 ? position : world;
                 string accumulator = dotIndex < 4 ? destination : $"R{scratch}.{lane}";
-                lines[instructions[index + dotIndex + 1]] =
+                lines[instructions[firstDot + dotIndex]] =
                     $"MUL {accumulator}, {source}.y, {constant}.y;\n" +
                     $"MAD {accumulator}, {source}.x, {constant}.x, {accumulator};\n" +
                     $"MAD {accumulator}, {source}.z, {constant}.z, {accumulator};\n" +
-                    (dotIndex < 4
+                    (dotIndex < 4 && !usesPositionW
                         ? $"ADD {destination}, {accumulator}, {constant}.w;"
                         : $"MAD {destination}, {source}.w, {constant}.w, {accumulator};");
             }
             lowered++;
-            index += 8;
+            index = firstDot + dots.Length - 1;
         }
         if (lowered == 0)
             return (assembly, false);

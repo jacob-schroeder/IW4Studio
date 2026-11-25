@@ -84,6 +84,7 @@
                   <MenuItem Header="Import Asset…" Click="ImportAssetMenuItem_Click" />
                   <MenuItem Header="Import RawFile folder…" Click="ImportRawFileFolderMenuItem_Click" />
                   <MenuItem Header="Import .d3dbsp…" Click="ImportD3dbspMenuItem_Click" />
+                  <MenuItem Header="Import Package…" Click="ImportPackageMenuItem_Click" />
                 </MenuFlyout>
               </Button.Flyout>
               <StackPanel Orientation="Horizontal" Spacing="4">
@@ -142,6 +143,10 @@
                     Header="Export Asset…"
                     IsVisible="False"
                     Click="ExportAssetMenuItem_Click" />
+          <MenuItem x:Name="ExportPackageMenuItem"
+                    Header="Export .iw4pkg with dependencies…"
+                    IsVisible="False"
+                    Click="ExportPackageMenuItem_Click" />
           <MenuItem x:Name="ImportAssetMenuItem"
                     Header="Import Asset…"
                     Click="ImportAssetMenuItem_Click" />
@@ -149,6 +154,10 @@
                     Header="Import RawFile folder…"
                     IsVisible="False"
                     Click="ImportRawFileFolderMenuItem_Click" />
+          <MenuItem x:Name="ImportPackageMenuItem"
+                    Header="Import Package…"
+                    IsVisible="False"
+                    Click="ImportPackageMenuItem_Click" />
         </MenuFlyout>
       </Grid.ContextFlyout>
       <Border Padding="12,4"
@@ -171,7 +180,7 @@
                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                ItemsSource="{Binding ContentsRows}"
                SelectedItem="{Binding SelectedContentsRow, Mode=TwoWay}"
-               SelectionMode="Single"
+               SelectionMode="Multiple"
                DoubleTapped="ContentsList_DoubleTapped"
                KeyDown="ContentsList_KeyDown">
         <ListBox.ItemTemplate>

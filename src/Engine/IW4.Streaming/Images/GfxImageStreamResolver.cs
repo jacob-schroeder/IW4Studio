@@ -21,6 +21,7 @@ public sealed class GfxImageStreamResolver : IDisposable
     private const int MaxCachedPackageBlockCount = 2048;
 
     private readonly ImmutableArray<DbHeaderImageStreamEntry> _entriesByStreamIndex;
+    private readonly IReadOnlyDictionary<uint, ImmutableArray<DbHeaderImageStreamEntry>> _entriesByLanguage;
     private readonly StreamPackagePathResolver _packagePaths;
     private readonly ConcurrentDictionary<
         PackagePayloadCacheKey,
@@ -49,6 +50,9 @@ public sealed class GfxImageStreamResolver : IDisposable
     public GfxImageStreamResolver(DbHeader header, string fastFilePath)
     {
         _entriesByStreamIndex = header.ImageStreamEntries;
+        _entriesByLanguage = header.LanguageTables.ToDictionary(
+            table => table.LanguageMask,
+            table => table.ImageStreamEntries);
         _packagePaths = new StreamPackagePathResolver(
             fastFilePath,
             "imagefile",
@@ -101,7 +105,7 @@ public sealed class GfxImageStreamResolver : IDisposable
                 }
 
                 int streamEntryIndex = checked(imageIndex * GfxImageStreamData.EntryCount + candidate.partIndex);
-                if (!TryGetEntry(image, candidate.partIndex, streamEntryIndex, out DbHeaderImageStreamEntry entry, out reason))
+                if (!TryGetEntry(image, candidate.partIndex, streamEntryIndex, null, out DbHeaderImageStreamEntry entry, out reason))
                 {
                     lastReason = reason;
                     continue;
@@ -129,6 +133,29 @@ public sealed class GfxImageStreamResolver : IDisposable
 
     /// <summary>Reads a complete native profile for source export, without splitting or dropping padding.</summary>
     public bool TryReadStreamParts(GfxImageAsset image, out IReadOnlyList<byte[]> parts, out string reason)
+        => TryReadStreamParts(image, null, out parts, out reason);
+
+    /// <summary>Reads all four exact native stream parts from one header language table.</summary>
+    public bool TryReadStreamParts(
+        GfxImageAsset image,
+        uint languageMask,
+        out IReadOnlyList<byte[]> parts,
+        out string reason)
+    {
+        if (!_entriesByLanguage.TryGetValue(languageMask, out ImmutableArray<DbHeaderImageStreamEntry> entries))
+        {
+            parts = [];
+            reason = $"image stream language table 0x{languageMask:X} is unavailable";
+            return false;
+        }
+        return TryReadStreamParts(image, entries, out parts, out reason);
+    }
+
+    private bool TryReadStreamParts(
+        GfxImageAsset image,
+        ImmutableArray<DbHeaderImageStreamEntry>? languageEntries,
+        out IReadOnlyList<byte[]> parts,
+        out string reason)
     {
         EnterRead();
         try
@@ -147,7 +174,7 @@ public sealed class GfxImageStreamResolver : IDisposable
                 resolved[part] = [];
                 if (lengths[part] == 0) continue;
                 int entryIndex = checked(imageIndex * GfxImageStreamData.EntryCount + part);
-                if (!TryGetEntry(image, part, entryIndex, out DbHeaderImageStreamEntry entry, out reason) ||
+                if (!TryGetEntry(image, part, entryIndex, languageEntries, out DbHeaderImageStreamEntry entry, out reason) ||
                     !TryReadPackagePayload(entry, lengths[part], out resolved[part], out reason))
                     return false;
             }
@@ -211,7 +238,7 @@ public sealed class GfxImageStreamResolver : IDisposable
                 }
 
                 int streamEntryIndex = checked(imageIndex * GfxImageStreamData.EntryCount + candidate.partIndex);
-                if (!TryGetEntry(image, candidate.partIndex, streamEntryIndex, out DbHeaderImageStreamEntry entry, out reason))
+                if (!TryGetEntry(image, candidate.partIndex, streamEntryIndex, null, out DbHeaderImageStreamEntry entry, out reason))
                 {
                     lastReason = reason;
                     if (resolvedMips.Count > 0)
@@ -350,9 +377,28 @@ public sealed class GfxImageStreamResolver : IDisposable
         GfxImageAsset image,
         int partIndex,
         int streamIndex,
+        ImmutableArray<DbHeaderImageStreamEntry>? languageEntries,
         out DbHeaderImageStreamEntry entry,
         out string reason)
     {
+        if (languageEntries is { } selectedEntries)
+        {
+            if (streamIndex >= selectedEntries.Length)
+            {
+                entry = default;
+                reason = $"stream index 0x{streamIndex:X} is outside the selected DB header table";
+                return false;
+            }
+            entry = selectedEntries[streamIndex];
+            if (entry.IsEmpty)
+            {
+                reason = $"stream index 0x{streamIndex:X} is empty";
+                return false;
+            }
+            reason = string.Empty;
+            return true;
+        }
+
         if (image.StreamEntries.Count == GfxImageStreamData.EntryCount)
         {
             entry = image.StreamEntries[partIndex];

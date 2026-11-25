@@ -83,6 +83,15 @@ public sealed class TargetZoneDocument
         _byIdentity[identity] = replacement;
     }
 
+    internal void AppendPackageRow(WorkspaceAssetCatalogEntry entry)
+    {
+        var identity = new TargetZoneRowIdentity(DocumentId, _rows.Count);
+        if (entry.TargetRowIdentity != identity)
+            throw new InvalidOperationException("The package row is out of order.");
+        _rows.Add(entry);
+        _byIdentity.Add(identity, entry);
+    }
+
     internal IReadOnlyList<WorkspaceAssetCatalogEntry> AppendDefinitions(
         IEnumerable<IW4.Game.Assets.BaseAsset> definitions)
     {

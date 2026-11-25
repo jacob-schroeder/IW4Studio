@@ -373,8 +373,8 @@ internal sealed class XModelLinkPlan : AssetLinkPlan
                     value,
                     $"XModel.BoneNames[{index}]"));
         return pointer.Type == PointerType.Offset
-            ? freeze.FreezeStorageRange(
-                pointer,
+            ? FreezeModelRange(
+                freeze, pointer,
                 bytes,
                 XFileBlockType.LARGE,
                 alignment: 2,
@@ -424,8 +424,8 @@ internal sealed class XModelLinkPlan : AssetLinkPlan
                         checked(addend + item.index * sizeof(int))),
                     item.dependency!.Value));
         return pointer.Type == PointerType.Offset
-            ? freeze.FreezeStorageRange(
-                pointer,
+            ? FreezeModelRange(
+                freeze, pointer,
                 bytes,
                 XFileBlockType.LARGE,
                 alignment: 4,
@@ -579,8 +579,8 @@ internal sealed class XModelLinkPlan : AssetLinkPlan
         if (pointer.Type != PointerType.Offset)
             RequireAuthoredOrInline(pointer, fieldPath);
         return pointer.Type == PointerType.Offset
-            ? freeze.FreezeStorageRange(
-                pointer,
+            ? FreezeModelRange(
+                freeze, pointer,
                 bytes,
                 block,
                 alignment,
@@ -595,6 +595,21 @@ internal sealed class XModelLinkPlan : AssetLinkPlan
                 fieldPath);
     }
 
+    // Model arrays have a native inline representation. A subset can omit the original
+    // owner of an interior range; retain that array's typed values and its relocations.
+    private static LinkStorageTarget FreezeModelRange(
+        LinkAssetFreezeScope freeze, XPointerReference pointer, byte[] bytes, XFileBlockType block,
+        int alignment, Func<LinkStorageSymbol, int, IEnumerable<LinkOperation>>? operations, string fieldPath)
+    {
+        var captured = freeze.FreezeStorageRange(pointer, bytes, block, alignment, operations, fieldPath);
+        if (captured.CanMaterializeRoot && captured.View.Addend == 0 &&
+            captured.View.Length == captured.View.Storage.Definition.ByteLength && captured.View.CompositeRange is null)
+            return captured;
+        var standalone = LinkStorageSymbol.SourceBytes(block, bytes, alignment,
+            operations is null ? null : owner => operations(owner, 0));
+        return captured with { StandaloneValue = standalone };
+    }
+
     private static IEnumerable<LinkOperation> OrderedDirectOperations(
         LinkStorageSymbol owner,
         params (int Offset, LinkStorageTarget? Target, string Path)[] values)
@@ -607,7 +622,8 @@ internal sealed class XModelLinkPlan : AssetLinkPlan
                     new LinkStorageCell(owner, offset),
                     value.View,
                     value.CanMaterializeRoot,
-                    path);
+                    path,
+                    value.StandaloneValue);
             }
         }
     }

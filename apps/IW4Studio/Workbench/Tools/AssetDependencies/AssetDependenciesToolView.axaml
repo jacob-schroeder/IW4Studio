@@ -62,6 +62,14 @@
                    FontWeight="SemiBold"
                    TextWrapping="Wrap"
                    Foreground="{DynamicResource StudioTextBrush}" />
+        <Button Content="Export .iw4pkg with dependencies…"
+                IsVisible="{Binding CanExportPackage}"
+                HorizontalAlignment="Left"
+                Click="ExportPackageButton_Click" />
+        <TextBlock Text="{Binding PackageStatusMessage}"
+                   IsVisible="{Binding HasPackageStatus}"
+                   TextWrapping="Wrap" FontSize="10"
+                   Foreground="{DynamicResource StudioTextMutedBrush}" />
       </StackPanel>
 
       <Border Grid.Row="1"

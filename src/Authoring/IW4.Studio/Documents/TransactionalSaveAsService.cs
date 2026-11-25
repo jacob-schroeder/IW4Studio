@@ -1,10 +1,12 @@
 using IW4.Game.Database;
+using IW4.Game.Database.Streaming;
 using IW4.Loaders.Database;
 using IW4.Loaders.Database.Planning;
 using IW4.Game.Zone;
 using IW4.Linker.Linking;
 using IW4.Linker.Packaging;
 using System.Security.Cryptography;
+using IW4.Game.Assets.Sound;
 
 namespace IW4.Studio.Documents;
 
@@ -76,6 +78,10 @@ public interface ITransactionalSaveFileSystem
         TransactionalSaveDirectory directory,
         string fileName,
         ReadOnlySpan<byte> bytes);
+    TransactionalSaveFile WriteTemporaryCopy(
+        TransactionalSaveDirectory directory,
+        string fileName,
+        string sourcePath);
     void CommitTemporaryFile(
         TransactionalSaveFile temporaryFile,
         string destinationPath,
@@ -240,6 +246,18 @@ public sealed class TransactionalSaveFileSystem : ITransactionalSaveFileSystem
         }
     }
 
+    public TransactionalSaveFile WriteTemporaryCopy(
+        TransactionalSaveDirectory directory,
+        string fileName,
+        string sourcePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+        return WriteTemporaryFile(
+            directory,
+            fileName,
+            File.ReadAllBytes(ResolveExistingFilePath(sourcePath)));
+    }
+
     public void CommitTemporaryFile(
         TransactionalSaveFile temporaryFile,
         string destinationPath,
@@ -371,6 +389,8 @@ public sealed class TransactionalSaveFileSystem : ITransactionalSaveFileSystem
 /// </summary>
 public sealed class TransactionalSaveAsService
 {
+    // A map and its _load fastfile can publish the same named image package.
+    private static readonly object[] DestinationGates = Enumerable.Range(0, 64).Select(_ => new object()).ToArray();
     private readonly ZoneLinker _zoneLinker;
     private readonly FastFilePackager _packager;
     private readonly ITransactionalSaveFileSystem _fileSystem;
@@ -391,6 +411,31 @@ public sealed class TransactionalSaveAsService
         IProgress<SaveAsProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.DestinationPath);
+        try
+        {
+            string fullPath = _fileSystem.GetFullPath(request.DestinationPath);
+            string directory = Path.GetDirectoryName(fullPath)
+                ?? throw new InvalidDataException("Save destination has no containing directory.");
+            string packageName = DbHeaderImageStreamEntry.GetPackageFileName(DbHeaderImageStreamEntry.NamedFileIndex, fullPath);
+            string packagePath = Path.Combine(_fileSystem.ResolveExistingDirectoryPath(directory), packageName);
+            uint hash = unchecked((uint)StringComparer.OrdinalIgnoreCase.GetHashCode(packagePath));
+            lock (DestinationGates[hash % DestinationGates.Length])
+                return SaveAsCore(session, request, progress, cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return new SaveAsResult(false, false, null, [$"{ex.GetType().Name}: {ex.Message}"]);
+        }
+    }
+
+    private SaveAsResult SaveAsCore(
+        FastFileEditingSession session,
+        SaveAsRequest request,
+        IProgress<SaveAsProgress>? progress,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.DestinationPath);
@@ -398,6 +443,14 @@ public sealed class TransactionalSaveAsService
         var diagnostics = new List<string>();
         TransactionalSaveDirectory? temporaryDirectory = null;
         TransactionalSaveFile? temporaryFastFile = null;
+        TransactionalSaveFile? temporaryImagePackage = null;
+        TransactionalSaveFile? temporarySoundPackage = null;
+        TransactionalSaveFile? backupImagePackage = null;
+        TransactionalSaveFile? backupSoundPackage = null;
+        string? imagePackageDestinationPath = null;
+        string? soundPackageDestinationPath = null;
+        bool imagePackageCommitted = false;
+        bool soundPackageCommitted = false;
         try
         {
             FastFileSaveRevision revision = session.CaptureRevision();
@@ -467,6 +520,33 @@ public sealed class TransactionalSaveAsService
                 temporaryDirectory,
                 Path.GetFileName(destinationPath),
                 packageBytes.Span);
+            NativeStreamPackageBase streamPackages = session.GetNativeStreamPackageBase();
+            string imagePackageName = DbHeaderImageStreamEntry.GetPackageFileName(
+                DbHeaderImageStreamEntry.NamedFileIndex,
+                destinationPath);
+            string soundPackageName = StreamedSound.GetPackageFileName(
+                StreamedSound.NamedFileIndex,
+                destinationPath);
+            if (streamPackages.ImagePackage is { } imagePackage)
+            {
+                string imagePackagePath = Path.Combine(
+                    Path.GetDirectoryName(destinationPath)!, imagePackageName);
+                imagePackageDestinationPath = imagePackagePath;
+                if (_fileSystem.FileExists(imagePackagePath) && !request.AllowOverwrite)
+                    throw new IOException($"Save destination sidecar '{imagePackageName}' already exists and overwrite was not approved.");
+                temporaryImagePackage = _fileSystem.WriteTemporaryFile(
+                    temporaryDirectory, imagePackageName, imagePackage);
+            }
+            if (streamPackages.SoundPackage is { } soundPackage)
+            {
+                string soundPackagePath = Path.Combine(
+                    Path.GetDirectoryName(destinationPath)!, soundPackageName);
+                soundPackageDestinationPath = soundPackagePath;
+                if (_fileSystem.FileExists(soundPackagePath) && !request.AllowOverwrite)
+                    throw new IOException($"Save destination sidecar '{soundPackageName}' already exists and overwrite was not approved.");
+                temporarySoundPackage = _fileSystem.WriteTemporaryFile(
+                    temporaryDirectory, soundPackageName, soundPackage);
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new(
@@ -491,10 +571,7 @@ public sealed class TransactionalSaveAsService
                 diagnostics.AddRange(candidateDiagnostics.Where(value => !string.IsNullOrWhiteSpace(value)));
                 if (candidateDiagnostics.Any(value => !string.IsNullOrWhiteSpace(value)))
                 {
-                    RollbackPendingFiles(
-                        ref temporaryFastFile,
-                        ref temporaryDirectory,
-                        diagnostics);
+                    RollbackStagedFiles();
                     return new SaveAsResult(false, false, null, diagnostics);
                 }
             }
@@ -508,6 +585,32 @@ public sealed class TransactionalSaveAsService
                     savedHeader,
                     () =>
                     {
+                        if (temporaryImagePackage is not null)
+                        {
+                            if (_fileSystem.FileExists(imagePackageDestinationPath!))
+                                backupImagePackage = _fileSystem.WriteTemporaryCopy(
+                                    temporaryDirectory!,
+                                    $".{Guid.NewGuid():N}.image.bak",
+                                    imagePackageDestinationPath!);
+                            _fileSystem.CommitTemporaryFile(
+                                temporaryImagePackage,
+                                imagePackageDestinationPath!,
+                                request.AllowOverwrite);
+                            imagePackageCommitted = true;
+                        }
+                        if (temporarySoundPackage is not null)
+                        {
+                            if (_fileSystem.FileExists(soundPackageDestinationPath!))
+                                backupSoundPackage = _fileSystem.WriteTemporaryCopy(
+                                    temporaryDirectory!,
+                                    $".{Guid.NewGuid():N}.sound.bak",
+                                    soundPackageDestinationPath!);
+                            _fileSystem.CommitTemporaryFile(
+                                temporarySoundPackage,
+                                soundPackageDestinationPath!,
+                                request.AllowOverwrite);
+                            soundPackageCommitted = true;
+                        }
                         _fileSystem.CommitTemporaryFile(
                             temporaryFastFile,
                             destinationPath,
@@ -515,14 +618,15 @@ public sealed class TransactionalSaveAsService
                         ReleasePublishedFile(
                             ref temporaryFastFile,
                             diagnostics);
+                        ReleasePublishedFile(ref temporaryImagePackage, diagnostics);
+                        ReleasePublishedFile(ref temporarySoundPackage, diagnostics);
+                        RollbackFile(ref backupImagePackage, "image package backup", diagnostics);
+                        RollbackFile(ref backupSoundPackage, "sound package backup", diagnostics);
                     }))
             {
                 diagnostics.Add(
                     $"Semantic revision {revision.Revision} became stale before publication.");
-                RollbackPendingFiles(
-                    ref temporaryFastFile,
-                    ref temporaryDirectory,
-                    diagnostics);
+                RollbackStagedFiles();
                 return new SaveAsResult(false, false, null, diagnostics);
             }
 
@@ -532,10 +636,7 @@ public sealed class TransactionalSaveAsService
         catch (OperationCanceledException)
         {
             diagnostics.Add("Save As was cancelled before commit.");
-            RollbackPendingFiles(
-                ref temporaryFastFile,
-                ref temporaryDirectory,
-                diagnostics);
+            RollbackStagedFiles();
             return new SaveAsResult(false, true, null, diagnostics);
         }
         catch (Exception exception) when (exception is
@@ -549,18 +650,21 @@ public sealed class TransactionalSaveAsService
             OverflowException)
         {
             diagnostics.Add($"{exception.GetType().Name}: {exception.Message}");
-            RollbackPendingFiles(
-                ref temporaryFastFile,
-                ref temporaryDirectory,
-                diagnostics);
+            RollbackStagedFiles();
             return new SaveAsResult(false, false, null, diagnostics);
         }
         finally
         {
-            RollbackPendingFiles(
-                ref temporaryFastFile,
-                ref temporaryDirectory,
-                diagnostics);
+            RollbackStagedFiles();
+        }
+
+        void RollbackStagedFiles()
+        {
+            RollbackNativePackage(ref temporaryImagePackage, ref backupImagePackage,
+                imagePackageDestinationPath, imagePackageCommitted, "image package", diagnostics);
+            RollbackNativePackage(ref temporarySoundPackage, ref backupSoundPackage,
+                soundPackageDestinationPath, soundPackageCommitted, "sound package", diagnostics);
+            RollbackPendingFiles(ref temporaryFastFile, ref temporaryDirectory, diagnostics);
         }
     }
 
@@ -638,6 +742,57 @@ public sealed class TransactionalSaveAsService
             diagnostics.Add(
                 $"Could not roll back the operation-created {description} '{ownedFile.Path}': {exception.Message}");
         }
+    }
+
+    private void RollbackNativePackage(
+        ref TransactionalSaveFile? package,
+        ref TransactionalSaveFile? backup,
+        string? destinationPath,
+        bool committed,
+        string description,
+        ICollection<string> diagnostics)
+    {
+        if (package is not null && committed && destinationPath is not null)
+        {
+            TransactionalSaveFile published = package;
+            package = null;
+            if (backup is not null)
+            {
+                TransactionalSaveFile saved = backup;
+                backup = null;
+                try
+                {
+                    _fileSystem.CommitTemporaryFile(saved, destinationPath, overwrite: true);
+                    saved.Dispose();
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    diagnostics.Add($"Could not restore the previous {description} '{destinationPath}': {exception.Message}");
+                    saved.Dispose();
+                }
+                published.Dispose();
+            }
+            else
+            {
+                try
+                {
+                    _fileSystem.RollbackFile(published);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    diagnostics.Add($"Could not remove the operation-published {description} '{destinationPath}': {exception.Message}");
+                    published.Dispose();
+                }
+            }
+        }
+        else
+        {
+            RollbackFile(ref package, description, diagnostics);
+            RollbackFile(ref backup, $"{description} backup", diagnostics);
+            return;
+        }
+
+        RollbackFile(ref backup, $"{description} backup", diagnostics);
     }
 
     private static void ReleasePublishedFile(

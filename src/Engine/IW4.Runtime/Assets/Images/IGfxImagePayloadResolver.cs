@@ -27,3 +27,13 @@ public interface IGfxImagePayloadResolver
         out IReadOnlyList<GfxImagePayload> mips,
         out string reason);
 }
+
+/// <summary>Optional support for resolving image streams from a specific native language table.</summary>
+public interface IGfxImageLanguagePayloadResolver : IGfxImagePayloadResolver
+{
+    bool TryResolveStreamParts(
+        GfxImageAsset image,
+        uint languageMask,
+        out IReadOnlyList<byte[]> parts,
+        out string reason);
+}

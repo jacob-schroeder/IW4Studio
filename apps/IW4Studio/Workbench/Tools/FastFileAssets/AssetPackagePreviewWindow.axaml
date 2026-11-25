@@ -1,0 +1,56 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:fastfileAssets="using:IW4.Studio.Desktop.Workbench.Tools.FastFileAssets"
+        x:Class="IW4.Studio.Desktop.Workbench.Tools.FastFileAssets.AssetPackagePreviewWindow"
+        x:DataType="fastfileAssets:AssetPackagePreviewWindow"
+        Title="Material package"
+        Width="690" Height="580" MinWidth="500" MinHeight="360"
+        ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,Auto" Background="{DynamicResource StudioBackgroundBrush}">
+    <StackPanel Margin="20,18,20,12" Spacing="6">
+      <TextBlock x:Name="HeadingText" FontSize="16" FontWeight="SemiBold"
+                 Foreground="{DynamicResource StudioTextBrush}" />
+      <TextBlock x:Name="SummaryText" FontSize="11" TextWrapping="Wrap"
+                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+    </StackPanel>
+    <ListBox Grid.Row="1" Margin="20,0" ItemsSource="{Binding Rows}"
+             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="fastfileAssets:AssetPackageRowViewModel">
+          <Border BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="0,0,0,1"
+                  Padding="4,8">
+            <StackPanel Spacing="4">
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                <TextBlock Text="{Binding StatusText}" Width="76" FontWeight="SemiBold"
+                           FontSize="11" Foreground="{DynamicResource StudioAccentSecondaryBrush}" />
+                <TextBlock Grid.Column="1" Text="{Binding AssetText}" FontSize="12"
+                           TextWrapping="Wrap" Foreground="{DynamicResource StudioTextBrush}" />
+              </Grid>
+              <TextBlock Margin="86,0,0,0" Text="{Binding Detail}" FontSize="10"
+                         TextWrapping="Wrap" Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <TextBlock Margin="86,0,0,0" Text="{Binding UsedByText}" FontSize="10"
+                         IsVisible="{Binding HasUsedBy}" TextWrapping="Wrap"
+                         Foreground="{DynamicResource StudioTextMutedBrush}" />
+              <CheckBox Margin="86,2,0,0" Content="Replace existing"
+                        IsVisible="{Binding CanChooseReplace}" IsChecked="{Binding Replace, Mode=TwoWay}" />
+              <TextBlock Margin="86,0,0,0" Text="Keep existing (replacement unavailable)"
+                         IsVisible="{Binding MustKeepExisting}" FontSize="10"
+                         Foreground="{DynamicResource StudioTextSubtleBrush}" />
+            </StackPanel>
+          </Border>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+    <Border Grid.Row="2" Padding="20,12" BorderBrush="{DynamicResource StudioBorderBrush}"
+            BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <TextBlock x:Name="ErrorText" VerticalAlignment="Center" TextWrapping="Wrap"
+                   Foreground="{DynamicResource StudioErrorBrush}" FontSize="11" />
+        <Button x:Name="CancelButton" Grid.Column="1" Content="Cancel" MinWidth="86"
+                IsCancel="True" Click="CancelButton_Click" />
+        <Button x:Name="ConfirmButton" Grid.Column="2" Content="Continue" MinWidth="110"
+                Classes="primary" Click="ConfirmButton_Click" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

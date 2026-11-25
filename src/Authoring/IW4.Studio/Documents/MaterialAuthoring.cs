@@ -1,5 +1,6 @@
 using IW4.Game.Assets.Image;
 using IW4.Game.Assets.Material;
+using IW4.Game.Assets.TechniqueSet;
 using IW4.Game.Zone;
 
 namespace IW4.Studio.Documents;
@@ -57,9 +58,10 @@ public sealed class MaterialDraft
         return MaterialEquals(Material, other.Material);
     }
 
-    private static MaterialAsset Copy(
+    internal static MaterialAsset Copy(
         MaterialAsset value,
-        IReadOnlyList<MaterialTextureDef>? textures = null) => new()
+        IReadOnlyList<MaterialTextureDef>? textures = null,
+        MaterialTechniqueSetAsset? techniqueSet = null) => new()
     {
         Offset = value.Offset,
         RuntimeAddress = value.RuntimeAddress,
@@ -89,7 +91,7 @@ public sealed class MaterialDraft
         RuntimeTechniqueSlotStateBitsPointer = value.RuntimeTechniqueSlotStateBitsPointer,
         RuntimeTechniqueSlotStateBits = value.RuntimeTechniqueSlotStateBits.ToArray(),
         TechniqueSetPointer = value.TechniqueSetPointer,
-        TechniqueSet = value.TechniqueSet,
+        TechniqueSet = techniqueSet ?? value.TechniqueSet,
         TextureTablePointer = value.TextureTablePointer,
         Textures = textures?.Select(texture => Copy(texture, texture.Image)).ToArray()
             ?? value.Textures.Select(texture => Copy(texture, texture.Image)).ToArray(),
@@ -103,7 +105,12 @@ public sealed class MaterialDraft
 
     private static MaterialTextureDef Copy(
         MaterialTextureDef value,
-        GfxImageAsset? image) => new()
+        GfxImageAsset? image) => Copy(value, image, Copy(value.Water));
+
+    internal static MaterialTextureDef Copy(
+        MaterialTextureDef value,
+        GfxImageAsset? image,
+        MaterialWater? water) => new()
     {
         NameHash = value.NameHash,
         NameStart = value.NameStart,
@@ -112,10 +119,10 @@ public sealed class MaterialDraft
         Semantic = value.Semantic,
         DataPointer = value.DataPointer,
         Image = image,
-        Water = Copy(value.Water)
+        Water = water
     };
 
-    private static MaterialWater? Copy(MaterialWater? value) => value is null
+    internal static MaterialWater? Copy(MaterialWater? value, GfxImageAsset? image = null) => value is null
         ? null
         : new MaterialWater
         {
@@ -136,7 +143,7 @@ public sealed class MaterialDraft
             H0X = value.H0X.ToArray(),
             H0Y = value.H0Y.ToArray(),
             WTerm = value.WTerm.ToArray(),
-            Image = value.Image
+            Image = image ?? value.Image
         };
 
     private static MaterialConstantDef Copy(MaterialConstantDef value) => new()

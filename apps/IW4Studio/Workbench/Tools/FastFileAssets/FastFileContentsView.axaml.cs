@@ -18,6 +18,7 @@ public sealed partial class FastFileContentsView : UserControl
     private bool _isD3dbspImportInProgress;
     private bool _isRawFileImportInProgress;
     private bool _isAssetExportInProgress;
+    private bool _isPackageOperationInProgress;
     private XAssetType? _contextAssetType;
     private AssetExplorerEntryViewModel? _contextRow;
     private FastFileContentsRow? _contextContentsRow;
@@ -83,6 +84,10 @@ public sealed partial class FastFileContentsView : UserControl
         _contextAssetType = row?.AssetType ?? viewModel.SelectedCategory?.AssetType;
         ExportAssetMenuItem.IsVisible = row?.PoolSlot is null && CanExportAsset(_contextRow);
         ExportAssetMenuItem.IsEnabled = !_isAssetExportInProgress;
+        ExportPackageMenuItem.IsVisible = row is not null;
+        ExportPackageMenuItem.IsEnabled = !_isPackageOperationInProgress;
+        ImportPackageMenuItem.IsVisible = viewModel.IsThisFastFileScope;
+        ImportPackageMenuItem.IsEnabled = !_isPackageOperationInProgress;
         ImportAssetMenuItem.IsVisible = viewModel.IsThisFastFileScope &&
             (row is null || row.CatalogEntry is { IsTargetRow: true } &&
                 AssetSourceTransfer.CanImport(row.AssetType));

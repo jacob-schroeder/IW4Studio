@@ -15,6 +15,7 @@ public sealed record AssetDependencyRelation(
 public sealed class WorkspaceAssetDependencyIndex
 {
     private readonly Dictionary<WorkspaceAssetCatalogEntry, Node> _entries = [];
+    private readonly Dictionary<AssetKey, Node> _effective = [];
     private readonly IReadOnlyDictionary<long, WorkspaceAssetCatalogEntry> _activeProviders;
 
     private WorkspaceAssetDependencyIndex(IReadOnlyDictionary<long, WorkspaceAssetCatalogEntry> activeProviders) =>
@@ -27,6 +28,12 @@ public sealed class WorkspaceAssetDependencyIndex
 
     public IReadOnlyList<AssetDependencyRelation> Uses(WorkspaceAssetCatalogEntry entry) =>
         _entries.TryGetValue(entry, out Node? node) ? Describe(node.Outgoing) : [];
+
+    internal WorkspaceAssetCatalogEntry? EffectiveEntry(AssetKey key) =>
+        _effective.GetValueOrDefault(key)?.Entry;
+
+    internal IReadOnlyList<AssetDependencyRelation> UsedBy(AssetKey key) =>
+        _effective.TryGetValue(key, out Node? node) ? Describe(node.Incoming) : [];
 
     private static AssetDependencyRelation[] Describe(Dictionary<Node, HashSet<string>> neighbors) =>
         neighbors.Select(pair => new AssetDependencyRelation(
@@ -43,7 +50,7 @@ public sealed class WorkspaceAssetDependencyIndex
         CancellationToken cancellationToken)
     {
         var index = new WorkspaceAssetDependencyIndex(activeProviders);
-        var nodes = new Dictionary<AssetKey, Node>();
+        var nodes = index._effective;
         var sources = new List<(Node Node, LinkAssetProvider? Frozen, BaseAsset? Loaded)>();
         var fullProviders = new Dictionary<AssetKey, LinkAssetProvider>();
         var authoredProviders = authored.Providers.ToHashSet();

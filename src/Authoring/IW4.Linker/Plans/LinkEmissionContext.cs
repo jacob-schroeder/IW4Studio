@@ -121,7 +121,10 @@ internal sealed class LinkStorageEmissionState
         switch (operation)
         {
             case DirectStorageLinkOperation direct:
-                EmitDirect(direct.Cell, direct.Target, direct.CanMaterializeRoot, direct.FieldPath, emitDependency);
+                if (direct.StandaloneValue is { } standalone && !_publications.ContainsKey(direct.Target.Storage))
+                    EmitDirect(direct.Cell, LinkStorageView.Whole(standalone), true, direct.FieldPath, emitDependency);
+                else
+                    EmitDirect(direct.Cell, direct.Target, direct.CanMaterializeRoot, direct.FieldPath, emitDependency);
                 break;
             case PresenceStorageLinkOperation presence:
                 EmitPresence(presence, emitDependency);

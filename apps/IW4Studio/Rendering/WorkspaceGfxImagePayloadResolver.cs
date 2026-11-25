@@ -77,10 +77,16 @@ internal sealed class WorkspaceGfxImagePayloadResolver(
         out string source,
         out string reason)
     {
-        XAssetPool pool = _workspace.LoadedZone.Context.AssetPool;
-        if (image.RuntimeAddress?.AssetPoolAddress is not { } address ||
+        if (_workspace.FindPackageImageResolver(image) is { } packaged)
+        {
+            resolver = packaged;
+            source = "the imported image package";
+            reason = string.Empty;
+            return true;
+        }
+        if (_workspace.IsBlank || image.RuntimeAddress?.AssetPoolAddress is not { } address ||
             address.AssetType != XAssetType.Image ||
-            !pool.TryGetSlot(address, out XAssetSlot? slot) ||
+            !_workspace.LoadedZone.Context.AssetPool.TryGetSlot(address, out XAssetSlot? slot) ||
             slot is null ||
             slot.AssetType != XAssetType.Image ||
             slot.ActiveProvider.IsReferencePlaceholder ||

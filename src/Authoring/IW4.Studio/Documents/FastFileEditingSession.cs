@@ -985,10 +985,14 @@ public sealed partial class FastFileEditingSession : IDisposable
         TargetZoneRowIdentity identity = entry.TargetRowIdentity ??
             throw new InvalidDataException(
                 "A current target definition requires a target-row identity.");
-        return _drafts.TryGetValue(identity, out DraftState? draft)
+        var definition = _drafts.TryGetValue(identity, out DraftState? draft)
             ? draft.CreateCurrentDefinition()
             : entry.Definition ?? throw new InvalidDataException(
                 "A current target definition requires semantic content.");
+        if (entry.Definition is { } baseline && !ReferenceEquals(baseline, definition) &&
+            _packageStreamOwners.TryGetValue(baseline, out var owner))
+            _packageStreamOwners.AddOrUpdate(definition, owner);
+        return definition;
     }
 
     internal bool TryResolveTracerMaterial(string? name, out MaterialAsset? material)
@@ -1170,6 +1174,8 @@ public sealed partial class FastFileEditingSession : IDisposable
         {
             ThrowIfDisposedCore();
             Workspace.ThrowIfDisposed();
+            if (_hasPackageImport)
+                return _revision with { LinkRequest = ZoneLinker.ProjectDependencyRootOrder(_revision.LinkRequest) };
             HashSet<AssetKey> authoredImpactFx = _authoredAssets.Providers
                 .Where(provider => provider.SerializedType == XAssetType.ImpactFx &&
                     !provider.IsReferencePlaceholder)
@@ -2496,6 +2502,7 @@ public sealed partial class FastFileEditingSession : IDisposable
             _surfaceRootOwnerCurrent.Clear();
             WithdrawSavedAuxiliaries();
             _addedRows.Clear();
+            _changedPackageProviders.Clear();
             _addedReferenceRows.Clear();
             _promotedReferenceRows.Clear();
             _savedHeaderMetadata = _revision.HeaderMetadata;
@@ -2560,6 +2567,9 @@ public sealed partial class FastFileEditingSession : IDisposable
                 return;
 
             _disposed = true;
+            foreach (var package in _packageZones)
+                package.Dispose();
+            _packageZones.Clear();
             disposeWorkspace = true;
         }
 
@@ -2587,7 +2597,8 @@ public sealed partial class FastFileEditingSession : IDisposable
         IEnumerable<AssetKey>? withdrawnTargetProviderKeys = null,
         IEnumerable<AssetKey>? publishedProviderKeys = null,
         LinkAssetPool? targetProviderAssets = null,
-        AssetKey? allowedChangedLoadedSoundProviderKey = null)
+        AssetKey? allowedChangedLoadedSoundProviderKey = null,
+        bool validatePackageOrder = false)
     {
         ArgumentNullException.ThrowIfNull(authoredAssets);
         var maskedTargetBaseProviderKeys = new HashSet<AssetKey>(
@@ -2624,6 +2635,8 @@ public sealed partial class FastFileEditingSession : IDisposable
             previous.LanguageMask,
             previous.SelectedLanguageMask,
             previous.ScriptStrings);
+        if (validatePackageOrder)
+            _ = ZoneLinker.ProjectDependencyRootOrder(request);
         var revision = new FastFileSaveRevision(
             checked(_revision.Revision + 1),
             _revision.HeaderMetadata,
@@ -2659,6 +2672,10 @@ public sealed partial class FastFileEditingSession : IDisposable
 
         LinkAssetProviderSource provider = detachedCandidate switch
         {
+            _ when _packageDefinitionOwners.TryGetValue(candidateKey, out var owner) &&
+                state.Entry.Definition is { } packaged && detachedCandidate is not ImageDraft { RetainsOriginalPixels: false } =>
+                LoadedZoneLinkExtensions.CreateCapturedProviderSource(owner, definition, packaged, state.Entry.OriginalName,
+                    LinkAssetProviderSourceDisposition.AuthoredDetached),
             ImageDraft image => CreateEditedImageProviderSource(state, image, definition),
             XModelSurfsDraft when !Workspace.IsBlank &&
                 state.Identity.SerializedIndex < Workspace.InitialLinkRequest.Roots.Count &&
@@ -2750,15 +2767,15 @@ public sealed partial class FastFileEditingSession : IDisposable
         ArgumentNullException.ThrowIfNull(adapters);
         if (entry.TargetRowIdentity is not { } identity ||
             entry.Access != WorkspaceAssetAccess.Editable ||
-            entry.Definition is null ||
-            !adapters.TryGetAdapter(
-                entry.AssetType,
-                out IAssetAuthoringAdapter? adapter))
-        {
+            entry.Definition is not { } definition)
             return;
-        }
 
-        _drafts.Add(identity, new DraftState(entry, adapter!, entry.TargetProvider));
+        if (adapters.TryGetAdapter(entry.AssetType, out IAssetAuthoringAdapter? adapter) ||
+            entry.AssetType == XAssetType.Techset)
+        {
+            _drafts.Add(identity, new DraftState(entry,
+                adapter ?? adapters.AdapterForNewDefinition(definition), entry.TargetProvider));
+        }
     }
 
     private IAssetAuthoringAdapter RequireHostedAdapter(
@@ -2801,8 +2818,11 @@ public sealed partial class FastFileEditingSession : IDisposable
             .Select(state => state.CreateChange());
         IEnumerable<AssetRowChange> added = _addedRows.Select(value =>
         {
-            DraftState state = RequireDraft(value.Key);
-            return state.CreateAddedChange(value.Value);
+            if (_drafts.TryGetValue(value.Key, out DraftState? state))
+                return state.CreateAddedChange(value.Value);
+            var entry = Document.GetRow(value.Key);
+            return new AssetRowChange(value.Key, entry.AssetType, entry.OriginalName, entry.Origin,
+                value.Value, value.Value, AssetRowChangeKind.Added);
         });
         IEnumerable<AssetRowChange> addedReferences = _addedReferenceRows.Select(value =>
         {
@@ -2835,7 +2855,7 @@ public sealed partial class FastFileEditingSession : IDisposable
         });
         _changeSet = new AssetChangeSet(
             modified.Concat(added).Concat(addedReferences).Concat(promotedReferences),
-            _providerDrafts.Values.Count(state => state.IsChanged));
+            _providerDrafts.Values.Count(state => state.IsChanged) + _changedPackageProviders.Count);
     }
 
     private bool HasPendingHeaderPropertiesChangeCore() =>

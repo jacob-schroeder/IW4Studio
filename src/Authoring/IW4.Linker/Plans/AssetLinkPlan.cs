@@ -100,6 +100,8 @@ internal abstract class AssetLinkPlan
                         break;
                     case DirectStorageLinkOperation direct:
                         VisitStorage(direct.Target.Storage);
+                        if (direct.StandaloneValue is { } standalone)
+                            VisitStorage(standalone);
                         break;
                     case PresenceStorageLinkOperation presence:
                         VisitStorage(presence.Target.Storage);

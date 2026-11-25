@@ -13,7 +13,8 @@ internal sealed record DirectStorageLinkOperation(
     LinkStorageCell Cell,
     LinkStorageView Target,
     bool CanMaterializeRoot,
-    string FieldPath) : LinkOperation;
+    string FieldPath,
+    LinkStorageSymbol? StandaloneValue = null) : LinkOperation;
 
 internal sealed record PresenceStorageLinkOperation(
     LinkStorageCell Cell,

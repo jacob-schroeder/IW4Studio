@@ -8,7 +8,7 @@ namespace IW4.Loaders.Streaming.Images;
 /// Loader-owned binding between the backend-neutral Runtime contract and the
 /// imagefile*.pak implementation owned by FastFiles.Streaming.
 /// </summary>
-public sealed class GfxImageStreamPayloadResolver : IGfxImagePayloadResolver
+public sealed class GfxImageStreamPayloadResolver : IGfxImageLanguagePayloadResolver
 {
     private readonly GfxImageStreamResolver _streams;
 
@@ -39,6 +39,13 @@ public sealed class GfxImageStreamPayloadResolver : IGfxImagePayloadResolver
 
     public bool TryResolveStreamParts(GfxImageAsset image, out IReadOnlyList<byte[]> parts, out string reason) =>
         _streams.TryReadStreamParts(image, out parts, out reason);
+
+    public bool TryResolveStreamParts(
+        GfxImageAsset image,
+        uint languageMask,
+        out IReadOnlyList<byte[]> parts,
+        out string reason) =>
+        _streams.TryReadStreamParts(image, languageMask, out parts, out reason);
 
     public bool TryResolveMipPayloads(
         GfxImageAsset image,

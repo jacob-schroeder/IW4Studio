@@ -1,4 +1,6 @@
+using IW4.Game.Assets.Image;
 using IW4.Game.Assets.Sound;
+using IW4.Runtime.Assets.Images;
 using IW4.Loaders.Database;
 using IW4.Loaders.Database.Planning;
 using IW4.Game.Zone;
@@ -61,6 +63,9 @@ public sealed class FastFileWorkspace : IDisposable
     public string? ZonePlanProfileName { get; }
     public FastFileDependencyGraph? DependencyGraph { get; }
 
+    public IGfxImagePayloadResolver? FindPackageImageResolver(GfxImageAsset image) =>
+        _editingSessionOwner?.FindPackageStreamOwner(image)?.ImagePayloadResolver;
+
     public bool TryGetSoundPayloadResolver(
         AssetEditorSurface surface,
         out ISoundPayloadResolver resolver,
@@ -76,6 +81,13 @@ public sealed class FastFileWorkspace : IDisposable
             return false;
         }
 
+        if (entry.Definition is SoundAliasListAsset baseline &&
+            _editingSessionOwner?.FindPackageStreamOwner(baseline) is { } packaged)
+        {
+            resolver = packaged.SoundPayloadResolver;
+            reason = string.Empty;
+            return true;
+        }
         return TryGetSoundPayloadResolver(
             sound,
             entry.ResolvedProvider?.ProviderId,
@@ -105,6 +117,12 @@ public sealed class FastFileWorkspace : IDisposable
         out ISoundPayloadResolver resolver,
         out string reason)
     {
+        if (_editingSessionOwner?.FindPackageStreamOwner(sound) is { } packageZone)
+        {
+            resolver = packageZone.SoundPayloadResolver;
+            reason = string.Empty;
+            return true;
+        }
         IEnumerable<XAssetProviderContribution> providers = LoadedZones.Count == 0
             ? []
             : LoadedZones[0].LoadResult.Context.AssetPool.Slots

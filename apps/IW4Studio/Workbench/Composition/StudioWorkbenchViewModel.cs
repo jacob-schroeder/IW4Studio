@@ -6,6 +6,7 @@ using IW4.Game.Assets;
 using IW4.Game.Assets.Physics;
 using IW4.Formats.D3dbsp;
 using IW4.Game.Zone;
+using IW4.Linker.Contracts;
 using IW4.Runtime.Assets;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.AssetReferences;
@@ -153,6 +154,7 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
                 Editor,
                 _selectionContext,
                 ApplyImportedAsset,
+                ApplyAssetPackageImport,
                 AssetPool);
             constructionResources.Add(FastFileAssets);
             _gscWorkbenchNavigator = new GscWorkbenchNavigator(
@@ -190,7 +192,8 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
                 ShowStreamedImages);
             ZoneDetails = new ZoneDetailsToolViewModel(editingSession);
             DependencyGraph = new DependencyGraphToolViewModel(workspace);
-            AssetDependencies = new AssetDependenciesToolViewModel(FastFileAssets.OpenCatalogEntry);
+            AssetDependencies = new AssetDependenciesToolViewModel(
+                FastFileAssets.OpenCatalogEntry, editingSession);
 
             StudioToolContext toolContext = new(
                 FastFileAssets,
@@ -589,6 +592,39 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
                 CloseEditorTab(tab);
         }
         return entry;
+    }
+
+    private int ApplyAssetPackageImport(
+        AssetPackageImportPreview preview,
+        IReadOnlyDictionary<AssetKey, AssetPackageConflictChoice> choices)
+    {
+        HashSet<AssetKey> replacing = preview.Rows
+            .Where(row => row.Status == AssetPackageStatus.Conflict &&
+                row.Key is { } key && choices.TryGetValue(key, out AssetPackageConflictChoice choice) &&
+                choice == AssetPackageConflictChoice.Replace)
+            .Select(row => row.Key!.Value)
+            .ToHashSet();
+        WorkbenchEditorTabViewModel[] affectedTabs = _openEditorTabs.Where(tab =>
+        {
+            WorkspaceAssetCatalogEntry? entry = tab.CatalogEditor?.Entry.Entry;
+            return entry is { TargetRowIdentity: not null, NormalizedName: { } name } && replacing.Contains(
+                AssetKey.FromWireName(
+                    CanonicalAssetFamily.FromSerializedType(entry.AssetType),
+                    name));
+        }).ToArray();
+        if (affectedTabs.Any(tab => tab.IsDirty))
+        {
+            throw new InvalidOperationException(
+                "Apply or revert unapplied editor changes before replacing package assets.");
+        }
+
+        int changed = Editor.EditingSession.ImportAssetPackage(preview, choices);
+        if (changed > 0)
+        {
+            foreach (WorkbenchEditorTabViewModel tab in affectedTabs)
+                CloseEditorTab(tab);
+        }
+        return changed;
     }
 
     public void RequestCloseEditorTab(WorkbenchEditorTabViewModel tab)

@@ -45,7 +45,9 @@ public sealed class ImageEditorViewModel : ObservableObject, IAssetEditorStaging
             session.CanEdit || provider?.IsTarget == true
                 ? z.IsTarget
                 : string.Equals(z.LogicalZoneName, provider?.LogicalZoneName, StringComparison.OrdinalIgnoreCase));
-        _resolver = zone?.LoadResult.ImagePayloadResolver ?? UnavailableGfxImagePayloadResolver.Instance;
+        var packageResolver = session.Definition is GfxImageAsset image
+            ? session.Workspace.FindPackageImageResolver(image) : null;
+        _resolver = packageResolver ?? zone?.LoadResult.ImagePayloadResolver ?? UnavailableGfxImagePayloadResolver.Instance;
         Info = new ImageEditorInfo(_draft.Image);
         var roles = new List<ImageTextureRole>
         {
