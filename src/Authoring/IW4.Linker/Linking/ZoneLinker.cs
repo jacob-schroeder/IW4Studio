@@ -8,6 +8,12 @@ using IW4.Linker.Plans;
 namespace IW4.Linker.Linking;
 
 /// <summary>
+/// One zone-local string slot. Use counts belong to the first slot for duplicate text,
+/// since linked asset references resolve to that canonical index.
+/// </summary>
+public sealed record ZoneScriptStringRow(int Index, string? Text, int AssetUseCount);
+
+/// <summary>
 /// Failure-atomic result of rebuilding a canonical decoded zone.
 /// </summary>
 public sealed class ZoneLinkResult
@@ -77,6 +83,27 @@ public sealed class ZoneLinker
 {
     private const int XAssetRowSize = 0x08;
     private const int DecodedPageSize = 0x10000;
+
+    /// <summary>Inspects the exact table and asset graph a canonical link would use.</summary>
+    public IReadOnlyList<ZoneScriptStringRow> InspectScriptStrings(ZoneLinkRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ResolvedLinkGraph graph = ResolveGraph(request);
+        var usersBySlot = new Dictionary<int, HashSet<AssetKey>>();
+        ScriptStringTable table = BuildScriptStringTable(
+            graph.Roots.Select(root => root.Provider), graph.DependencyClosure,
+            request.ScriptStrings, RecordUse);
+        return Array.AsReadOnly(table.Values.Select((text, index) =>
+            new ZoneScriptStringRow(index, text, usersBySlot.GetValueOrDefault(index)?.Count ?? 0))
+            .ToArray());
+
+        void RecordUse(ushort slot, AssetKey asset)
+        {
+            if (!usersBySlot.TryGetValue(slot, out HashSet<AssetKey>? users))
+                usersBySlot.Add(slot, users = []);
+            users.Add(asset);
+        }
+    }
 
     /// <summary>
     /// Projects authored ImpactFx roots after their explicit native provider
@@ -188,36 +215,13 @@ public sealed class ZoneLinker
 
     private static ZoneLinkResult LinkCore(ZoneLinkRequest request)
     {
-        ValidateRoots(request.Roots);
-        ProviderSelection providerSelection =
-            SelectProviders(request.Assets.Providers);
-        var externalProviders = new Dictionary<AssetKey, ProviderBinding>();
-        ResolvedRoot[] resolvedRoots = ResolveRoots(
-            request,
-            providerSelection,
-            externalProviders);
-        IReadOnlyDictionary<AssetKey, ProviderBinding> rootAuthorities =
-            BindRootAuthorities(resolvedRoots);
-        IReadOnlyDictionary<DependencyEdge, ProviderBinding> dependencyClosure =
-            ResolveDependencyClosure(
-                resolvedRoots,
-                providerSelection,
-                rootAuthorities,
-                externalProviders,
-                request.Assets.Providers.Count);
-        AssetRow[] assetRows = BuildAssetRows(
-            request.Roots,
-            resolvedRoots,
-            dependencyClosure);
-        ValidateLanguageCount(
-            request.LanguageCount,
-            resolvedRoots,
-            dependencyClosure);
+        ResolvedLinkGraph graph = ResolveGraph(request);
+        var dependencyClosure = graph.DependencyClosure;
+        AssetRow[] assetRows = BuildAssetRows(request.Roots, graph.Roots, dependencyClosure);
+        ValidateLanguageCount(request.LanguageCount, graph.Roots, dependencyClosure);
         ValidateAssetRowPublicationOrder(assetRows, dependencyClosure);
         ScriptStringTable scriptStrings = BuildScriptStringTable(
-            assetRows,
-            dependencyClosure,
-            request.ScriptStrings);
+            assetRows.Select(row => row.Provider), dependencyClosure, request.ScriptStrings);
 
         var output = new ZoneEmissionWriter();
         int headerSourceOffset = output.ReserveSource(XFile.SerializedSize);
@@ -316,6 +320,28 @@ public sealed class ZoneLinker
             request.LanguageMask,
             request.SelectedLanguageMask,
             imageStreamLanguageTables);
+    }
+
+    private static ResolvedLinkGraph ResolveGraph(ZoneLinkRequest request)
+    {
+        ValidateRoots(request.Roots);
+        ProviderSelection providerSelection =
+            SelectProviders(request.Assets.Providers);
+        var externalProviders = new Dictionary<AssetKey, ProviderBinding>();
+        ResolvedRoot[] resolvedRoots = ResolveRoots(
+            request,
+            providerSelection,
+            externalProviders);
+        IReadOnlyDictionary<AssetKey, ProviderBinding> rootAuthorities =
+            BindRootAuthorities(resolvedRoots);
+        IReadOnlyDictionary<DependencyEdge, ProviderBinding> dependencyClosure =
+            ResolveDependencyClosure(
+                resolvedRoots,
+                providerSelection,
+                rootAuthorities,
+                externalProviders,
+                request.Assets.Providers.Count);
+        return new ResolvedLinkGraph(resolvedRoots, dependencyClosure);
     }
 
     private static void ValidateRoots(IReadOnlyList<LinkRoot> roots)
@@ -1113,9 +1139,10 @@ public sealed class ZoneLinker
     }
 
     private static ScriptStringTable BuildScriptStringTable(
-        IEnumerable<AssetRow> rows,
+        IEnumerable<ProviderBinding?> rootProviders,
         IReadOnlyDictionary<DependencyEdge, ProviderBinding> dependencyClosure,
-        IReadOnlyList<string?> sourceValues)
+        IReadOnlyList<string?> sourceValues,
+        Action<ushort, AssetKey>? recordUse = null)
     {
         var values = new List<string?>(sourceValues);
         // Null references serialize as local index zero, including unused weapon
@@ -1130,12 +1157,14 @@ public sealed class ZoneLinker
                 indices.TryAdd(value, checked((ushort)index));
         }
         var visited = new HashSet<ProviderSymbol>();
-        var visitedStorage = new HashSet<LinkStorageSymbol>(
-            ReferenceEqualityComparer.Instance);
+        // Emission needs each shared cell once. Usage counts need each asset that reaches it.
+        var visitedStorage = recordUse is null
+            ? new HashSet<LinkStorageSymbol>(ReferenceEqualityComparer.Instance)
+            : null;
 
-        foreach (AssetRow row in rows)
+        foreach (ProviderBinding? root in rootProviders)
         {
-            if (row.Provider is { } provider)
+            if (root is { } provider)
                 Visit(provider);
         }
 
@@ -1149,40 +1178,30 @@ public sealed class ZoneLinker
                 return;
 
             provider.Plan.VisitReferences(
-                VisitDependency,
+                dependency => Visit(ResolveClosureEdge(provider, dependency, dependencyClosure)),
                 _ => { },
                 script =>
                 {
-                    if (script.Text is null || indices.ContainsKey(script.Text))
+                    if (script.Text is null)
                         return;
-                    if (values.Count == 0)
-                        values.Add(null);
-                    if (values.Count > ushort.MaxValue)
+                    if (!indices.TryGetValue(script.Text, out ushort index))
                     {
-                        throw new InvalidDataException(
-                            "The selected asset graph exceeds the 16-bit script-string index range.");
+                        if (values.Count == 0)
+                            values.Add(null);
+                        if (values.Count > ushort.MaxValue)
+                        {
+                            throw new InvalidDataException(
+                                "The selected asset graph exceeds the 16-bit script-string index range.");
+                        }
+
+                        index = checked((ushort)values.Count);
+                        indices.Add(script.Text, index);
+                        values.Add(script.Text);
                     }
 
-                    ushort index = checked((ushort)values.Count);
-                    indices.Add(script.Text, index);
-                    values.Add(script.Text);
+                    recordUse?.Invoke(index, provider.Key);
                 },
                 visitedStorage);
-
-            void VisitDependency(AssetDependency dependency)
-            {
-                var edge = new DependencyEdge(dependency);
-                if (!dependencyClosure.TryGetValue(
-                        edge,
-                        out ProviderBinding dependencyProvider))
-                {
-                    throw new InvalidDataException(
-                        $"The precomputed closure has no {dependency.FieldPath} edge " +
-                        $"from {provider.Key} to {dependency.Key}.");
-                }
-
-                Visit(dependencyProvider);
-            }
         }
     }
 
@@ -1239,4 +1258,8 @@ public sealed class ZoneLinker
     private readonly record struct ScriptStringTable(
         IReadOnlyList<string?> Values,
         IReadOnlyDictionary<string, ushort> Indices);
+
+    private readonly record struct ResolvedLinkGraph(
+        ResolvedRoot[] Roots,
+        IReadOnlyDictionary<DependencyEdge, ProviderBinding> DependencyClosure);
 }

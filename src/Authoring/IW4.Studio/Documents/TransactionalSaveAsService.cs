@@ -442,13 +442,17 @@ public sealed class TransactionalSaveAsService
                 SaveAsStage.Packaging,
                 "Packaging the linked zone."));
 
+            DbHeaderAuthoringMetadata savedHeader = revision.HeaderMetadata with
+            {
+                FileCreationTimeRaw = checked((ulong)DateTime.UtcNow.ToFileTimeUtc())
+            };
             FastFilePackagingResult package = _packager.PackageGreenfield(
                 decodedBytes,
                 link.LanguageMask,
                 link.SelectedLanguageMask,
                 link.ImageStreamLanguageTables,
                 request.PackagingPolicy,
-                revision.HeaderMetadata);
+                savedHeader);
             diagnostics.AddRange(package.Errors.Select(error => $"{error.Code}: {error.Message}"));
             if (!package.Succeeded || package.Bytes is not { } packageBytes)
                 return new SaveAsResult(false, false, null, diagnostics);
@@ -501,6 +505,7 @@ public sealed class TransactionalSaveAsService
                 "Atomically publishing the fastfile."));
             if (!session.CommitSaveIfCurrentRevision(
                     revision.Revision,
+                    savedHeader,
                     () =>
                     {
                         _fileSystem.CommitTemporaryFile(

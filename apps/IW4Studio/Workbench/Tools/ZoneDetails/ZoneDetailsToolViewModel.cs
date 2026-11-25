@@ -1,19 +1,18 @@
 using System.Globalization;
 using IW4.Game.Zone;
 using IW4.Studio.Documents;
+using IW4.Studio.Desktop.ViewModels;
 
 namespace IW4.Studio.Desktop.Workbench.Tools.ZoneDetails;
 
-/// <summary>
-/// Read-only projection of the decoded target zone's serialized metadata.
-/// </summary>
-public sealed class ZoneDetailsToolViewModel
+public sealed class ZoneDetailsToolViewModel : ObservableObject
 {
-    public ZoneDetailsToolViewModel(FastFileWorkspace workspace)
-    {
-        ArgumentNullException.ThrowIfNull(workspace);
+    private readonly FastFileEditingSession _session;
 
-        var loadedZone = workspace.LoadedZone;
+    public ZoneDetailsToolViewModel(FastFileEditingSession session)
+    {
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        var loadedZone = session.Workspace.LoadedZone;
         IReadOnlyList<uint> blockSizes = loadedZone.XFile.BlockSizes;
 
         ZoneName = loadedZone.Zone.Name;
@@ -25,11 +24,7 @@ public sealed class ZoneDetailsToolViewModel
                         ? blockSizes[index]
                         : 0))
                 .ToArray());
-        ScriptStrings = Array.AsReadOnly(
-            loadedZone.Context.ZoneScriptStrings.Entries
-                .Select(value => new ZoneScriptStringViewModel(value.Index, value.Value))
-                .ToArray());
-        ScriptStringCount = ScriptStrings.Count.ToString("N0", CultureInfo.InvariantCulture);
+        RefreshScriptStrings(session.LinkRequest.ScriptStrings);
         AssetCount = loadedZone.XAssetList.Assets.Count.ToString("N0", CultureInfo.InvariantCulture);
     }
 
@@ -37,9 +32,26 @@ public sealed class ZoneDetailsToolViewModel
 
     public IReadOnlyList<ZoneBlockStreamViewModel> BlockStreams { get; }
 
-    public string ScriptStringCount { get; }
+    public string ScriptStringCount => ScriptStrings.Count.ToString("N0", CultureInfo.InvariantCulture);
 
-    public IReadOnlyList<ZoneScriptStringViewModel> ScriptStrings { get; }
+    public IReadOnlyList<ZoneScriptStringViewModel> ScriptStrings { get; private set; } = [];
 
     public string AssetCount { get; }
+
+    internal ScriptStringEditSnapshot CaptureScriptStrings() => _session.CaptureScriptStrings();
+
+    internal void ApplyScriptStrings(ScriptStringEditSnapshot snapshot, IReadOnlyList<string?> values)
+    {
+        bool changed = _session.ApplyScriptStrings(snapshot, values);
+        RefreshScriptStrings(changed ? _session.LinkRequest.ScriptStrings : values);
+    }
+
+    private void RefreshScriptStrings(IReadOnlyList<string?> values)
+    {
+        ScriptStrings = values
+            .Select((text, index) => new ZoneScriptStringViewModel(index, text))
+            .ToArray();
+        OnPropertyChanged(nameof(ScriptStrings));
+        OnPropertyChanged(nameof(ScriptStringCount));
+    }
 }

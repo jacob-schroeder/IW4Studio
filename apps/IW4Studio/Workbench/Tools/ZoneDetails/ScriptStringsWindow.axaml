@@ -1,0 +1,45 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:zone="using:IW4.Studio.Desktop.Workbench.Tools.ZoneDetails"
+        x:Class="IW4.Studio.Desktop.Workbench.Tools.ZoneDetails.ScriptStringsWindow"
+        Title="Edit script strings" Width="620" Height="520" MinWidth="430" MinHeight="375"
+        ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
+  <Grid Margin="20,16" RowDefinitions="Auto,Auto,*,Auto,Auto,Auto" RowSpacing="10">
+    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+      <TextBlock x:Name="UsageSummary" Text="Counting asset references…"
+                 TextWrapping="Wrap" VerticalAlignment="Center" />
+      <Button Grid.Column="1" x:Name="AddButton" Content="Add" Click="Add_Click" IsEnabled="False" />
+      <Button Grid.Column="2" x:Name="RemoveButton" Content="Remove" Click="Remove_Click" IsEnabled="False" />
+    </Grid>
+    <Grid Grid.Row="1" Margin="10,0" ColumnDefinitions="56,*,80" ColumnSpacing="10">
+      <TextBlock Text="Index" FontWeight="SemiBold" />
+      <TextBlock Grid.Column="1" Text="Script string" FontWeight="SemiBold" />
+      <TextBlock Grid.Column="2" Text="Asset count" FontWeight="SemiBold" HorizontalAlignment="Right" />
+    </Grid>
+    <ListBox Grid.Row="2" x:Name="StringsList" SelectionChanged="SelectionChanged"
+             AutomationProperties.Name="Zone script strings">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="zone:ZoneScriptStringViewModel">
+          <Grid ColumnDefinitions="56,*,80" ColumnSpacing="10">
+            <TextBlock Text="{Binding Index}" Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Grid.Column="1" Text="{Binding Value}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="2" Text="{Binding AssetUseCount}" HorizontalAlignment="Right" />
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+    <StackPanel Grid.Row="3" Spacing="4">
+      <TextBlock x:Name="EditLabel" Text="Selected string" FontWeight="SemiBold" />
+      <TextBox x:Name="ValueEditor" x:DataType="zone:ZoneScriptStringViewModel"
+               Text="{Binding Text, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+               IsEnabled="False" AutomationProperties.Name="Selected script string" />
+    </StackPanel>
+    <TextBlock Grid.Row="4" x:Name="ErrorText" IsVisible="False"
+               Foreground="{DynamicResource StudioErrorBrush}" TextWrapping="Wrap" />
+    <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="Cancel" IsCancel="True" Click="Cancel_Click" />
+      <Button x:Name="ApplyButton" Content="Apply" Classes="primary" Click="Apply_Click" IsEnabled="False" />
+    </StackPanel>
+  </Grid>
+</Window>

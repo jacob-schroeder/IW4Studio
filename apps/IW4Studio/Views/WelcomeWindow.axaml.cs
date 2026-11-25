@@ -286,13 +286,6 @@ public sealed partial class WelcomeWindow : Window
                     languageMask: 1,
                     selectedLanguageMask: 1);
                 using var session = new FastFileEditingSession(blank);
-                session.UpdateHeaderProperties(
-                    session.HeaderMetadata with
-                    {
-                        FileCreationTimeRaw = checked(
-                            (ulong)DateTime.UtcNow.ToFileTimeUtc())
-                    },
-                    session.LanguageMask);
                 return _saveAsService.SaveAs(
                     session,
                     new SaveAsRequest(destination, AllowOverwrite: true),

@@ -56,15 +56,15 @@
           <CheckBox IsChecked="{Binding AllowOnlineUpdate, Mode=TwoWay}"
                     Content="Allow online update" />
 
-          <StackPanel Spacing="4">
-            <TextBlock Text="File creation time (UTC)" Classes="propertyLabel" />
-            <TextBox Text="{Binding FileCreationTimeUtc, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                     FontFamily="Consolas" />
-            <TextBlock Text="yyyy-MM-dd HH:mm:ss[.fffffff] UTC; stored as Windows FILETIME."
-                       FontSize="9"
-                       TextWrapping="Wrap"
-                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
-          </StackPanel>
+          <Grid ColumnDefinitions="116,*">
+            <TextBlock Text="File Created On (UTC)"
+                       Classes="propertyLabel"
+                       TextWrapping="Wrap" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding FileCreatedOnUtc}"
+                       Classes="propertyValue"
+                       TextWrapping="Wrap" />
+          </Grid>
 
           <StackPanel Spacing="4">
             <TextBlock Text="Languages" Classes="propertyLabel" />
@@ -89,11 +89,15 @@
                      TextWrapping="Wrap"
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
 
-          <Grid ColumnDefinitions="116,*">
+          <Grid ColumnDefinitions="116,*,Auto" ColumnSpacing="8">
             <TextBlock Text="Streamed images" Classes="propertyLabel" />
             <TextBlock Grid.Column="1"
                        Text="{Binding StreamedImageCount}"
                        Classes="propertyValue" />
+            <Button Grid.Column="2"
+                    Content="Open" Padding="10,3" MinHeight="26"
+                    AutomationProperties.Name="Open streamed images pane"
+                    Command="{Binding ShowStreamedImagesCommand}" />
           </Grid>
         </StackPanel>
       </Border>

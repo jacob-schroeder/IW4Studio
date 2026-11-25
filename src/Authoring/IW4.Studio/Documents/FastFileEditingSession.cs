@@ -49,6 +49,7 @@ public sealed partial class FastFileEditingSession : IDisposable
     private AssetChangeSet _changeSet = new([]);
     private DbHeaderAuthoringMetadata _savedHeaderMetadata;
     private uint _savedLanguageMask;
+    private IReadOnlyList<string?> _savedScriptStrings;
     private FastFileSaveRevision _revision;
     private bool _disposed;
 
@@ -63,6 +64,7 @@ public sealed partial class FastFileEditingSession : IDisposable
             workspace.InitialLinkRequest.Assets.Providers.Select(provider => provider.Key));
         _savedHeaderMetadata = workspace.Document.InitialHeaderMetadata;
         _savedLanguageMask = workspace.InitialLinkRequest.LanguageMask;
+        _savedScriptStrings = workspace.InitialLinkRequest.ScriptStrings;
         _revision = new FastFileSaveRevision(
             Revision: 0,
             HeaderMetadata: workspace.Document.InitialHeaderMetadata,
@@ -611,7 +613,8 @@ public sealed partial class FastFileEditingSession : IDisposable
             {
                 ThrowIfDisposedCore();
                 return !_changeSet.IsEmpty ||
-                    HasPendingHeaderPropertiesChangeCore();
+                    HasPendingHeaderPropertiesChangeCore() ||
+                    HasPendingScriptStringChangeCore();
             }
         }
     }
@@ -629,11 +632,94 @@ public sealed partial class FastFileEditingSession : IDisposable
     }
 
     /// <summary>
-    /// The document-level dirty contribution for header values and the
-    /// serialized language mask. All pending edits count as one changed item.
+    /// Header properties and script-string table each contribute one changed item.
     /// </summary>
-    public int PendingDocumentChangeCount =>
-        HasPendingHeaderPropertiesChange ? 1 : 0;
+    public int PendingDocumentChangeCount
+    {
+        get
+        {
+            lock (_gate)
+            {
+                ThrowIfDisposedCore();
+                return (HasPendingHeaderPropertiesChangeCore() ? 1 : 0) +
+                    (HasPendingScriptStringChangeCore() ? 1 : 0);
+            }
+        }
+    }
+
+    /// <summary>Captures source slots plus strings the current asset graph would append.</summary>
+    public ScriptStringEditSnapshot CaptureScriptStrings()
+    {
+        FastFileSaveRevision revision = CaptureRevision();
+        return new ScriptStringEditSnapshot(
+            this,
+            revision.Revision,
+            new ZoneLinker().InspectScriptStrings(revision.LinkRequest));
+    }
+
+    /// <summary>Applies a complete edited table if its asset graph is still current.</summary>
+    public bool ApplyScriptStrings(
+        ScriptStringEditSnapshot snapshot,
+        IReadOnlyList<string?> values)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(values);
+        lock (_gate)
+        {
+            ThrowIfDisposedCore();
+            if (!ReferenceEquals(snapshot.Owner, this))
+                throw new ArgumentException("The snapshot belongs to another editing session.", nameof(snapshot));
+            if (_revision.Revision != snapshot.Revision)
+                throw new InvalidOperationException("The script-string table changed while it was being edited. Reopen the editor and try again.");
+            if (values.Count > ushort.MaxValue + 1)
+                throw new ArgumentException("Script-string tables cannot exceed the 16-bit zone-local index range.", nameof(values));
+            if (values.Count != 0 && values[0] is not null)
+                throw new ArgumentException("Script-string slot zero must remain null.", nameof(values));
+
+            string?[] candidate = values.ToArray();
+            for (int index = 1; index < candidate.Length; index++)
+            {
+                string? value = candidate[index];
+                if (value is null)
+                    continue;
+                if (value.Contains('\0') || value.Any(character => character > byte.MaxValue))
+                {
+                    throw new ArgumentException(
+                        $"Script string {index} must be Latin-1 text without NUL.",
+                        nameof(values));
+                }
+            }
+
+            ZoneLinkRequest previous = _revision.LinkRequest;
+            if (candidate.SequenceEqual(snapshot.Rows.Select(row => row.Text), StringComparer.Ordinal))
+                return false;
+
+            if (candidate.Length == 1 && _savedScriptStrings.Count == 0)
+                candidate = [];
+
+            var retained = candidate.OfType<string>().ToHashSet(StringComparer.Ordinal);
+            ZoneScriptStringRow? missing = snapshot.Rows.FirstOrDefault(row =>
+                row.AssetUseCount != 0 && row.Text is not null &&
+                !retained.Contains(row.Text));
+            if (missing is not null)
+            {
+                throw new InvalidOperationException(
+                    $"Script string '{missing.Text}' is required by {missing.AssetUseCount} asset(s).");
+            }
+
+            var request = new ZoneLinkRequest(
+                previous.Assets,
+                previous.Roots,
+                previous.LanguageMask,
+                previous.SelectedLanguageMask,
+                candidate);
+            _revision = new FastFileSaveRevision(
+                checked(_revision.Revision + 1),
+                _revision.HeaderMetadata,
+                request);
+            return true;
+        }
+    }
 
     /// <summary>Validates one new hosted-definition name against live rows and the imported pool.</summary>
     public string? ValidateNewAssetName(XAssetType assetType, string? name) =>
@@ -1032,6 +1118,11 @@ public sealed partial class FastFileEditingSession : IDisposable
         lock (_gate)
         {
             ThrowIfDisposedCore();
+            // A header draft can predate a save. Only the save transaction owns the timestamp.
+            headerMetadata = headerMetadata with
+            {
+                FileCreationTimeRaw = _revision.HeaderMetadata.FileCreationTimeRaw
+            };
             if (!headerMetadata.HasSupportedMagic)
             {
                 throw new ArgumentException(
@@ -2367,8 +2458,12 @@ public sealed partial class FastFileEditingSession : IDisposable
             return RequireDraft(identity).CreateCurrentDefinition();
     }
 
-    internal bool CommitSaveIfCurrentRevision(long revision, Action commit)
+    internal bool CommitSaveIfCurrentRevision(
+        long revision,
+        DbHeaderAuthoringMetadata savedHeader,
+        Action commit)
     {
+        ArgumentNullException.ThrowIfNull(savedHeader);
         ArgumentNullException.ThrowIfNull(commit);
         lock (_gate)
         {
@@ -2377,7 +2472,13 @@ public sealed partial class FastFileEditingSession : IDisposable
             if (_revision.Revision != revision)
                 return false;
 
+            FastFileSaveRevision savedRevision = _revision with
+            {
+                Revision = checked(revision + 1),
+                HeaderMetadata = savedHeader
+            };
             commit();
+            _revision = savedRevision;
             foreach (DraftState state in _drafts.Values)
                 state.AcknowledgeSaved();
             foreach (DraftState state in _providerDrafts.Values.Where(state =>
@@ -2395,6 +2496,7 @@ public sealed partial class FastFileEditingSession : IDisposable
             _addedRows.Clear();
             _savedHeaderMetadata = _revision.HeaderMetadata;
             _savedLanguageMask = _revision.LinkRequest.LanguageMask;
+            _savedScriptStrings = _revision.LinkRequest.ScriptStrings;
             RebuildChangeSet();
             return true;
         }
@@ -2703,6 +2805,14 @@ public sealed partial class FastFileEditingSession : IDisposable
     private bool HasPendingHeaderPropertiesChangeCore() =>
         _revision.HeaderMetadata != _savedHeaderMetadata ||
         _revision.LinkRequest.LanguageMask != _savedLanguageMask;
+
+    private bool HasPendingScriptStringChangeCore()
+    {
+        IReadOnlyList<string?> current = _revision.LinkRequest.ScriptStrings;
+        // The linker always emits null in reserved slot zero, including for legacy empty strings.
+        return current.Count != _savedScriptStrings.Count ||
+            !current.Skip(1).SequenceEqual(_savedScriptStrings.Skip(1), StringComparer.Ordinal);
+    }
 
     private sealed class DraftState
     {

@@ -81,7 +81,7 @@
             Background="{DynamicResource StudioSurfaceSunkenBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="0,1">
-      <Grid ColumnDefinitions="*,Auto">
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
         <TextBlock Text="SCRIPT STRINGS"
                    VerticalAlignment="Center"
                    FontSize="9"
@@ -93,6 +93,9 @@
                    VerticalAlignment="Center"
                    FontSize="9"
                    Foreground="{DynamicResource StudioTextMutedBrush}" />
+        <Button Grid.Column="2" Content="…" Width="28" MinHeight="24" Padding="0"
+                ToolTip.Tip="Edit script strings" AutomationProperties.Name="Edit script strings"
+                Click="EditScriptStrings_Click" />
       </Grid>
     </Border>
 
@@ -104,7 +107,7 @@
         <DataTemplate x:DataType="zoneDetails:ZoneScriptStringViewModel">
           <Grid ColumnDefinitions="48,*"
                 ColumnSpacing="8">
-            <TextBlock Text="{Binding IndexText}"
+            <TextBlock Text="{Binding Index, StringFormat='{}{0:N0}'}"
                        HorizontalAlignment="Right"
                        FontSize="8"
                        FontFamily="Consolas"

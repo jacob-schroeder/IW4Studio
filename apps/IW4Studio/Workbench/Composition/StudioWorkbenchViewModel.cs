@@ -185,8 +185,10 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
                 ImageFilePak,
                 PackFilePak);
             constructionResources.Add(Properties);
-            FastFileDetails = new FastFileDetailsToolViewModel(editingSession, () => { });
-            ZoneDetails = new ZoneDetailsToolViewModel(workspace);
+            FastFileDetails = new FastFileDetailsToolViewModel(
+                editingSession,
+                ShowStreamedImages);
+            ZoneDetails = new ZoneDetailsToolViewModel(editingSession);
             DependencyGraph = new DependencyGraphToolViewModel(workspace);
 
             StudioToolContext toolContext = new(
@@ -497,6 +499,12 @@ public sealed class StudioWorkbenchViewModel : ObservableObject, IDisposable
         }
 
         return result;
+    }
+
+    private void ShowStreamedImages()
+    {
+        if (DockLayout.State.FindTool(StudioToolIds.ImageFilePak) is { IsActive: false })
+            _ = ActivateTool(StudioToolIds.ImageFilePak);
     }
 
     public bool CollapseRegion(DockRegion region) =>
