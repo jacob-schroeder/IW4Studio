@@ -41,6 +41,8 @@ public sealed class DockRegionState : ObservableObject
 
     public bool IsOpen => ActiveTool is not null;
 
+    public double MinimumLayoutSize => IsOpen ? SizeLimits.Minimum : 0;
+
     /// <summary>
     /// The last requested open size. Collapsing a region does not discard it.
     /// </summary>
@@ -63,6 +65,7 @@ public sealed class DockRegionState : ObservableObject
         ActiveTool?.SetActive(true);
         OnPropertyChanged(nameof(ActiveToolId));
         OnPropertyChanged(nameof(IsOpen));
+        OnPropertyChanged(nameof(MinimumLayoutSize));
     }
 
     internal double Resize(double requestedSize)

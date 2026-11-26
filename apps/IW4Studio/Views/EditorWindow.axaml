@@ -4,7 +4,6 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:composition="using:IW4.Studio.Desktop.Workbench.Composition"
         xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-        xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Svg.Controls.Skia.Avalonia"
         x:Class="IW4.Studio.Desktop.Views.EditorWindow"
         x:DataType="composition:StudioWorkbenchViewModel"
         mc:Ignorable="d"
@@ -15,31 +14,60 @@
         Height="900"
         MinWidth="1180"
         MinHeight="700"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="44"
+        Background="{DynamicResource StudioWindowGradientBrush}"
         WindowStartupLocation="CenterScreen">
-  <Grid RowDefinitions="Auto,44,*,25">
+  <Window.WindowDecorationsTheme>
+    <ControlTheme TargetType="WindowDrawnDecorations" BasedOn="{StaticResource {x:Type WindowDrawnDecorations}}">
+      <!-- Fluent overlays its own copy of Window.Title beside the caption buttons. -->
+      <Style Selector="^ /template/ Panel#PART_TitleTextPanel">
+        <Setter Property="Opacity" Value="0" />
+      </Style>
+    </ControlTheme>
+  </Window.WindowDecorationsTheme>
+  <Window.Styles>
+    <Style Selector="Border.editorTitleBar">
+      <Setter Property="Padding" Value="12,0" />
+    </Style>
+    <Style Selector=":is(Window)[IsExtendedIntoWindowDecorations=True]:not(Window[WindowState=FullScreen]) Border.editorTitleBar">
+      <!-- AppKit traffic lights occupy the left edge. Fluent's four 45-DIP buttons occupy the right. -->
+      <Setter Property="Padding" Value="{OnPlatform Default='12,0,198,0', macOS='82,0,12,0', x:TypeArguments=Thickness}" />
+    </Style>
+  </Window.Styles>
 
-    <Menu x:Name="WindowMenu" Grid.Row="0" Height="30" />
-  
-    <Border Grid.Row="1"
-            Padding="12,4"
-            Background="{DynamicResource StudioSurfaceBrush}"
-            BorderBrush="{DynamicResource StudioBorderBrush}"
-            BorderThickness="0,0,0,1">
+  <Grid RowDefinitions="44,*,25" Margin="{Binding $parent[Window].OffScreenMargin}">
+    <Border Classes="editorTitleBar" Background="Transparent"
+            WindowDecorationProperties.ElementRole="TitleBar">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="8">
+        <Border Width="26" Height="26" VerticalAlignment="Center" CornerRadius="5" ClipToBounds="True">
+          <Image Source="/Resources/logo_simple.png" Stretch="UniformToFill" />
+        </Border>
+        <TextBlock Grid.Column="1" Text="IW4 Studio" FontSize="13" FontWeight="SemiBold"
+                   IsVisible="{Binding !#WindowMenu.IsVisible}" VerticalAlignment="Center" />
+        <Menu x:Name="WindowMenu" Grid.Column="1" VerticalAlignment="Center" Background="Transparent"
+              FontSize="13" WindowDecorationProperties.ElementRole="User" />
+        <TextBlock Grid.Column="2" Text="/" Opacity="0.6" VerticalAlignment="Center" />
+        <Button Grid.Column="3" Classes="ghost" Padding="6,3" MinHeight="28" MaxWidth="330"
+                VerticalAlignment="Center" WindowDecorationProperties.ElementRole="User"
+                ToolTip.Tip="{Binding TargetPath}" AutomationProperties.Name="{Binding TargetFileName}">
+          <Button.Flyout>
+            <Flyout Placement="BottomEdgeAlignedLeft">
+              <SelectableTextBlock Text="{Binding TargetPath}" MaxWidth="500" TextWrapping="Wrap" />
+            </Flyout>
+          </Button.Flyout>
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+            <materialIcons:MaterialIcon Kind="PackageVariantClosed" Width="15" Height="15" />
+            <TextBlock Grid.Column="1" Text="{Binding TargetFileName}" FontSize="13"
+                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            <materialIcons:MaterialIcon Grid.Column="2" Kind="ChevronDown" Width="13" Height="13" />
+          </Grid>
+        </Button>
+        <TextBlock x:Name="SaveProgressText" Grid.Column="4" Margin="6,0"
+                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="12" />
 
-      <Grid ColumnDefinitions="Auto,12,*,Auto" VerticalAlignment="Center">
-
-        <Image Width="32" Height="32"
-               Source="/Resources/logo_simple.png" Stretch="Uniform" />
-        <Grid Grid.Column="2" ColumnDefinitions="Auto,*" ColumnSpacing="12"
-              VerticalAlignment="Center" Margin="0,0,8,0">
-          <TextBlock Text="{Binding TargetFileName}"
-                     MaxWidth="320" VerticalAlignment="Center"
-                     FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-          <TextBlock Grid.Column="1" Text="{Binding TargetPath}" ToolTip.Tip="{Binding TargetPath}"
-                     VerticalAlignment="Center" FontSize="10" TextTrimming="CharacterEllipsis"
-                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
-        </Grid>
-        <StackPanel Grid.Column="3"
+        <StackPanel Grid.Column="5" VerticalAlignment="Center"
+                    WindowDecorationProperties.ElementRole="User"
                     Orientation="Horizontal"
                     Spacing="9"
                     Name="ActionBar"
@@ -72,13 +100,9 @@
       </Grid>
     </Border>
 
-    <composition:StudioWorkbenchView Grid.Row="2" />
+    <composition:StudioWorkbenchView Grid.Row="1" />
 
-    <Border Grid.Row="3"
-            Padding="9,0"
-            Background="{DynamicResource StudioSurfaceBrush}"
-            BorderBrush="{DynamicResource StudioBorderBrush}"
-            BorderThickness="0,1,0,0">
+    <Border Grid.Row="2" Padding="12,0">
       <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="18">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="7">
           <TextBlock Text="●"
@@ -88,7 +112,7 @@
           <TextBlock Text="Workspace catalog loaded"
                      VerticalAlignment="Center"
                      FontSize="10"
-                     Foreground="{DynamicResource StudioSuccessBrush}" />
+                     Foreground="{DynamicResource StudioTextBrush}" />
         </StackPanel>
         <composition:WorkbenchActivityIndicator
             Grid.Column="1"

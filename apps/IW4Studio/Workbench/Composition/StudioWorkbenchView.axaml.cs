@@ -324,22 +324,10 @@ public sealed partial class StudioWorkbenchView : UserControl
         }
     }
 
-    private void LeftSplitter_PointerReleased(object? sender, PointerReleasedEventArgs e)
-    {
-        if (DataContext is StudioWorkbenchViewModel viewModel)
-            viewModel.ResizeRegion(DockRegion.Left, LeftPane.Bounds.Width);
-    }
-
     private void BottomSplitter_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (DataContext is StudioWorkbenchViewModel viewModel)
             viewModel.ResizeRegion(DockRegion.Bottom, BottomPane.Bounds.Height);
-    }
-
-    private void RightSplitter_PointerReleased(object? sender, PointerReleasedEventArgs e)
-    {
-        if (DataContext is StudioWorkbenchViewModel viewModel)
-            viewModel.ResizeRegion(DockRegion.Right, RightPane.Bounds.Width);
     }
 
     private void ShowDropCue(DockRegion allowedRegion, bool isPointerInside)

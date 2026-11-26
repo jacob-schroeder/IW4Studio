@@ -99,13 +99,13 @@
     <Setter Property="MinHeight" Value="32" />
     <Setter Property="Margin" Value="8,3" />
     <Setter Property="Padding" Value="6" />
-    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="CornerRadius" Value="6" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderBrush" Value="Transparent" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
   </Style>
 
   <Style Selector="ToggleButton.studioToolRailButton:pointerover">
@@ -118,15 +118,13 @@
   </Style>
 
   <Style Selector="ToggleButton.studioToolRailButton:checked">
-    <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
-    <Setter Property="Foreground" Value="{DynamicResource StudioAccentBrush}" />
+    <Setter Property="Background" Value="{DynamicResource StudioAccentStrongBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioOnAccentBrush}" />
   </Style>
 
   <Style Selector="ToggleButton.studioToolRailButton:checked:pointerover">
-    <Setter Property="Background" Value="{DynamicResource StudioAccentSurfaceBrush}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentStrongBrush}" />
-    <Setter Property="Foreground" Value="{DynamicResource StudioAccentBrush}" />
+    <Setter Property="Background" Value="{DynamicResource StudioAccentHoverBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioOnAccentBrush}" />
   </Style>
 
   <Style Selector="ToggleButton.studioToolRailButton:focus-visible">
@@ -239,7 +237,7 @@
        uses the IW4 accent only as a narrow state marker. -->
   <Style Selector="ListBox.studioEditorTabStrip">
     <Setter Property="Padding" Value="0" />
-    <Setter Property="Background" Value="{DynamicResource StudioSidebarBrush}" />
+    <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderThickness" Value="0" />
   </Style>
 

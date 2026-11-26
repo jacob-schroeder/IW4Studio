@@ -148,6 +148,12 @@ public sealed partial class WelcomeWindow : Window
             case StudioMenuAction.SelectLightTheme:
                 ThemeRequested?.Invoke(ThemeMode.Light);
                 break;
+            case StudioMenuAction.SelectDarkYellowTheme:
+                ThemeRequested?.Invoke(ThemeMode.DarkYellow);
+                break;
+            case StudioMenuAction.SelectLightYellowTheme:
+                ThemeRequested?.Invoke(ThemeMode.LightYellow);
+                break;
         }
     }
 

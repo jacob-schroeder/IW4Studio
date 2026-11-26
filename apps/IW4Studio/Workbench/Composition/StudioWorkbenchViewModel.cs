@@ -411,14 +411,28 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
 
     public double RightSize => DockLayout.State.Right.Size;
 
-    public GridLength LeftPaneWidth =>
-        IsLeftOpen ? new GridLength(LeftSize) : new GridLength(0);
+    public GridLength LeftPaneWidth
+    {
+        get => new(IsLeftOpen ? LeftSize : 0);
+        set
+        {
+            if (IsLeftOpen && value.IsAbsolute)
+                DockLayout.ResizeRegion(DockRegion.Left, value.Value);
+        }
+    }
 
     public GridLength BottomPaneHeight =>
         new GridLength(IsBottomOpen ? BottomSize : 36);
 
-    public GridLength RightPaneWidth =>
-        IsRightOpen ? new GridLength(RightSize) : new GridLength(0);
+    public GridLength RightPaneWidth
+    {
+        get => new(IsRightOpen ? RightSize : 0);
+        set
+        {
+            if (IsRightOpen && value.IsAbsolute)
+                DockLayout.ResizeRegion(DockRegion.Right, value.Value);
+        }
+    }
 
     public string LeftTitle => DockLayout.State.Left.ActiveTool?.Title ?? string.Empty;
 

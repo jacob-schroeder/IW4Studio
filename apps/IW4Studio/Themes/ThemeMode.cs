@@ -6,5 +6,7 @@ namespace IW4.Studio.Desktop.Themes;
 public enum ThemeMode
 {
     Dark,
-    Light
+    Light,
+    DarkYellow,
+    LightYellow
 }

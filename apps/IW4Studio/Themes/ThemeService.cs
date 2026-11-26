@@ -13,6 +13,8 @@ internal sealed class ThemeService
 {
     private static readonly ITheme DarkThemeInstance = new DarkTheme();
     private static readonly ITheme LightThemeInstance = new LightTheme();
+    private static readonly ITheme DarkYellowThemeInstance = new DarkYellowTheme();
+    private static readonly ITheme LightYellowThemeInstance = new LightYellowTheme();
 
     private readonly Application _application;
     private readonly AppSettingsStore _settingsStore;
@@ -26,9 +28,6 @@ internal sealed class ThemeService
         _application = application;
         _settingsStore = settingsStore;
         _fluentTheme = application.Styles.OfType<FluentTheme>().SingleOrDefault();
-
-        ConfigureFluentAccent(DarkThemeInstance);
-        ConfigureFluentAccent(LightThemeInstance);
 
         CurrentTheme = Resolve(settingsStore.LoadTheme());
         Apply(CurrentTheme);
@@ -51,6 +50,8 @@ internal sealed class ThemeService
     {
         ThemeMode.Dark => DarkThemeInstance,
         ThemeMode.Light => LightThemeInstance,
+        ThemeMode.DarkYellow => DarkYellowThemeInstance,
+        ThemeMode.LightYellow => LightYellowThemeInstance,
         _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null)
     };
 
@@ -58,8 +59,10 @@ internal sealed class ThemeService
     {
         ThemePalette palette = theme.Palette;
 
+        ConfigureFluentAccent(theme);
         _application.RequestedThemeVariant = theme.BaseVariant;
         _application.Resources["StudioFontFamily"] = theme.FontFamily;
+        _application.Resources["StudioWindowGradientBrush"] = CreateWindowGradient(theme.Mode);
 
         SetBrush("StudioBackgroundBrush", palette.Surfaces.Canvas);
         SetBrush("StudioSurfaceBrush", palette.Surfaces.Default);
@@ -114,6 +117,32 @@ internal sealed class ThemeService
 
     private void SetBrush(string resourceName, Color color) =>
         _application.Resources[resourceName] = new SolidColorBrush(color);
+
+    private static RadialGradientBrush CreateWindowGradient(ThemeMode mode)
+    {
+        (Color start, Color middle, Color end) = mode switch
+        {
+            ThemeMode.Dark => (Color.FromUInt32(0xFF666B35), Color.FromUInt32(0xFF3A5033), Color.FromUInt32(0xFF232C27)),
+            ThemeMode.Light => (Color.FromUInt32(0xFFE0E3A1), Color.FromUInt32(0xFFC7DCB4), Color.FromUInt32(0xFFE7ECE7)),
+            ThemeMode.DarkYellow => (Color.FromUInt32(0xFF867039), Color.FromUInt32(0xFF544C32), Color.FromUInt32(0xFF2C2B25)),
+            ThemeMode.LightYellow => (Color.FromUInt32(0xFFF5DA8D), Color.FromUInt32(0xFFE0D8AF), Color.FromUInt32(0xFFEEECE4)),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null)
+        };
+
+        return new RadialGradientBrush
+        {
+            Center = new RelativePoint(0.11, 0, RelativeUnit.Relative),
+            GradientOrigin = new RelativePoint(0.11, 0, RelativeUnit.Relative),
+            RadiusX = new RelativeScalar(0.86, RelativeUnit.Relative),
+            RadiusY = new RelativeScalar(1.35, RelativeUnit.Relative),
+            GradientStops =
+            [
+                new GradientStop(start, 0),
+                new GradientStop(middle, 0.48),
+                new GradientStop(end, 1)
+            ]
+        };
+    }
 
     private void ConfigureFluentAccent(ITheme theme)
     {

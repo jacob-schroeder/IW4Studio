@@ -62,6 +62,7 @@
 
     <ListBox x:Name="CategoryList" Grid.Row="2"
              Classes="studioNavigatorList studioAssetList"
+             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
              Margin="4,0,4,4"
              ItemsSource="{Binding Groups}"
              SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
@@ -79,7 +80,7 @@
                        Text="{Binding Name}"
                        VerticalAlignment="Center"
                        FontSize="12"
-                       TextTrimming="CharacterEllipsis"
+                       TextWrapping="Wrap"
                        Foreground="{DynamicResource StudioTextBrush}" />
             <TextBlock Grid.Column="2" Classes="assetCount"
                        Text="{Binding Count, StringFormat='{}{0:N0}'}" />

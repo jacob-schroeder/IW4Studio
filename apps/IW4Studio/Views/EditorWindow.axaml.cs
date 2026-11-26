@@ -363,6 +363,12 @@ public sealed partial class EditorWindow : Window
             case StudioMenuAction.SelectLightTheme:
                 ThemeRequested?.Invoke(ThemeMode.Light);
                 break;
+            case StudioMenuAction.SelectDarkYellowTheme:
+                ThemeRequested?.Invoke(ThemeMode.DarkYellow);
+                break;
+            case StudioMenuAction.SelectLightYellowTheme:
+                ThemeRequested?.Invoke(ThemeMode.LightYellow);
+                break;
         }
     }
 
@@ -468,6 +474,12 @@ public sealed partial class EditorWindow : Window
         StudioWorkbenchViewModel workbench)
     {
         string originalTitle = Title ?? "IW4 Studio";
+        void ShowProgress(string message)
+        {
+            Title = $"{originalTitle} — {message}";
+            SaveProgressText.Text = message;
+        }
+
         Control? editorContent = Content as Control;
         bool wasContentEnabled = editorContent?.IsEnabled == true;
         try
@@ -483,7 +495,7 @@ public sealed partial class EditorWindow : Window
             if (shaders.Length != 0)
             {
                 if (editorContent is not null) editorContent.IsEnabled = false;
-                Title = $"{originalTitle} — Compiling shaders";
+                ShowProgress("Compiling shaders");
                 string? error = await ShaderEditorViewModel.CompilePendingAsync(
                     shaders, workbench.Editor.EditingSession.CancellationToken);
                 if (_disposed) return WorkspaceSaveOutcome.Cancellation;
@@ -494,8 +506,7 @@ public sealed partial class EditorWindow : Window
                 }
             }
 
-            var progress = new Progress<SaveAsProgress>(value =>
-                Title = $"{originalTitle} — {value.Message}");
+            var progress = new Progress<SaveAsProgress>(value => ShowProgress(value.Message));
             SaveAsResult result = await Task.Run(() => _saveAsService.SaveAs(
                 workbench.Editor.EditingSession,
                 new SaveAsRequest(destination, AllowOverwrite: true),
@@ -522,6 +533,7 @@ public sealed partial class EditorWindow : Window
             if (!_disposed)
             {
                 Title = originalTitle;
+                SaveProgressText.Text = null;
                 if (editorContent is not null) editorContent.IsEnabled = wasContentEnabled;
             }
         }

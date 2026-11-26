@@ -19,6 +19,7 @@
                    TextWrapping="Wrap"
                    Foreground="{DynamicResource StudioTextBrush}" />
         <TextBlock Text="AUTHORED FASTFILE HEADER"
+                   TextWrapping="Wrap"
                    FontSize="11"
                    FontWeight="Bold"
                    LetterSpacing="0.7"
@@ -31,7 +32,7 @@
               BorderBrush="{DynamicResource StudioBorderBrush}"
               BorderThickness="1">
         <StackPanel Spacing="8">
-          <Grid ColumnDefinitions="116,*" ColumnSpacing="8">
+          <Grid ColumnDefinitions="96,*" ColumnSpacing="8">
             <TextBlock Text="Magic" Classes="propertyLabel" />
             <TextBlock Grid.Column="1"
                        Text="{Binding Magic}"
@@ -39,14 +40,14 @@
                        FontFamily="Consolas" />
           </Grid>
 
-          <Grid ColumnDefinitions="116,*" ColumnSpacing="8">
+          <Grid ColumnDefinitions="96,*" ColumnSpacing="8">
             <TextBlock Text="Magic type" Classes="propertyLabel" />
             <TextBlock Grid.Column="1"
                        Text="{Binding MagicType}"
                        Classes="propertyValue" />
           </Grid>
 
-          <Grid ColumnDefinitions="116,*" ColumnSpacing="8">
+          <Grid ColumnDefinitions="96,*" ColumnSpacing="8">
             <TextBlock Text="Version" Classes="propertyLabel" />
             <TextBlock Grid.Column="1"
                        Text="{Binding Version}"
@@ -57,21 +58,21 @@
           <CheckBox FontSize="12" IsChecked="{Binding AllowOnlineUpdate, Mode=TwoWay}"
                     Content="Allow online update" />
 
-          <Grid ColumnDefinitions="116,*" ColumnSpacing="8">
+          <WrapPanel ItemSpacing="8" LineSpacing="3">
             <TextBlock Text="File Created On (UTC)"
+                       MinWidth="96"
                        Classes="propertyLabel"
                        TextWrapping="Wrap" />
-            <TextBlock Grid.Column="1"
-                       Text="{Binding FileCreatedOnUtc}"
+            <TextBlock Text="{Binding FileCreatedOnUtc}"
                        Classes="propertyValue"
                        TextWrapping="Wrap" />
-          </Grid>
+          </WrapPanel>
 
           <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="3">
             <TextBlock Text="Languages" Classes="propertyLabel" />
             <TextBlock Grid.Row="1" Classes="propertyValue"
                        Text="{Binding SelectedLanguagesText}" TextWrapping="Wrap" />
-            <Button Grid.Column="1" Grid.RowSpan="2" Content="Edit…" Padding="10,3" MinHeight="28"
+            <Button Grid.Column="1" Grid.RowSpan="2" Content="Edit" Padding="10,3" MinHeight="28"
                     FontSize="12" CornerRadius="4"
                     VerticalAlignment="Center" AutomationProperties.Name="Edit fastfile languages">
               <Button.Flyout>
@@ -91,14 +92,11 @@
             </Button>
           </Grid>
 
-          <Grid ColumnDefinitions="116,*,Auto" ColumnSpacing="8">
-            <TextBlock Text="Streamed images" Classes="propertyLabel" />
-            <TextBlock Grid.Column="1"
-                       Text="{Binding StreamedImageCount}"
-                       Classes="propertyValue" />
-            <Button Grid.Column="2"
-                    Content="Open" Padding="10,3" MinHeight="28"
-                    FontSize="12" CornerRadius="4"
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="3">
+            <TextBlock Text="Streamed images" Classes="propertyLabel" TextWrapping="Wrap" />
+            <TextBlock Grid.Row="1" Classes="propertyValue" Text="{Binding StreamedImageCount}" />
+            <Button Grid.Column="1" Grid.RowSpan="2" Content="Open" Padding="10,3" MinHeight="28"
+                    FontSize="12" CornerRadius="4" VerticalAlignment="Center"
                     AutomationProperties.Name="Open streamed images pane"
                     Command="{Binding ShowStreamedImagesCommand}" />
           </Grid>

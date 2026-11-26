@@ -57,8 +57,10 @@ internal static class StudioMenu
                     "Theme",
                     Items:
                     [
-                        new("Dark", StudioMenuAction.SelectDarkTheme, Theme: ThemeMode.Dark),
-                        new("Light", StudioMenuAction.SelectLightTheme, Theme: ThemeMode.Light)
+                        new("Dark Green", StudioMenuAction.SelectDarkTheme, Theme: ThemeMode.Dark),
+                        new("Light Green", StudioMenuAction.SelectLightTheme, Theme: ThemeMode.Light),
+                        new("Dark Yellow", StudioMenuAction.SelectDarkYellowTheme, Theme: ThemeMode.DarkYellow),
+                        new("Light Yellow", StudioMenuAction.SelectLightYellowTheme, Theme: ThemeMode.LightYellow)
                     ])
             ])
     ];
@@ -237,5 +239,7 @@ internal enum StudioMenuAction
     Exit,
     LivePreview,
     SelectDarkTheme,
-    SelectLightTheme
+    SelectLightTheme,
+    SelectDarkYellowTheme,
+    SelectLightYellowTheme
 }

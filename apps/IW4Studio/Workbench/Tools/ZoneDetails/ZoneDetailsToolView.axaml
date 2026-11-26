@@ -53,24 +53,19 @@
         <ItemsControl ItemsSource="{Binding BlockStreams}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="zoneDetails:ZoneBlockStreamViewModel">
-              <Grid Margin="0,0,0,8"
-                    ColumnDefinitions="Auto,*,Auto"
-                    ColumnSpacing="8">
+              <WrapPanel Margin="0,0,0,8" ItemSpacing="8" LineSpacing="2">
                 <TextBlock Text="{Binding TypeName}"
                            FontSize="12"
                            FontWeight="SemiBold"
                            Foreground="{DynamicResource StudioTextBrush}" />
-                <TextBlock Grid.Column="1"
-                           Text="{Binding SizeText}"
+                <TextBlock Text="{Binding SizeText}"
                            FontSize="12"
-                           HorizontalAlignment="Right"
                            Foreground="{DynamicResource StudioTextMutedBrush}" />
-                <TextBlock Grid.Column="2"
-                           Text="{Binding HexSizeText}"
+                <TextBlock Text="{Binding HexSizeText}"
                            FontSize="11"
                            FontFamily="Consolas"
                            Foreground="{DynamicResource StudioTextSubtleBrush}" />
-              </Grid>
+              </WrapPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
