@@ -27,14 +27,8 @@
     <Exec Command="&quot;$(HlslLink)&quot; /entry:entry /subsystem:console /nodefaultlib /machine:x64 /out:&quot;$(IntermediateOutputPath)Native/shaderconvert-hlsl.exe&quot; &quot;$(IntermediateOutputPath)Native/hlsl_frontend.obj&quot; &quot;$(IntermediateOutputPath)Native/kernel32.lib&quot; &quot;$(IntermediateOutputPath)Native/shell32.lib&quot;" />
   </Target>
 
-  <Target Name="CopyShaderTools" AfterTargets="Build">
-    <MSBuild Projects="../MapConverter/MapConverter.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
-      <Output TaskParameter="TargetOutputs" ItemName="MapConverterTarget" />
-    </MSBuild>
-    <ItemGroup>
-      <ShaderTools Include="@(MapConverterTarget->'%(RootDir)%(Directory)Native/mapconverter-mojoshader');@(MapConverterTarget->'%(RootDir)%(Directory)Native/mapconverter-cgcomp')" />
-      <ShaderTools Include="$(IntermediateOutputPath)Native/shaderconvert-hlsl.exe" Condition="Exists('$(IntermediateOutputPath)Native/shaderconvert-hlsl.exe')" />
-    </ItemGroup>
-    <Copy SourceFiles="@(ShaderTools)" DestinationFolder="$(OutDir)Native" SkipUnchangedFiles="true" />
-  </Target>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <Content Include="$(BaseIntermediateOutputPath)$(Configuration)/$(TargetFramework)/$(RuntimeIdentifier)/Native/shaderconvert-hlsl.exe"
+             Link="Native/shaderconvert-hlsl.exe" ExcludeFromSingleFile="true" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

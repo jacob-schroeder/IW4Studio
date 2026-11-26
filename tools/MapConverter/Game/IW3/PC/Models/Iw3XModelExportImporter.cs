@@ -1,6 +1,8 @@
+using MapConverter.IW3.PC.Assets.XModel;
 using IW4.Game.Codecs.XModel;
 using System.Globalization;
 using System.Numerics;
+using MapConverter.IW3.PC.Rules;
 using System.Text.Json;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Assets.ColMap;
@@ -224,7 +226,8 @@ internal static class Iw3XModelExportImporter
                 ? XModelExportLodCompiler.Compile(
                     document,
                     skeleton.Bones.Count,
-                    compileCollisionTrees)
+                    compileCollisionTrees,
+                    lod.SourceBasis)
                 : Iw3RigidSurfaceCompiler.Compile(
                     lod.TangentSource,
                     document,
@@ -620,6 +623,9 @@ internal static class Iw3XModelExportImporter
                 modelName,
                 lodIndex);
             XModelExportDocument tangentSource = document;
+            IReadOnlyList<XModelSourceVertexBasis>? sourceBasis = metadata.IsAnimated
+                ? ReadSourceBasis(lodPath, document.Vertices.Count, modelName, lodIndex)
+                : null;
             if (!metadata.IsAnimated)
             {
                 document = SplitRigidBoneSurfacePartitions(
@@ -631,8 +637,33 @@ internal static class Iw3XModelExportImporter
                 lodIndex,
                 metadataLod,
                 tangentSource,
-                document);
+                document,
+                sourceBasis);
         }
+    }
+
+    private static IReadOnlyList<XModelSourceVertexBasis>? ReadSourceBasis(
+        string lodPath, int vertexCount, string modelName, int lodIndex)
+    {
+        string path = Path.ChangeExtension(lodPath, ".basis.json");
+        if (!File.Exists(path)) return null;
+        float[][] rows;
+        try
+        {
+            rows = JsonSerializer.Deserialize<float[][]>(File.ReadAllBytes(path))
+                ?? throw new JsonException("Missing vertex rows.");
+        }
+        catch (JsonException error)
+        {
+            throw new InvalidDataException(
+                $"IW3 XModel '{modelName}' LOD {lodIndex} has invalid source basis data.", error);
+        }
+        if (rows.Length != vertexCount || rows.Any(row => row is null || row.Length != 7))
+            throw new InvalidDataException(
+                $"IW3 XModel '{modelName}' LOD {lodIndex} source basis does not match its vertex table.");
+        return Array.AsReadOnly(rows.Select(row => new XModelSourceVertexBasis(
+            new Vector3(row[0], row[1], row[2]),
+            new Vector3(row[3], row[4], row[5]), row[6])).ToArray());
     }
 
     private static void ValidateMaterialMappings(
@@ -1848,7 +1879,8 @@ internal static class Iw3XModelExportImporter
         int Index,
         XModelMetadataLod Metadata,
         XModelExportDocument TangentSource,
-        XModelExportDocument Document);
+        XModelExportDocument Document,
+        IReadOnlyList<XModelSourceVertexBasis>? SourceBasis);
 
     private sealed record XModelSkeleton(
         IReadOnlyList<XModelExportBone> Bones,

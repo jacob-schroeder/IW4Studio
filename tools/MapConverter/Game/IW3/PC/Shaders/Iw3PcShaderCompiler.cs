@@ -1,18 +1,17 @@
 using System.Buffers.Binary;
-using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using IW4.Game.Assets.TechniqueSet;
 using IW4.Game.Pointers;
 using MapConverter.Game.IW3.PC.Techniques;
+using MapConverter.IW3.PC.Readers.Shaders;
 
 namespace MapConverter.Game.IW3.PC.Shaders;
 
 /// <summary>
 /// Lowers a recovered IW3 Direct3D 9 shader to RSX instructions without
-/// copying a target-game shader payload. OpenAssetTools is only the extractor;
-/// this compiler consumes its recovered Direct3D bytecode as source input.
+/// copying a target-game shader payload.
 /// </summary>
 internal sealed class Iw3PcShaderCompiler
 {
@@ -63,7 +62,7 @@ internal sealed class Iw3PcShaderCompiler
 
         byte[] direct3D = File.ReadAllBytes(fullPath);
         ValidateDirect3DProgram(direct3D, source.Stage, source.ShaderModel, fullPath);
-        IReadOnlyList<Direct3DConstant> constants = ReadConstantTable(direct3D, fullPath);
+        IReadOnlyList<Iw3PcD3d9Constant> constants = Iw3PcD3d9ConstantTable.Read(direct3D, fullPath);
         ValidateSourceArguments(source, constants, fullPath);
         Iw3ShaderParameter[] parameters = constants.Select(CreateParameter).ToArray();
         (int World, int ViewProjection) positionMatrices = nativeRsxSource ? (-1, -1) : GetPositionMatrixRegisters(source, parameters);
@@ -84,75 +83,36 @@ internal sealed class Iw3PcShaderCompiler
                  (constant.RegisterIndex == sunShadow.ModelSampler && constant.Type != Direct3DSampler3D))))
             throw new InvalidDataException($"Shader '{fullPath}' binds an unsupported Sun receiver sampler dimension.");
 
-        string scratchDirectory = Path.Combine(Path.GetTempPath(), "mapconverter-shaders", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(scratchDirectory);
-        try
+        (string assembly, string mojoProfile) = RsxShaderLibrary.Translate(direct3D, source.Stage, fullPath);
+        (string normalized, bool worldPositionLowered) = NormalizeAssembly(assembly, source.Stage,
+            signedNormalInputMask, decodedTexCoordInputMask, comparisonSamplerMask, reflectionProbeSamplerMask,
+            positionMatrices, sunShadow, nativeRsxSource ? -1 : GetFogRegister(source, parameters),
+            nativeRsxSource ? (-1, -1, -1) : GetLightColorRegisters(source, parameters));
+        byte[] binary = RsxShaderLibrary.Assemble(normalized, source.Stage, fullPath);
+        RsxProgram program = ReadRsxProgram(binary, source.Stage, fullPath);
+        byte[] data = BuildCgProgram(source.Stage, constants, program, fullPath, nativeRsxSource);
+        MaterialShaderKind kind = source.Stage == Iw3ShaderStage.Vertex
+            ? MaterialShaderKind.Vertex
+            : MaterialShaderKind.Pixel;
+        var asset = new MaterialShaderAsset
         {
-            string inputPath = Path.Combine(scratchDirectory, "input.cso");
-            string assemblyPath = Path.Combine(scratchDirectory, "program.asm");
-            string binaryPath = Path.Combine(scratchDirectory, "program.rsx");
-            File.WriteAllBytes(inputPath, direct3D);
-
-            string mojoProfile = TranslateWithMojoShader(inputPath, assemblyPath, source.Stage, fullPath);
-            bool worldPositionLowered = NormalizeAssembly(assemblyPath, source.Stage, signedNormalInputMask,
-                decodedTexCoordInputMask,
-                comparisonSamplerMask, reflectionProbeSamplerMask, positionMatrices,
-                sunShadow, nativeRsxSource ? -1 : GetFogRegister(source, parameters),
-                nativeRsxSource ? (-1, -1, -1) : GetLightColorRegisters(source, parameters));
-            Assemble(assemblyPath, binaryPath, source.Stage, fullPath);
-
-            RsxProgram program = ReadRsxProgram(File.ReadAllBytes(binaryPath), source.Stage, fullPath);
-            byte[] data = BuildCgProgram(source.Stage, constants, program, fullPath, nativeRsxSource);
-            MaterialShaderKind kind = source.Stage == Iw3ShaderStage.Vertex
-                ? MaterialShaderKind.Vertex
-                : MaterialShaderKind.Pixel;
-            var asset = new MaterialShaderAsset
-            {
-                Kind = kind,
-                Name = source.ProgramName,
-                DataPointer = default,
-                DataSize = checked((uint)data.Length),
-                Data = data,
-                LoadDefTail = new byte[MaterialShaderAsset.GetLoadDefTailSize(kind)]
-            };
-            return new Iw3ShaderCompilation(
-                asset,
-                parameters,
-                worldPositionLowered,
-                positionMatrices.World,
-                $"MojoShader ad5dff84830c2863c841f4b1f4e3df78c705b383 ({mojoProfile}) + PSL1GHT cgcomp f649a08fd536a9e27c08c7db2d93a2d7ee4c3bbe");
-        }
-        finally
-        {
-            if (Directory.Exists(scratchDirectory))
-                Directory.Delete(scratchDirectory, recursive: true);
-        }
+            Kind = kind,
+            Name = source.ProgramName,
+            DataPointer = default,
+            DataSize = checked((uint)data.Length),
+            Data = data,
+            LoadDefTail = new byte[MaterialShaderAsset.GetLoadDefTailSize(kind)]
+        };
+        return new Iw3ShaderCompilation(
+            asset,
+            parameters,
+            worldPositionLowered,
+            positionMatrices.World,
+            $"MojoShader ad5dff84830c2863c841f4b1f4e3df78c705b383 ({mojoProfile}) + PSL1GHT cgcomp f649a08fd536a9e27c08c7db2d93a2d7ee4c3bbe");
     }
 
-    private static string TranslateWithMojoShader(
-        string inputPath,
-        string assemblyPath,
-        Iw3ShaderStage stage,
-        string sourcePath)
-    {
-        string tool = FindNativeTool("mapconverter-mojoshader");
-        string preferred = stage == Iw3ShaderStage.Vertex ? "nv3" : "nv3";
-        if (Run(tool, [preferred, inputPath, assemblyPath], out string error))
-            return preferred;
-
-        // NV4 is needed by known IW3 pixel programs that contain TEXLDL.
-        if (stage == Iw3ShaderStage.Pixel &&
-            Run(tool, ["nv4", inputPath, assemblyPath], out string fallbackError))
-        {
-            return "nv4";
-        }
-
-        throw new InvalidDataException(
-            $"Shader '{sourcePath}' could not be translated from Direct3D 9 bytecode. {error}");
-    }
-
-    private static bool NormalizeAssembly(
-        string assemblyPath,
+    private static (string Assembly, bool WorldPositionLowered) NormalizeAssembly(
+        string assembly,
         Iw3ShaderStage stage,
         ushort signedNormalInputMask,
         ushort decodedTexCoordInputMask,
@@ -163,7 +123,6 @@ internal sealed class Iw3PcShaderCompiler
         int fogRegister,
         (int SunSpecular, int PointDiffuse, int PointSpecular) lightColors)
     {
-        string assembly = File.ReadAllText(assemblyPath, Encoding.ASCII);
         string requiredHeader = stage == Iw3ShaderStage.Vertex ? "!!ARBvp1.0" : "!!ARBfp1.0";
         int firstLine = assembly.IndexOf('\n');
         if (firstLine < 0)
@@ -217,8 +176,7 @@ internal sealed class Iw3PcShaderCompiler
         }
         if (stage == Iw3ShaderStage.Vertex)
             assembly = RelocateVertexLiterals(assembly);
-        File.WriteAllText(assemblyPath, assembly, Encoding.ASCII);
-        return worldPositionLowered;
+        return (assembly, worldPositionLowered);
     }
 
     private static string RelocateVertexLiterals(string assembly)
@@ -1963,53 +1921,6 @@ internal sealed class Iw3PcShaderCompiler
         return string.Join(' ', components);
     }
 
-    private static void Assemble(string assemblyPath, string binaryPath, Iw3ShaderStage stage, string sourcePath)
-    {
-        string tool = FindNativeTool("mapconverter-cgcomp");
-        string flag = stage == Iw3ShaderStage.Vertex ? "-v" : "-f";
-        if (!Run(tool, [flag, "-a", assemblyPath, binaryPath], out string error))
-        {
-            throw new InvalidDataException(
-                $"Shader '{sourcePath}' could not be assembled for RSX. {error}");
-        }
-    }
-
-    private static bool Run(string executable, IReadOnlyList<string> arguments, out string error)
-    {
-        using var process = new Process
-        {
-            StartInfo = new ProcessStartInfo(executable)
-            {
-                UseShellExecute = false,
-                RedirectStandardError = true,
-                RedirectStandardOutput = true,
-                CreateNoWindow = true
-            }
-        };
-        foreach (string argument in arguments)
-            process.StartInfo.ArgumentList.Add(argument);
-        process.Start();
-        string standardError = process.StandardError.ReadToEnd();
-        string standardOutput = process.StandardOutput.ReadToEnd();
-        process.WaitForExit();
-        error = string.Join(Environment.NewLine, new[] { standardError, standardOutput }
-            .Where(value => !string.IsNullOrWhiteSpace(value))).Trim();
-        if (process.ExitCode != 0 && string.IsNullOrEmpty(error))
-            error = $"The local shader tool exited with code {process.ExitCode}.";
-        return process.ExitCode == 0;
-    }
-
-    private static string FindNativeTool(string name)
-    {
-        string path = Path.Combine(AppContext.BaseDirectory, "Native", name);
-        if (!File.Exists(path))
-        {
-            throw new InvalidOperationException(
-                $"The local MapConverter shader tool '{name}' is missing at '{path}'. Build MapConverter before running it.");
-        }
-        return path;
-    }
-
     private static void ValidateDirect3DProgram(
         ReadOnlySpan<byte> program,
         Iw3ShaderStage expectedStage,
@@ -2053,63 +1964,9 @@ internal sealed class Iw3PcShaderCompiler
             new Iw3ShaderModel(major, minor));
     }
 
-    private static IReadOnlyList<Direct3DConstant> ReadConstantTable(ReadOnlySpan<byte> data, string path)
-    {
-        for (int offset = 4; offset + 8 <= data.Length; offset += 4)
-        {
-            uint token = ReadLittleEndian(data, offset);
-            if ((token & 0xffff) != 0xfffe)
-                continue;
-            int byteLength = checked((int)(token >> 16) * 4);
-            int payload = offset + 4;
-            if (byteLength < 28 || payload + byteLength > data.Length ||
-                !data.Slice(payload, 4).SequenceEqual("CTAB"u8))
-            {
-                continue;
-            }
-            return ParseConstantTable(data.Slice(payload, byteLength), path);
-        }
-        return [];
-    }
-
-    private static IReadOnlyList<Direct3DConstant> ParseConstantTable(ReadOnlySpan<byte> table, string path)
-    {
-        const int ctabSignatureSize = 4;
-        if (ReadLittleEndian(table, 4) != 28)
-            throw new InvalidDataException($"Shader '{path}' has an unsupported CTAB header.");
-        int count = checked((int)ReadLittleEndian(table, 16));
-        if (count == 0)
-            return [];
-        int infoOffset = checked(ctabSignatureSize + (int)ReadLittleEndian(table, 20));
-        if (count > 256 || infoOffset < 28 || infoOffset + checked(count * 20) > table.Length)
-            throw new InvalidDataException($"Shader '{path}' has an invalid CTAB constant table.");
-
-        var result = new List<Direct3DConstant>(count);
-        for (int index = 0; index < count; index++)
-        {
-            int entry = infoOffset + index * 20;
-            string name = ReadCString(table, checked(ctabSignatureSize + (int)ReadLittleEndian(table, entry)), path);
-            ushort registerSet = ReadLittleEndian16(table, entry + 4);
-            ushort registerIndex = ReadLittleEndian16(table, entry + 6);
-            ushort registerCount = ReadLittleEndian16(table, entry + 8);
-            int typeOffset = checked(ctabSignatureSize + (int)ReadLittleEndian(table, entry + 12));
-            if (registerCount == 0 || typeOffset < 0 || typeOffset + 16 > table.Length)
-                throw new InvalidDataException($"Shader '{path}' has an invalid CTAB constant '{name}'.");
-            ushort parameterClass = ReadLittleEndian16(table, typeOffset);
-            ushort type = ReadLittleEndian16(table, typeOffset + 2);
-            ushort rows = ReadLittleEndian16(table, typeOffset + 4);
-            ushort columns = ReadLittleEndian16(table, typeOffset + 6);
-            ushort elements = ReadLittleEndian16(table, typeOffset + 8);
-            result.Add(new Direct3DConstant(
-                name, registerSet, registerIndex, registerCount, type,
-                parameterClass, rows, columns, elements));
-        }
-        return result;
-    }
-
     private static void ValidateSourceArguments(
         Iw3ShaderSource source,
-        IReadOnlyList<Direct3DConstant> constants,
+        IReadOnlyList<Iw3PcD3d9Constant> constants,
         string path)
     {
         foreach (Iw3ShaderArgumentSource argument in source.Arguments)
@@ -2242,7 +2099,7 @@ internal sealed class Iw3PcShaderCompiler
 
     private static byte[] BuildCgProgram(
         Iw3ShaderStage stage,
-        IReadOnlyList<Direct3DConstant> constants,
+        IReadOnlyList<Iw3PcD3d9Constant> constants,
         RsxProgram rsx,
         string path,
         bool nativeRsxSource)
@@ -2254,8 +2111,8 @@ internal sealed class Iw3PcShaderCompiler
         // Preserve that layout so subsequent edits can recover the register assignments.
         if (nativeRsxSource && stage == Iw3ShaderStage.Vertex)
         {
-            var reflected = new List<Direct3DConstant>(constants.Count);
-            foreach (Direct3DConstant uniform in constants)
+            var reflected = new List<Iw3PcD3d9Constant>(constants.Count);
+            foreach (Iw3PcD3d9Constant uniform in constants)
             {
                 reflected.Add(uniform);
                 if (uniform.RegisterSet != 2 || uniform.Class < 2) continue;
@@ -2296,7 +2153,7 @@ internal sealed class Iw3PcShaderCompiler
         int vertexDefaultsOffset = cursor;
         cursor = checked(cursor + rsx.VertexConstants.Count * 16);
         var names = new int[parameterCount];
-        foreach ((Direct3DConstant constant, int index) in constants.Select((value, index) => (value, index)))
+        foreach ((Iw3PcD3d9Constant constant, int index) in constants.Select((value, index) => (value, index)))
         {
             names[index] = cursor;
             cursor = checked(cursor + Encoding.ASCII.GetByteCount(constant.Name) + 1);
@@ -2324,7 +2181,7 @@ internal sealed class Iw3PcShaderCompiler
 
         for (int index = 0; index < constants.Count; index++)
         {
-            Direct3DConstant constant = constants[index];
+            Iw3PcD3d9Constant constant = constants[index];
             int entry = parameterOffset + index * CgParameterSize;
             bool sampler = constant.RegisterSet == 3;
             if (constant.RegisterSet is not (2 or 3))
@@ -2417,7 +2274,7 @@ internal sealed class Iw3PcShaderCompiler
         return data;
     }
 
-    private static uint GetCgParameterType(Direct3DConstant constant, string path)
+    private static uint GetCgParameterType(Iw3PcD3d9Constant constant, string path)
     {
         if (constant.RegisterSet == 2)
         {
@@ -2445,7 +2302,7 @@ internal sealed class Iw3PcShaderCompiler
 
     private static IReadOnlyList<uint>[] BuildFragmentPatchLists(
         Iw3ShaderStage stage,
-        IReadOnlyList<Direct3DConstant> constants,
+        IReadOnlyList<Iw3PcD3d9Constant> constants,
         RsxProgram rsx,
         string path)
     {
@@ -2464,7 +2321,7 @@ internal sealed class Iw3PcShaderCompiler
             return result;
         }
 
-        foreach (Direct3DConstant constant in constants)
+        foreach (Iw3PcD3d9Constant constant in constants)
         {
             if (constant.RegisterSet == 2 && constant.RegisterCount != 1)
             {
@@ -2494,7 +2351,7 @@ internal sealed class Iw3PcShaderCompiler
             int owner = -1;
             for (int index = 0; index < constants.Count; index++)
             {
-                Direct3DConstant constant = constants[index];
+                Iw3PcD3d9Constant constant = constants[index];
                 if (constant.RegisterSet != 2)
                     continue;
                 uint first = constant.RegisterIndex;
@@ -2530,7 +2387,7 @@ internal sealed class Iw3PcShaderCompiler
         return result;
     }
 
-    private static Iw3ShaderParameter CreateParameter(Direct3DConstant value) => new(
+    private static Iw3ShaderParameter CreateParameter(Iw3PcD3d9Constant value) => new(
         value.Name,
         value.RegisterSet == 3 ? CgTextureUnitBase + value.RegisterIndex : CgConstantRegister,
         value.RegisterSet == 3 ? uint.MaxValue : value.RegisterIndex,
@@ -2542,16 +2399,6 @@ internal sealed class Iw3PcShaderCompiler
         value.Columns,
         value.Elements);
 
-    private static string ReadCString(ReadOnlySpan<byte> source, int offset, string path)
-    {
-        if (offset < 0 || offset >= source.Length)
-            throw new InvalidDataException($"Shader '{path}' contains an out-of-range CTAB string.");
-        int length = source[offset..].IndexOf((byte)0);
-        if (length <= 0)
-            throw new InvalidDataException($"Shader '{path}' contains an invalid CTAB string.");
-        return Encoding.ASCII.GetString(source.Slice(offset, length));
-    }
-
     private static int Align(int value, int alignment) => checked((value + alignment - 1) & -alignment);
     private static uint ReadLittleEndian(ReadOnlySpan<byte> value, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(value.Slice(offset, 4));
     private static ushort ReadLittleEndian16(ReadOnlySpan<byte> value, int offset) => BinaryPrimitives.ReadUInt16LittleEndian(value.Slice(offset, 2));
@@ -2560,16 +2407,6 @@ internal sealed class Iw3PcShaderCompiler
     private static void WriteBigEndian(Span<byte> value, int offset, uint integer) => BinaryPrimitives.WriteUInt32BigEndian(value.Slice(offset, 4), integer);
     private static void WriteBigEndian16(Span<byte> value, int offset, ushort integer) => BinaryPrimitives.WriteUInt16BigEndian(value.Slice(offset, 2), integer);
 
-    private sealed record Direct3DConstant(
-        string Name,
-        ushort RegisterSet,
-        ushort RegisterIndex,
-        ushort RegisterCount,
-        ushort Type,
-        ushort Class,
-        ushort Rows,
-        ushort Columns,
-        ushort Elements);
     private sealed record RsxFragmentRelocation(uint RegisterIndex, uint UploadOffset);
     private sealed record RsxProgram(
         int InstructionCount,

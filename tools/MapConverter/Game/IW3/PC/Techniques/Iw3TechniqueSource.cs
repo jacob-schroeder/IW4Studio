@@ -1,45 +1,5 @@
+using MapConverter.IW3.PC.Assets.TechniqueSet;
 namespace MapConverter.Game.IW3.PC.Techniques;
-
-/// <summary>
-/// IW3's 34 material-technique table slots, in serialized order.
-/// </summary>
-internal enum Iw3TechniqueSlot : byte
-{
-    DepthPrepass = 0,
-    BuildFloatZ = 1,
-    BuildShadowmapDepth = 2,
-    BuildShadowmapColor = 3,
-    Unlit = 4,
-    Emissive = 5,
-    EmissiveShadow = 6,
-    Lit = 7,
-    LitSun = 8,
-    LitSunShadow = 9,
-    LitSpot = 10,
-    LitSpotShadow = 11,
-    LitOmni = 12,
-    LitOmniShadow = 13,
-    LitInstanced = 14,
-    LitInstancedSun = 15,
-    LitInstancedSunShadow = 16,
-    LitInstancedSpot = 17,
-    LitInstancedSpotShadow = 18,
-    LitInstancedOmni = 19,
-    LitInstancedOmniShadow = 20,
-    LightSpot = 21,
-    LightOmni = 22,
-    LightSpotShadow = 23,
-    FakeLightNormal = 24,
-    FakeLightView = 25,
-    SunlightPreview = 26,
-    CaseTexture = 27,
-    WireframeSolid = 28,
-    WireframeShaded = 29,
-    ShadowCookieCaster = 30,
-    ShadowCookieReceiver = 31,
-    DebugBumpmap = 32,
-    DebugBumpmapInstanced = 33,
-}
 
 internal enum Iw3ShaderStage
 {
@@ -91,6 +51,9 @@ internal sealed record Iw3CodeShaderValueSource(
     Iw3CodeShaderValueKind Kind,
     string Accessor,
     int? ElementIndex) : Iw3ShaderValueSource;
+
+internal sealed record Iw3CodeShaderRowsSource(
+    string Accessor, int? ElementIndex, int FirstRow, int RowCount) : Iw3ShaderValueSource;
 
 internal sealed record Iw3LiteralShaderValueSource(
     float X,

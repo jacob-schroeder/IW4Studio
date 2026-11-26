@@ -93,6 +93,9 @@ existing input decoding adaptations when converting shaders written for packed P
 vertex streams. Values are 16-bit RSX input-slot bit masks, in decimal or `0x` hex.
 Leave both zero for HLSL written against the actual PS3 vertex inputs.
 
-The repository currently builds the native conversion tools on macOS. The HLSL
-frontend is a Windows executable run through Wine on macOS; Windows and Linux
-native-tool build and distribution are not provided by this project.
+For compiled D3D9 shaders, build on the target OS. On Linux, use a build host
+with the target architecture. The build
+uses a C/C++ compiler on Linux or macOS and LLVM Clang with the Windows SDK
+and C++ build tools on Windows. The resulting build and publish directories
+include the native shader library. Compiled shader conversion calls it directly.
+The separate HLSL frontend build above targets Wine on macOS.

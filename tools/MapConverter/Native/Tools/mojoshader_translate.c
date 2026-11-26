@@ -1,11 +1,28 @@
 /*
- * MapConverter's narrow command-line wrapper around the vendored MojoShader
+ * MapConverter's in-memory interface to the vendored MojoShader
  * parser. The bundled upstream license is in ThirdParty/MojoShader/LICENSE.txt.
  */
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "mojoshader.h"
+
+#ifdef _WIN32
+#define IW4_EXPORT __declspec(dllexport)
+#else
+#define IW4_EXPORT __attribute__((visibility("default")))
+#endif
+
+static char *copy_text(const char *text, size_t length)
+{
+    char *copy = (char *)malloc(length + 1);
+    if (copy != NULL) {
+        memcpy(copy, text, length);
+        copy[length] = '\0';
+    }
+    return copy;
+}
 
 static int vertex_input_name(const MOJOSHADER_attribute *attribute,
                              char *name, size_t capacity)
@@ -44,9 +61,10 @@ static int vertex_input_name(const MOJOSHADER_attribute *attribute,
 
 /* MojoShader's generic attribute numbers are GL binding locations.  Restore
  * the parsed D3D semantics so cgcomp selects the matching RSX input registers. */
-static char *vertex_assembly(const MOJOSHADER_parseData *result)
+static char *vertex_assembly(const MOJOSHADER_parseData *result, char **error)
 {
     size_t length = (size_t)result->output_len;
+    if ((size_t)result->attribute_count > (SIZE_MAX - length - 1) / 64) return NULL;
     size_t capacity = length + (size_t)result->attribute_count * 64 + 1;
     char *assembly = (char *)malloc(capacity);
     int index;
@@ -62,8 +80,10 @@ static char *vertex_assembly(const MOJOSHADER_parseData *result)
         int prefix_length;
         if (attribute->name == NULL || attribute->name[0] == '\0' ||
             !vertex_input_name(attribute, semantic, sizeof(semantic))) {
-            fprintf(stderr, "unsupported vertex input semantic %d[%d]\n",
-                    attribute->usage, attribute->index);
+            char message[96];
+            snprintf(message, sizeof(message), "Unsupported vertex input semantic %d[%d].",
+                     attribute->usage, attribute->index);
+            *error = copy_text(message, strlen(message));
             goto fail;
         }
         prefix_length = snprintf(prefix, sizeof(prefix),
@@ -93,79 +113,55 @@ static char *vertex_assembly(const MOJOSHADER_parseData *result)
     return assembly;
 
 fail:
-    fprintf(stderr, "cannot preserve vertex input semantics in translated assembly\n");
+    if (*error == NULL) {
+        const char message[] = "Cannot preserve vertex input semantics in translated assembly.";
+        *error = copy_text(message, sizeof(message) - 1);
+    }
     free(assembly);
     return NULL;
 }
 
-int main(int argc, char **argv)
+static char *parse_errors(const MOJOSHADER_parseData *result)
 {
-    const MOJOSHADER_parseData *result;
-    FILE *input;
-    FILE *output;
-    unsigned char *bytes;
-    char *vertex_output = NULL;
-    const char *assembly;
-    size_t assembly_length;
-    long length;
-    int index;
+    size_t length = 0;
+    int i;
+    for (i = 0; i < result->error_count; i++) {
+        size_t count = strlen(result->errors[i].error);
+        if (count >= SIZE_MAX - length) return NULL;
+        length += count + 1;
+    }
+    if (length == 0) return NULL;
+    char *message = (char *)malloc(length);
+    if (message == NULL) return NULL;
+    char *cursor = message;
+    for (i = 0; i < result->error_count; i++) {
+        const char *part = result->errors[i].error;
+        size_t count = strlen(part);
+        memcpy(cursor, part, count);
+        cursor += count;
+        *cursor++ = i + 1 == result->error_count ? '\0' : '\n';
+    }
+    return message;
+}
 
-    if (argc != 4) {
-        fprintf(stderr, "usage: %s <nv3|nv4> <input-cso> <output-assembly>\\n", argv[0]);
-        return 2;
-    }
-    if (strcmp(argv[1], "nv3") != 0 && strcmp(argv[1], "nv4") != 0) {
-        fprintf(stderr, "unsupported MojoShader profile '%s'\\n", argv[1]);
-        return 2;
-    }
-    input = fopen(argv[2], "rb");
-    if (input == NULL) {
-        fprintf(stderr, "cannot open '%s'\\n", argv[2]);
-        return 1;
-    }
-    if (fseek(input, 0, SEEK_END) != 0 || (length = ftell(input)) <= 0 ||
-        fseek(input, 0, SEEK_SET) != 0) {
-        fprintf(stderr, "cannot size '%s'\\n", argv[2]);
-        fclose(input);
-        return 1;
-    }
-    bytes = (unsigned char *)malloc((size_t)length);
-    if (bytes == NULL || fread(bytes, 1, (size_t)length, input) != (size_t)length) {
-        fprintf(stderr, "cannot read '%s'\\n", argv[2]);
-        free(bytes);
-        fclose(input);
-        return 1;
-    }
-    fclose(input);
-
-    result = MOJOSHADER_parse(argv[1], NULL, bytes, (unsigned int)length,
-                              NULL, 0, NULL, 0, NULL, NULL, NULL);
-    free(bytes);
-    if (result->error_count != 0 || result->output == NULL) {
-        for (index = 0; index < result->error_count; index++)
-            fprintf(stderr, "%s\\n", result->errors[index].error);
-        MOJOSHADER_freeParseData(result);
-        return 1;
-    }
-    if (result->shader_type == MOJOSHADER_TYPE_VERTEX) {
-        vertex_output = vertex_assembly(result);
-        if (vertex_output == NULL) {
-            MOJOSHADER_freeParseData(result);
-            return 1;
-        }
-    }
-    assembly = vertex_output != NULL ? vertex_output : result->output;
-    assembly_length = vertex_output != NULL ? strlen(vertex_output) : (size_t)result->output_len;
-    output = fopen(argv[3], "wb");
-    if (output == NULL || fwrite(assembly, 1, assembly_length, output) != assembly_length) {
-        fprintf(stderr, "cannot write '%s'\\n", argv[3]);
-        if (output != NULL) fclose(output);
-        free(vertex_output);
-        MOJOSHADER_freeParseData(result);
-        return 1;
-    }
-    fclose(output);
-    free(vertex_output);
+IW4_EXPORT int iw4_translate_d3d9(const char *profile, const unsigned char *bytes,
+                                  unsigned int length, char **output, char **error)
+{
+    *output = NULL;
+    *error = NULL;
+    const MOJOSHADER_parseData *result = MOJOSHADER_parse(profile, NULL, bytes, length,
+                                                          NULL, 0, NULL, 0, NULL, NULL, NULL);
+    if (result->error_count != 0 || result->output == NULL)
+        *error = parse_errors(result);
+    else if (result->shader_type == MOJOSHADER_TYPE_VERTEX)
+        *output = vertex_assembly(result, error);
+    else
+        *output = copy_text(result->output, (size_t)result->output_len);
     MOJOSHADER_freeParseData(result);
-    return 0;
+    return *output == NULL;
+}
+
+IW4_EXPORT void iw4_shader_free(void *buffer)
+{
+    free(buffer);
 }

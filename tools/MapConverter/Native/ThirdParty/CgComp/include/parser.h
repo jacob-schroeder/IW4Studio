@@ -7,6 +7,11 @@
 #include <string>
 #include <sstream>
 #include <stdexcept>
+#include <new>
+
+// The original parser used process-global strtok state. Keep its tokenization
+// semantics while making separate assembler calls safe on different threads.
+char *cgcomp_strtok(char *text, const char *delimiters);
 
 #include "nv30_vertprog.h"
 #include "nv40_vertprog.h"

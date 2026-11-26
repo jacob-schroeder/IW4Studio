@@ -1,9 +1,11 @@
+using MapConverter.Game.IW3.PC.World;
+using MapConverter.IW3.PC.Readers.World;
 using IW4.Linker.Packaging;
-using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
+using MapConverter.IW3.PC.Assets;
+using MapConverter.IW3.PC.Readers;
 using MapConverter.Game.IW3.PC.Conversion;
-using MapConverter.Game.IW3.PC.Images;
 using MapConverter.Game.IW3.PS3.Extraction;
 using MapConverter.Game.IW3.PS3.Rules;
 
@@ -23,7 +25,6 @@ internal sealed class Iw3PcSourceLibrary
         "image", "material", "xmodel", "rawfile", "mapents", "physpreset", "techniqueset",
     };
 
-    private readonly string _nativePath;
     private readonly string _libraryDirectory;
     private readonly string _scratchDirectory;
     private readonly string? _customIwd;
@@ -40,10 +41,9 @@ internal sealed class Iw3PcSourceLibrary
     private int _exportSequence;
 
     private Iw3PcSourceLibrary(
-        string nativePath, string libraryDirectory, string scratchDirectory, string? customIwd,
+        string libraryDirectory, string scratchDirectory, string? customIwd,
         IReadOnlyList<string> iwdPaths)
     {
-        _nativePath = nativePath;
         _libraryDirectory = libraryDirectory;
         _scratchDirectory = scratchDirectory;
         _customIwd = customIwd;
@@ -64,7 +64,7 @@ internal sealed class Iw3PcSourceLibrary
             _soundSources.Add(path, [archive]);
     }
 
-    internal async Task<string> ResolveSoundFastFileAsync(string mapFF, string alias, CancellationToken token)
+    internal async Task<(string Path, int RecordId)> ResolveSoundRecordAsync(string mapFF, string alias, CancellationToken token)
     {
         var errors = new SortedSet<string>(StringComparer.Ordinal);
         Node? node = await ResolveNamedAsync(_closures[ExistingPath(mapFF, directory: false)].Root,
@@ -74,7 +74,7 @@ internal sealed class Iw3PcSourceLibrary
         if (node.Source.IsPs3)
             throw new NotSupportedException($"PC sound '{alias}' resolves to a PS3 fastfile.");
         _capturedSoundDefinitions[alias] = node.Source.Path;
-        return node.Source.Path;
+        return (node.Source.Path, node.Asset.Id);
     }
 
     internal async Task<IReadOnlyList<(string Name, string FastFilePath, int RecordId)>>
@@ -125,16 +125,10 @@ internal sealed class Iw3PcSourceLibrary
         (string fastFile, int recordId) = await ResolveRawFileAsync(mapFF, name, token).ConfigureAwait(false);
         Source source = _sources.Single(source => PathComparer.Equals(source.Path, fastFile));
         await VerifyHashAsync(source.Path, source.Sha256, token).ConfigureAwait(false);
-        string selection = Path.Combine(_scratchDirectory, $"source-script-{_exportSequence++:D6}.json");
-        string output = Path.Combine(_scratchDirectory, $"source-script-{_exportSequence++:D6}");
-        RejectExisting(selection);
-        RejectExisting(output);
-        await File.WriteAllBytesAsync(selection, JsonSerializer.SerializeToUtf8Bytes(new[] { recordId }), token)
-            .ConfigureAwait(false);
-        await Iw3PcExtractionBackend.RunToolAsync("IW3 shared vehicle recipe extraction", _nativePath,
-            _scratchDirectory, ["--extract-assets", fastFile, selection, output], token).ConfigureAwait(false);
+        var zone = Iw3PcZone.Load(source.Path, token);
+        byte[] bytes = Iw3PcAssetExporter.ReadRawFile(zone, zone.Assets[recordId]);
         await VerifyHashAsync(source.Path, source.Sha256, token).ConfigureAwait(false);
-        return await File.ReadAllBytesAsync(Path.Combine(output, name), token).ConfigureAwait(false);
+        return bytes;
     }
 
     internal async Task IncludeMapVehicleAssetsAsync(string mapFF,
@@ -160,16 +154,15 @@ internal sealed class Iw3PcSourceLibrary
                 string.Join("\n", errors.Select(error => "- " + error)));
     }
 
-    internal string EffectSourcePath(string mapFF, string name)
+    internal (string Path, int RecordId) EffectSourceRecord(string mapFF, string name)
     {
         Closure closure = _closures[ExistingPath(mapFF, directory: false)];
         if (!closure.SelectedDefinitions.TryGetValue(("fx", name.ToLowerInvariant()), out Node? selected))
             throw new InvalidDataException($"Vehicle effect '{name}' has no resolved source definition.");
-        return selected.Source.Path;
+        return (selected.Source.Path, selected.Asset.Id);
     }
 
     internal static async Task<Iw3PcSourceLibrary> ResolveAsync(
-        string nativePath,
         string mapFF,
         string loadFF,
         string? customIwd,
@@ -178,7 +171,6 @@ internal sealed class Iw3PcSourceLibrary
         bool allowMissingSounds,
         CancellationToken cancellationToken)
     {
-        nativePath = ExistingPath(nativePath, directory: false);
         mapFF = ExistingPath(mapFF, directory: false);
         loadFF = ExistingPath(loadFF, directory: false);
         libraryDirectory = ExistingPath(libraryDirectory, directory: true);
@@ -194,7 +186,7 @@ internal sealed class Iw3PcSourceLibrary
         iwdPaths.AddRange(files.Where(path =>
             path.EndsWith(".iwd", StringComparison.OrdinalIgnoreCase) && !PathComparer.Equals(path, customIwd)));
         var library = new Iw3PcSourceLibrary(
-            nativePath, libraryDirectory, scratch, customIwd, iwdPaths.AsReadOnly());
+            libraryDirectory, scratch, customIwd, iwdPaths.AsReadOnly());
 
         var inputs = new[] { (Path: mapFF, Role: "map"), (Path: loadFF, Role: "load") };
         foreach ((string path, string role) in inputs.Concat(files
@@ -208,21 +200,8 @@ internal sealed class Iw3PcSourceLibrary
             Catalog catalog;
             try
             {
-                if (isPs3)
-                {
-                    catalog = Iw3Ps3FastFileCatalog.Read(path, cancellationToken);
-                }
-                else
-                {
-                    string catalogPath = Path.Combine(scratch, $"source-catalog-{library._sources.Count:D6}.json");
-                    RejectExisting(catalogPath);
-                    await Iw3PcExtractionBackend.RunToolAsync(
-                        $"IW3 source catalog '{path}'", nativePath, scratch,
-                        ["--catalog-assets", path, catalogPath], cancellationToken).ConfigureAwait(false);
-                    await using FileStream stream = File.OpenRead(catalogPath);
-                    catalog = await JsonSerializer.DeserializeAsync<Catalog>(stream, cancellationToken: cancellationToken)
-                        .ConfigureAwait(false) ?? throw new InvalidDataException("The catalog is null.");
-                }
+                catalog = isPs3 ? Iw3Ps3FastFileCatalog.Read(path, cancellationToken)
+                    : CreateCatalog(Iw3PcZone.Load(path, cancellationToken));
                 await VerifyHashAsync(path, hash, cancellationToken).ConfigureAwait(false);
                 ValidateCatalog(catalog);
             }
@@ -255,8 +234,8 @@ internal sealed class Iw3PcSourceLibrary
         return library;
     }
 
-    internal async Task<string> ConvertWorldAsync(
-        string mapFF, string d3dbspPath, string dynamicEntityPath, string collisionPath,
+    internal async Task<Iw3PcWorldExtraction> ConvertWorldAsync(
+        string mapFF, string d3dbspPath,
         CancellationToken cancellationToken)
     {
         mapFF = ExistingPath(mapFF, directory: false);
@@ -272,18 +251,10 @@ internal sealed class Iw3PcSourceLibrary
             .Append(closure.Root).Distinct().ToArray();
         foreach (Source source in sources)
             await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
-        string selectionPath = Path.Combine(_scratchDirectory, "source-world-models.json");
-        RejectExisting(selectionPath);
-        await File.WriteAllBytesAsync(selectionPath, JsonSerializer.SerializeToUtf8Bytes(
-            externalModels.GroupBy(node => node.Source).Select(group => new
-            {
-                FastFilePath = group.Key.Path,
-                RecordIds = group.Select(node => node.Asset.Id).Distinct().Order().ToArray(),
-            })), cancellationToken).ConfigureAwait(false);
-        string result = await Iw3PcExtractionBackend.RunToolAsync(
-            "Native IW3 map conversion with resolved source models", _nativePath, _scratchDirectory,
-            [mapFF, d3dbspPath, dynamicEntityPath, collisionPath, selectionPath],
-            cancellationToken).ConfigureAwait(false);
+        var models = externalModels.ToDictionary(node => node.Asset.Key,
+            node => new Iw3PcModelProvider(node.Asset.Name, node.Source.Path, node.Asset.Id), StringComparer.OrdinalIgnoreCase);
+        var result = Iw3PcWorldConverter.Convert(Iw3PcZone.Load(mapFF, cancellationToken), d3dbspPath,
+            true, cancellationToken, models);
         foreach (Source source in sources)
             await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
         return result;
@@ -554,15 +525,15 @@ internal sealed class Iw3PcSourceLibrary
         cancellationToken.ThrowIfCancellationRequested();
         if (_customIwd is not null)
         {
-            foreach (var pair in Iw3IwdImageCompiler.ResolveFiles([_customIwd], requests))
-                _soundSources.Add(pair.Key, pair.Value);
+            foreach (var pair in Iw3PcIwdReader.ResolveFiles([_customIwd], requests))
+                _soundSources.Add(pair.Key, pair.Value.Sources);
         }
         string[] remaining = requests.Where(path => !_soundSources.ContainsKey(path)).ToArray();
         if (remaining.Length != 0)
         {
             string[] stockIwds = IwdPaths.Where(path => !PathComparer.Equals(path, _customIwd)).ToArray();
-            foreach (var pair in Iw3IwdImageCompiler.ResolveFiles(stockIwds, remaining))
-                _soundSources.Add(pair.Key, pair.Value);
+            foreach (var pair in Iw3PcIwdReader.ResolveFiles(stockIwds, remaining))
+                _soundSources.Add(pair.Key, pair.Value.Sources);
         }
         foreach (string missing in requests.Where(path => !_soundSources.ContainsKey(path)))
         {
@@ -613,23 +584,21 @@ internal sealed class Iw3PcSourceLibrary
                 left.Asset.Name, right.Asset.Name, leftFiles.Keys.ToArray(), rightFiles.Keys.ToArray(),
                 path => FilesEqual(leftFiles[path], rightFiles[path]));
         }
+        else if (left.Asset.Type is not ("material" or "image" or "loadedsound" or "soundcurve"))
+        {
+            return false;
+        }
         else
         {
-            Source[] sources = new[] { left.Source, right.Source }.Distinct().ToArray();
+            var sources = new[] { left.Source, right.Source }.Distinct().ToArray();
             foreach (Source source in sources)
                 await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
-            string result = await Iw3PcExtractionBackend.RunToolAsync(
-                $"IW3 source comparison {left.Asset.Type}:{left.Asset.Name}", _nativePath, _scratchDirectory,
-                ["--compare-assets", left.Source.Path, left.Asset.Id.ToString(CultureInfo.InvariantCulture),
-                    right.Source.Path, right.Asset.Id.ToString(CultureInfo.InvariantCulture)], cancellationToken).ConfigureAwait(false);
+            var leftZone = Iw3PcZone.Load(left.Source.Path, cancellationToken);
+            var rightZone = left.Source == right.Source ? leftZone : Iw3PcZone.Load(right.Source.Path, cancellationToken);
+            localEqual = Iw3PcAssetComparison.SameContents(leftZone, leftZone.Assets[left.Asset.Id],
+                rightZone, rightZone.Assets[right.Asset.Id]);
             foreach (Source source in sources)
                 await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
-            localEqual = result.Trim() switch
-            {
-                "true" => true,
-                "false" => false,
-                _ => throw new InvalidDataException($"Invalid source comparison result for {left.Asset.Type}:{left.Asset.Name}."),
-            };
         }
         if (!localEqual)
             return false;
@@ -687,19 +656,37 @@ internal sealed class Iw3PcSourceLibrary
     {
         await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
         string exportName = $"source-export-{_exportSequence++:D6}";
-        string selectionPath = Path.Combine(_scratchDirectory, exportName + ".json");
         string exportDirectory = Path.Combine(_scratchDirectory, exportName);
-        RejectExisting(selectionPath);
-        RejectExisting(exportDirectory);
-        await File.WriteAllBytesAsync(selectionPath,
-            JsonSerializer.SerializeToUtf8Bytes(recordIds), cancellationToken).ConfigureAwait(false);
-        await Iw3PcExtractionBackend.RunToolAsync(
-            $"IW3 selected source extraction '{source.Path}'", _nativePath, _scratchDirectory,
-            ["--extract-assets", source.Path, selectionPath, exportDirectory], cancellationToken).ConfigureAwait(false);
+        int[] exportIds = recordIds.Where(id => ExportedAssetTypes.Contains(source.Records[id].Type)).ToArray();
+        var zone = Iw3PcZone.Load(source.Path, cancellationToken);
+        Iw3PcAssetExporter.ExportSelected(zone, exportIds, exportDirectory, cancellationToken);
         await VerifyHashAsync(source.Path, source.Sha256, cancellationToken).ConfigureAwait(false);
-        if (!Directory.Exists(exportDirectory))
-            throw new InvalidDataException($"Source extraction did not create '{exportDirectory}'.");
         return exportDirectory;
+    }
+
+    internal static Catalog CreateCatalog(Iw3PcZone zone)
+    {
+        static string LogicalName(string name) => name.StartsWith(',') ? name[1..] : name;
+        static string Key(string name) => name.Replace('\\', '/').Trim().ToLowerInvariant();
+        return new Catalog
+        {
+            SkippedAssetTypes = ["snddriverglobals"],
+            Assets = zone.Assets.Select(asset =>
+            {
+                string name = LogicalName(asset.Name);
+                return new CatalogAsset
+                {
+                    Id = asset.Id, Type = asset.Type, Name = name, Key = Key(name),
+                    IsReference = asset.Name.StartsWith(','), Dependencies = asset.Dependencies,
+                    References = asset.References.Select(reference =>
+                    {
+                        string target = LogicalName(reference.Name);
+                        return new CatalogReference { Type = reference.Type, Name = target, Key = Key(target) };
+                    }).DistinctBy(reference => (reference.Type, reference.Key)).ToArray(),
+                    StreamedSounds = asset.StreamedSounds.Distinct(StringComparer.Ordinal).ToArray()
+                };
+            }).ToArray()
+        };
     }
 
     private static IOrderedEnumerable<Node> OrderedNodes(IEnumerable<Node> nodes) => nodes

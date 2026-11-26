@@ -767,6 +767,13 @@ internal static class Iw3MaterialCompiler
             string techniqueSetName,
             string assetName)
     {
+        if (MaterialRules.ParticleCloudSort(sourceSortKey, sourceCameraRegion, techniqueSetName, assetName)
+            is { } cloudSort)
+            return (cloudSort, sourceCameraRegion);
+        // PC caulk_shadow uses the same four slots and states as IW4's native shadow-only material.
+        if (sourceSortKey == 4 && sourceCameraRegion == GfxCameraRegionType.None &&
+            techniqueSetName == "wc_tools" && assetName is "w/caulk_shadow" or "wc/caulk_shadow")
+            return ((MaterialSortKey)34, sourceCameraRegion);
         bool lit = stateEntries[(int)MaterialTechniqueType.Lit].StateBitsIndex != byte.MaxValue;
         bool emissive = stateEntries[(int)MaterialTechniqueType.Emissive].StateBitsIndex != byte.MaxValue;
         bool ui = !lit && !emissive &&

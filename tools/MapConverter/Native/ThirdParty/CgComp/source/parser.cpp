@@ -1,9 +1,23 @@
 #include <ctype.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 
 #include "parser.h"
+
+char *cgcomp_strtok(char *text, const char *delimiters)
+{
+	static thread_local char *next = NULL;
+	if (text != NULL) next = text;
+	if (next == NULL) return NULL;
+	char *start = next + strspn(next, delimiters);
+	if (*start == '\0') { next = NULL; return NULL; }
+	char *end = start + strcspn(start, delimiters);
+	if (*end == '\0') next = NULL;
+	else { *end = '\0'; next = end + 1; }
+	return start;
+}
 
 static paramtype paramtypes[] =
 {
@@ -31,6 +45,7 @@ static const size_t PARAM_TYPE_CNT = sizeof(paramtypes)/sizeof(struct _paramtype
 
 CParser::CParser()
 {
+	m_pInstructions = NULL;
 	m_nOption = 0;
 	m_nInstructions = 0;
 }
@@ -38,6 +53,8 @@ CParser::CParser()
 CParser::~CParser()
 {
 	if(m_pInstructions) delete [] m_pInstructions;
+	for (std::list<param>::iterator it = m_lParameters.begin(); it != m_lParameters.end(); ++it)
+		free(it->values);
 }
 
 void CParser::ParseComment(const char *line)
@@ -49,57 +66,64 @@ void CParser::ParseComment(const char *line)
 	line++;
 
 	if(strncasecmp(line,"var",3)==0) {
-		const char *token = SkipSpaces(strtok((char*)(line+3)," :"));
+		const char *token = SkipSpaces(cgcomp_strtok((char*)(line+3)," :"));
+		if (!token) throw std::runtime_error("Incomplete parameter declaration.");
 		p.type = GetParamType(token);
 		p.is_const = 0;
 		p.is_internal = 0;
 		p.count = 1;
-		p.name = SkipSpaces(strtok(NULL," :"));
+		token = SkipSpaces(cgcomp_strtok(NULL," :"));
+		if (!token) throw std::runtime_error("Missing parameter name.");
+		p.name = token;
 
 next:
-		token = SkipSpaces(strtok(NULL," :"));
+		token = SkipSpaces(cgcomp_strtok(NULL," :"));
 		if (token) {
 			if(strstr(token,"$vin")) {
-				token = SkipSpaces(strtok(NULL," :"));
+				token = SkipSpaces(cgcomp_strtok(NULL," :"));
+				if (!token) throw std::runtime_error("Missing input parameter binding.");
 				if(strncasecmp(token,"ATTR",4)==0)
 					p.index = atoi(token+4);
 				else
 					p.index = ConvertInputReg(token);
 			} else if(strstr(token,"texunit")) {
-				token = SkipSpaces(strtok(NULL," :"));
+				token = SkipSpaces(cgcomp_strtok(NULL," :"));
+				if (!token) throw std::runtime_error("Missing texture parameter binding.");
 				p.index = atoi(token);
 			} else if(token[0]=='c') {
 				p.is_const = 1;
 				p.index = atoi(token+2);
 
-				token = strtok(NULL," ,");
-				if(isdigit(*token)) p.count = atoi(token);
+				token = cgcomp_strtok(NULL," ,");
+				if(token && isdigit((unsigned char)*token)) p.count = atoi(token);
 			} else
 				goto next;
 		} else
 			return;
 
 		if(p.index>-1) {
+			if (m_lParameters.size() >= UINT16_MAX) throw std::runtime_error("Too many shader parameters.");
 			InitParameter(&p);
 			m_lParameters.push_back(p);
 		}
 	} else if(strncasecmp(line,"const",5)==0) {
-		const char *token = SkipSpaces(strtok((char*)(line+5)," "));
+		const char *token = SkipSpaces(cgcomp_strtok((char*)(line+5)," "));
+		if (!token) throw std::runtime_error("Incomplete constant declaration.");
 
 		p.is_const = 1;
 		p.is_internal = 1;
 		p.type = PARAM_FLOAT4;
 		p.count = 1;
 
-		InitParameter(&p);
-
+		if (m_lParameters.size() >= UINT16_MAX) throw std::runtime_error("Too many shader parameters.");
 		if(token[0]=='c' && token[1]=='[') {
 			u32 i;
+			InitParameter(&p);
 			f32 *pVal = p.values[0];
 
 			p.index = atoi(token+2);
 			for(i=0;i<4;i++) {
-				token = strtok(NULL," =");
+				token = cgcomp_strtok(NULL," =");
 				if(token)
 					pVal[i] = (f32)atof(token);
 				else
@@ -115,8 +139,14 @@ next:
 void CParser::InitParameter(param *p)
 {
 	if(!p) return;
-
-	p->values = (f32(*)[4])calloc(p->count*4,sizeof(f32));
+	if (p->count < 1 || p->count > UINT8_MAX)
+		throw std::runtime_error("Shader parameter count does not fit the RSX constant record.");
+	if ((p->type == PARAM_FLOAT4x4 && p->count < 4) ||
+		((p->type == PARAM_FLOAT4x3 || p->type == PARAM_FLOAT3x3 ||
+		  p->type == PARAM_FLOAT3x4) && p->count < 3))
+		throw std::runtime_error("Matrix parameter has too few registers.");
+	p->values = (f32(*)[4])calloc(p->count, sizeof(*p->values));
+	if (p->values == NULL) throw std::bad_alloc();
 	
 	switch(p->type) {
 		case PARAM_FLOAT4x4:

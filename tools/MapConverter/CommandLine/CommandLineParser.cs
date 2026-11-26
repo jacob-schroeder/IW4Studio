@@ -59,14 +59,6 @@ internal static class CommandLineParser
                                      Full conversions write <map>.ff, <map>_load.ff, an image package,
                                      <map>_snd.pak, and resident <map>_ui.ff.
           --help                     Show this help text.
-
-        Extraction tools:
-          Source-library extraction requires mapconverter-iw3-d3dbsp;
-          other extraction also requires mapconverter-unlinker. Put them in
-          the Native output directory or on PATH, or supply their paths through
-          MAPCONVERTER_IW3_D3DBSP_CONVERTER and MAPCONVERTER_UNLINKER.
-          World-first conversion also requires D3dbspLinker in Native or on
-          PATH, or its executable path in MAPCONVERTER_D3DBSP_LINKER.
         """;
 
     private static readonly HashSet<string> ValueOptions =

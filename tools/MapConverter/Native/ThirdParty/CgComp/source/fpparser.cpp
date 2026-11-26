@@ -165,7 +165,7 @@ int CFPParser::Parse(const char *str)
 	std::stringstream input(str);
 
 	while(!input.eof()) {
-		char line[256];
+		char line[256] = {};
 		struct nvfx_insn *insn = NULL;
 
 		input.getline(line,255);
@@ -214,7 +214,7 @@ int CFPParser::Parse(const char *str)
 			}
 
 			if(valid) {
-				(void)strtok((char*)ptr,":\x20");
+				(void)cgcomp_strtok((char*)ptr,":\x20");
 				ptr = col_ptr + 1;
 			}
 		}
@@ -232,14 +232,14 @@ int CFPParser::Parse(const char *str)
 			continue;
 		} 
 		else if (strncmp(ptr,"TEMP ",5)==0) {
-			const char *temp = SkipSpaces(strtok((char*)ptr + 5,","));
+			const char *temp = SkipSpaces(cgcomp_strtok((char*)ptr + 5,","));
 			if(!temp)
 				throw std::runtime_error("Missing fragment temporary declaration.");
 			while(temp) {
 				s32 index;
 				if(*SkipSpaces(ParseTempReg(temp,&index)))
 					throw std::runtime_error("Unsupported fragment temporary declaration.");
-				temp = SkipSpaces(strtok(NULL,","));
+				temp = SkipSpaces(cgcomp_strtok(NULL,","));
 			}
 			continue;
 		}
@@ -247,7 +247,7 @@ int CFPParser::Parse(const char *str)
 			ParseOutput(ptr);
 			continue;
 		} else {
-			const char *opcode = strtok((char*)ptr," ");
+			const char *opcode = cgcomp_strtok((char*)ptr," ");
 			struct _opcode opc = FindOpcode(opcode);
 
 			if(opc.opcode>=MAX_OPCODE)
@@ -256,7 +256,7 @@ int CFPParser::Parse(const char *str)
 				throw std::runtime_error("Too many fragment instructions.");
 			
 			insn = &m_pInstructions[m_nInstructions];
-			param_str = SkipSpaces(strtok(NULL,"\0"));
+			param_str = SkipSpaces(cgcomp_strtok(NULL,"\0"));
 
 			InitInstruction(insn,opc.opcode);
 			if(opc.opcode==OPCODE_END) {
@@ -277,7 +277,7 @@ int CFPParser::Parse(const char *str)
 
 void CFPParser::ParseInstruction(struct nvfx_insn *insn,opcode *opc,const char *param_str)
 {
-	const char *token = SkipSpaces(strtok((char*)param_str,","));
+	const char *token = SkipSpaces(cgcomp_strtok((char*)param_str,","));
 
 	insn->precision = opc->suffixes&(_R|_H|_X);
 	insn->sat = ((opc->suffixes&_S) ? TRUE : FALSE);
@@ -290,7 +290,7 @@ void CFPParser::ParseInstruction(struct nvfx_insn *insn,opcode *opc,const char *
 	}
 
 	if(opc->outputs!=OUTPUT_NONE && opc->inputs!=INPUT_NONE) {
-		token = SkipSpaces(strtok(NULL,","));
+		token = SkipSpaces(cgcomp_strtok(NULL,","));
 	}
 
 	if(opc->inputs==INPUT_1V) {
@@ -298,44 +298,44 @@ void CFPParser::ParseInstruction(struct nvfx_insn *insn,opcode *opc,const char *
 	} else if(opc->inputs==INPUT_2V) {
 		ParseVectorSrc(token,&insn->src[0]);
 
-		token = SkipSpaces(strtok(NULL,","));
+		token = SkipSpaces(cgcomp_strtok(NULL,","));
 		ParseVectorSrc(token,&insn->src[1]);
 	} else if(opc->inputs==INPUT_3V) {
 		ParseVectorSrc(token,&insn->src[0]);
 
-		token = SkipSpaces(strtok(NULL,","));
+		token = SkipSpaces(cgcomp_strtok(NULL,","));
 		ParseVectorSrc(token,&insn->src[1]);
 
-		token = SkipSpaces(strtok(NULL,","));
+		token = SkipSpaces(cgcomp_strtok(NULL,","));
 		ParseVectorSrc(token,&insn->src[2]);
 	} else if(opc->inputs==INPUT_1S) {
 		ParseScalarSrc(token,&insn->src[0]);
 	} else if(opc->inputs==INPUT_2S) {
 		ParseScalarSrc(token,&insn->src[0]);
 
-		token = SkipSpaces(strtok(NULL,","));
+		token = SkipSpaces(cgcomp_strtok(NULL,","));
 		ParseScalarSrc(token,&insn->src[1]);
 	} else if(opc->inputs==INPUT_1V_T) {
 		ParseVectorSrc(token,&insn->src[0]);
 
-		token = SkipSpaces(strtok(NULL,","));
+		token = SkipSpaces(cgcomp_strtok(NULL,","));
 		ParseTextureUnit(token,&insn->tex_unit);
 
-		token = SkipSpaces(strtok(NULL,","));
+		token = SkipSpaces(cgcomp_strtok(NULL,","));
 		ParseTextureTarget(token,&insn->tex_target);
 	} else if(opc->inputs==INPUT_3V_T) {
 		ParseVectorSrc(token,&insn->src[0]);
 
-		token = SkipSpaces(strtok(NULL,","));
+		token = SkipSpaces(cgcomp_strtok(NULL,","));
 		ParseVectorSrc(token,&insn->src[1]);
 
-		token = SkipSpaces(strtok(NULL,","));
+		token = SkipSpaces(cgcomp_strtok(NULL,","));
 		ParseVectorSrc(token,&insn->src[2]);
 
-		token = SkipSpaces(strtok(NULL,","));
+		token = SkipSpaces(cgcomp_strtok(NULL,","));
 		ParseTextureUnit(token,&insn->tex_unit);
 
-		token = SkipSpaces(strtok(NULL,","));
+		token = SkipSpaces(cgcomp_strtok(NULL,","));
 		ParseTextureTarget(token,&insn->tex_target);
 	} else if(opc->inputs==INPUT_CC) {
 		if(!token || !*token)
@@ -366,7 +366,7 @@ void CFPParser::ParseInstruction(struct nvfx_insn *insn,opcode *opc,const char *
 	} else {
 		throw std::runtime_error("Unsupported fragment instruction operands.");
 	}
-	if(strtok(NULL,","))
+	if(cgcomp_strtok(NULL,","))
 		throw std::runtime_error("Too many fragment operands.");
 
 	// ARB fragment attributes already have perspective-correct values. Keep
@@ -460,8 +460,8 @@ void CFPParser::ParseOutput(const char *param_str)
 	u8 is_fp16 = 0;
 	s32 reg = -1;
 	const char *param = SkipSpaces(strstr(param_str, "OUTPUT") + 6);
-	const char *token = SkipSpaces(strtok((char*)param," ="));
-	const char *name = SkipSpaces(strtok(NULL,"=\0"));
+	const char *token = SkipSpaces(cgcomp_strtok((char*)param," ="));
+	const char *name = SkipSpaces(cgcomp_strtok(NULL,"=\0"));
 
 	if(!token || !name)
 		throw std::runtime_error("Incomplete fragment output declaration.");

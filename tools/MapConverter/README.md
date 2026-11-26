@@ -10,6 +10,30 @@ dotnet run --project tools/MapConverter/MapConverter.csproj -- <arguments>
 
 Use `--help` for IW3 conversion options. Quote paths that contain spaces.
 
+## IW3 conversion dependencies
+
+MapConverter reads IW3 PC and PS3 fastfiles in process. The IW3 PC C# readers
+and asset exporters live under `tools/MapConverter.IW3.PC` in the `Readers`
+and `Assets` namespaces. The F# project owns IWD handling, the IWI6 header,
+and PC conversion rules. MapConverter builds the version 22 D3DBSP and passes
+it to the IW4 linker. OpenAssetTools is the reference for the IW3 PC formats.
+Both MapConverter and ShaderConvert use the bundled shader library for compiled
+D3D9 shaders.
+
+PC audio conversion looks beside the executable for FFmpeg with `libmp3lame`.
+Development builds can also use `ffmpeg` on `PATH`. To publish a self-contained
+distribution, build on the target OS and architecture and supply a standalone
+FFmpeg executable for that target with its distribution license. This example targets Linux x64.
+
+```sh
+dotnet publish tools/MapConverter/MapConverter.csproj -c Release -r linux-x64 --self-contained \
+  -p:MapConverterFfmpegPath=/path/to/distribution/ffmpeg \
+  -p:MapConverterFfmpegLicensePath=/path/to/distribution/LICENSE
+```
+
+`MapConverterFfmpegNoticePath` can include an additional distribution notice.
+The publish directory contains the executable and license alongside MapConverter.
+
 ## Xbox 360 multiplayer map
 
 ```bash

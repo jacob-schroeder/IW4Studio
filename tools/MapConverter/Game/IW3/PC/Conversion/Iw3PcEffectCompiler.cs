@@ -4,6 +4,8 @@ using IW4.Game.Assets.Material;
 using IW4.Game.Assets.XModel;
 using MapConverter.Game.IW3.PC.Extraction;
 using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.IW3.PC.Assets;
+using MapConverter.IW3.PC.Readers;
 
 namespace MapConverter.Game.IW3.PC.Conversion;
 
@@ -11,23 +13,25 @@ internal sealed class Iw3PcEffectCompiler
 {
     private readonly Dictionary<string, JsonElement> effects = new(StringComparer.OrdinalIgnoreCase);
 
-    internal static async Task<Iw3PcEffectCompiler> CaptureAsync(
-        IReadOnlyList<string> roots, Iw3PcSourceLibrary? library, string nativePath,
-        string mapPath, string scratch, CancellationToken token)
+    internal static Iw3PcEffectCompiler Capture(
+        IReadOnlyList<string> roots, Iw3PcSourceLibrary? library, string mapPath, CancellationToken token)
     {
         var result = new Iw3PcEffectCompiler();
         var pending = roots.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        int sequence = 0;
         while (pending.Count != 0)
         {
-            var groups = pending.GroupBy(name => library?.EffectSourcePath(mapPath, name) ?? mapPath).ToArray();
+            var groups = pending.Select(name => (Name: name, Source: library?.EffectSourceRecord(mapPath, name)
+                    ?? (Path: mapPath, RecordId: -1)))
+                .GroupBy(row => row.Source.Path).ToArray();
             pending.Clear();
             foreach (var group in groups)
             {
-                string path = Path.Combine(scratch, $"effects-{sequence++}.json");
-                await Iw3PcExtractionBackend.RunToolAsync("IW3 PC effect extraction", nativePath, scratch,
-                    ["--extract-effects", group.Key, path, .. group], token).ConfigureAwait(false);
-                using var graph = JsonDocument.Parse(await File.ReadAllBytesAsync(path, token).ConfigureAwait(false));
+                string[] names = group.Select(row => row.Name).ToArray();
+                var zone = Iw3PcZone.Load(group.Key, token);
+                byte[] bytes = Iw3PcEffectExporter.Export(zone, names,
+                    library is null ? null : group.ToDictionary(row => row.Name,
+                        row => row.Source.RecordId, StringComparer.OrdinalIgnoreCase), token);
+                using var graph = JsonDocument.Parse(bytes);
                 foreach (var effect in graph.RootElement.GetProperty("effects").EnumerateArray())
                 {
                     string name = AssetName(effect.GetProperty("asset")) ??
@@ -39,6 +43,9 @@ internal sealed class Iw3PcEffectCompiler
                         pending.Add(child.GetString() ?? throw new InvalidDataException("PC effect reference has no name."));
             }
             pending.ExceptWith(result.effects.Keys);
+            if (library is null && pending.Count != 0)
+                throw new InvalidDataException($"IW3 PC fastfile '{mapPath}' has no definitions for effects: " +
+                    string.Join(", ", pending.Order(StringComparer.OrdinalIgnoreCase)) + ".");
         }
         return result;
     }

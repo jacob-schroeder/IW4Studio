@@ -12,7 +12,8 @@ public static class XModelExportLodCompiler
 
     public static XModelExportLodCompileResult Compile(
         XModelExportDocument document, int boneCount,
-        bool compileCollisionTrees)
+        bool compileCollisionTrees,
+        IReadOnlyList<XModelSourceVertexBasis>? sourceBasis = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         var blockers = new List<string>();
@@ -41,7 +42,8 @@ public static class XModelExportLodCompiler
                     isWholePartition: true,
                     result,
                     materialIndices,
-                    blockers);
+                    blockers,
+                    sourceBasis);
             }
         }
         if (document.Objects.Count == 0) blockers.Add("The imported LOD has no objects.");
@@ -63,7 +65,8 @@ public static class XModelExportLodCompiler
         bool isWholePartition,
         List<XSurface> destination,
         List<int> materialIndices,
-        List<string> blockers)
+        List<string> blockers,
+        IReadOnlyList<XModelSourceVertexBasis>? sourceBasis)
     {
         string surfacePrefix = isWholePartition
             ? partitionPrefix
@@ -82,7 +85,8 @@ public static class XModelExportLodCompiler
                 surfacePrefix,
                 out surface,
                 out errors,
-                out exceedsVertexLimit);
+                out exceedsVertexLimit,
+                sourceBasis);
         }
 
         if (!compiled && triangles.Length > 1 &&
@@ -100,7 +104,8 @@ public static class XModelExportLodCompiler
                 isWholePartition: false,
                 destination,
                 materialIndices,
-                blockers);
+                blockers,
+                sourceBasis);
             CompileSurfacePartition(
                 document,
                 triangles[firstCount..],
@@ -112,7 +117,8 @@ public static class XModelExportLodCompiler
                 isWholePartition: false,
                 destination,
                 materialIndices,
-                blockers);
+                blockers,
+                sourceBasis);
             return;
         }
 
@@ -124,7 +130,8 @@ public static class XModelExportLodCompiler
                 blockers.AddRange(errors);
             return;
         }
-        if (compileCollisionTrees && !XModelCollisionTreeCompiler.TryAttach(
+        if (compileCollisionTrees && (sourceBasis is null || surface.DeformedRaw == 0) &&
+            !XModelCollisionTreeCompiler.TryAttach(
                 surface,
                 surfacePrefix,
                 out surface,
@@ -137,7 +144,7 @@ public static class XModelExportLodCompiler
         materialIndices.Add(materialIndex);
     }
 
-    private static bool TryCompileSurface(XModelExportDocument document, IReadOnlyList<XModelExportTriangle> triangles, int boneCount, string prefix, out XSurface? surface, out IReadOnlyList<string> blockers, out bool exceedsVertexLimit)
+    private static bool TryCompileSurface(XModelExportDocument document, IReadOnlyList<XModelExportTriangle> triangles, int boneCount, string prefix, out XSurface? surface, out IReadOnlyList<string> blockers, out bool exceedsVertexLimit, IReadOnlyList<XModelSourceVertexBasis>? sourceBasis)
     {
         surface = null; exceedsVertexLimit = false;
         var errors = new List<string>();
@@ -151,7 +158,15 @@ public static class XModelExportLodCompiler
             if (!Finite(cross) || cross.LengthSquared() <= 0.0000000001f) { errors.Add($"{prefix} triangle {triangleIndex}: has non-finite or degenerate positions."); continue; }
             Vector2 duv1 = second.Uv - first.Uv, duv2 = third.Uv - first.Uv;
             float determinant = duv1.X * duv2.Y - duv1.Y * duv2.X;
-            if (HasUvDegenerateMapping(first.Uv, second.Uv, third.Uv)) { errors.Add($"{prefix} triangle {triangleIndex}: has UV-degenerate mapping."); continue; }
+            if (HasUvDegenerateMapping(first.Uv, second.Uv, third.Uv))
+            {
+                if (sourceBasis is null ||
+                    !AppendSource(triangle.First, first, sourceBasis, corners) ||
+                    !AppendSource(triangle.Second, second, sourceBasis, corners) ||
+                    !AppendSource(triangle.Third, third, sourceBasis, corners))
+                    errors.Add($"{prefix} triangle {triangleIndex}: has UV-degenerate mapping without a valid source tangent basis.");
+                continue;
+            }
             Vector3 tangent = ((second.Position - first.Position) * duv2.Y - (third.Position - first.Position) * duv1.Y) / determinant;
             Vector3 binormal = ((third.Position - first.Position) * duv1.X - (second.Position - first.Position) * duv2.X) / determinant;
             if (!Append(first, tangent, binormal, corners) || !Append(second, tangent, binormal, corners) || !Append(third, tangent, binormal, corners))
@@ -220,6 +235,18 @@ public static class XModelExportLodCompiler
         destination.Add(corner with { Tangent = tangent, BinormalSign = binormalSign, Serial = destination.Count });
         return true;
     }
+    private static bool AppendSource(XModelExportCorner sourceCorner, CompiledCorner corner,
+        IReadOnlyList<XModelSourceVertexBasis> sourceBasis, List<CompiledCorner> destination)
+    {
+        if ((uint)sourceCorner.VertexIndex >= (uint)sourceBasis.Count) return false;
+        XModelSourceVertexBasis basis = sourceBasis[sourceCorner.VertexIndex];
+        if (!Finite(basis.Position) || Vector3.Distance(corner.Position, basis.Position) > 0.00001f ||
+            !Finite(basis.Tangent) || basis.Tangent.LengthSquared() <= 0f ||
+            basis.BinormalSign is not (-1f or 1f)) return false;
+        destination.Add(corner with { Tangent = basis.Tangent, BinormalSign = basis.BinormalSign,
+            Serial = destination.Count });
+        return true;
+    }
     private static bool TryCorner(XModelExportDocument document, XModelExportCorner corner, int boneCount, string prefix, out CompiledCorner result, out string? error)
     {
         result = null!; error = null;
@@ -272,3 +299,5 @@ public sealed record XModelExportLodCompileResult(IReadOnlyList<XSurface> Surfac
 {
     public bool IsSuccess => Blockers.Count == 0;
 }
+
+public readonly record struct XModelSourceVertexBasis(Vector3 Position, Vector3 Tangent, float BinormalSign);

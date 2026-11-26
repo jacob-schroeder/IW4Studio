@@ -122,6 +122,7 @@ private:
 	u8 m_HRegs[NUM_HW_REGS];
 
 	std::list<param> m_lParameters;
+	std::vector<void*> m_ownedParameterValues;
 	std::list<struct fragment_program_data> m_lConstData;
 	std::stack<int> m_repStack;
 	std::stack<int> m_ifStack;

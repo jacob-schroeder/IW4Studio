@@ -1384,12 +1384,7 @@ internal static class D3dbspMapEntsCodec
             };
 
             IReadOnlyList<Vec3> gfxAxis = DecodePackedAxis(placement.PackedAxis);
-            Vec3 angles = AxisToCanonicalAngles(gfxAxis);
-            IReadOnlyList<Vec3> rebuiltAxis = AnglesToAxis(angles);
-            RequireEquivalentAxes(
-                gfxAxis,
-                rebuiltAxis,
-                $"static model {index} packed axis cannot be represented by canonical Euler angles");
+            Vec3 angles = StaticModelAngles(gfxAxis, index);
 
             const GfxStaticModelDrawInstFlags supportedFlags =
                 GfxStaticModelDrawInstFlags.NoCastShadow |
@@ -1912,8 +1907,26 @@ internal static class D3dbspMapEntsCodec
             MidpointRounding.AwayFromZero));
     }
 
-    private static Vec3 AxisToCanonicalAngles(IReadOnlyList<Vec3> axis)
+    internal static Vec3 StaticModelAngles(IReadOnlyList<Vec3> axis, int index, bool positiveRange = false)
     {
+        if (axis.Count != 3)
+            throw new InvalidDataException($"Static model {index} must have three axis rows.");
+        Vec3 angles = AxisToCanonicalAngles(axis, positiveRange);
+        RequireEquivalentAxes(axis, AnglesToAxis(angles),
+            $"static model {index} axis cannot be represented by canonical Euler angles");
+        return angles;
+    }
+
+    private static Vec3 AxisToCanonicalAngles(IReadOnlyList<Vec3> axis, bool positiveRange)
+    {
+        float radiansToDegrees = positiveRange ? (float)(180.0 / System.Math.PI) : 180.0f / MathF.PI;
+        float Normalize(float degrees)
+        {
+            if (!positiveRange) return NormalizeDegrees(degrees);
+            degrees %= 360f;
+            return degrees < 0f ? degrees + 360f : degrees == 0f ? 0f : degrees;
+        }
+
         Vec3 forward = axis[0];
         float pitch;
         float yaw;
@@ -1924,12 +1937,12 @@ internal static class D3dbspMapEntsCodec
         }
         else
         {
-            yaw = RadiansToDegrees(MathF.Atan2(forward.Y, forward.X));
+            yaw = (MathF.Atan2(forward.Y, forward.X) * radiansToDegrees);
             if (yaw < 0.0f)
                 yaw += 360.0f;
             float forwardLength = MathF.Sqrt(
                 forward.X * forward.X + forward.Y * forward.Y);
-            pitch = -RadiansToDegrees(MathF.Atan2(forward.Z, forwardLength));
+            pitch = -(MathF.Atan2(forward.Z, forwardLength) * radiansToDegrees);
             if (pitch < 0.0f)
                 pitch += 360.0f;
         }
@@ -1955,7 +1968,7 @@ internal static class D3dbspMapEntsCodec
         {
             float horizontal = MathF.Sqrt(
                 rolledX * rolledX + transformedY * transformedY);
-            signedRollPitch = -RadiansToDegrees(MathF.Atan2(rolledZ, horizontal));
+            signedRollPitch = -(MathF.Atan2(rolledZ, horizontal) * radiansToDegrees);
         }
 
         float roll = transformedY >= 0.0f
@@ -1965,9 +1978,9 @@ internal static class D3dbspMapEntsCodec
                 : signedRollPitch + 180.0f;
         return new Vec3
         {
-            X = NormalizeDegrees(pitch),
-            Y = NormalizeDegrees(yaw),
-            Z = NormalizeDegrees(roll)
+            X = Normalize(pitch),
+            Y = Normalize(yaw),
+            Z = Normalize(roll)
         };
     }
 
@@ -2066,8 +2079,6 @@ internal static class D3dbspMapEntsCodec
     }
 
     private static float DegreesToRadians(float value) => value * (MathF.PI / 180.0f);
-
-    private static float RadiansToDegrees(float value) => value * (180.0f / MathF.PI);
 
     private static float RequireFinite(float value, string description)
     {

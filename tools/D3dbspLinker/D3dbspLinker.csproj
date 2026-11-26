@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="MapConverter" />
     <ProjectReference Include="..\..\src\Engine\IW4.Game\IW4.Game.csproj" />
     <ProjectReference Include="..\..\src\Authoring\IW4.Formats\IW4.Formats.csproj" />
     <ProjectReference Include="..\..\src\Authoring\IW4.Linker\IW4.Linker.csproj" />

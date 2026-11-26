@@ -31,6 +31,8 @@ CCompilerVP::CCompilerVP()
 
 CCompilerVP::~CCompilerVP()
 {
+	free(m_pInstructions);
+	free(m_pConstData);
 }
 
 void CCompilerVP::Prepare(CParser *pParser)
@@ -230,8 +232,7 @@ void CCompilerVP::Compile(CParser *pParser)
 				m_pInstructions[m_nCurInstruction].data[3] |= NVFX_VP_INST_LAST;
 				break;
 			default:
-				fprintf(stderr, "Unknown instruction \"%d\"\n", insn->op);
-				exit(EXIT_FAILURE);
+				throw std::runtime_error("Unknown vertex instruction: " + std::to_string(insn->op));
 		}
 		release_temps();
 	}
@@ -588,7 +589,9 @@ struct nvfx_reg CCompilerVP::constant(s32 pipe, f32 x, f32 y, f32 z, f32 w)
 	}
 
 	idx = m_nConsts++;
-	m_pConstData = (struct vertex_program_data*)realloc(m_pConstData,sizeof(struct vertex_program_data)*m_nConsts);
+	void *grown = realloc(m_pConstData,sizeof(struct vertex_program_data)*m_nConsts);
+	if (!grown) throw std::bad_alloc();
+	m_pConstData = (struct vertex_program_data*)grown;
 
 	vpd = &m_pConstData[idx];
 	vpd->index = pipe;
@@ -607,7 +610,9 @@ int CCompilerVP::grow_insns(int count)
 	int pos = m_nInstructions;
 
 	m_nInstructions += count;
-	m_pInstructions = (struct vertex_program_exec*)realloc(m_pInstructions,m_nInstructions*sizeof(struct vertex_program_exec));
+	void *grown = realloc(m_pInstructions,m_nInstructions*sizeof(struct vertex_program_exec));
+	if (!grown) throw std::bad_alloc();
+	m_pInstructions = (struct vertex_program_exec*)grown;
 
 	return pos;
 }

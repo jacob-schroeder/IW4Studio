@@ -7,11 +7,6 @@
 #include <float.h>
 #include <math.h>
 
-#ifdef WIN32
-#include <memory.h>
-#include <windows.h>
-#endif
-
 /**
  * Instruction precision for GL_NV_fragment_program
  */
@@ -76,7 +71,7 @@ typedef double						f64;
 #define strnicmp strncasecmp
 #endif
 
-#ifdef __CYGWIN__
+#ifndef _MSC_VER
 #include <strings.h>
 #endif
 

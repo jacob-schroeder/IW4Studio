@@ -1,3 +1,4 @@
+using MapConverter.IW3.PC.Assets.World;
 using IW4.Game.Assets.ColMap;
 using IW4.Game.Assets.Physics;
 using IW4.Game.Assets.XModel;

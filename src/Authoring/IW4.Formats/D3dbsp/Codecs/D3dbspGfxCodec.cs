@@ -497,6 +497,7 @@ internal static partial class D3dbspGfxCodec
                     worldSurfaceIndices);
         uint litSurfaceEnd = checked((uint)staticSurfaceCount);
         uint emissiveSurfaceBegin = checked((uint)staticSurfaceCount);
+        uint nonCameraSurfaceCount = 0;
         if (useSourceMaterials)
         {
             litSurfaceEnd = 0;
@@ -511,6 +512,14 @@ internal static partial class D3dbspGfxCodec
                     slot.Type == MaterialTechniqueType.Lit && slot.Technique is not null) == true;
                 bool hasEmissiveTechnique = material.TechniqueSet?.TechniqueSlots.Any(slot =>
                     slot.Type == MaterialTechniqueType.Emissive && slot.Technique is not null) == true;
+                // Native caulk_shadow casts shadows but belongs to neither camera draw range.
+                if (material.Info.Name == "w/caulk_shadow" && sortKey == 34 &&
+                    material.CameraRegion == GfxCameraRegionType.None && !hasLitTechnique && !hasEmissiveTechnique)
+                {
+                    nonCameraSurfaceCount++;
+                    emissiveSurfaceBegin++;
+                    continue;
+                }
                 GfxCameraRegionType cameraRegion = isEmissive
                     ? GfxCameraRegionType.Emissive
                     : sortKey < SortKeyLitDecal
@@ -687,8 +696,8 @@ internal static partial class D3dbspGfxCodec
                 VisibilityCounts =
                 [
                     litSurfaceEnd,
-                    emissiveSurfaceBegin,
-                    emissiveSurfaceBegin,
+                    emissiveSurfaceBegin - nonCameraSurfaceCount,
+                    emissiveSurfaceBegin - nonCameraSurfaceCount,
                     emissiveSurfaceBegin,
                     emissiveSurfaceBegin,
                     checked((uint)staticSurfaceCount),

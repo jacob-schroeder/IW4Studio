@@ -1,3 +1,4 @@
+using MapConverter.IW3.PC.Assets.TechniqueSet;
 using System.Globalization;
 using System.Text;
 
@@ -11,48 +12,10 @@ namespace MapConverter.Game.IW3.PC.Techniques;
 /// </summary>
 internal sealed class Iw3TechniqueFormatParser
 {
-    internal const int TechniqueSlotCount = 34;
-
-    private static readonly (Iw3TechniqueSlot Slot, string DisplayName)[] SlotDefinitions =
-    [
-        (Iw3TechniqueSlot.DepthPrepass, "depth prepass"),
-        (Iw3TechniqueSlot.BuildFloatZ, "build floatz"),
-        (Iw3TechniqueSlot.BuildShadowmapDepth, "build shadowmap depth"),
-        (Iw3TechniqueSlot.BuildShadowmapColor, "build shadowmap color"),
-        (Iw3TechniqueSlot.Unlit, "unlit"),
-        (Iw3TechniqueSlot.Emissive, "emissive"),
-        (Iw3TechniqueSlot.EmissiveShadow, "emissive shadow"),
-        (Iw3TechniqueSlot.Lit, "lit"),
-        (Iw3TechniqueSlot.LitSun, "lit sun"),
-        (Iw3TechniqueSlot.LitSunShadow, "lit sun shadow"),
-        (Iw3TechniqueSlot.LitSpot, "lit spot"),
-        (Iw3TechniqueSlot.LitSpotShadow, "lit spot shadow"),
-        (Iw3TechniqueSlot.LitOmni, "lit omni"),
-        (Iw3TechniqueSlot.LitOmniShadow, "lit omni shadow"),
-        (Iw3TechniqueSlot.LitInstanced, "lit instanced"),
-        (Iw3TechniqueSlot.LitInstancedSun, "lit instanced sun"),
-        (Iw3TechniqueSlot.LitInstancedSunShadow, "lit instanced sun shadow"),
-        (Iw3TechniqueSlot.LitInstancedSpot, "lit instanced spot"),
-        (Iw3TechniqueSlot.LitInstancedSpotShadow, "lit instanced spot shadow"),
-        (Iw3TechniqueSlot.LitInstancedOmni, "lit instanced omni"),
-        (Iw3TechniqueSlot.LitInstancedOmniShadow, "lit instanced omni shadow"),
-        (Iw3TechniqueSlot.LightSpot, "light spot"),
-        (Iw3TechniqueSlot.LightOmni, "light omni"),
-        (Iw3TechniqueSlot.LightSpotShadow, "light spot shadow"),
-        (Iw3TechniqueSlot.FakeLightNormal, "fakelight normal"),
-        (Iw3TechniqueSlot.FakeLightView, "fakelight view"),
-        (Iw3TechniqueSlot.SunlightPreview, "sunlight preview"),
-        (Iw3TechniqueSlot.CaseTexture, "case texture"),
-        (Iw3TechniqueSlot.WireframeSolid, "solid wireframe"),
-        (Iw3TechniqueSlot.WireframeShaded, "shaded wireframe"),
-        (Iw3TechniqueSlot.ShadowCookieCaster, "shadowcookie caster"),
-        (Iw3TechniqueSlot.ShadowCookieReceiver, "shadowcookie receiver"),
-        (Iw3TechniqueSlot.DebugBumpmap, "debug bumpmap"),
-        (Iw3TechniqueSlot.DebugBumpmapInstanced, "debug bumpmap instanced"),
-    ];
+    internal static int TechniqueSlotCount => Iw3TechniqueSlots.Definitions.Length;
 
     private static readonly IReadOnlyDictionary<string, Iw3TechniqueSlot> SlotsByDisplayName =
-        SlotDefinitions.ToDictionary(
+        Iw3TechniqueSlots.Definitions.ToDictionary(
             definition => definition.DisplayName,
             definition => definition.Slot,
             StringComparer.Ordinal);
@@ -144,7 +107,7 @@ internal sealed class Iw3TechniqueFormatParser
                 "The technique set ends before its pending slots receive a technique name.");
         }
 
-        Iw3TechniqueSlotSource[] slots = SlotDefinitions
+        Iw3TechniqueSlotSource[] slots = Iw3TechniqueSlots.Definitions
             .Select(definition =>
             {
                 techniqueNames.TryGetValue(definition.Slot, out string? techniqueName);
@@ -345,6 +308,21 @@ internal sealed class Iw3TechniqueFormatParser
                 if (sourceKind.Text == "sampler" && elementIndex is not null)
                     throw reader.Error(sourceKind, "A code sampler cannot have an array index.");
 
+                if (sourceKind.Text == "constant" && reader.Peek().Kind == TokenKind.Identifier &&
+                    reader.Peek().Text == "rows")
+                {
+                    reader.Read();
+                    reader.Expect(TokenKind.LeftParenthesis, "Expected '(' after code-constant rows.");
+                    int firstRow = ParseNonNegativeInt32(reader,
+                        reader.Expect(TokenKind.Number, "Expected a code-constant first row."), "first row");
+                    reader.Expect(TokenKind.Comma, "Expected ',' between code-constant rows.");
+                    int rowCount = ParseNonNegativeInt32(reader,
+                        reader.Expect(TokenKind.Number, "Expected a code-constant row count."), "row count");
+                    reader.Expect(TokenKind.RightParenthesis, "Expected ')' after code-constant rows.");
+                    if (firstRow > byte.MaxValue || rowCount > byte.MaxValue)
+                        throw reader.Error(reader.Peek(), "Code-constant row bytes exceed 255.");
+                    return new Iw3CodeShaderRowsSource(accessor.ToString(), elementIndex, firstRow, rowCount);
+                }
                 return new Iw3CodeShaderValueSource(
                     sourceKind.Text == "constant"
                         ? Iw3CodeShaderValueKind.Constant

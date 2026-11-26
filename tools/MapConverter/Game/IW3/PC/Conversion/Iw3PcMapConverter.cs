@@ -1,6 +1,12 @@
+using MapConverter.IW3.PC.Assets;
+using MapConverter.IW3.PC.Assets.Materials;
+using MapConverter.Game.IW3.PC.World;
+using MapConverter.IW3.PC.Assets.XModel;
+using MapConverter.IW3.PC.Assets.World;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using D3dbspLinker.Conversion;
 using IW4.Formats.SourceFormat.Material;
 using IW4.Game.Assets;
 using IW4.Game.Assets.GfxMap;
@@ -33,6 +39,8 @@ using MapConverter.Game.IW3.PC.Models;
 using MapConverter.Game.IW3.PC.Physics;
 using MapConverter.Game.IW3.PC.Shaders;
 using MapConverter.Game.IW3.PC.Techniques;
+using MapConverter.IW3.PC.Readers;
+using MapConverter.IW3.PC.Readers.World;
 using MapConverter.Game.IW3.PS3.Conversion;
 using MapConverter.Game.IW3.PS3.Images;
 using MapConverter.Game.IW3.PS3.Rules;
@@ -170,8 +178,6 @@ internal static class Iw3PcMapConverter
         if (imagePath is not null && (File.Exists(imagePath) || Directory.Exists(imagePath)))
             throw new IOException($"Output file '{imagePath}' already exists.");
 
-        string nativeConverter = Iw3PcExtractionToolLocator.FindNativeMapConverter();
-        string worldLinker = Iw3PcExtractionToolLocator.FindWorldLinker();
         string scratchDirectory = Path.Combine(
             Path.GetTempPath(),
             "mapconverter-world-" + Guid.NewGuid().ToString("N"));
@@ -182,18 +188,8 @@ internal static class Iw3PcMapConverter
         try
         {
             string bspPath = Path.Combine(scratchDirectory, mapName + ".d3dbsp");
-            string dynamicEntityPath = Path.Combine(scratchDirectory, mapName + ".dynents");
-            string modelCollisionPath = Path.Combine(scratchDirectory, mapName + ".modelcoll");
-            string worldExtractionOutput = await Iw3PcExtractionBackend.RunToolAsync(
-                "Native IW3 world extraction",
-                nativeConverter,
-                scratchDirectory,
-                [
-                    inputPath, bspPath,
-                    dynamicEntityPath,
-                    modelCollisionPath
-                ],
-                cancellationToken).ConfigureAwait(false);
+            var mapZone = Iw3PcZone.Load(inputPath, cancellationToken);
+            var world = Iw3PcWorldConverter.Convert(mapZone, bspPath, textured, cancellationToken);
 
             int texturedMaterialCount = 0;
             IReadOnlyList<string> defaultMaterialNames = [];
@@ -204,15 +200,14 @@ internal static class Iw3PcMapConverter
             Iw3WorldObjectiveCompilation? objectives = null;
             IReadOnlyList<GfxLightmapArray> lightmaps = [];
             GfxImageAsset? outdoorImage = null;
-            string? outdoorLookupMatrix = null;
+            float[] outdoorLookupMatrix = [];
             string? materialProviderPath = bootstrapPath;
             if (textured)
             {
                 string assetDirectory = Path.Combine(scratchDirectory, "world-assets");
-                await Iw3PcExtractionBackend.ExtractWorldAssetsAsync(
-                    Iw3PcExtractionToolLocator.FindUnlinker(), inputPath, assetDirectory,
-                    scratchDirectory, iwdPath, cancellationToken).ConfigureAwait(false);
-                Iw3DynamicEntitySourceData dynamicEntities = Iw3DynamicEntityReader.Read(dynamicEntityPath);
+                await Iw3PcExtractionBackend.ExtractStandaloneAsync(
+                    mapZone, inputPath, assetDirectory, iwdPath, worldOnly: true, cancellationToken).ConfigureAwait(false);
+                Iw3DynamicEntitySourceData dynamicEntities = world.DynamicEntities;
                 ValidateDynamicEntityMapName(dynamicEntities.MapName, mapName);
                 damageFx = Iw3WorldFxCompiler.Compile(assetDirectory, dynamicEntities, mapName, scratchDirectory);
                 objectives = Iw3WorldObjectiveCompiler.Compile(bspPath, mapName, scratchDirectory);
@@ -220,22 +215,20 @@ internal static class Iw3PcMapConverter
                 if (loadInputPath is not null && loadName is not null)
                 {
                     string loadAssetDirectory = Path.Combine(scratchDirectory, "load-assets");
-                    await Iw3PcExtractionBackend.ExtractWorldAssetsAsync(
-                        Iw3PcExtractionToolLocator.FindUnlinker(), loadInputPath, loadAssetDirectory,
-                        scratchDirectory, iwdPath, cancellationToken).ConfigureAwait(false);
+                    await Iw3PcExtractionBackend.ExtractStandaloneAsync(
+                        Iw3PcZone.Load(loadInputPath, cancellationToken), loadInputPath, loadAssetDirectory, iwdPath, worldOnly: true, cancellationToken).ConfigureAwait(false);
                     stagedLoadPath = Path.Combine(scratchDirectory, loadName + ".ff");
                     loadZone = (loadAssetDirectory, loadName, stagedLoadPath);
                 }
-                var lighting = CompileSourceLighting(worldExtractionOutput, assetDirectory);
+                var lighting = CompileSourceLighting(world.Lighting, assetDirectory);
                 lightmaps = lighting.Lightmaps;
                 outdoorImage = lighting.OutdoorImage;
-                outdoorLookupMatrix = string.Join(',', lighting.OutdoorLookupMatrix
-                    .Select(value => value.ToString("R", CultureInfo.InvariantCulture)));
+                outdoorLookupMatrix = lighting.OutdoorLookupMatrix;
                 materialProviderPath = Path.Combine(scratchDirectory, "world-materials.ff");
                 stagedImagePath = Path.Combine(scratchDirectory, "world-images.pak");
                 bool hasImagePackage;
                 (texturedMaterialCount, defaultMaterialNames, fallbackImageNames, hudMaterialNames, hudScriptPath, hasImagePackage) =
-                    BuildWorldTextureProvider(bspPath, modelCollisionPath, assetDirectory, mapName,
+                    BuildWorldTextureProvider(bspPath, world.ModelCollision, assetDirectory, mapName,
                         bootstrapPath ?? throw new InvalidOperationException("Missing material bootstrap."),
                         iwdPath, sourceFastFileDirectory,
                         options.ImageFileIndex ?? throw new InvalidOperationException("Missing imagefile index."),
@@ -247,103 +240,81 @@ internal static class Iw3PcMapConverter
                 }
             }
             stagedMapPath = Path.Combine(scratchDirectory, mapName + ".ff");
-            List<string> linkerArguments =
+            List<string> modelNames =
             [
-                "to-fastfile", bspPath, templatePath,
-                $"maps/mp/{mapName}.d3dbsp", stagedMapPath, "--world-only",
-                "--xmodel", "com_plasticcase_beige_big",
-                "--xmodel", "com_laptop_2_open",
-                "--xmodel", "com_cellphone_on",
-                "--xmodel", "com_bomb_objective",
-                "--xmodel", "com_bomb_objective_d",
-                "--xmodel", MilTntBombMp.Name
+                "com_plasticcase_beige_big",
+                "com_laptop_2_open",
+                "com_cellphone_on",
+                "com_bomb_objective",
+                "com_bomb_objective_d",
+                MilTntBombMp.Name
             ];
+            List<string> materialNames = [];
+            List<string> effectNames = [];
+            List<string> soundNames = [];
+            Dictionary<string, string> rawFilePaths = new(StringComparer.Ordinal);
+            List<(string PrimaryImageName, string SecondaryImageName)> lightmapImageNames = [];
+            string? outdoorImageName = null;
             if (textured)
             {
-                linkerArguments.Add("--source-materials");
-                linkerArguments.AddRange(["--sound", "ui_pulse_text_type", "--sound", "ui_pulse_text_delete"]);
-                linkerArguments.Add(bootstrapPath ?? throw new InvalidOperationException("Missing world bootstrap."));
+                soundNames.AddRange(["ui_pulse_text_type", "ui_pulse_text_delete"]);
                 if (damageFx is not null)
                 {
                     foreach (string effectName in damageFx.EffectNames)
-                    {
-                        linkerArguments.Add("--fx");
-                        linkerArguments.Add(effectName);
-                    }
+                        effectNames.Add(effectName);
                     foreach (string soundName in damageFx.SoundNames)
-                    {
-                        linkerArguments.Add("--sound");
-                        linkerArguments.Add(soundName);
-                    }
+                        soundNames.Add(soundName);
                     // Models already referenced by the world receive their asset
                     // row there; a later explicit root would duplicate that owner.
                     IReadOnlyList<string> worldModelNames = Iw3StaticModelNameReader
                         .ReadFromConvertedD3dbsp(bspPath, WorldOnlyVehicleModels).StaticModelNames;
                     foreach (string modelName in damageFx.ModelNames.Except(worldModelNames, StringComparer.Ordinal))
-                    {
-                        linkerArguments.Add("--xmodel");
-                        linkerArguments.Add(modelName);
-                    }
+                        modelNames.Add(modelName);
                     foreach ((string name, string path) in damageFx.RawFilePaths)
-                    {
-                        linkerArguments.Add("--rawfile");
-                        linkerArguments.Add(name + "=" + path);
-                    }
+                        rawFilePaths.Add(name, path);
                 }
                 if (objectives is not null)
                 {
-                    HashSet<string> linkedModelNames = linkerArguments.Zip(linkerArguments.Skip(1))
-                        .Where(pair => pair.First == "--xmodel").Select(pair => pair.Second)
+                    HashSet<string> linkedModelNames = modelNames
                         .Concat(Iw3StaticModelNameReader.ReadFromConvertedD3dbsp(bspPath, WorldOnlyVehicleModels).StaticModelNames)
                         .ToHashSet(StringComparer.Ordinal);
                     foreach (string modelName in objectives.ModelNames.Where(linkedModelNames.Add))
-                        linkerArguments.AddRange(["--xmodel", modelName]);
+                        modelNames.Add(modelName);
                     foreach (string materialName in objectives.MaterialNames)
-                        linkerArguments.AddRange(["--material", materialName]);
-                    linkerArguments.AddRange(["--rawfile", objectives.RawFileName + "=" + objectives.Path]);
-                }
-                foreach (string modelName in WorldOnlyVehicleModels.Order(StringComparer.Ordinal))
-                {
-                    linkerArguments.Add("--static-script-model");
-                    linkerArguments.Add(modelName);
+                        materialNames.Add(materialName);
+                    rawFilePaths.Add(objectives.RawFileName, objectives.Path);
                 }
                 foreach (string materialName in hudMaterialNames)
-                {
-                    linkerArguments.Add("--material");
-                    linkerArguments.Add(materialName);
-                }
+                    materialNames.Add(materialName);
                 if (hudScriptPath is not null)
-                {
-                    linkerArguments.Add("--rawfile");
-                    linkerArguments.Add($"maps/mp/{mapName}.gsc={hudScriptPath}");
-                }
+                    rawFilePaths.Add($"maps/mp/{mapName}.gsc", hudScriptPath);
                 foreach (GfxLightmapArray lightmap in lightmaps)
-                {
-                    linkerArguments.Add("--lightmap");
-                    linkerArguments.Add(lightmap.Primary?.Name ?? throw new InvalidDataException("Missing primary atlas name."));
-                    linkerArguments.Add(lightmap.Secondary?.Name ?? throw new InvalidDataException("Missing secondary atlas name."));
-                }
-                linkerArguments.Add("--outdoor-image");
-                linkerArguments.Add(outdoorImage?.Name ?? throw new InvalidDataException("Missing outdoor image name."));
-                linkerArguments.Add("--outdoor-lookup-matrix");
-                linkerArguments.Add(outdoorLookupMatrix ?? throw new InvalidDataException("Missing outdoor lookup matrix."));
+                    lightmapImageNames.Add((
+                        lightmap.Primary?.Name ?? throw new InvalidDataException("Missing primary atlas name."),
+                        lightmap.Secondary?.Name ?? throw new InvalidDataException("Missing secondary atlas name.")));
+                outdoorImageName = outdoorImage?.Name ?? throw new InvalidDataException("Missing outdoor image name.");
             }
-            // The intermediate provider now owns the pixels; retain only its
-            // path and the image names while the separate linker runs.
+            // The intermediate provider owns the pixels; retain only its path
+            // and the image names during linking.
             lightmaps = [];
             outdoorImage = null;
-            if (materialProviderPath is not null)
-            {
-                linkerArguments.Add("--provider-fastfile");
-                linkerArguments.Add(materialProviderPath);
-            }
             Directory.CreateDirectory(outputDirectory);
-            await Iw3PcExtractionBackend.RunToolAsync(
-                "IW4 world-first fastfile linking",
-                worldLinker,
-                scratchDirectory,
-                linkerArguments,
-                cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            FastFileConverter.FromD3dbsp(
+                bspPath, templatePath, $"maps/mp/{mapName}.d3dbsp", stagedMapPath,
+                forceFullbright: false, useCompiledLighting: false,
+                worldOnly: true, useSourceMaterials: textured, stockBootstrap: false,
+                dependencyFastFiles: textured ? [bootstrapPath ?? throw new InvalidOperationException("Missing world bootstrap.")] : [],
+                providerFastFiles: materialProviderPath is null ? [] : [materialProviderPath],
+                additionalXModelNames: modelNames, additionalMaterialNames: materialNames,
+                additionalFxNames: effectNames, additionalXAnimNames: [],
+                additionalSoundNames: soundNames, soundDefinitionPaths: new Dictionary<string, string>(),
+                assetLibraryDirectory: null, rawFilePaths: rawFilePaths,
+                lightmapImageNames: lightmapImageNames, outdoorImageName: outdoorImageName,
+                outdoorLookupMatrix: outdoorLookupMatrix,
+                staticScriptModelNames: textured ? WorldOnlyVehicleModels : new HashSet<string>(StringComparer.Ordinal),
+                cancellationToken: cancellationToken,
+                progress: new Progress<string>());
             if (!File.Exists(stagedMapPath) || new FileInfo(stagedMapPath).Length == 0)
                 throw new InvalidDataException("World-first linking did not produce a fastfile.");
             PublishOutputs((stagedMapPath, outputPath),
@@ -364,48 +335,22 @@ internal static class Iw3PcMapConverter
     }
 
     private static (IReadOnlyList<GfxLightmapArray> Lightmaps, GfxImageAsset OutdoorImage,
-        float[] OutdoorLookupMatrix) CompileSourceLighting(string output, string assetDirectory)
+        float[] OutdoorLookupMatrix) CompileSourceLighting(
+        Iw3PcWorldLightingInfo? lighting, string assetDirectory)
     {
-        string atlasCountText = ReadWorldExtractionValue(output, "source-lightmap-atlases-linker-owned");
-        if (!int.TryParse(atlasCountText, NumberStyles.None, CultureInfo.InvariantCulture,
-                out int atlasCount) || atlasCount is < 0 or > 31)
-            throw new InvalidDataException("Native world extraction returned an invalid lightmap atlas count.");
-
-        string[] matrixElements = ReadWorldExtractionValue(output, "outdoor-lookup-matrix").Split(',');
-        var matrix = new float[16];
-        if (matrixElements.Length != matrix.Length)
-            throw new InvalidDataException("Native world extraction returned an invalid outdoor lookup matrix.");
-        for (int index = 0; index < matrix.Length; index++)
-        {
-            if (!float.TryParse(matrixElements[index], NumberStyles.Float, CultureInfo.InvariantCulture,
-                    out matrix[index]) || !float.IsFinite(matrix[index]))
-                throw new InvalidDataException("Native world extraction returned an invalid outdoor lookup matrix.");
-        }
-
-        string outdoorName = ReadWorldExtractionValue(output, "outdoor-image");
+        ArgumentNullException.ThrowIfNull(lighting);
         return (
-            Iw3Iwi6LightingCompiler.CompileDirectory(Path.Combine(assetDirectory, "images"), atlasCount),
+            Iw3Iwi6LightingCompiler.CompileDirectory(Path.Combine(assetDirectory, "images"), lighting.LightmapAtlasCount),
             Iw3Iwi6LightingCompiler.CompileOutdoor(
-                ResolveAssetFile(assetDirectory, "images", outdoorName, ".iwi", "outdoor image")),
-            matrix);
-    }
-
-    private static string ReadWorldExtractionValue(string output, string field)
-    {
-        string prefix = field + ": ";
-        string[] values = output.Split('\n', StringSplitOptions.TrimEntries)
-            .Where(line => line.StartsWith(prefix, StringComparison.Ordinal))
-            .Select(line => line[prefix.Length..]).ToArray();
-        if (values.Length != 1 || string.IsNullOrWhiteSpace(values[0]))
-            throw new InvalidDataException($"Native world extraction must provide one '{field}' value.");
-        return values[0];
+                ResolveAssetFile(assetDirectory, "images", lighting.OutdoorImageName, ".iwi", "outdoor image")),
+            lighting.OutdoorLookupMatrix);
     }
 
     private static (int TexturedMaterialCount, IReadOnlyList<string> DefaultMaterialNames,
         IReadOnlyList<string> FallbackImageNames,
         IReadOnlyList<string> HudMaterialNames,
         string? HudScriptPath, bool HasImagePackage) BuildWorldTextureProvider(
-        string bspPath, string modelCollisionPath, string assetDirectory, string mapName, string bootstrapPath,
+        string bspPath, Iw3XModelCollisionSourceData modelCollisionSource, string assetDirectory, string mapName, string bootstrapPath,
         string? iwdPath, string? sourceFastFileDirectory, int imageFileIndex,
         string providerPath, string imagePath, IReadOnlyList<GfxLightmapArray> lightmaps,
         GfxImageAsset outdoorImage,
@@ -424,7 +369,6 @@ internal static class Iw3PcMapConverter
         if (unownedModelNames.Length != 0)
             throw new InvalidDataException("The converted d3dbsp contains static XModels without owned IW3 definitions: " +
                 string.Join(", ", unownedModelNames));
-        Iw3XModelCollisionSourceData modelCollisionSource = Iw3XModelCollisionReader.Read(modelCollisionPath);
         ValidateDynamicEntityMapName(modelCollisionSource.MapName, mapName);
         ValidateModelCollisionSource(modelCollisionSource, staticModelNames, manifest);
         IReadOnlyList<string> modelMaterialNames = Iw3XModelExportImporter.ReadReferencedMaterialNames(
@@ -790,8 +734,6 @@ internal static class Iw3PcMapConverter
 
         ConversionPaths paths = ValidatePaths(options);
         int effectiveImageFileIndex = options.ImageFileIndex ?? -1;
-        Iw3PcExtractionTools tools = Iw3PcExtractionToolLocator.Find(
-            requireUnlinker: paths.SourceLibraryDirectory is null);
         string scratchDirectory = Path.Combine(
             Path.GetTempPath(),
             "mapconverter-iw3-" + Guid.NewGuid().ToString("N"));
@@ -808,8 +750,6 @@ internal static class Iw3PcMapConverter
             Iw3PcExtractionResult extraction =
                 await Iw3PcExtractionBackend.ExtractAsync(
                     new Iw3PcExtractionRequest(
-                        tools.NativeMapConverterPath,
-                        tools.UnlinkerPath,
                         paths.MapInputPath,
                         paths.LoadInputPath,
                         paths.IwdInputPath,
@@ -823,10 +763,10 @@ internal static class Iw3PcMapConverter
             Iw3ZoneManifest loadManifest = Iw3ZoneManifest.Read(
                 extraction.LoadZoneSourcePath);
             Iw3DynamicEntitySourceData dynamicEntitySource =
-                Iw3DynamicEntityReader.Read(extraction.DynamicEntityPath);
+                extraction.World.DynamicEntities;
             ValidateDynamicEntityMapName(dynamicEntitySource.MapName, paths.MapName);
             Iw3XModelCollisionSourceData xmodelCollisionSource =
-                Iw3XModelCollisionReader.Read(extraction.XModelCollisionPath);
+                extraction.World.ModelCollision;
             ValidateDynamicEntityMapName(xmodelCollisionSource.MapName, paths.MapName);
 
             Iw3MapModelReferences modelReferences =
@@ -921,9 +861,8 @@ internal static class Iw3PcMapConverter
                     "custom imagefile index. Select a different '--imagefile-index'.");
             }
 
-            var vehicleEffects = await Iw3PcEffectCompiler.CaptureAsync(extraction.VehicleRecipes.EffectNames,
-                extraction.SourceLibrary, tools.NativeMapConverterPath, paths.MapInputPath,
-                scratchDirectory, cancellationToken).ConfigureAwait(false);
+            var vehicleEffects = Iw3PcEffectCompiler.Capture(extraction.VehicleRecipes.EffectNames,
+                extraction.SourceLibrary, paths.MapInputPath, cancellationToken);
             string[] importedModelNames = modelReferences.StaticModelNames
                 .Concat(modelReferences.NamedEntityModelNames)
                 .Concat(extraction.VehicleRecipes.ModelNames)
@@ -1030,7 +969,7 @@ internal static class Iw3PcMapConverter
                     physPresets.ByName);
 
             string mapAssetName = $"maps/mp/{paths.MapName}.d3dbsp";
-            var lighting = CompileSourceLighting(extraction.NativeConversionOutput, extraction.MapAssetDirectory);
+            var lighting = CompileSourceLighting(extraction.World.Lighting, extraction.MapAssetDirectory);
             D3dbspLinkResult mapGraph = D3dbspAssetLinker.Link(
                 new D3dbspLinkRequest(
                     extraction.D3dbspPath,
@@ -1083,7 +1022,7 @@ internal static class Iw3PcMapConverter
             requiredAliases.UnionWith(vehicleEffects.SoundNames);
             var entities = mapGraph.NestedAssets.OfType<MapEntsAsset>().Single();
             var audio = await Iw3PcAudioCompiler.CaptureAsync(extraction.SourceLibrary,
-                tools.NativeMapConverterPath, paths.MapInputPath, paths.IwdInputPath,
+                paths.MapInputPath, paths.IwdInputPath,
                 extraction.MapAssetDirectory, nativeDirectory, soundPrefix, ambientAliases, requiredAliases,
                 D3dbspAssetLinker.ReadEntities(entities.EntityStringBytes.ToArray()), scratchDirectory,
                 cancellationToken, allowMissingSounds: options.AllowMissingSounds).ConfigureAwait(false);
@@ -1729,7 +1668,7 @@ internal static class Iw3PcMapConverter
         string assetDirectory,
         string imageName) => ResolveContainedPath(
             assetDirectory,
-            Path.Combine("images", imageName + ".iwi"),
+            Iw3PcImageExporter.FileName(imageName),
             "image");
 
     private static TechniqueCompilationGraph CompileTechniques(
@@ -2509,7 +2448,7 @@ internal static class Iw3PcMapConverter
         if (!string.Equals(normalized, expected, StringComparison.Ordinal))
         {
             throw new InvalidDataException(
-                $"IW3 dynamic-entity sidecar belongs to '{sourceName}', " +
+                $"IW3 world data belongs to '{sourceName}', " +
                 $"not '{expected}'.");
         }
     }
@@ -2529,7 +2468,7 @@ internal static class Iw3PcMapConverter
         if (missing.Length != 0 || unexpected.Length != 0)
         {
             throw new InvalidDataException(
-                "The XModel-collision sidecar does not cover the required map models or contains models outside " +
+                "The source XModel collision data does not cover the required map models or contains models outside " +
                 "the source manifest. Missing: " + string.Join(", ", missing) +
                 "; unexpected: " + string.Join(", ", unexpected) + ".");
         }
@@ -2619,10 +2558,13 @@ internal static class Iw3PcMapConverter
         string extension,
         string description)
     {
-        string path = ResolveContainedPath(
-            assetDirectory,
-            Path.Combine(kindDirectory, assetName + extension),
-            description);
+        string relativePath = kindDirectory switch
+        {
+            "materials" => Iw3PcMaterialExporter.FileName(assetName),
+            "images" => Iw3PcImageExporter.FileName(assetName),
+            _ => Path.Combine(kindDirectory, assetName + extension)
+        };
+        string path = ResolveContainedPath(assetDirectory, relativePath, description);
         if (!File.Exists(path))
             throw new FileNotFoundException($"Extracted {description} '{assetName}' was not found.", path);
         return path;

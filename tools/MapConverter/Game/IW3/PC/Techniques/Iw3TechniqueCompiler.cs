@@ -658,6 +658,12 @@ internal sealed class Iw3TechniqueCompiler
     {
         switch (source.Value)
         {
+            case Iw3CodeShaderRowsSource rows:
+                throw new InvalidDataException(
+                    $"{passPath} shader '{shader.ProgramName}' parameter '{source.Destination.Name}' preserves " +
+                    $"IW3 code-constant firstRow={rows.FirstRow}, rowCount={rows.RowCount} for " +
+                    $"constant.{rows.Accessor}; this selected row slice has no established IW4 binding.");
+
             case Iw3CodeShaderValueSource code
                 when code.Kind == Iw3CodeShaderValueKind.Constant:
                 if (!Iw3TechniqueBindingFacts.TryGetConstant(

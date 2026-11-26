@@ -3,7 +3,7 @@ namespace MapConverter.Game.IW3.PS3.Rules
 open System
 open System.Collections.Generic
 
-type internal FactionProfile =
+type FactionProfile =
     | UsRussia = 0
     | Tf141Opfor = 1
 

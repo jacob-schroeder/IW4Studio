@@ -1,0 +1,30 @@
+<Project>
+  <PropertyGroup>
+    <MapConverterFfmpegName Condition="$([MSBuild]::IsOSPlatform('Windows'))">ffmpeg.exe</MapConverterFfmpegName>
+    <MapConverterFfmpegName Condition="'$(MapConverterFfmpegName)' == ''">ffmpeg</MapConverterFfmpegName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="$(MapConverterFfmpegPath)" Condition="'$(MapConverterFfmpegPath)' != ''"
+             Link="$(MapConverterFfmpegName)" ExcludeFromSingleFile="true" CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(MapConverterFfmpegLicensePath)" Condition="'$(MapConverterFfmpegLicensePath)' != ''"
+             Link="ffmpeg-license.txt" CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(MapConverterFfmpegNoticePath)" Condition="'$(MapConverterFfmpegNoticePath)' != ''"
+             Link="ffmpeg-notice.txt" CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="ValidateMapConverterFfmpeg" BeforeTargets="GetCopyToOutputDirectoryItems;ComputeFilesToPublish"
+          Condition="'$(MapConverterFfmpegPath)' != ''">
+    <Error Condition="!Exists('$(MapConverterFfmpegPath)')"
+           Text="MapConverterFfmpegPath must name a distribution FFmpeg executable." />
+    <Error Condition="'$(MapConverterFfmpegLicensePath)' == '' or !Exists('$(MapConverterFfmpegLicensePath)')"
+           Text="Bundled FFmpeg requires MapConverterFfmpegLicensePath for the distribution license." />
+    <Error Condition="'$(MapConverterFfmpegNoticePath)' != '' and !Exists('$(MapConverterFfmpegNoticePath)')"
+           Text="MapConverterFfmpegNoticePath does not exist." />
+  </Target>
+  <Target Name="RequireMapConverterFfmpegForPublish" BeforeTargets="ComputeFilesToPublish" Condition="'$(SelfContained)' == 'true'">
+    <Error Condition="'$(MapConverterFfmpegPath)' == ''"
+           Text="A self-contained MapConverter distribution needs a target-platform FFmpeg executable with libmp3lame. Set MapConverterFfmpegPath and MapConverterFfmpegLicensePath." />
+  </Target>
+</Project>

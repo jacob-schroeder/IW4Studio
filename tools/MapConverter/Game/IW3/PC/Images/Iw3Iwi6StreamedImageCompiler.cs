@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+using MapConverter.IW3.PC.Assets;
 using IW4.Game.Assets.Image;
 
 namespace MapConverter.Game.IW3.PC.Images;
@@ -16,22 +16,7 @@ internal sealed record Iw3Iwi6StreamedImageCompilation(
 /// </summary>
 internal static class Iw3Iwi6StreamedImageCompiler
 {
-    private const int HeaderSize = 0x1c;
-    private const byte Version = 6;
-    private const byte NoPicMip = 0x01;
-    private const byte NoMipMaps = 0x02;
-    private const byte CubeMap = 0x04;
-    private const byte LegacyNormals = 0x20;
-    private const byte ClampU = 0x40;
-    private const byte ClampV = 0x80;
     private const uint TextureControl1 = 0x0001aae4;
-
-    private const byte IwiRgba = 0x01;
-    private const byte IwiRgb = 0x02;
-    private const byte IwiLuminance = 0x04;
-    private const byte IwiDxt1 = 0x0b;
-    private const byte IwiDxt3 = 0x0c;
-    private const byte IwiDxt5 = 0x0d;
 
     internal static Iw3Iwi6StreamedImageCompilation Compile(
         string imageName,
@@ -47,36 +32,27 @@ internal static class Iw3Iwi6StreamedImageCompiler
                 semantic,
                 "A material-image semantic is required.");
         }
-        if (iwiBytes.Length < HeaderSize)
-            throw new InvalidDataException("IWI6 data is shorter than its 0x1C-byte header.");
-        if (iwiBytes[0] != 'I' || iwiBytes[1] != 'W' || iwiBytes[2] != 'i')
-            throw new InvalidDataException("The IWI magic is invalid.");
-        if (iwiBytes[3] != Version)
+        Iwi6Header header = Iwi6Header.Read(iwiBytes, imageName);
+        GfxImageBaseFormat baseFormat = header.Format switch
         {
-            throw new NotSupportedException(
-                $"IWI version {iwiBytes[3]} is not supported; IW3 IWI6 is required.");
-        }
-
-        GfxImageBaseFormat baseFormat = iwiBytes[4] switch
-        {
-            IwiRgba or IwiRgb or IwiLuminance => GfxImageBaseFormat.A8R8G8B8,
-            IwiDxt1 => GfxImageBaseFormat.CompressedDxt1,
-            IwiDxt3 => GfxImageBaseFormat.CompressedDxt23,
-            IwiDxt5 => GfxImageBaseFormat.CompressedDxt45,
+            Iwi6Format.Rgba or Iwi6Format.Rgb or Iwi6Format.Luminance => GfxImageBaseFormat.A8R8G8B8,
+            Iwi6Format.Dxt1 => GfxImageBaseFormat.CompressedDxt1,
+            Iwi6Format.Dxt3 => GfxImageBaseFormat.CompressedDxt23,
+            Iwi6Format.Dxt5 => GfxImageBaseFormat.CompressedDxt45,
             _ => throw new NotSupportedException(
-                $"IWI6 format 0x{iwiBytes[4]:X2} is not supported; " +
+                $"IWI6 format 0x{(byte)header.Format:X2} is not supported; " +
                 "RGB, RGBA, luminance, DXT1, DXT3, or DXT5 is required.")
         };
-        byte flags = iwiBytes[5];
+        Iwi6Flags flags = header.Flags;
         // Clamp flags do not change pixel layout. Per-use addressing is
         // retained by the source material's sampler state.
-        if ((flags & ~(NoPicMip | NoMipMaps | CubeMap | LegacyNormals | ClampU | ClampV)) != 0)
+        if ((flags & ~(Iwi6Flags.NoPicMip | Iwi6Flags.NoMipMaps | Iwi6Flags.CubeMap | Iwi6Flags.LegacyNormals | Iwi6Flags.ClampU | Iwi6Flags.ClampV)) != 0)
         {
             throw new NotSupportedException(
-                $"IWI6 flags 0x{flags:X2} request an unsupported image shape or layout.");
+                $"IWI6 flags 0x{(byte)flags:X2} request an unsupported image shape or layout.");
         }
-        if ((flags & LegacyNormals) != 0 &&
-            ((flags & CubeMap) != 0 || baseFormat != GfxImageBaseFormat.CompressedDxt45 ||
+        if ((flags & Iwi6Flags.LegacyNormals) != 0 &&
+            ((flags & Iwi6Flags.CubeMap) != 0 || baseFormat != GfxImageBaseFormat.CompressedDxt45 ||
              semantic != TextureSemantic.NormalMap || useSrgbReads))
         {
             throw new NotSupportedException(
@@ -85,10 +61,10 @@ internal static class Iw3Iwi6StreamedImageCompiler
         // Legacy DXT5 normal channels are authored in alpha/green and decoded
         // by the material shader. Retain the compressed blocks unchanged.
 
-        ushort width = ReadDimension(iwiBytes, 0x06, "width");
-        ushort height = ReadDimension(iwiBytes, 0x08, "height");
-        ushort depth = ReadDimension(iwiBytes, 0x0a, "depth");
-        bool isCubemap = (flags & CubeMap) != 0;
+        ushort width = header.Width;
+        ushort height = header.Height;
+        ushort depth = header.Depth;
+        bool isCubemap = (flags & Iwi6Flags.CubeMap) != 0;
         if (depth != 1)
         {
             throw new NotSupportedException(
@@ -99,7 +75,7 @@ internal static class Iw3Iwi6StreamedImageCompiler
         if (isCubemap && !System.Numerics.BitOperations.IsPow2((uint)width))
             throw new InvalidDataException("An IWI6 cubemap requires power-of-two face dimensions.");
 
-        int mipCount = (flags & NoMipMaps) != 0
+        int mipCount = (flags & Iwi6Flags.NoMipMaps) != 0
             ? 1
             : ComputeFullMipCount(width, height);
         byte format = (byte)baseFormat;
@@ -110,10 +86,10 @@ internal static class Iw3Iwi6StreamedImageCompiler
             height);
         // Bitmap formats expand into the existing four-byte PS3 ARGB format.
         // IWI file extents still describe the original source pixels.
-        int[] sourceMipByteCounts = iwiBytes[4] switch
+        int[] sourceMipByteCounts = header.Format switch
         {
-            IwiRgb => mipByteCounts.Select(byteCount => checked(byteCount / 4 * 3)).ToArray(),
-            IwiLuminance => mipByteCounts.Select(byteCount => byteCount / 4).ToArray(),
+            Iwi6Format.Rgb => mipByteCounts.Select(byteCount => checked(byteCount / 4 * 3)).ToArray(),
+            Iwi6Format.Luminance => mipByteCounts.Select(byteCount => byteCount / 4).ToArray(),
             _ => mipByteCounts
         };
         int faceCount = isCubemap ? 6 : 1;
@@ -122,7 +98,7 @@ internal static class Iw3Iwi6StreamedImageCompiler
             (total, byteCount) => checked(total + byteCount));
         int sourcePayloadByteCount = checked(sourceFaceByteCount * faceCount);
 
-        int sourceFileByteCount = checked(HeaderSize + sourcePayloadByteCount);
+        int sourceFileByteCount = checked(Iwi6Header.Size + sourcePayloadByteCount);
         if (iwiBytes.Length != sourceFileByteCount)
         {
             throw new InvalidDataException(
@@ -131,7 +107,7 @@ internal static class Iw3Iwi6StreamedImageCompiler
                 $"{sourceFileByteCount:N0} byte(s).");
         }
         ValidatePicmipFileSizes(
-            iwiBytes,
+            header,
             sourceMipByteCounts,
             faceCount,
             sourceFileByteCount);
@@ -158,7 +134,7 @@ internal static class Iw3Iwi6StreamedImageCompiler
 
         var payload = new byte[alignedPayloadByteCount];
         int[] destinationOffsets = ComputeDestinationOffsets(mipByteCounts);
-        int sourceOffset = HeaderSize;
+        int sourceOffset = Iwi6Header.Size;
         for (int mipLevel = mipByteCounts.Length - 1;
              mipLevel >= 0;
              mipLevel--)
@@ -175,15 +151,15 @@ internal static class Iw3Iwi6StreamedImageCompiler
                 if (baseFormat == GfxImageBaseFormat.A8R8G8B8)
                 {
                     byte[] linear;
-                    if (iwiBytes[4] is IwiRgb or IwiLuminance)
+                    if (header.Format is Iwi6Format.Rgb or Iwi6Format.Luminance)
                     {
                         linear = new byte[byteCount];
-                        int sourcePixelSize = iwiBytes[4] == IwiRgb ? 3 : 1;
+                        int sourcePixelSize = header.Format == Iwi6Format.Rgb ? 3 : 1;
                         for (int sourcePixel = 0, targetPixel = 0;
                              sourcePixel < sourceMip.Length;
                              sourcePixel += sourcePixelSize, targetPixel += 4)
                         {
-                            if (iwiBytes[4] == IwiRgb)
+                            if (header.Format == Iwi6Format.Rgb)
                                 sourceMip.Slice(sourcePixel, 3).CopyTo(linear.AsSpan(targetPixel, 3));
                             else
                                 linear.AsSpan(targetPixel, 3).Fill(sourceMip[sourcePixel]);
@@ -211,7 +187,7 @@ internal static class Iw3Iwi6StreamedImageCompiler
         if (sourceOffset != iwiBytes.Length)
             throw new InvalidDataException("IWI6 mip traversal did not consume the source payload.");
 
-        if (isCubemap || (flags & NoPicMip) != 0)
+        if (isCubemap || (flags & Iwi6Flags.NoPicMip) != 0)
         {
             // The PS3 wire image has no noPicmip field. Full resident storage
             // preserves the source resolution without stream quality reduction.
@@ -446,18 +422,6 @@ internal static class Iw3Iwi6StreamedImageCompiler
         }
     }
 
-    private static ushort ReadDimension(
-        ReadOnlySpan<byte> source,
-        int offset,
-        string fieldName)
-    {
-        ushort value = BinaryPrimitives.ReadUInt16LittleEndian(
-            source.Slice(offset, sizeof(ushort)));
-        return value != 0
-            ? value
-            : throw new InvalidDataException($"IWI6 {fieldName} cannot be zero.");
-    }
-
     private static int ComputeFullMipCount(int width, int height)
     {
         int count = 1;
@@ -510,13 +474,12 @@ internal static class Iw3Iwi6StreamedImageCompiler
     }
 
     private static void ValidatePicmipFileSizes(
-        ReadOnlySpan<byte> source,
+        Iwi6Header header,
         IReadOnlyList<int> mipByteCounts,
         int faceCount,
         int sourceFileByteCount)
     {
-        uint serializedFileSize = BinaryPrimitives.ReadUInt32LittleEndian(
-            source.Slice(0x0c, sizeof(uint)));
+        uint serializedFileSize = header.FileSizeForPicmip[0];
         if (serializedFileSize != sourceFileByteCount)
         {
             throw new InvalidDataException(
@@ -529,7 +492,7 @@ internal static class Iw3Iwi6StreamedImageCompiler
             int firstRetainedMip = Math.Min(
                 picmip,
                 mipByteCounts.Count - 1);
-            int expected = HeaderSize;
+            int expected = Iwi6Header.Size;
             for (int mipLevel = firstRetainedMip;
                  mipLevel < mipByteCounts.Count;
                  mipLevel++)
@@ -537,8 +500,7 @@ internal static class Iw3Iwi6StreamedImageCompiler
                 expected = checked(expected + mipByteCounts[mipLevel] * faceCount);
             }
 
-            uint serialized = BinaryPrimitives.ReadUInt32LittleEndian(
-                source.Slice(0x0c + picmip * sizeof(uint), sizeof(uint)));
+            uint serialized = header.FileSizeForPicmip[picmip];
             if (picmip >= mipByteCounts.Count && serialized == 0)
                 continue;
             if (serialized != expected)

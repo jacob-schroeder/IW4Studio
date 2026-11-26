@@ -151,6 +151,9 @@ public sealed partial class WelcomeWindow : Window
             case StudioMenuAction.ShowAbout:
                 AboutRequested?.Invoke(this);
                 break;
+            case StudioMenuAction.ShowMapConverter:
+                _ = new MapConverterWindow().ShowDialog(this);
+                break;
             case StudioMenuAction.SelectDarkTheme:
                 ThemeRequested?.Invoke(ThemeMode.Dark);
                 break;

@@ -1,13 +1,14 @@
+using MapConverter.Game.IW3.PC.World;
+using MapConverter.IW3.PC.Assets;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 using MapConverter.Game.IW3.PC.Conversion;
+using MapConverter.IW3.PC.Readers;
 
 namespace MapConverter.Game.IW3.PC.Extraction;
 
 internal sealed record Iw3PcExtractionRequest(
-    string NativeMapConverterPath,
-    string? UnlinkerPath,
     string MapFastFilePath,
     string LoadFastFilePath,
     string? IwdPath,
@@ -17,10 +18,8 @@ internal sealed record Iw3PcExtractionRequest(
 
 internal sealed record Iw3PcExtractionResult(
     string BackendDescription,
-    string NativeConversionOutput,
+    Iw3PcWorldExtraction World,
     string D3dbspPath,
-    string DynamicEntityPath,
-    string XModelCollisionPath,
     string MapAssetDirectory,
     string MapZoneSourcePath,
     string LoadAssetDirectory,
@@ -29,16 +28,12 @@ internal sealed record Iw3PcExtractionResult(
     Iw3PcVehicleRecipes VehicleRecipes);
 
 /// <summary>
-/// Runs the current IW3 PC extraction tools and converts the source map BSP
+/// Reads IW3 PC source assets and converts the map BSP
 /// into the version consumed by the IW4 PS3 linker.
 /// </summary>
 internal static class Iw3PcExtractionBackend
 {
-    internal const string Description =
-        "Native IW3-to-v22 D3DBSP converter with OpenAssetTools Unlinker";
-
-    private const string IncludedAssetTypes =
-        "image,material,xmodel,rawfile,mapents,fx,physpreset";
+    internal const string Description = "IW3 PC fastfile reader and v22 D3DBSP writer";
 
     public static async Task<Iw3PcExtractionResult> ExtractAsync(
         Iw3PcExtractionRequest request,
@@ -48,10 +43,6 @@ internal static class Iw3PcExtractionBackend
         if (request.AllowMissingSounds && request.SourceLibraryDirectory is null)
             throw new ArgumentException("Allowing missing sounds requires a source library.", nameof(request));
 
-        var nativeMapConverterPath = ValidateExistingFile(
-            request.NativeMapConverterPath,
-            nameof(request.NativeMapConverterPath),
-            "Native IW3 map converter");
         var mapFastFilePath = ValidateFastFile(
             request.MapFastFilePath,
             nameof(request.MapFastFilePath),
@@ -84,26 +75,18 @@ internal static class Iw3PcExtractionBackend
         var mapName = GetZoneName(mapFastFilePath, nameof(request.MapFastFilePath));
         var loadName = GetZoneName(loadFastFilePath, nameof(request.LoadFastFilePath));
         var d3dbspPath = Path.Combine(scratchDirectory, $"{mapName}.d3dbsp");
-        var dynamicEntityPath = Path.Combine(scratchDirectory, $"{mapName}.dynents");
-        var xmodelCollisionPath = Path.Combine(scratchDirectory, $"{mapName}.modelcoll");
         var mapAssetDirectory = Path.Combine(scratchDirectory, "map-assets");
         var loadAssetDirectory = Path.Combine(scratchDirectory, "load-assets");
         var mapZoneSourcePath = Path.Combine(mapAssetDirectory, "zone_source", $"{mapName}.zone");
         var loadZoneSourcePath = Path.Combine(loadAssetDirectory, "zone_source", $"{loadName}.zone");
 
         RejectExistingOutput(d3dbspPath);
-        RejectExistingOutput(dynamicEntityPath);
-        RejectExistingOutput(xmodelCollisionPath);
         RejectExistingOutput(mapAssetDirectory);
         RejectExistingOutput(loadAssetDirectory);
-
-        Directory.CreateDirectory(mapAssetDirectory);
-        Directory.CreateDirectory(loadAssetDirectory);
 
         Iw3PcSourceLibrary? sourceLibrary = sourceLibraryDirectory is null
             ? null
             : await Iw3PcSourceLibrary.ResolveAsync(
-                nativeMapConverterPath,
                 mapFastFilePath,
                 loadFastFilePath,
                 iwdPath,
@@ -112,28 +95,27 @@ internal static class Iw3PcExtractionBackend
                 request.AllowMissingSounds,
                 cancellationToken).ConfigureAwait(false);
 
-        string nativeConversionOutput = sourceLibrary is null
-            ? await RunToolAsync(
-                "Native IW3 map conversion", nativeMapConverterPath, scratchDirectory,
-                [mapFastFilePath, d3dbspPath, dynamicEntityPath, xmodelCollisionPath],
-                cancellationToken).ConfigureAwait(false)
-            : await sourceLibrary.ConvertWorldAsync(
-                mapFastFilePath, d3dbspPath, dynamicEntityPath, xmodelCollisionPath,
-                cancellationToken).ConfigureAwait(false);
-
-        ValidateProducedFile(d3dbspPath, "The native converter did not produce the expected D3DBSP");
-        ValidateProducedFile(
-            dynamicEntityPath,
-            "The native converter did not produce the expected dynamic-entity sidecar");
-        ValidateProducedFile(
-            xmodelCollisionPath,
-            "The native converter did not produce the expected XModel-collision sidecar");
+        Iw3PcWorldExtraction world;
+        if (sourceLibrary is null)
+        {
+            var mapZone = Iw3PcZone.Load(mapFastFilePath, cancellationToken);
+            world = Iw3PcWorldConverter.Convert(mapZone, d3dbspPath, textured: true, cancellationToken);
+            await ExtractStandaloneAsync(mapZone, mapFastFilePath, mapAssetDirectory, iwdPath,
+                worldOnly: false, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            world = await sourceLibrary.ConvertWorldAsync(mapFastFilePath, d3dbspPath, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         Iw3PcVehicleRecipes vehicleRecipes = await Iw3PcVehicleRecipes.ReadAsync(
             mapFastFilePath, d3dbspPath, mapName, sourceLibrary, cancellationToken).ConfigureAwait(false);
 
         if (sourceLibrary is not null)
         {
+            Directory.CreateDirectory(mapAssetDirectory);
+            Directory.CreateDirectory(loadAssetDirectory);
             await sourceLibrary.ExtractAsync(
                 mapFastFilePath, mapAssetDirectory, mapZoneSourcePath,
                 cancellationToken).ConfigureAwait(false);
@@ -143,27 +125,14 @@ internal static class Iw3PcExtractionBackend
         }
         else
         {
-            string unlinkerPath = ValidateExistingFile(
-                request.UnlinkerPath ?? throw new ArgumentException(
-                    "Extraction without a source library requires Unlinker.", nameof(request)),
-                nameof(request.UnlinkerPath),
-                "OpenAssetTools Unlinker");
-            await ExtractZoneAssetsAsync(
-                unlinkerPath, nativeMapConverterPath, mapFastFilePath,
-                mapAssetDirectory, mapZoneSourcePath, scratchDirectory,
-                iwdPath, cancellationToken).ConfigureAwait(false);
-            await ExtractZoneAssetsAsync(
-                unlinkerPath, nativeMapConverterPath, loadFastFilePath,
-                loadAssetDirectory, loadZoneSourcePath, scratchDirectory,
-                iwdPath, cancellationToken).ConfigureAwait(false);
+            await ExtractStandaloneAsync(Iw3PcZone.Load(loadFastFilePath, cancellationToken), loadFastFilePath,
+                loadAssetDirectory, iwdPath, worldOnly: false, cancellationToken).ConfigureAwait(false);
         }
 
         return new Iw3PcExtractionResult(
-            sourceLibrary is null ? Description : "Native IW3 conversion with resolved source assets",
-            nativeConversionOutput,
+            Description,
+            world,
             d3dbspPath,
-            dynamicEntityPath,
-            xmodelCollisionPath,
             mapAssetDirectory,
             mapZoneSourcePath,
             loadAssetDirectory,
@@ -172,139 +141,33 @@ internal static class Iw3PcExtractionBackend
             vehicleRecipes);
     }
 
-    private static async Task ExtractZoneAssetsAsync(
-        string unlinkerPath,
-        string nativeMapConverterPath,
-        string fastFilePath,
-        string assetDirectory,
-        string zoneSourcePath,
-        string scratchDirectory,
-        string? iwdPath,
-        CancellationToken cancellationToken)
+    internal static async Task ExtractStandaloneAsync(Iw3PcZone zone, string fastFilePath,
+        string outputDirectory, string? iwdPath, bool worldOnly, CancellationToken token)
     {
-        await UnlinkZoneAsync(
-            unlinkerPath,
-            fastFilePath,
-            assetDirectory,
-            scratchDirectory,
-            iwdPath,
-            IncludedAssetTypes,
-            "IW3 asset extraction",
-            cancellationToken).ConfigureAwait(false);
-
-        ValidateProducedFile(zoneSourcePath, "Unlinker did not produce the expected zone source");
-
-        await ExtractTechniquesAsync(
-            nativeMapConverterPath,
-            fastFilePath,
-            assetDirectory,
-            scratchDirectory,
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task ExtractTechniquesAsync(
-        string nativeMapConverterPath,
-        string fastFilePath,
-        string assetDirectory,
-        string workingDirectory,
-        CancellationToken cancellationToken)
-    {
-        // The native loader preserves inline technique and shader identities.
-        // Unlinker's name-only graph export merges shader-model variants.
-        await RunToolAsync(
-            "IW3 technique and shader extraction",
-            nativeMapConverterPath,
-            workingDirectory,
-            ["--extract-techniques", fastFilePath, assetDirectory],
-            cancellationToken).ConfigureAwait(false);
-
-        foreach (string name in new[] { "techsets", "techniques", "shader_bin" })
+        string name = GetZoneName(fastFilePath, nameof(fastFilePath));
+        var catalog = Iw3PcSourceLibrary.CreateCatalog(zone);
+        // Files come from the last registration of each concrete name in the typed pool.
+        // The zone manifest also retains references and records hidden by later definitions.
+        var records = catalog.Assets.Where(asset => !asset.IsReference)
+            .Where(asset => asset.Type is "material" or "xmodel" or "image" or "rawfile" ||
+                !worldOnly && asset.Type is ("mapents" or "physpreset" or "techniqueset"))
+            .GroupBy(asset => (asset.Type, asset.Key)).Select(group => group.Last()).ToArray();
+        Iw3PcAssetExporter.ExportSelected(zone, records.Select(asset => asset.Id).ToArray(), outputDirectory, token);
+        var entries = catalog.Assets.Where(asset => asset.Type != "localize")
+            .Select(asset => new Iw3ZoneManifestEntry(asset.Type, asset.Name.Trim(), asset.IsReference));
+        if (catalog.Assets.Any(asset => asset.Type == "localize"))
+            entries = entries.Append(new Iw3ZoneManifestEntry("localize", name, false));
+        Iw3ZoneManifest.Write(Path.Combine(outputDirectory, "zone_source", name + ".zone"), entries);
+        if (!worldOnly)
         {
-            ValidateExistingDirectory(
-                Path.Combine(assetDirectory, name),
-                nameof(assetDirectory),
-                $"Extracted {name} directory");
+            foreach (string directory in new[] { "techsets", "techniques", "shader_bin" })
+                Directory.CreateDirectory(Path.Combine(outputDirectory, directory));
         }
-    }
-
-    internal static async Task ExtractWorldAssetsAsync(
-        string unlinkerPath,
-        string mapFastFilePath,
-        string outputDirectory,
-        string workingDirectory,
-        string? iwdPath,
-        CancellationToken cancellationToken)
-    {
-        unlinkerPath = ValidateExistingFile(
-            unlinkerPath,
-            nameof(unlinkerPath),
-            "OpenAssetTools Unlinker");
-        mapFastFilePath = ValidateFastFile(
-            mapFastFilePath,
-            nameof(mapFastFilePath),
-            "Map fastfile");
-        iwdPath = iwdPath is null ? null : ValidateIwd(iwdPath, nameof(iwdPath));
-        outputDirectory = NormalizePath(outputDirectory, nameof(outputDirectory));
-        workingDirectory = ValidateExistingDirectory(
-            workingDirectory,
-            nameof(workingDirectory),
-            "Scratch directory");
-
-        var mapName = GetZoneName(mapFastFilePath, nameof(mapFastFilePath));
-        var mapZoneSourcePath = Path.Combine(outputDirectory, "zone_source", $"{mapName}.zone");
-        RejectExistingOutput(outputDirectory);
-        Directory.CreateDirectory(outputDirectory);
-
-        await UnlinkZoneAsync(
-            unlinkerPath,
-            mapFastFilePath,
-            outputDirectory,
-            workingDirectory,
-            iwdPath,
-            "material,image,xmodel,rawfile",
-            "IW3 world asset extraction",
-            cancellationToken).ConfigureAwait(false);
-
-        ValidateProducedFile(mapZoneSourcePath, "Unlinker did not produce the expected map zone source");
-    }
-
-    private static Task UnlinkZoneAsync(
-        string unlinkerPath,
-        string fastFilePath,
-        string outputDirectory,
-        string workingDirectory,
-        string? iwdPath,
-        string includedAssetTypes,
-        string operationName,
-        CancellationToken cancellationToken)
-    {
-        var arguments = new List<string>
-        {
-            "--no-color",
-            "--output-folder",
-            outputDirectory,
-            "--include-assets",
-            includedAssetTypes,
-            "--image-format",
-            "IWI",
-            "--model-format",
-            "XMODEL_EXPORT",
-        };
-        string? searchPath = iwdPath is null
-            ? null
-            : Path.GetDirectoryName(iwdPath);
-        if (searchPath is not null)
-        {
-            arguments.Add("--search-path");
-            arguments.Add(searchPath);
-        }
-        arguments.Add(fastFilePath);
-        return RunToolAsync(
-            operationName,
-            unlinkerPath,
-            workingDirectory,
-            arguments,
-            cancellationToken);
+        string[] externalImages = records.Where(asset => asset.Type == "image" &&
+                !Iw3PcImageExporter.HasEmbeddedPixels(zone, zone.Assets[asset.Id]))
+            .Select(asset => Iw3PcImageExporter.FileName(asset.Name)).ToArray();
+        await Iw3PcIwdReader.ExtractExternalImages(fastFilePath, iwdPath, externalImages, outputDirectory, token)
+            .ConfigureAwait(false);
     }
 
     internal static async Task<string> RunToolAsync(
@@ -360,6 +223,7 @@ internal static class Iw3PcExtractionBackend
         catch (OperationCanceledException)
         {
             TryKillProcessTree(process);
+            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
             await DrainOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
             throw;
         }
@@ -463,15 +327,6 @@ internal static class Iw3PcExtractionBackend
         {
             throw new IOException(
                 $"Extraction output already exists: '{path}'. Use a new or empty scratch directory to avoid stale data.");
-        }
-    }
-
-    private static void ValidateProducedFile(string path, string message)
-    {
-        var file = new FileInfo(path);
-        if (!file.Exists || file.Length == 0)
-        {
-            throw new Iw3PcExtractionException($"{message}: '{path}'.");
         }
     }
 

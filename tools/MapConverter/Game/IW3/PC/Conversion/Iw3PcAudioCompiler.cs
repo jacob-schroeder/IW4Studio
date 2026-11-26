@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json;
 using IW4.Game.Assets;
@@ -7,20 +6,22 @@ using IW4.Game.Assets.Sound;
 using MapConverter.Game.IW3.PC.Extraction;
 using MapConverter.Game.IW3.PS3.Conversion;
 using MapConverter.Game.IW3.PS3.Extraction;
+using MapConverter.IW3.PC.Assets;
+using MapConverter.IW3.PC.Readers;
 
 namespace MapConverter.Game.IW3.PC.Conversion;
 
 internal static class Iw3PcAudioCompiler
 {
     internal static async Task<(IReadOnlyList<BaseAsset> Assets, byte[] SoundPackage)> CaptureAsync(
-        Iw3PcSourceLibrary? sourceLibrary, string nativePath, string mapFF, string? customIwd,
+        Iw3PcSourceLibrary? sourceLibrary, string mapFF, string? customIwd,
         string assetDirectory, string bootstrapDirectory, string ownedPrefix,
         IReadOnlySet<string> ambientAliases, IReadOnlySet<string> requiredAliases,
         IReadOnlyList<IReadOnlyDictionary<string, string>> entities, string scratch, CancellationToken token,
         bool allowMissingSounds = false)
     {
-        var sharedAliases = await ReadSharedAliasesAsync(sourceLibrary, nativePath, mapFF,
-            customIwd, assetDirectory, entities, scratch, token).ConfigureAwait(false);
+        var sharedAliases = await ReadSharedAliasesAsync(sourceLibrary, mapFF,
+            customIwd, assetDirectory, entities, token).ConfigureAwait(false);
         var mapOwned = requiredAliases.Concat(ambientAliases).ToHashSet(StringComparer.Ordinal);
         var wanted = mapOwned.Concat(sharedAliases).ToHashSet(StringComparer.Ordinal);
         var skipped = new HashSet<string>(StringComparer.Ordinal);
@@ -31,6 +32,7 @@ internal static class Iw3PcAudioCompiler
             string[] missing = wanted.Except(captures.Keys).Except(skipped).Order(StringComparer.Ordinal).ToArray();
             if (missing.Length == 0) break;
             var origins = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            var selectedSoundRecordIds = new Dictionary<string, int>(StringComparer.Ordinal);
             if (sourceLibrary is not null)
             {
                 foreach (string alias in missing)
@@ -38,7 +40,10 @@ internal static class Iw3PcAudioCompiler
                     string origin;
                     try
                     {
-                        origin = await sourceLibrary.ResolveSoundFastFileAsync(mapFF, alias, token).ConfigureAwait(false);
+                        var soundRecord = await sourceLibrary.ResolveSoundRecordAsync(mapFF, alias, token)
+                            .ConfigureAwait(false);
+                        origin = soundRecord.Path;
+                        selectedSoundRecordIds.Add(alias, soundRecord.RecordId);
                     }
                     catch (InvalidDataException error) when (allowMissingSounds &&
                         error.Message.StartsWith("Missing sound:", StringComparison.Ordinal))
@@ -61,28 +66,23 @@ internal static class Iw3PcAudioCompiler
             foreach ((string origin, List<string> names) in origins)
             {
                 token.ThrowIfCancellationRequested();
-                string selection = Path.Combine(scratch, $"pc-sound-selection-{sequence:D4}.json");
-                string output = Path.Combine(scratch, $"pc-sound-export-{sequence++:D4}");
-                await File.WriteAllBytesAsync(selection, JsonSerializer.SerializeToUtf8Bytes(names), token).ConfigureAwait(false);
-                string? loadedSources = null;
-                if (sourceLibrary is not null)
+                if (sourceLibrary is null && names.All(captures.ContainsKey)) continue;
+                var loadedZones = new Dictionary<string, Iw3PcZone>(
+                    OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
+                Iw3PcZone LoadedZone(string path)
                 {
-                    var sources = await sourceLibrary.ResolveExternalLoadedSoundsAsync(mapFF, names, token)
-                        .ConfigureAwait(false);
-                    if (sources.Count != 0)
-                    {
-                        loadedSources = Path.Combine(scratch, $"pc-sound-loaded-sources-{sequence - 1:D4}.json");
-                        await File.WriteAllBytesAsync(loadedSources, JsonSerializer.SerializeToUtf8Bytes(
-                            sources.Select(source => new
-                            {
-                                source.Name, source.FastFilePath, source.RecordId
-                            })), token).ConfigureAwait(false);
-                    }
+                    if (!loadedZones.TryGetValue(path, out var loaded))
+                        loadedZones.Add(path, loaded = Iw3PcZone.Load(path, token));
+                    return loaded;
                 }
-                await Iw3PcExtractionBackend.RunToolAsync("IW3 PC selected sound extraction", nativePath, scratch,
-                    loadedSources is null
-                        ? ["--extract-sounds", origin, selection, output]
-                        : ["--extract-sounds", origin, selection, output, loadedSources], token).ConfigureAwait(false);
+                string output = Path.Combine(scratch, $"pc-sound-export-{sequence++:D4}");
+                IReadOnlyList<(string Name, string FastFilePath, int RecordId)> sources = sourceLibrary is null
+                    ? []
+                    : await sourceLibrary.ResolveExternalLoadedSoundsAsync(mapFF, names, token).ConfigureAwait(false);
+                var providers = sources.ToDictionary(source => Iw3PcAsset.CanonicalName(source.Name),
+                    source => (LoadedZone(source.FastFilePath), source.RecordId), StringComparer.Ordinal);
+                Iw3PcSoundExporter.ExportSelected(LoadedZone(origin), names, output, providers, token,
+                    sourceLibrary is null ? null : names.Select(name => selectedSoundRecordIds[name]).ToArray());
                 using JsonDocument document = JsonDocument.Parse(await File.ReadAllBytesAsync(
                     Path.Combine(output, "sounds.json"), token).ConfigureAwait(false));
                 foreach (JsonElement sound in document.RootElement.EnumerateArray())
@@ -134,7 +134,7 @@ internal static class Iw3PcAudioCompiler
                     else if (source.TryGetProperty("Loaded", out JsonElement loaded))
                         wav = WrapLoadedPcm(captures[name].Directory, loaded);
                     else throw new FileNotFoundException($"Sound '{name}' has no playable payload.", name);
-                    byte[] mp3 = await EncodeMp3Async(wav, scratch, sequence++, token).ConfigureAwait(false);
+                    byte[] mp3 = await EncodeMp3Async(wav, name, scratch, sequence++, token).ConfigureAwait(false);
                     rows.Add(new Iw3Ps3SourceSoundRow(
                         source.GetProperty("SecondaryAlias").GetString(), source.GetProperty("ChainAlias").GetString(),
                         source.GetProperty("Sequence").GetInt32(), Single(source, "VolumeMin"), Single(source, "VolumeMax"),
@@ -179,9 +179,9 @@ internal static class Iw3PcAudioCompiler
     }
 
     private static async Task<HashSet<string>> ReadSharedAliasesAsync(
-        Iw3PcSourceLibrary? sourceLibrary, string nativePath, string mapFF, string? customIwd,
+        Iw3PcSourceLibrary? sourceLibrary, string mapFF, string? customIwd,
         string assetDirectory, IReadOnlyList<IReadOnlyDictionary<string, string>> entities,
-        string scratch, CancellationToken token)
+        CancellationToken token)
     {
         if (!entities.Any(entity => entity.TryGetValue("classname", out string? value) && value == "script_struct"))
             return new HashSet<string>(StringComparer.Ordinal);
@@ -203,23 +203,10 @@ internal static class Iw3PcAudioCompiler
                 break;
             }
         }
+        if (bytes is null && sourceLibrary is not null)
+            bytes = await sourceLibrary.ReadRawFileAsync(mapFF, "maps/mp/_global_fx.gsc", token).ConfigureAwait(false);
         if (bytes is null)
-        {
-            (string FastFile, int RecordId)? source = sourceLibrary is null
-                ? await FindLegacyRawFileAsync(nativePath, mapFF, scratch, token).ConfigureAwait(false)
-                : await sourceLibrary.ResolveRawFileAsync(mapFF, "maps/mp/_global_fx.gsc", token).ConfigureAwait(false);
-            if (source is { } selected)
-            {
-                string selection = Path.Combine(scratch, "shared-fx-script-selection.json");
-                string output = Path.Combine(scratch, "shared-fx-script-assets");
-                await File.WriteAllBytesAsync(selection, JsonSerializer.SerializeToUtf8Bytes(new[] { selected.RecordId }), token)
-                    .ConfigureAwait(false);
-                await Iw3PcExtractionBackend.RunToolAsync("IW3 shared FX script extraction", nativePath, scratch,
-                    ["--extract-assets", selected.FastFile, selection, output], token).ConfigureAwait(false);
-                bytes = await File.ReadAllBytesAsync(Path.Combine(output, "maps/mp/_global_fx.gsc"), token)
-                    .ConfigureAwait(false);
-            }
-        }
+            bytes = FindSharedScript(mapFF, token);
         if (bytes is null) throw new FileNotFoundException("Shared FX script is required by script_struct entities.", path);
         var buffer = new byte[bytes.Length + 1];
         bytes.CopyTo(buffer, 0);
@@ -227,23 +214,16 @@ internal static class Iw3PcAudioCompiler
         return Iw3Ps3RawFileCompiler.ReadSharedPrefabSoundNames(raw, entities).ToHashSet(StringComparer.Ordinal);
     }
 
-    private static async Task<(string FastFile, int RecordId)?> FindLegacyRawFileAsync(
-        string nativePath, string mapFF, string scratch, CancellationToken token)
+    private static byte[]? FindSharedScript(string mapFF, CancellationToken token)
     {
         string directory = Path.GetDirectoryName(mapFF) ?? throw new InvalidDataException("Map has no directory.");
-        int index = 0;
         foreach (string fastFile in new[] { mapFF }.Concat(Directory.EnumerateFiles(directory, "*.ff"))
                      .Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            string catalogPath = Path.Combine(scratch, $"shared-fx-catalog-{index++:D4}.json");
-            await Iw3PcExtractionBackend.RunToolAsync("IW3 shared FX script catalog", nativePath, scratch,
-                ["--catalog-assets", fastFile, catalogPath], token).ConfigureAwait(false);
-            using JsonDocument document = JsonDocument.Parse(await File.ReadAllBytesAsync(catalogPath, token).ConfigureAwait(false));
-            foreach (JsonElement asset in document.RootElement.GetProperty("Assets").EnumerateArray())
-                if (asset.GetProperty("Type").GetString() == "rawfile" &&
-                    asset.GetProperty("Key").GetString() == "maps/mp/_global_fx.gsc" &&
-                    !asset.GetProperty("IsReference").GetBoolean())
-                    return (fastFile, asset.GetProperty("Id").GetInt32());
+            var zone = Iw3PcZone.Load(fastFile, token);
+            var asset = zone.Assets.LastOrDefault(asset => asset.Type == "rawfile" &&
+                asset.Name.Equals("maps/mp/_global_fx.gsc", StringComparison.OrdinalIgnoreCase));
+            if (asset != null) return Iw3PcAssetExporter.ReadRawFile(zone, asset);
         }
         return null;
     }
@@ -335,8 +315,9 @@ internal static class Iw3PcAudioCompiler
         return memory.ToArray();
     }
 
-    private static async Task<byte[]> EncodeMp3Async(byte[] source, string scratch, int index, CancellationToken token)
+    private static async Task<byte[]> EncodeMp3Async(byte[] source, string aliasName, string scratch, int index, CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
         if (source.AsSpan().StartsWith("ID3"u8)) return source;
         if (source.Length > 4 && source[0] == 0xff && (source[1] & 0xe6) == 0xe2 &&
             (source[2] & 0xf0) is not (0x00 or 0xf0) && (source[2] & 0x0c) != 0x0c)
@@ -349,34 +330,16 @@ internal static class Iw3PcAudioCompiler
         }
         string input = Path.Combine(scratch, $"pc-sound-{index:D5}.wav");
         string output = Path.Combine(scratch, $"pc-sound-{index:D5}.mp3");
+        string bundled = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg");
         await File.WriteAllBytesAsync(input, source, token).ConfigureAwait(false);
-        using var process = new Process { StartInfo = new ProcessStartInfo("ffmpeg")
-        {
-            RedirectStandardError = true, RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true
-        } };
-        process.StartInfo.ArgumentList.Add("-v"); process.StartInfo.ArgumentList.Add("error");
-        process.StartInfo.ArgumentList.Add("-y");
-        process.StartInfo.ArgumentList.Add("-i");
-        process.StartInfo.ArgumentList.Add(input);
-        process.StartInfo.ArgumentList.Add("-codec:a"); process.StartInfo.ArgumentList.Add("libmp3lame");
-        process.StartInfo.ArgumentList.Add("-id3v2_version"); process.StartInfo.ArgumentList.Add("3");
-        process.StartInfo.ArgumentList.Add(output);
-        try
-        {
-            if (!process.Start()) throw new InvalidOperationException("Could not start ffmpeg MP3 encoder.");
-        }
-        catch (System.ComponentModel.Win32Exception startError)
-        {
-            throw new NotSupportedException("COD4 PC WAV sounds require ffmpeg with libmp3lame on PATH.", startError);
-        }
-        Task<string> error = process.StandardError.ReadToEndAsync(token);
-        Task<string> standard = process.StandardOutput.ReadToEndAsync(token);
-        await process.WaitForExitAsync(token).ConfigureAwait(false);
-        if (process.ExitCode != 0)
-            throw new InvalidDataException($"System MP3 encoder failed: {await error.ConfigureAwait(false)} {await standard.ConfigureAwait(false)}");
+        await Iw3PcExtractionBackend.RunToolAsync(
+            $"FFmpeg MP3 encoding for sound alias '{aliasName}'",
+            File.Exists(bundled) ? bundled : "ffmpeg", scratch,
+            ["-v", "error", "-y", "-i", input, "-codec:a", "libmp3lame", "-id3v2_version", "3", output],
+            token).ConfigureAwait(false);
         byte[] encoded = await File.ReadAllBytesAsync(output, token).ConfigureAwait(false);
-        if (encoded.Length == 0 || !encoded.AsSpan().StartsWith("ID3"u8))
-            throw new InvalidDataException("System encoder did not produce an ID3 MP3 sound.");
+        if (!encoded.AsSpan().StartsWith("ID3"u8))
+            throw new InvalidDataException("FFmpeg did not produce an ID3 MP3 sound.");
         return encoded;
     }
 }

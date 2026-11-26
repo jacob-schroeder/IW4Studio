@@ -151,7 +151,7 @@ int CVPParser::Parse(const char *str)
 	std::stringstream input(str);
 
 	while(!input.eof()) {
-		char line[256];
+		char line[256] = {};
 		opcode *opc = NULL;
 		struct nvfx_insn *insn = NULL;
 
@@ -205,12 +205,12 @@ int CVPParser::Parse(const char *str)
 			}
 
 			if(valid) {
-				label = strtok(ptr,":\x20");
+				label = cgcomp_strtok(ptr,":\x20");
 				ptr = col_ptr + 1;
 			}
 		}
 
-		opcode = strtok(ptr," ");
+		opcode = cgcomp_strtok(ptr," ");
 
 		if(label) {
 			jmpdst d;
@@ -221,7 +221,7 @@ int CVPParser::Parse(const char *str)
 		}
 
 		if(opcode) {
-			const char *param_str = SkipSpaces(strtok(NULL,"\0"));
+			const char *param_str = SkipSpaces(cgcomp_strtok(NULL,"\0"));
 			if(strcasecmp(opcode,"OPTION")==0) {
 				if(param_str && strncasecmp(param_str,"NV_vertex_program3",18)==0 && !*SkipSpaces(param_str + 18))
 					m_nOption |= NV_OPTION_VP3;
@@ -229,24 +229,26 @@ int CVPParser::Parse(const char *str)
 					throw std::runtime_error("Unsupported vertex option.");
 				continue;
 			} else if(strcasecmp(opcode,"TEMP")==0) {
-				const char *temp = SkipSpaces(strtok((char*)param_str,","));
+				if (!param_str) throw std::runtime_error("Missing vertex temporary declaration.");
+				const char *temp = SkipSpaces(cgcomp_strtok((char*)param_str,","));
 				if(!temp)
 					throw std::runtime_error("Missing vertex temporary declaration.");
 				while(temp) {
 					s32 index;
 					if(*temp!='R' || *SkipSpaces(ParseTempReg(temp,&index)))
 						throw std::runtime_error("Unsupported vertex temporary declaration.");
-					temp = SkipSpaces(strtok(NULL,","));
+					temp = SkipSpaces(cgcomp_strtok(NULL,","));
 				}
 				continue;
 			} else if(strcasecmp(opcode,"ADDRESS")==0) {
-				const char *address = SkipSpaces(strtok((char*)param_str,","));
+				if (!param_str) throw std::runtime_error("Missing vertex address declaration.");
+				const char *address = SkipSpaces(cgcomp_strtok((char*)param_str,","));
 				if(!address)
 					throw std::runtime_error("Missing vertex address declaration.");
 				while(address) {
 					if(address[0]!='A' || (address[1]!='0' && address[1]!='1') || *SkipSpaces(address + 2))
 						throw std::runtime_error("Unsupported vertex address declaration.");
-					address = SkipSpaces(strtok(NULL,","));
+					address = SkipSpaces(cgcomp_strtok(NULL,","));
 				}
 				continue;
 			} else {
@@ -311,8 +313,7 @@ int CVPParser::Parse(const char *str)
 		}
 
 		if(found==false) {
-			fprintf(stderr,"Identifier \'%s\' not found.\n",r->ident.c_str());
-			exit(EXIT_FAILURE);
+			throw std::runtime_error("Vertex identifier not found: " + r->ident);
 		}
 	}
 
@@ -322,7 +323,7 @@ int CVPParser::Parse(const char *str)
 void CVPParser::ParseInstruction(struct nvfx_insn *insn,opcode *opc,const char *param_str)
 {
 	u32 i;
-	const char *token = SkipSpaces(strtok((char*)param_str,","));
+	const char *token = SkipSpaces(cgcomp_strtok((char*)param_str,","));
 	if(opc->opcode==OPCODE_NOP) {
 		if(token)
 			throw std::runtime_error("Unexpected vertex NOP operand.");
@@ -335,10 +336,10 @@ void CVPParser::ParseInstruction(struct nvfx_insn *insn,opcode *opc,const char *
 		ParseMaskedDstReg(token,insn);
 
 	for(i=0;i<opc->nr_src;i++) {
-		token = SkipSpaces(strtok(NULL,","));
+		token = SkipSpaces(cgcomp_strtok(NULL,","));
 		ParseSwizzledSrcReg(token,insn,opc->src_slots[i]);
 	}
-	if(strtok(NULL,","))
+	if(cgcomp_strtok(NULL,","))
 		throw std::runtime_error("Too many vertex operands.");
 }
 
@@ -436,7 +437,7 @@ void CVPParser::ParseSwizzledSrcReg(const char *token,struct nvfx_insn *insn,s32
 		reg->reg.index = idx;
 	} else if(!strncmp(token,"texture[",8)) {
 		ParseTextureUnit(token,&insn->tex_unit);
-		token = SkipSpaces(strtok(NULL,","));
+		token = SkipSpaces(cgcomp_strtok(NULL,","));
 		ParseTextureTarget(token,&insn->tex_target);
 
 		reg->reg.type = NVFXSR_SAMPLER;

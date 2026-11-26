@@ -32,6 +32,9 @@ CCompilerFP::CCompilerFP()
 
 CCompilerFP::~CCompilerFP()
 {
+	free(m_pInstructions);
+	for (std::vector<void*>::iterator it = m_ownedParameterValues.begin();
+		it != m_ownedParameterValues.end(); ++it) free(*it);
 }
 
 void CCompilerFP::Prepare(CParser *pParser)
@@ -622,12 +625,12 @@ void CCompilerFP::emit_rep(struct nvfx_insn *insn)
 
 	hw = m_pInstructions[m_nCurInstruction].data;
 
+	if (insn->src[0].reg.type != NVFXSR_IMM)
+		throw std::runtime_error("Input to REP must be immediate number 0-255.");
 	param fpd = GetImmData(insn->src[0].reg.index);
-
-	if (insn->src[0].reg.type != NVFXSR_IMM ||
+	if (fpd.values == NULL ||
 		(*fpd.values)[0] < 0.0 || (*fpd.values)[0] > 255.0) {
-		fprintf(stderr,"Input to REP must be immediate number 0-255\n");
-		exit(EXIT_FAILURE);
+		throw std::runtime_error("Input to REP must be immediate number 0-255.");
 	}
 
 	count = (int)(*fpd.values)[0];
@@ -741,12 +744,12 @@ void CCompilerFP::emit_loop(struct nvfx_insn *insn)
 
 	hw = m_pInstructions[m_nCurInstruction].data;
 
+	if (insn->src[0].reg.type != NVFXSR_IMM)
+		throw std::runtime_error("Input to LOOP must be immediate number 0-255.");
 	param fpd = GetImmData(insn->src[0].reg.index);
-
-	if (insn->src[0].reg.type != NVFXSR_IMM ||
+	if (fpd.values == NULL ||
 	    (*fpd.values)[0] < 0.0 || (*fpd.values)[0] > 255.0) {
-		fprintf(stderr,"Input to LOOP must be immediate number 0-255\n");
-		exit(EXIT_FAILURE);
+		throw std::runtime_error("Input to LOOP must be immediate number 0-255.");
 	}
 
 	count1 = (int)(*fpd.values)[0];
@@ -952,6 +955,7 @@ struct nvfx_reg CCompilerFP::imm(f32 x, f32 y, f32 z, f32 w)
 	p.type = PARAM_FLOAT4;
 
 	CParser::InitParameter(&p);
+	m_ownedParameterValues.push_back(p.values);
 	memcpy(p.values, v, sizeof(f32)*4);
 
 	m_lParameters.push_back(p);
@@ -1034,10 +1038,14 @@ bool CCompilerFP::canUseTempFp16(struct nvfx_insn *insn)
 
 int CCompilerFP::grow_insns(int count)
 {
+	if (count < 0 || count > MAX_NV_FRAGMENT_PROGRAM_INSTRUCTIONS * 8 - m_nInstructions)
+		throw std::runtime_error("Fragment program exceeds the supported instruction limit.");
 	int pos = m_nInstructions;
 
 	m_nInstructions += count;
-	m_pInstructions = (struct fragment_program_exec*)realloc(m_pInstructions,m_nInstructions*sizeof(struct fragment_program_exec));
+	void *grown = realloc(m_pInstructions,m_nInstructions*sizeof(struct fragment_program_exec));
+	if (!grown) throw std::bad_alloc();
+	m_pInstructions = (struct fragment_program_exec*)grown;
 
 	return pos;
 }

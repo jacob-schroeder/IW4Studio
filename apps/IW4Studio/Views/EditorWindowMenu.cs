@@ -12,6 +12,7 @@ internal static class StudioMenu
 {
     private static readonly MenuEntry AboutEntry = new("About IW4 Studio", StudioMenuAction.ShowAbout);
     private static readonly MenuEntry ApplicationEntry = new("IW4 Studio", Items: [AboutEntry]);
+    private static readonly MenuEntry MapConverterEntry = new("Map Converter", StudioMenuAction.ShowMapConverter);
 
     private static readonly MenuEntry[] Entries =
     [
@@ -35,6 +36,7 @@ internal static class StudioMenu
             "Tools",
             Items:
             [
+                MapConverterEntry,
                 new(
                     "Live Preview",
                     StudioMenuAction.LivePreview,
@@ -61,9 +63,13 @@ internal static class StudioMenu
             ])
     ];
 
+    private static readonly MenuEntry WelcomeToolsEntry = new("Tools", Items: [MapConverterEntry]);
+    private static readonly MenuEntry WelcomeOptionsEntry = Entries.Single(entry => entry.Header == "Options");
+
     private static readonly MenuEntry[] WelcomeEntries =
     [
-        Entries.Single(entry => entry.Header == "Options")
+        WelcomeToolsEntry,
+        WelcomeOptionsEntry
     ];
 
     public static NativeMenu CreateNativeMenu(
@@ -126,8 +132,9 @@ internal static class StudioMenu
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(execute);
 
-        var welcomeMenu = ApplicationEntry with { Items = [AboutEntry, MenuEntry.Separator, .. WelcomeEntries] };
+        var welcomeMenu = ApplicationEntry with { Items = [AboutEntry, MenuEntry.Separator, WelcomeOptionsEntry] };
         menu.Items.Add(CreateWindowItem(welcomeMenu, owner, execute));
+        menu.Items.Add(CreateWindowItem(WelcomeToolsEntry, owner, execute));
     }
 
     private static NativeMenuItemBase CreateNativeItem(
@@ -227,6 +234,7 @@ internal static class StudioMenu
 internal enum StudioMenuAction
 {
     ShowAbout,
+    ShowMapConverter,
     SaveAs,
     ExtractZone,
     DumpSourceAssets,

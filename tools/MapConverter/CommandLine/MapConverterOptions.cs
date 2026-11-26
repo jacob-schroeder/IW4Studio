@@ -2,18 +2,18 @@ using MapConverter.Game.IW3.PS3.Rules;
 
 namespace MapConverter.CommandLine;
 
-internal enum SourceGame
+public enum SourceGame
 {
     Iw3,
 }
 
-internal enum SourcePlatform
+public enum SourcePlatform
 {
     Pc,
     Ps3,
 }
 
-internal sealed record MapConverterOptions(
+public sealed record MapConverterOptions(
     SourceGame Game,
     SourcePlatform Platform,
     string MapPath,

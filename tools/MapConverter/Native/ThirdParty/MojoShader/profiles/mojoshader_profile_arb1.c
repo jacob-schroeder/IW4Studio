@@ -1464,8 +1464,11 @@ void emit_ARB1_REP(Context *ctx)
         get_ARB1_branch_label_name(ctx,faillabel,failbranch,sizeof(failbranch));
         get_ARB1_branch_label_name(ctx,toplabel,topbranch,sizeof(topbranch));
 
-        assert(((size_t) ctx->branch_labels_stack_index) <
-                STATICARRAYLEN(ctx->branch_labels_stack)-1);
+        if ((size_t) ctx->branch_labels_stack_index >= STATICARRAYLEN(ctx->branch_labels_stack) - 1)
+        {
+            fail(ctx, "REP nesting exceeds the supported branch depth");
+            return;
+        }
 
         ctx->branch_labels_stack[ctx->branch_labels_stack_index++] = toplabel;
         ctx->branch_labels_stack[ctx->branch_labels_stack_index++] = faillabel;
@@ -1493,7 +1496,11 @@ void emit_ARB1_ENDREP(Context *ctx)
     else if (support_nv2(ctx))
     {
         // no ENDREP, but we can use branches.
-        assert(ctx->branch_labels_stack_index >= 2);
+        if (ctx->branch_labels_stack_index < 2)
+        {
+            fail(ctx, "missing REP labels");
+            return;
+        }
 
         char failbranch[32];
         char topbranch[32];
@@ -1529,8 +1536,11 @@ void nv2_if(Context *ctx)
         const int label = allocate_branch_label(ctx);
         get_ARB1_branch_label_name(ctx, label, failbranch, sizeof (failbranch));
 
-        assert(((size_t) ctx->branch_labels_stack_index)
-                 < STATICARRAYLEN(ctx->branch_labels_stack));
+        if ((size_t) ctx->branch_labels_stack_index >= STATICARRAYLEN(ctx->branch_labels_stack))
+        {
+            fail(ctx, "IF nesting exceeds the supported branch depth");
+            return;
+        }
 
         ctx->branch_labels_stack[ctx->branch_labels_stack_index++] = label;
 
@@ -1566,7 +1576,11 @@ void emit_ARB1_ELSE(Context *ctx)
     else if (support_nv2(ctx))
     {
         // there's no ELSE construct, but we can use a branch to a label.
-        assert(ctx->branch_labels_stack_index > 0);
+        if (ctx->branch_labels_stack_index <= 0)
+        {
+            fail(ctx, "missing IF label");
+            return;
+        }
 
         // At the end of the IF block, unconditionally jump to the ENDIF.
         const int endlabel = allocate_branch_label(ctx);
@@ -1600,7 +1614,11 @@ void emit_ARB1_ENDIF(Context *ctx)
     else if (support_nv2(ctx))
     {
         // there's no ENDIF construct, but we can use a branch to a label.
-        assert(ctx->branch_labels_stack_index > 0);
+        if (ctx->branch_labels_stack_index <= 0)
+        {
+            fail(ctx, "missing IF label");
+            return;
+        }
         const int endlabel = ctx->branch_labels_stack[--ctx->branch_labels_stack_index];
         char endbranch[32];
         get_ARB1_branch_label_name(ctx,endlabel,endbranch,sizeof (endbranch));
@@ -1623,7 +1641,12 @@ void emit_ARB1_BREAK(Context *ctx)
     else if (support_nv2(ctx))
     {
         // no BREAK, but we can use branches.
-        assert(ctx->branch_labels_stack_index >= 2);
+        if (ctx->branch_labels_stack_index < 2 ||
+            (size_t) ctx->branch_labels_stack_index >= STATICARRAYLEN(ctx->branch_labels_stack))
+        {
+            fail(ctx, "invalid BREAK label index");
+            return;
+        }
         const int faillabel = ctx->branch_labels_stack[ctx->branch_labels_stack_index];
         char failbranch[32];
         get_ARB1_branch_label_name(ctx,faillabel,failbranch,sizeof(failbranch));

@@ -339,6 +339,9 @@ public sealed partial class EditorWindow : Window
             case StudioMenuAction.ShowAbout:
                 AboutRequested?.Invoke(this);
                 break;
+            case StudioMenuAction.ShowMapConverter:
+                _ = new MapConverterWindow().ShowDialog(this);
+                break;
             case StudioMenuAction.SaveAs:
                 await RequestSaveAsAsync();
                 break;

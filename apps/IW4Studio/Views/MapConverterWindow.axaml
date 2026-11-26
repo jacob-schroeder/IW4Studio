@@ -1,0 +1,106 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:converter="clr-namespace:MapConverter.CommandLine;assembly=MapConverter"
+        x:Class="IW4.Studio.Desktop.Views.MapConverterWindow"
+        Title="Map Converter" Width="700" Height="670" MinWidth="500" MinHeight="410"
+        WindowStartupLocation="CenterOwner" Background="{DynamicResource StudioBackgroundBrush}">
+  <Window.Styles>
+    <Style Selector="TextBlock.fieldLabel">
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.browse">
+      <Setter Property="Margin" Value="8,0,0,0" />
+    </Style>
+  </Window.Styles>
+  <Grid Margin="24" RowDefinitions="*,Auto,Auto" RowSpacing="14">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Name="Inputs" Spacing="14">
+        <Grid ColumnDefinitions="2*,*,*" ColumnSpacing="12">
+          <StackPanel Spacing="5">
+            <TextBlock Classes="fieldLabel" Text="Source game" />
+            <ComboBox Name="SourceGamePicker" SelectedIndex="0" HorizontalAlignment="Stretch"
+                      AutomationProperties.Name="Source game">
+              <ComboBoxItem Content="IW3 (Call of Duty 4)" Tag="{x:Static converter:SourceGame.Iw3}" />
+            </ComboBox>
+          </StackPanel>
+          <StackPanel Grid.Column="1" Spacing="5">
+            <TextBlock Classes="fieldLabel" Text="Platform" />
+            <ComboBox Name="PlatformPicker" SelectedIndex="0" HorizontalAlignment="Stretch"
+                      AutomationProperties.Name="Source platform">
+              <ComboBoxItem Name="PcOption" Content="PC" Tag="{x:Static converter:SourcePlatform.Pc}" />
+              <ComboBoxItem Name="Ps3Option" Content="PS3" Tag="{x:Static converter:SourcePlatform.Ps3}" />
+            </ComboBox>
+          </StackPanel>
+          <StackPanel Grid.Column="2" Spacing="5">
+            <TextBlock Classes="fieldLabel" Text="Target" />
+            <TextBlock Text="IW4 PS3" Margin="0,7,0,0" />
+          </StackPanel>
+        </Grid>
+
+        <StackPanel Spacing="5">
+          <TextBlock Classes="fieldLabel" Text="Map fastfile" />
+          <DockPanel>
+            <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #MapPath}" />
+            <TextBox Name="MapPath" PlaceholderText="mp_example.ff" AutomationProperties.Name="Map fastfile" />
+          </DockPanel>
+        </StackPanel>
+        <StackPanel Spacing="5">
+          <TextBlock Classes="fieldLabel" Text="Load fastfile" />
+          <DockPanel>
+            <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #LoadPath}" />
+            <TextBox Name="LoadPath" PlaceholderText="mp_example_load.ff" AutomationProperties.Name="Load fastfile" />
+          </DockPanel>
+        </StackPanel>
+        <StackPanel Spacing="5" IsVisible="{Binding #PcOption.IsSelected}">
+          <TextBlock Classes="fieldLabel" Text="Texture archive (optional)" />
+          <DockPanel>
+            <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #IwdPath}" />
+            <TextBox Name="IwdPath" PlaceholderText="Map .iwd containing .iwi textures" AutomationProperties.Name="Texture archive" />
+          </DockPanel>
+        </StackPanel>
+        <StackPanel Spacing="5" IsVisible="{Binding #PcOption.IsSelected}">
+          <TextBlock Classes="fieldLabel" Text="COD4 PC source library (optional)" />
+          <DockPanel>
+            <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #PcLibraryPath}" />
+            <TextBox Name="PcLibraryPath" PlaceholderText="Folder containing stock fastfiles and IWD archives" AutomationProperties.Name="PC source library" />
+          </DockPanel>
+        </StackPanel>
+        <StackPanel Spacing="5" IsVisible="{Binding #Ps3Option.IsSelected}">
+          <TextBlock Classes="fieldLabel" Text="Stock PS3 fastfiles and packages" />
+          <DockPanel>
+            <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #Ps3StockPath}" />
+            <TextBox Name="Ps3StockPath" PlaceholderText="Defaults to the map fastfile’s folder" AutomationProperties.Name="PS3 stock files" />
+          </DockPanel>
+          <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource StudioTextMutedBrush}"
+                     Text="Use the folder containing code_post_gfx_mp.ff, common_mp.ff, ui_mp.ff, and packfile*.pak." />
+        </StackPanel>
+        <StackPanel Spacing="5" IsVisible="{Binding #Ps3Option.IsSelected}">
+          <TextBlock Classes="fieldLabel" Text="PS3 localization folder (if stored separately)" />
+          <DockPanel>
+            <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #Ps3StringsPath}" />
+            <TextBox Name="Ps3StringsPath" PlaceholderText="Folder containing english/localizedstrings" AutomationProperties.Name="PS3 localization folder" />
+          </DockPanel>
+        </StackPanel>
+        <StackPanel Spacing="5">
+          <TextBlock Classes="fieldLabel" Text="Destination folder" />
+          <DockPanel>
+            <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #OutputPath}" />
+            <TextBox Name="OutputPath" PlaceholderText="Where to save the converted map" AutomationProperties.Name="Destination folder" />
+          </DockPanel>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+
+    <TextBox Grid.Row="1" Name="Report" IsVisible="False" IsReadOnly="True" AcceptsReturn="True"
+             MinHeight="76" MaxHeight="138" TextWrapping="Wrap" ScrollViewer.VerticalScrollBarVisibility="Auto"
+             AutomationProperties.Name="Conversion details" />
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+      <StackPanel VerticalAlignment="Center" Spacing="5">
+        <TextBlock Name="Status" TextWrapping="Wrap" />
+        <ProgressBar Name="Progress" Height="3" IsVisible="False" />
+      </StackPanel>
+      <Button Name="CancelConversion" Grid.Column="1" Content="Cancel" IsVisible="False" Click="Cancel_Click" />
+      <Button Name="ConvertButton" Grid.Column="2" Content="Convert" Classes="primary" Click="Convert_Click" />
+    </Grid>
+  </Grid>
+</Window>

@@ -95,6 +95,9 @@ public static class D3dbspAssetLinker
         Func<IReadOnlyDictionary<string, string>, string, string, string> rewrite) =>
         D3dbspMapEntsCodec.RewriteEntityPropertyValues(sourceEntities, rewrite);
 
+    public static Vec3 StaticModelAngles(IReadOnlyList<Vec3> axis, int index) =>
+        D3dbspMapEntsCodec.StaticModelAngles(axis, index, positiveRange: true);
+
     public static byte[] FilterEntities(ReadOnlySpan<byte> sourceEntities,
         Func<IReadOnlyList<IReadOnlyDictionary<string, string>>, IReadOnlyList<bool>> retain) =>
         D3dbspMapEntsCodec.FilterEntities(sourceEntities, retain);

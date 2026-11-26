@@ -1,0 +1,49 @@
+<Project>
+  <PropertyGroup>
+    <ShaderRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</ShaderRid>
+    <ShaderRid Condition="'$(ShaderRid)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</ShaderRid>
+    <ShaderObj>$(BaseIntermediateOutputPath)$(Configuration)/$(TargetFramework)/$(ShaderRid)/shaders</ShaderObj>
+    <ShaderLibrary Condition="$([MSBuild]::IsOSPlatform('Windows'))">iw4_map_shaders.dll</ShaderLibrary>
+    <ShaderLibrary Condition="$([MSBuild]::IsOSPlatform('OSX'))">libiw4_map_shaders.dylib</ShaderLibrary>
+    <ShaderLibrary Condition="$([MSBuild]::IsOSPlatform('Linux'))">libiw4_map_shaders.so</ShaderLibrary>
+    <ShaderCC Condition="$([MSBuild]::IsOSPlatform('Windows'))">clang</ShaderCC>
+    <ShaderCXX Condition="$([MSBuild]::IsOSPlatform('Windows'))">clang++</ShaderCXX>
+    <ShaderCXX Condition="$([MSBuild]::IsOSPlatform('OSX')) and Exists('/opt/homebrew/opt/llvm/bin/clang++')">/opt/homebrew/opt/llvm/bin/clang++</ShaderCXX>
+    <ShaderCC Condition="'$(ShaderCC)' == ''">cc</ShaderCC>
+    <ShaderCXX Condition="'$(ShaderCXX)' == ''">c++</ShaderCXX>
+    <ShaderFlags Condition="!$([MSBuild]::IsOSPlatform('Windows'))">-fPIC -fvisibility=hidden</ShaderFlags>
+    <!-- Match the deployment floor of the .NET 10 runtime on macOS. -->
+    <ShaderFlags Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(ShaderFlags) -mmacosx-version-min=12.0</ShaderFlags>
+    <ShaderFlags Condition="'$(ShaderRid)' == 'win-x64'">--target=x86_64-pc-windows-msvc -fms-runtime-lib=static</ShaderFlags>
+    <ShaderFlags Condition="'$(ShaderRid)' == 'win-arm64'">--target=aarch64-pc-windows-msvc -fms-runtime-lib=static</ShaderFlags>
+    <ShaderFlags Condition="'$(ShaderRid)' == 'win-x86'">--target=i686-pc-windows-msvc -fms-runtime-lib=static</ShaderFlags>
+    <ShaderFlags Condition="'$(ShaderRid)' == 'osx-arm64'">$(ShaderFlags) -arch arm64</ShaderFlags>
+    <ShaderFlags Condition="'$(ShaderRid)' == 'osx-x64'">$(ShaderFlags) -arch x86_64</ShaderFlags>
+    <ShaderPlatformSupported Condition="$([MSBuild]::IsOSPlatform('Windows')) and ('$(ShaderRid)' == 'win-x64' or '$(ShaderRid)' == 'win-arm64' or '$(ShaderRid)' == 'win-x86')">true</ShaderPlatformSupported>
+    <ShaderPlatformSupported Condition="$([MSBuild]::IsOSPlatform('OSX')) and ('$(ShaderRid)' == 'osx-x64' or '$(ShaderRid)' == 'osx-arm64')">true</ShaderPlatformSupported>
+    <ShaderPlatformSupported Condition="$([MSBuild]::IsOSPlatform('Linux')) and '$(ShaderRid)' == '$(NETCoreSdkPortableRuntimeIdentifier)'">true</ShaderPlatformSupported>
+    <ShaderLink Condition="$([MSBuild]::IsOSPlatform('OSX'))">-dynamiclib -Wl,-install_name,@rpath/$(ShaderLibrary)</ShaderLink>
+    <ShaderLink Condition="'$(ShaderLink)' == ''">-shared</ShaderLink>
+    <ShaderProfiles>-DSUPPORT_PROFILE_BYTECODE=0 -DSUPPORT_PROFILE_D3D=0 -DSUPPORT_PROFILE_HLSL=0 -DSUPPORT_PROFILE_GLSL=0 -DSUPPORT_PROFILE_GLSL120=0 -DSUPPORT_PROFILE_GLSLES=0 -DSUPPORT_PROFILE_GLSLES3=0 -DSUPPORT_PROFILE_GLSPIRV=0 -DSUPPORT_PROFILE_METAL=0 -DSUPPORT_PROFILE_SPIRV=0 -DSUPPORT_PROFILE_ARB1=1 -DSUPPORT_PROFILE_ARB1_NV=1</ShaderProfiles>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ShaderC Include="Native/Tools/mojoshader_translate.c;Native/ThirdParty/MojoShader/mojoshader.c;Native/ThirdParty/MojoShader/mojoshader_common.c;Native/ThirdParty/MojoShader/profiles/mojoshader_profile_common.c;Native/ThirdParty/MojoShader/profiles/mojoshader_profile_arb1.c" />
+    <ShaderCpp Include="Native/ThirdParty/CgComp/source/*.cpp" />
+    <ShaderHeader Include="Native/ThirdParty/MojoShader/**/*.h;Native/ThirdParty/CgComp/include/*.h" />
+    <Content Include="$(ShaderObj)/$(ShaderLibrary)" Link="$(ShaderLibrary)" ExcludeFromSingleFile="true"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Native/ThirdParty/*/LICENSE*"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="BuildMapShaders" BeforeTargets="CoreCompile;GetCopyToOutputDirectoryItems"
+          Inputs="$(MSBuildThisFileFullPath);@(ShaderC);@(ShaderCpp);@(ShaderHeader)"
+          Outputs="$(ShaderObj)/$(ShaderLibrary)">
+    <Error Condition="'$(ShaderPlatformSupported)' != 'true'"
+           Text="Cannot build the shader library for $(ShaderRid) on $(NETCoreSdkPortableRuntimeIdentifier). Use a build host for the target OS (and target architecture on Linux)." />
+    <MakeDir Directories="$(ShaderObj)" />
+    <Exec Command="&quot;$(ShaderCC)&quot; -std=gnu99 -O2 -DNDEBUG -DDECLSPEC= $(ShaderFlags) $(ShaderProfiles) -I Native/ThirdParty/MojoShader -I Native/ThirdParty/MojoShader/profiles -c &quot;%(ShaderC.Identity)&quot; -o &quot;$(ShaderObj)/%(ShaderC.Filename).o&quot;" />
+    <Exec Command="&quot;$(ShaderCXX)&quot; -std=c++11 -O2 -DNDEBUG $(ShaderFlags) -I Native/ThirdParty/CgComp/include $(ShaderLink) @(ShaderCpp->'&quot;%(Identity)&quot;', ' ') @(ShaderC->'&quot;$(ShaderObj)/%(Filename).o&quot;', ' ') -o &quot;$(ShaderObj)/$(ShaderLibrary)&quot;" />
+  </Target>
+</Project>

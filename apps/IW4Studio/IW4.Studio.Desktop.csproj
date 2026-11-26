@@ -35,6 +35,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\tools\MapConverter\MapConverter.csproj" />
     <ProjectReference Include="..\..\src\Authoring\IW4.Formats\IW4.Formats.csproj" />
     <ProjectReference Include="..\..\src\Authoring\IW4.Gsc\IW4.Gsc.csproj" />
     <ProjectReference Include="..\..\src\Authoring\IW4.Studio\IW4.Studio.csproj" />
@@ -64,5 +65,11 @@
   <ItemGroup>
     <Folder Include="Persistence\" />
   </ItemGroup>
+
+  <Target Name="RequireDesktopMapConverterFfmpeg" BeforeTargets="ComputeFilesToPublish"
+          Condition="'$(SelfContained)' == 'true'">
+    <Error Condition="'$(MapConverterFfmpegPath)' == ''"
+           Text="A self-contained IW4 Studio distribution needs a target-platform FFmpeg executable with libmp3lame. Set MapConverterFfmpegPath and MapConverterFfmpegLicensePath." />
+  </Target>
 
 </Project>
