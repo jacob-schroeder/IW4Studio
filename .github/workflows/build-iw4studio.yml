@@ -78,41 +78,6 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Prepare bundled FFmpeg
-        shell: bash
-        run: |
-          set -euo pipefail
-          distribution="$RUNNER_TEMP/iw4studio-ffmpeg"
-          mkdir -p "$distribution"
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            archive="$distribution/ffmpeg.zip"
-            curl -fsSL 'https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip' -o "$archive"
-            echo '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba  '"$archive" | sha256sum -c -
-            unzip -q "$archive" -d "$distribution"
-            package="$distribution/ffmpeg-9.0.2-essentials_build"
-            executable="$package/bin/ffmpeg.exe"
-            license="$package/LICENSE"
-            notice="$package/README.txt"
-          else
-            archive="$distribution/ffmpeg.zip"
-            curl -fsSL 'https://ffmpeg.martin-riedl.de/download/macos/arm64/1795207104_9.1/ffmpeg.zip' -o "$archive"
-            echo '1f66e9a690a7f1c9e60b012379f8869c11818d1797f45b21dbb2f2564ba61ae1  '"$archive" | shasum -a 256 -c -
-            unzip -q "$archive" -d "$distribution"
-            executable="$distribution/ffmpeg"
-            chmod +x "$executable"
-            license="$distribution/COPYING.GPLv3"
-            curl -fsSL 'https://raw.githubusercontent.com/FFmpeg/FFmpeg/n9.1/COPYING.GPLv3' -o "$license"
-            echo '8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  '"$license" | shasum -a 256 -c -
-            notice="$distribution/NOTICE.txt"
-            printf '%s\n' \
-              'FFmpeg 9.1 macOS arm64 distribution:' \
-              'https://ffmpeg.martin-riedl.de/info/detail/macos/arm64/1795207104_9.1' \
-              'FFmpeg source: https://github.com/FFmpeg/FFmpeg/tree/n9.1' > "$notice"
-          fi
-          echo "MAP_CONVERTER_FFMPEG_PATH=$executable" >> "$GITHUB_ENV"
-          echo "MAP_CONVERTER_FFMPEG_LICENSE_PATH=$license" >> "$GITHUB_ENV"
-          echo "MAP_CONVERTER_FFMPEG_NOTICE_PATH=$notice" >> "$GITHUB_ENV"
-
       - name: Publish desktop app
         shell: bash
         run: >-
@@ -128,9 +93,6 @@ jobs:
           -p:PublishTrimmed=false
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:MapConverterFfmpegPath="$MAP_CONVERTER_FFMPEG_PATH"
-          -p:MapConverterFfmpegLicensePath="$MAP_CONVERTER_FFMPEG_LICENSE_PATH"
-          -p:MapConverterFfmpegNoticePath="$MAP_CONVERTER_FFMPEG_NOTICE_PATH"
           -p:DebugSymbols=false
           -p:DebugType=None
 

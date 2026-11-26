@@ -102,7 +102,7 @@ public static class Iw3PcEffectExporter
             visuals = table == 0 ? null : Enumerable.Range(0, count)
                 .Select(i => ReadVisual(zone, table + i * 4, type, children)).ToArray();
         }
-        else visuals = count == 0 ? [] : [ReadVisual(zone, row + 188, type, children)];
+        else visuals = [ReadVisual(zone, row + 188, type, children)];
         int trail = zone.Pointer(row + 244);
         return new
         {
@@ -136,7 +136,7 @@ public static class Iw3PcEffectExporter
     {
         <= 4 => new { kind = "material", asset = RefAsset(zone, field, 0) },
         5 => new { kind = "model", asset = RefAsset(zone, field, 0) },
-        6 or 7 => new { kind = "none", asset = (object?)null },
+        6 or 7 => new { kind = "none", reserved = I32(zone, field) },
         8 => new { kind = "sound", name = Optional(zone, field) },
         10 => new { kind = "effect", asset = EffectRef(zone, field, children) },
         _ => throw new NotSupportedException($"Unsupported IW3 PC FX visual type {type}.")

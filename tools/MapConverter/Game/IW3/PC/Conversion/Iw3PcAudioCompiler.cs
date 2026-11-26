@@ -13,23 +13,25 @@ namespace MapConverter.Game.IW3.PC.Conversion;
 
 internal static class Iw3PcAudioCompiler
 {
-    internal static async Task<(IReadOnlyList<BaseAsset> Assets, byte[] SoundPackage)> CaptureAsync(
+    internal static async Task<(IReadOnlyList<BaseAsset> Assets, byte[] SoundPackage,
+        IReadOnlyList<string> MissingSoundReferences)> CaptureAsync(
         Iw3PcSourceLibrary? sourceLibrary, string mapFF, string? customIwd,
         string assetDirectory, string bootstrapDirectory, string ownedPrefix,
         IReadOnlySet<string> ambientAliases, IReadOnlySet<string> requiredAliases,
-        IReadOnlyList<IReadOnlyDictionary<string, string>> entities, string scratch, CancellationToken token,
-        bool allowMissingSounds = false)
+        IReadOnlyList<IReadOnlyDictionary<string, string>> entities, string scratch, CancellationToken token)
     {
         var sharedAliases = await ReadSharedAliasesAsync(sourceLibrary, mapFF,
             customIwd, assetDirectory, entities, token).ConfigureAwait(false);
-        var mapOwned = requiredAliases.Concat(ambientAliases).ToHashSet(StringComparer.Ordinal);
-        var wanted = mapOwned.Concat(sharedAliases).ToHashSet(StringComparer.Ordinal);
-        var skipped = new HashSet<string>(StringComparer.Ordinal);
-        var captures = new Dictionary<string, (JsonElement Sound, string Directory)>(StringComparer.Ordinal);
+        var mapOwned = requiredAliases.Concat(ambientAliases).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var wanted = mapOwned.Concat(sharedAliases).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var skipped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var missingSounds = sourceLibrary?.MissingSoundReferences ?? new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var captures = new Dictionary<string, (JsonElement Sound, string Directory)>(StringComparer.OrdinalIgnoreCase);
         int sequence = 0;
         while (true)
         {
-            string[] missing = wanted.Except(captures.Keys).Except(skipped).Order(StringComparer.Ordinal).ToArray();
+            string[] missing = wanted.Where(name => !captures.ContainsKey(name) && !skipped.Contains(name))
+                .Order(StringComparer.Ordinal).ToArray();
             if (missing.Length == 0) break;
             var origins = new Dictionary<string, List<string>>(StringComparer.Ordinal);
             var selectedSoundRecordIds = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -37,22 +39,14 @@ internal static class Iw3PcAudioCompiler
             {
                 foreach (string alias in missing)
                 {
-                    string origin;
-                    try
-                    {
-                        var soundRecord = await sourceLibrary.ResolveSoundRecordAsync(mapFF, alias, token)
-                            .ConfigureAwait(false);
-                        origin = soundRecord.Path;
-                        selectedSoundRecordIds.Add(alias, soundRecord.RecordId);
-                    }
-                    catch (InvalidDataException error) when (allowMissingSounds &&
-                        error.Message.StartsWith("Missing sound:", StringComparison.Ordinal))
+                    if (await sourceLibrary.ResolveSoundRecordAsync(mapFF, alias, token).ConfigureAwait(false)
+                        is not { } soundRecord)
                     {
                         skipped.Add(alias);
-                        sourceLibrary.RecordMissingSound(alias);
                         continue;
                     }
-                    if (!origins.TryGetValue(origin, out List<string>? selected)) origins.Add(origin, selected = []);
+                    selectedSoundRecordIds.Add(alias, soundRecord.RecordId);
+                    if (!origins.TryGetValue(soundRecord.Path, out List<string>? selected)) origins.Add(soundRecord.Path, selected = []);
                     selected.Add(alias);
                 }
             }
@@ -92,17 +86,13 @@ internal static class Iw3PcAudioCompiler
                 }
             }
             foreach (string name in missing)
-                if (!captures.ContainsKey(name) && !skipped.Contains(name))
-                {
-                    if (!allowMissingSounds)
-                        throw new InvalidDataException($"Missing COD4 PC sound alias '{name}'.");
-                    skipped.Add(name);
-                    sourceLibrary?.RecordMissingSound(name);
-                }
-            foreach (string name in missing)
             {
-                if (skipped.Contains(name)) continue;
-                foreach (JsonElement row in captures[name].Sound.GetProperty("Rows").EnumerateArray())
+                if (!captures.TryGetValue(name, out var capture))
+                {
+                    skipped.Add(name);
+                    continue;
+                }
+                foreach (JsonElement row in capture.Sound.GetProperty("Rows").EnumerateArray())
                     foreach (string field in new[] { "SecondaryAlias", "ChainAlias" })
                         if (row.TryGetProperty(field, out JsonElement value) && value.ValueKind == JsonValueKind.String &&
                             value.GetString() is { Length: > 0 } reference)
@@ -114,46 +104,49 @@ internal static class Iw3PcAudioCompiler
         }
 
         string[] iwds = sourceLibrary?.IwdPaths.ToArray() ?? LegacyIwds(mapFF, customIwd);
-        var sourceSounds = new Dictionary<string, Iw3Ps3SourceSound>(StringComparer.Ordinal);
+        var sourceSounds = new Dictionary<string, Iw3Ps3SourceSound>(StringComparer.OrdinalIgnoreCase);
         foreach (string name in captures.Keys.Order(StringComparer.Ordinal))
         {
             var rows = new List<Iw3Ps3SourceSoundRow>();
-            try
+            foreach (JsonElement source in captures[name].Sound.GetProperty("Rows").EnumerateArray())
             {
-                foreach (JsonElement source in captures[name].Sound.GetProperty("Rows").EnumerateArray())
+                token.ThrowIfCancellationRequested();
+                byte[] wav;
+                if (source.TryGetProperty("StreamedPath", out JsonElement streamed))
                 {
-                    token.ThrowIfCancellationRequested();
-                    byte[] wav;
-                    if (source.TryGetProperty("StreamedPath", out JsonElement streamed))
+                    string path = streamed.GetString() ?? throw new InvalidDataException("Empty sound path.");
+                    if (ReadIwdSound(iwds, path) is not { } resolved)
                     {
-                        string path = streamed.GetString() ?? throw new InvalidDataException("Empty sound path.");
-                        var resolved = ReadIwdSound(iwds, path);
-                        wav = resolved.Bytes;
-                        sourceLibrary?.RecordSoundPayloadSource(path, resolved.Archive);
+                        missingSounds.Add(path);
+                        skipped.Add(name);
+                        break;
                     }
-                    else if (source.TryGetProperty("Loaded", out JsonElement loaded))
-                        wav = WrapLoadedPcm(captures[name].Directory, loaded);
-                    else throw new FileNotFoundException($"Sound '{name}' has no playable payload.", name);
-                    byte[] mp3 = await EncodeMp3Async(wav, name, scratch, sequence++, token).ConfigureAwait(false);
-                    rows.Add(new Iw3Ps3SourceSoundRow(
-                        source.GetProperty("SecondaryAlias").GetString(), source.GetProperty("ChainAlias").GetString(),
-                        source.GetProperty("Sequence").GetInt32(), Single(source, "VolumeMin"), Single(source, "VolumeMax"),
-                        Single(source, "PitchMin"), Single(source, "PitchMax"), Single(source, "DistanceMin"),
-                        Single(source, "DistanceMax"), source.GetProperty("Flags").GetInt32(),
-                        Single(source, "SlavePercentage"), Single(source, "Probability"),
-                        Single(source, "LfePercentage"), Single(source, "CenterPercentage"),
-                        source.GetProperty("StartDelay").GetInt32(), Single(source, "EnvelopMin"),
-                        Single(source, "EnvelopMax"), Single(source, "EnvelopPercentage"),
-                        source.TryGetProperty("SpeakerMap", out JsonElement speaker) ? ReadSpeakerMapBytes(speaker) : null,
-                        source.GetProperty("SpeakerMapName").GetString(), null, mp3, 0, 0, 0));
+                    wav = resolved.Bytes;
+                    sourceLibrary?.RecordSoundPayloadSource(path, resolved.Archive);
                 }
+                else if (source.TryGetProperty("Loaded", out JsonElement loaded))
+                    wav = WrapLoadedPcm(captures[name].Directory, loaded);
+                else
+                {
+                    string missingPayload = source.GetProperty("MissingPayload").GetString() ?? name;
+                    missingSounds.Add(missingPayload);
+                    skipped.Add(name);
+                    break;
+                }
+                byte[] mp3 = await EncodeMp3Async(wav, name, scratch, sequence++, token).ConfigureAwait(false);
+                rows.Add(new Iw3Ps3SourceSoundRow(
+                    source.GetProperty("SecondaryAlias").GetString(), source.GetProperty("ChainAlias").GetString(),
+                    source.GetProperty("Sequence").GetInt32(), Single(source, "VolumeMin"), Single(source, "VolumeMax"),
+                    Single(source, "PitchMin"), Single(source, "PitchMax"), Single(source, "DistanceMin"),
+                    Single(source, "DistanceMax"), source.GetProperty("Flags").GetInt32(),
+                    Single(source, "SlavePercentage"), Single(source, "Probability"),
+                    Single(source, "LfePercentage"), Single(source, "CenterPercentage"),
+                    source.GetProperty("StartDelay").GetInt32(), Single(source, "EnvelopMin"),
+                    Single(source, "EnvelopMax"), Single(source, "EnvelopPercentage"),
+                    source.TryGetProperty("SpeakerMap", out JsonElement speaker) ? ReadSpeakerMapBytes(speaker) : null,
+                    source.GetProperty("SpeakerMapName").GetString(), null, mp3, 0, 0, 0));
             }
-            catch (FileNotFoundException error) when (allowMissingSounds)
-            {
-                skipped.Add(name);
-                sourceLibrary?.RecordMissingSound(error.FileName ?? name);
-                continue;
-            }
+            if (skipped.Contains(name)) continue;
             sourceSounds.Add(name, new Iw3Ps3SourceSound(name, rows));
         }
         bool removed;
@@ -173,9 +166,13 @@ internal static class Iw3PcAudioCompiler
             }
         }
         while (removed);
-        return Iw3Ps3AudioCompiler.Emit(bootstrapDirectory, ownedPrefix, ambientAliases,
+        var audio = Iw3Ps3AudioCompiler.Emit(bootstrapDirectory, ownedPrefix, ambientAliases,
             mapOwned, sharedAliases, sourceSounds, row => row.LoadedPayload ??
                 throw new InvalidDataException("PC sound row has no encoded payload."), token);
+        missingSounds.UnionWith(skipped);
+        missingSounds.ExceptWith(audio.Assets.OfType<SoundAliasListAsset>()
+            .Select(asset => asset.AliasName).OfType<string>());
+        return (audio.Assets, audio.SoundPackage, missingSounds.ToArray());
     }
 
     private static async Task<HashSet<string>> ReadSharedAliasesAsync(
@@ -184,7 +181,7 @@ internal static class Iw3PcAudioCompiler
         CancellationToken token)
     {
         if (!entities.Any(entity => entity.TryGetValue("classname", out string? value) && value == "script_struct"))
-            return new HashSet<string>(StringComparer.Ordinal);
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         string path = Path.Combine(assetDirectory, "maps/mp/_global_fx.gsc");
         byte[]? bytes = File.Exists(path) ? await File.ReadAllBytesAsync(path, token).ConfigureAwait(false) : null;
         if (bytes is null)
@@ -211,7 +208,7 @@ internal static class Iw3PcAudioCompiler
         var buffer = new byte[bytes.Length + 1];
         bytes.CopyTo(buffer, 0);
         var raw = new RawFileAsset { Name = "maps/mp/_global_fx.gsc", Len = bytes.Length, Buffer = buffer };
-        return Iw3Ps3RawFileCompiler.ReadSharedPrefabSoundNames(raw, entities).ToHashSet(StringComparer.Ordinal);
+        return Iw3Ps3RawFileCompiler.ReadSharedPrefabSoundNames(raw, entities).ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private static byte[]? FindSharedScript(string mapFF, CancellationToken token)
@@ -276,7 +273,7 @@ internal static class Iw3PcAudioCompiler
         return bytes;
     }
 
-    private static (byte[] Bytes, string Archive) ReadIwdSound(IReadOnlyList<string> paths, string entryPath)
+    private static (byte[] Bytes, string Archive)? ReadIwdSound(IReadOnlyList<string> paths, string entryPath)
     {
         foreach (string path in paths)
         {
@@ -291,7 +288,7 @@ internal static class Iw3PcAudioCompiler
             stream.CopyTo(memory);
             return (memory.ToArray(), $"{path}:{entry.FullName}");
         }
-        throw new FileNotFoundException($"COD4 PC streamed sound '{entryPath}' was not found in the selected IWDs.");
+        return null;
     }
 
     private static byte[] WrapLoadedPcm(string directory, JsonElement source)

@@ -1393,7 +1393,7 @@ public static class D3dbspAssetLinker
         {
             // IW4 world geometry uses the 3D default material; the bare
             // $default asset is the 2D engine/UI fallback.
-            "$default" => "w/$default3d",
+            "$default" or "$default3d" => "w/$default3d",
             _ when name[0] == '$' || name.StartsWith("w/", StringComparison.Ordinal) ||
                    name.StartsWith("wc/", StringComparison.Ordinal) => name,
             _ => "w/" + name

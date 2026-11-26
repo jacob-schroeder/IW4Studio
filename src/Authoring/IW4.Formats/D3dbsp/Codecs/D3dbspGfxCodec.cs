@@ -512,8 +512,9 @@ internal static partial class D3dbspGfxCodec
                     slot.Type == MaterialTechniqueType.Lit && slot.Technique is not null) == true;
                 bool hasEmissiveTechnique = material.TechniqueSet?.TechniqueSlots.Any(slot =>
                     slot.Type == MaterialTechniqueType.Emissive && slot.Technique is not null) == true;
-                // Native caulk_shadow casts shadows but belongs to neither camera draw range.
-                if (material.Info.Name == "w/caulk_shadow" && sortKey == 34 &&
+                // Native shadowcaster and caulk_shadow surfaces stay in the world
+                // for shadow draws, outside the lit and emissive camera ranges.
+                if (material.Info.Name is "w/caulk_shadow" or "w/shadowcaster" or "wc/shadowcaster" && sortKey == 34 &&
                     material.CameraRegion == GfxCameraRegionType.None && !hasLitTechnique && !hasEmissiveTechnique)
                 {
                     nonCameraSurfaceCount++;

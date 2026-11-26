@@ -20,10 +20,11 @@ it to the IW4 linker. OpenAssetTools is the reference for the IW3 PC formats.
 Both MapConverter and ShaderConvert use the bundled shader library for compiled
 D3D9 shaders.
 
-PC audio conversion looks beside the executable for FFmpeg with `libmp3lame`.
-Development builds can also use `ffmpeg` on `PATH`. To publish a self-contained
-distribution, build on the target OS and architecture and supply a standalone
-FFmpeg executable for that target with its distribution license. This example targets Linux x64.
+Windows x64 and Apple Silicon builds of Studio and MapConverter automatically download
+and verify FFmpeg on the first build and bundle it beside the executable. PC audio
+conversion uses this copy for MP3 encoding. For other targets, development builds
+can use `ffmpeg` on `PATH`. To publish on those targets, supply a standalone FFmpeg
+with `libmp3lame` and its license. This example targets Linux x64.
 
 ```sh
 dotnet publish tools/MapConverter/MapConverter.csproj -c Release -r linux-x64 --self-contained \

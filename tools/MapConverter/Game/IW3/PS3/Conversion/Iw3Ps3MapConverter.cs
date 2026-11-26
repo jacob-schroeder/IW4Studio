@@ -26,6 +26,7 @@ using IW4.Runtime.Diagnostics;
 using IW4.Studio.Documents;
 using MapConverter.CommandLine;
 using MapConverter.Game.IW3.PC.Conversion;
+using MapConverter.Game.IW3;
 using MapConverter.Game.IW3.PS3.Extraction;
 using MapConverter.Game.IW3.PS3.Images;
 using MapConverter.Game.IW3.PS3.Rules;
@@ -45,19 +46,21 @@ internal static class Iw3Ps3MapConverter
         string mapName = Path.GetFileNameWithoutExtension(mapPath);
         string output = Path.GetFullPath(options.OutputDirectory);
         string[] names = [mapName + ".ff", mapName + "_load.ff", mapName + ".pak", mapName + "_snd.pak", MapUiRules.ZoneName(mapName) + ".ff"];
-        foreach (string name in names)
-            if (File.Exists(Path.Combine(output, name)))
-                throw new IOException($"Conversion output already exists: '{Path.Combine(output, name)}'.");
         string sourceDirectory = Path.GetFullPath(options.SourceFastFileDirectory ??
             options.SourceLibraryDirectory ?? Path.GetDirectoryName(mapPath) ??
                 throw new ArgumentException("The source map has no directory."));
-        byte[] ui = Iw3Ps3MapUiCompiler.Build(mapName, sourceDirectory,
-            Path.GetFullPath(options.SourceLibraryDirectory ?? sourceDirectory), options.Factions, token);
         string[] sources = new[]
         {
             Path.Combine(sourceDirectory, "code_post_gfx_mp.ff"),
             Path.Combine(sourceDirectory, "common_mp.ff"), mapPath, loadPath
         }.Distinct(StringComparer.Ordinal).ToArray();
+        string[] inputFiles = sources.Append(Path.Combine(sourceDirectory, "ui_mp.ff"))
+            .Concat(Directory.Exists(sourceDirectory)
+                ? Directory.EnumerateFiles(sourceDirectory, "packfile*.pak") : Array.Empty<string>())
+            .ToArray();
+        Iw3OutputPublication.ValidateDestinations(names.Select(name => Path.Combine(output, name)), inputFiles);
+        byte[] ui = Iw3Ps3MapUiCompiler.Build(mapName, sourceDirectory,
+            Path.GetFullPath(options.SourceLibraryDirectory ?? sourceDirectory), options.Factions, token);
         string prefix = mapName + "/";
         var shaders = new Iw3Ps3ShaderLibrary();
         var images = new Iw3Ps3ImageLibrary(prefix);
@@ -199,7 +202,6 @@ internal static class Iw3Ps3MapConverter
             CreateRawFile(mapName + "_load", ""));
         string stage = Path.Combine(Path.GetTempPath(), "iw3ps3-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(stage);
-        var published = new List<string>();
         try
         {
             File.WriteAllBytes(Path.Combine(stage, names[0]), map);
@@ -207,18 +209,8 @@ internal static class Iw3Ps3MapConverter
             File.WriteAllBytes(Path.Combine(stage, names[2]), package.Bytes);
             File.WriteAllBytes(Path.Combine(stage, names[3]), audio.SoundPackage);
             File.WriteAllBytes(Path.Combine(stage, names[4]), ui);
-            Directory.CreateDirectory(output);
-            foreach (string name in names)
-            {
-                string destination = Path.Combine(output, name);
-                File.Move(Path.Combine(stage, name), destination);
-                published.Add(destination);
-            }
-        }
-        catch
-        {
-            foreach (string path in published) File.Delete(path);
-            throw;
+            Iw3OutputPublication.Publish(names.Select(name => (Path.Combine(stage, name),
+                Path.Combine(output, name))).ToArray(), inputFiles);
         }
         finally { Directory.Delete(stage, recursive: true); }
         return (Path.Combine(output, names[0]), Path.Combine(output, names[1]),

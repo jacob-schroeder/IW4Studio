@@ -13,7 +13,6 @@ internal sealed record Iw3PcExtractionRequest(
     string LoadFastFilePath,
     string? IwdPath,
     string? SourceLibraryDirectory,
-    bool AllowMissingSounds,
     string ScratchDirectory);
 
 internal sealed record Iw3PcExtractionResult(
@@ -40,8 +39,6 @@ internal static class Iw3PcExtractionBackend
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (request.AllowMissingSounds && request.SourceLibraryDirectory is null)
-            throw new ArgumentException("Allowing missing sounds requires a source library.", nameof(request));
 
         var mapFastFilePath = ValidateFastFile(
             request.MapFastFilePath,
@@ -92,7 +89,6 @@ internal static class Iw3PcExtractionBackend
                 iwdPath,
                 sourceLibraryDirectory,
                 scratchDirectory,
-                request.AllowMissingSounds,
                 cancellationToken).ConfigureAwait(false);
 
         Iw3PcWorldExtraction world;

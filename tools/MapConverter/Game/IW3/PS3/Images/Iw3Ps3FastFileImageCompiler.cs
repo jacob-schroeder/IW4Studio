@@ -136,7 +136,7 @@ internal static class Iw3Ps3FastFileImageCompiler
         }
     }
 
-    private static IEnumerable<string> EnumerateFastFiles(string sourceDirectory) =>
+    internal static IEnumerable<string> EnumerateFastFiles(string sourceDirectory) =>
         Directory.EnumerateFiles(
                 sourceDirectory,
                 "*",

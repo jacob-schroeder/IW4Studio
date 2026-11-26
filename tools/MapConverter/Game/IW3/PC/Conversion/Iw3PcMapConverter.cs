@@ -44,6 +44,7 @@ using MapConverter.IW3.PC.Readers.World;
 using MapConverter.Game.IW3.PS3.Conversion;
 using MapConverter.Game.IW3.PS3.Images;
 using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3;
 
 namespace MapConverter.Game.IW3.PC.Conversion;
 
@@ -70,7 +71,8 @@ internal sealed record Iw3PcMapConversionResult(
     IReadOnlyList<string> DestroyPiecesFallbackNames,
     int RawFileCount,
     bool ElectricBoxFallbackApplied,
-    IReadOnlyList<string> FallbackImageNames);
+    IReadOnlyList<string> FallbackImageNames,
+    IReadOnlyList<string> MissingSoundReferences);
 
 /// <summary>
 /// Converts one extracted IW3 PC custom-map graph directly into authored IW4
@@ -167,16 +169,14 @@ internal static class Iw3PcMapConverter
         if (File.Exists(outputDirectory))
             throw new IOException($"Output directory path is an existing file: '{outputDirectory}'.");
         string outputPath = Path.Combine(outputDirectory, mapName + ".ff");
-        if (File.Exists(outputPath))
-            throw new IOException($"Output file '{outputPath}' already exists.");
         string? loadOutputPath = loadName is null ? null : Path.Combine(outputDirectory, loadName + ".ff");
-        if (loadOutputPath is not null && (File.Exists(loadOutputPath) || Directory.Exists(loadOutputPath)))
-            throw new IOException($"Output file '{loadOutputPath}' already exists.");
         string? imagePath = options.ImageFileIndex is { } imageIndex
             ? Path.Combine(outputDirectory, DbHeaderImageStreamEntry.GetPackageFileName(
                 unchecked((uint)imageIndex), outputPath)) : null;
-        if (imagePath is not null && (File.Exists(imagePath) || Directory.Exists(imagePath)))
-            throw new IOException($"Output file '{imagePath}' already exists.");
+        string[] inputs = ConversionInputPaths(inputPath, loadInputPath, iwdPath,
+            sourceFastFileDirectory, null, cancellationToken, templatePath, bootstrapPath);
+        Iw3OutputPublication.ValidateDestinations(
+            new[] { outputPath, loadOutputPath, imagePath }.OfType<string>(), inputs);
 
         string scratchDirectory = Path.Combine(
             Path.GetTempPath(),
@@ -317,7 +317,7 @@ internal static class Iw3PcMapConverter
                 progress: new Progress<string>());
             if (!File.Exists(stagedMapPath) || new FileInfo(stagedMapPath).Length == 0)
                 throw new InvalidDataException("World-first linking did not produce a fastfile.");
-            PublishOutputs((stagedMapPath, outputPath),
+            PublishOutputs(inputs, (stagedMapPath, outputPath),
                 stagedLoadPath is not null && loadOutputPath is not null
                     ? (stagedLoadPath, loadOutputPath) : null,
                 stagedImagePath is not null && imagePath is not null
@@ -733,6 +733,11 @@ internal static class Iw3PcMapConverter
         }
 
         ConversionPaths paths = ValidatePaths(options);
+        string[] inputs = ConversionInputPaths(paths.MapInputPath, paths.LoadInputPath, paths.IwdInputPath,
+            paths.SourceFastFileDirectory, paths.SourceLibraryDirectory, cancellationToken);
+        Iw3OutputPublication.ValidateDestinations(
+            new[] { paths.MapOutputPath, paths.LoadOutputPath, paths.ImageOutputPath,
+                paths.SourceProvenancePath, paths.SoundOutputPath, paths.UiOutputPath }.OfType<string>(), inputs);
         int effectiveImageFileIndex = options.ImageFileIndex ?? -1;
         string scratchDirectory = Path.Combine(
             Path.GetTempPath(),
@@ -754,7 +759,6 @@ internal static class Iw3PcMapConverter
                         paths.LoadInputPath,
                         paths.IwdInputPath,
                         paths.SourceLibraryDirectory,
-                        options.AllowMissingSounds,
                         scratchDirectory),
                     cancellationToken).ConfigureAwait(false);
 
@@ -861,12 +865,18 @@ internal static class Iw3PcMapConverter
                     "custom imagefile index. Select a different '--imagefile-index'.");
             }
 
-            var vehicleEffects = Iw3PcEffectCompiler.Capture(extraction.VehicleRecipes.EffectNames,
+            RawFileAsset[] mapRawFiles = CompileRawFiles(
+                extraction.MapAssetDirectory, mapManifest, paths.MapName, out bool mapElectricBoxFallbackApplied);
+            var ownedEffects = OwnedNames(mapManifest, "fx").ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var scriptEffects = Iw3Ps3RawFileCompiler.ReadEffectNames(mapRawFiles, requireLiteral: false);
+            var effectRoots = extraction.VehicleRecipes.EffectNames.Concat(scriptEffects.Where(ownedEffects.Contains))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            var mapEffects = Iw3PcEffectCompiler.Capture(effectRoots,
                 extraction.SourceLibrary, paths.MapInputPath, cancellationToken);
             string[] importedModelNames = modelReferences.StaticModelNames
                 .Concat(modelReferences.NamedEntityModelNames)
                 .Concat(extraction.VehicleRecipes.ModelNames)
-                .Concat(vehicleEffects.ModelNames)
+                .Concat(mapEffects.ModelNames)
                 .Concat(dynamicModelNames)
                 .Where(name =>
                     ownedXModelNames.Contains(name) &&
@@ -899,7 +909,7 @@ internal static class Iw3PcMapConverter
                 extraction,
                 mapManifest,
                 loadManifest,
-                modelMaterialNames.Concat(vehicleEffects.MaterialNames).Distinct(StringComparer.Ordinal).ToArray());
+                modelMaterialNames.Concat(mapEffects.MaterialNames).Distinct(StringComparer.Ordinal).ToArray());
             InspectMaterials(
                 materialSources,
                 out Dictionary<string, ImageRequirement> imageRequirements,
@@ -988,11 +998,6 @@ internal static class Iw3PcMapConverter
                     DynamicEntityDefinitions = dynamicEntities.Definitions
                 });
 
-            RawFileAsset[] mapRawFiles = CompileRawFiles(
-                extraction.MapAssetDirectory,
-                mapManifest,
-                paths.MapName,
-                out bool mapElectricBoxFallbackApplied);
             if (extraction.VehicleRecipes.Script.Length != 0)
             {
                 byte[] content = Encoding.Latin1.GetBytes(extraction.VehicleRecipes.Script);
@@ -1011,7 +1016,7 @@ internal static class Iw3PcMapConverter
                 out bool loadElectricBoxFallbackApplied);
 
             string soundPrefix = paths.MapName + "/";
-            var effects = vehicleEffects.Compile(soundPrefix, materials.BySourceName,
+            var effects = mapEffects.Compile(soundPrefix, materials.BySourceName,
                 xmodels.Models.ToDictionary(model => model.Name ??
                     throw new InvalidDataException("Imported XModel has no name."), StringComparer.OrdinalIgnoreCase));
             var ambientAliases = Iw3Ps3RawFileCompiler.ReadSoundNames(mapRawFiles, ambientOnly: true)
@@ -1019,18 +1024,20 @@ internal static class Iw3PcMapConverter
             var requiredAliases = Iw3Ps3RawFileCompiler.ReadSoundNames(mapRawFiles)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             requiredAliases.UnionWith(extraction.VehicleRecipes.SoundNames);
-            requiredAliases.UnionWith(vehicleEffects.SoundNames);
+            requiredAliases.UnionWith(mapEffects.SoundNames);
             var entities = mapGraph.NestedAssets.OfType<MapEntsAsset>().Single();
             var audio = await Iw3PcAudioCompiler.CaptureAsync(extraction.SourceLibrary,
                 paths.MapInputPath, paths.IwdInputPath,
                 extraction.MapAssetDirectory, nativeDirectory, soundPrefix, ambientAliases, requiredAliases,
                 D3dbspAssetLinker.ReadEntities(entities.EntityStringBytes.ToArray()), scratchDirectory,
-                cancellationToken, allowMissingSounds: options.AllowMissingSounds).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
             var emittedSounds = audio.Assets.OfType<SoundAliasListAsset>()
                 .Select(alias => alias.AliasName ?? throw new InvalidDataException("Compiled sound alias has no name."))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var emittedEffects = effects.Select(effect => effect.Name ??
+                throw new InvalidDataException("Compiled effect has no name.")).ToHashSet(StringComparer.OrdinalIgnoreCase);
             mapRawFiles = Iw3Ps3RawFileCompiler.CompilePcGameplay(mapRawFiles, paths.MapName,
-                options.Factions, emittedSounds, options.AllowMissingSounds);
+                options.Factions, emittedSounds, emittedEffects);
             nativeAssets = nativeAssets.Concat(audio.Assets).OrderBy(IsExternal)
                 .DistinctBy(AssetKey.FromDefinition).ToArray();
 
@@ -1085,7 +1092,6 @@ internal static class Iw3PcMapConverter
                 new Dictionary<AssetKey, ImageFileStreamLanguageReferences>());
 
             Directory.CreateDirectory(paths.OutputDirectory);
-            RejectExistingOutputs(paths);
             string token = Guid.NewGuid().ToString("N");
             stagedMapPath = StageOutput(
                 paths.MapOutputPath,
@@ -1114,7 +1120,7 @@ internal static class Iw3PcMapConverter
                     paths.SourceProvenancePath, token, library.SerializeProvenance());
             }
 
-            PublishOutputs(
+            PublishOutputs(inputs,
                 (stagedMapPath, paths.MapOutputPath),
                 (stagedLoadPath, paths.LoadOutputPath),
                 stagedImagePath is null || paths.ImageOutputPath is null
@@ -1155,7 +1161,8 @@ internal static class Iw3PcMapConverter
                 dynamicEntities.DestroyPiecesFallbackNames,
                 OwnedMapCount(XAssetType.RawFile) + loadRawFiles.Length,
                 mapElectricBoxFallbackApplied || loadElectricBoxFallbackApplied,
-                images.FallbackImageNames);
+                images.FallbackImageNames,
+                audio.MissingSoundReferences);
         }
         finally
         {
@@ -1220,7 +1227,7 @@ internal static class Iw3PcMapConverter
         string imageOutputPath = Path.Combine(outputDirectory,
             DbHeaderImageStreamEntry.GetPackageFileName(
                 unchecked((uint)effectiveImageFileIndex), mapOutputPath));
-        var result = new ConversionPaths(
+        return new ConversionPaths(
             mapPath,
             loadPath,
             iwdPath,
@@ -1235,8 +1242,18 @@ internal static class Iw3PcMapConverter
             sourceLibraryDirectory is null ? null : Path.Combine(outputDirectory, mapName + ".sources.json"),
             Path.Combine(outputDirectory, mapName + "_snd.pak"),
             Path.Combine(outputDirectory, MapUiRules.ZoneName(mapName) + ".ff"));
-        RejectExistingOutputs(result);
-        return result;
+    }
+
+    private static string[] ConversionInputPaths(string mapPath, string? loadPath, string? iwdPath,
+        string? sourceFastFileDirectory, string? sourceLibraryDirectory, CancellationToken token, params string?[] otherInputs)
+    {
+        IEnumerable<string> inputs = new[] { mapPath, loadPath, iwdPath }.Concat(otherInputs)
+            .OfType<string>();
+        if (sourceFastFileDirectory is not null)
+            inputs = inputs.Concat(Iw3Ps3FastFileImageCompiler.EnumerateFastFiles(sourceFastFileDirectory));
+        if (sourceLibraryDirectory is not null)
+            inputs = inputs.Concat(Iw3PcSourceLibrary.EnumerateLibraryFiles(sourceLibraryDirectory, token));
+        return inputs.Distinct(PathComparer).ToArray();
     }
 
     private static MaterialSource[] SelectMaterialSources(
@@ -2392,25 +2409,9 @@ internal static class Iw3PcMapConverter
         return stagePath;
     }
 
-    private static void PublishOutputs(params (string Staged, string Final)?[] outputs)
+    private static void PublishOutputs(string[] inputs, params (string Staged, string Final)?[] outputs)
     {
-        var moved = new List<string>(outputs.Length);
-        try
-        {
-            foreach (var output in outputs)
-            {
-                if (output is not { } pair) continue;
-                (string staged, string final) = pair;
-                File.Move(staged, final, overwrite: false);
-                moved.Add(final);
-            }
-        }
-        catch
-        {
-            foreach (string path in moved)
-                DeleteIfExists(path);
-            throw;
-        }
+        Iw3OutputPublication.Publish(outputs.OfType<(string Staged, string Final)>().ToArray(), inputs);
     }
 
     private static string RequireInputFile(
@@ -2607,24 +2608,6 @@ internal static class Iw3PcMapConverter
                 $"Extracted {description} path '{relativePath}' escapes its asset directory.");
         }
         return path;
-    }
-
-    private static void RejectExistingOutputs(ConversionPaths paths)
-    {
-        foreach (string output in new[]
-                 {
-                     paths.MapOutputPath,
-                     paths.LoadOutputPath,
-                     paths.ImageOutputPath,
-                     paths.SourceProvenancePath, paths.SoundOutputPath, paths.UiOutputPath
-                 }.OfType<string>())
-        {
-            if (File.Exists(output) || Directory.Exists(output))
-            {
-                throw new IOException(
-                    $"Output already exists and will not be overwritten: '{output}'.");
-            }
-        }
     }
 
     private static void DeleteIfExists(string? path)

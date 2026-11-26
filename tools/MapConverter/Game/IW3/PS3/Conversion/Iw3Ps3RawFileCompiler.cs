@@ -8,25 +8,31 @@ namespace MapConverter.Game.IW3.PS3.Conversion;
 /// <summary>Retains authored COD4 map scripts while retargeting owned asset names.</summary>
 internal static class Iw3Ps3RawFileCompiler
 {
-    internal static IReadOnlyList<string> ReadEffectNames(IEnumerable<RawFileAsset> scripts)
+    internal static IReadOnlyList<string> ReadEffectNames(IEnumerable<RawFileAsset> scripts, bool requireLiteral = true)
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (RawFileAsset script in scripts.Where(raw => raw.Name?.EndsWith(".gsc", StringComparison.OrdinalIgnoreCase) == true))
         {
             string text = Encoding.Latin1.GetString(LogicalBytes(script));
             List<Token> tokens = Lex(text);
-            for (int index = 0; index < tokens.Count; index++)
-            {
-                if (tokens[index].Kind == TokenKind.Identifier && Is(text, tokens[index], "loadfx") &&
-                    index + 3 < tokens.Count && Is(text, tokens[index + 1], "("))
-                {
-                    string name = Literal(text, tokens[index + 2]) ??
-                        throw new NotSupportedException($"Map script '{script.Name}' requires a literal loadfx asset name.");
-                    names.Add(name);
-                }
-            }
+            foreach ((Token _, string name) in ReadEffectReferences(text, tokens, script.Name, requireLiteral))
+                names.Add(name);
         }
         return names.Order(StringComparer.Ordinal).ToArray();
+    }
+
+    private static IEnumerable<(Token Literal, string Name)> ReadEffectReferences(
+        string text, List<Token> tokens, string? scriptName, bool requireLiteral)
+    {
+        for (int index = 0; index + 3 < tokens.Count; index++)
+        {
+            if (tokens[index].Kind != TokenKind.Identifier || !Is(text, tokens[index], "loadfx") ||
+                !Is(text, tokens[index + 1], "(")) continue;
+            if (Literal(text, tokens[index + 2]) is { } name && Is(text, tokens[index + 3], ")"))
+                yield return (tokens[index + 2], name);
+            else if (requireLiteral)
+                throw new NotSupportedException($"Map script '{scriptName}' requires a literal loadfx asset name.");
+        }
     }
 
     internal static IReadOnlyList<string> ReadSoundNames(IEnumerable<RawFileAsset> scripts, bool ambientOnly = false)
@@ -182,10 +188,8 @@ internal static class Iw3Ps3RawFileCompiler
             }
 
             byte[] content = LogicalBytes(raw);
-            byte[] scriptContent = name == $"maps/createfx/{mapName}_fx.gsc"
-                ? Encoding.Latin1.GetBytes(ScriptRules.CreateFxHelpers(Encoding.Latin1.GetString(content))) : content;
             byte[] converted = name.EndsWith(".gsc", StringComparison.OrdinalIgnoreCase)
-                ? RewriteScript(scriptContent, name, name == mainName, ownedNamePrefix,
+                ? RewriteScript(content, name, name == mainName, ownedNamePrefix,
                     fx, models, materials, sounds, splitStaticModelNames, hasVehicleRecipes, factions)
                 : Iw3PcMapConverter.CompileVisionFile(content);
             result[index] = WithContent(raw, content, converted);
@@ -195,10 +199,14 @@ internal static class Iw3Ps3RawFileCompiler
 
     internal static RawFileAsset[] CompilePcGameplay(
         IReadOnlyList<RawFileAsset> rawFiles, string mapName, FactionProfile factions,
-        IReadOnlySet<string> soundNames, bool allowMissingSounds)
+        IReadOnlySet<string> soundNames, IReadOnlySet<string> effectNames)
     {
         string prefix = mapName + "/";
         var ownedSounds = OwnedNames(soundNames, prefix);
+        var ownedEffects = OwnedNames(effectNames, prefix);
+        string fxDefsPath = $"maps/mp/{mapName}_fx_defs";
+        var fxDefs = rawFiles.FirstOrDefault(raw => string.Equals(raw.Name, fxDefsPath + ".gsc", StringComparison.OrdinalIgnoreCase));
+        string? spawnFxName = fxDefs is null ? null : RenamedSpawnFx(LogicalBytes(fxDefs), rawFiles);
         bool hasVehicleRecipes = rawFiles.Any(raw => raw.Name == $"maps/mp/{mapName}_vehicles.gsc");
         return rawFiles.Select(raw =>
         {
@@ -206,16 +214,74 @@ internal static class Iw3Ps3RawFileCompiler
                 return raw;
             byte[] content = LogicalBytes(raw);
             string text = Encoding.Latin1.GetString(content);
-            if (name == $"maps/createfx/{mapName}_fx.gsc")
-                text = ScriptRules.CreateFxHelpers(text);
             List<Token> tokens = Lex(text);
             bool main = name == $"maps/mp/{mapName}.gsc";
             var changes = GameplayReplacements(text, tokens, name, main,
-                prefix, ownedSounds, factions, allowMissingSounds, soundNames);
+                prefix, ownedSounds, factions, requireSoundProvider: false);
+            if (spawnFxName is not null)
+                RetargetSpawnFx(text, tokens, raw == fxDefs, fxDefsPath, spawnFxName, changes);
+            foreach ((Token literal, string effectName) in ReadEffectReferences(text, tokens, name, requireLiteral: false))
+                if (ownedEffects.TryGetValue(prefix + effectName, out string? ownedEffect))
+                    changes.Add(ReplaceLiteral(literal, ownedEffect));
             if (main && hasVehicleRecipes)
                 changes.Add(VehicleStartup(text, tokens, prefix));
             return WithContent(raw, content, ApplyReplacements(text, changes));
         }).ToArray();
+    }
+
+    private static string? RenamedSpawnFx(byte[] fxDefs, IReadOnlyList<RawFileAsset> rawFiles)
+    {
+        string text = Encoding.Latin1.GetString(fxDefs);
+        var tokens = Lex(text);
+        // IW3 FX definition scripts can declare a zero-argument spawnFX helper.
+        // IW4 reserves the identifier even if the helper has a different signature.
+        for (int i = 0; i + 3 < tokens.Count; i++)
+        {
+            if (!Is(text, tokens[i], "spawnfx") || !Is(text, tokens[i + 1], "(") ||
+                !Is(text, tokens[i + 2], ")") || !Is(text, tokens[i + 3], "{")) continue;
+            string newName = "iw3_spawnfx";
+            foreach (var script in rawFiles.Where(raw => raw.Name?.EndsWith(".gsc", StringComparison.OrdinalIgnoreCase) == true))
+            {
+                string source = Encoding.Latin1.GetString(LogicalBytes(script));
+                while (source.Contains(newName, StringComparison.OrdinalIgnoreCase)) newName += "_";
+            }
+            return newName;
+        }
+        return null;
+    }
+
+    private static void RetargetSpawnFx(string text, List<Token> tokens, bool ownsHelper,
+        string fxDefsPath, string replacement, List<Replacement> changes)
+    {
+        if (!text.Contains("spawnfx", StringComparison.OrdinalIgnoreCase)) return;
+        bool hasLocalHelper = ownsHelper;
+        for (int i = 2; !hasLocalHelper && i < tokens.Count; i++)
+            if (Is(text, tokens[i], ";") && PathBefore(i, out int start).Equals(fxDefsPath, StringComparison.OrdinalIgnoreCase))
+                hasLocalHelper = start >= 2 && Is(text, tokens[start - 1], "include") && Is(text, tokens[start - 2], "#");
+
+        for (int i = 0; i < tokens.Count; i++)
+        {
+            Token token = tokens[i];
+            if (!Is(text, token, "spawnfx")) continue;
+            bool scoped = i >= 2 && Is(text, tokens[i - 1], ":") && Is(text, tokens[i - 2], ":");
+            bool localCall = i + 2 < tokens.Count && Is(text, tokens[i + 1], "(") && Is(text, tokens[i + 2], ")");
+            if (!scoped && (!localCall || i > 0 && Is(text, tokens[i - 1], "."))) continue;
+            string scope = scoped ? PathBefore(i - 2, out _) : string.Empty;
+            bool local = scope.Length == 0 || scope.Equals("return", StringComparison.OrdinalIgnoreCase) ||
+                scope.Equals("thread", StringComparison.OrdinalIgnoreCase);
+            if (local ? hasLocalHelper : scope.Equals(fxDefsPath, StringComparison.OrdinalIgnoreCase))
+                changes.Add(new Replacement(token.Start, token.Length, replacement));
+        }
+
+        string PathBefore(int end, out int start)
+        {
+            start = end - 1;
+            if (start < 0 || tokens[start].Kind != TokenKind.Identifier) return string.Empty;
+            while (start >= 2 && (Is(text, tokens[start - 1], "\\") || Is(text, tokens[start - 1], "/")) &&
+                tokens[start - 2].Kind == TokenKind.Identifier) start -= 2;
+            Token last = tokens[end - 1];
+            return text[tokens[start].Start..(last.Start + last.Length)].Replace('\\', '/');
+        }
     }
 
     private static RawFileAsset WithContent(RawFileAsset raw, byte[] original, byte[] converted) =>
@@ -297,14 +363,34 @@ internal static class Iw3Ps3RawFileCompiler
 
     private static List<Replacement> GameplayReplacements(string text, List<Token> tokens, string scriptName,
         bool main, string ownedNamePrefix, IReadOnlyDictionary<string, string> sounds, FactionProfile factions,
-        bool allowMissingSounds = false, IReadOnlySet<string>? nativeSounds = null)
+        bool requireSoundProvider = true)
     {
         var replacements = new List<Replacement>();
+        bool clientFx = scriptName.Equals($"maps/createfx/{ownedNamePrefix.TrimEnd('/')}_fx.gsc", StringComparison.OrdinalIgnoreCase);
+        if (clientFx)
+        {
+            var (position, includes) = ScriptRules.ClientCreateFxIncludes(text);
+            if (includes.Length != 0) replacements.Add(new Replacement(position, 0, includes));
+        }
+        for (int i = 0; i + 7 < tokens.Count; i++)
+        {
+            if (!Is(text, tokens[i], "maps") || !Is(text, tokens[i + 5], ":") || !Is(text, tokens[i + 6], ":"))
+                continue;
+            if (i > 0 && (Is(text, tokens[i - 1], "\\") || Is(text, tokens[i - 1], "/")))
+                continue;
+            Token name = tokens[i + 7];
+            if (name.Kind != TokenKind.Identifier) continue;
+            string path = text[tokens[i].Start..(tokens[i + 4].Start + tokens[i + 4].Length)];
+            string? target = ScriptRules.CreateFxHelper(path, text.Substring(name.Start, name.Length),
+                clientFx && i + 8 < tokens.Count && Is(text, tokens[i + 8], "("));
+            if (target is not null)
+                replacements.Add(new Replacement(tokens[i].Start, name.Start + name.Length - tokens[i].Start, target));
+        }
         foreach ((Token literal, string alias) in ReadSoundReferences(text, tokens, scriptName))
         {
             if (!sounds.TryGetValue(ownedNamePrefix + alias, out string? ownedSound))
             {
-                if (allowMissingSounds || nativeSounds?.Contains(alias) == true) continue;
+                if (!requireSoundProvider) continue;
                 throw new InvalidDataException($"Source map sound alias '{alias}' has no converted provider.");
             }
             replacements.Add(ReplaceLiteral(literal, ownedSound));

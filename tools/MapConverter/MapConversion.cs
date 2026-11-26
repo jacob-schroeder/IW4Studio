@@ -101,6 +101,8 @@ public static class MapConversion
                 $"'{Iw3PcMapConverter.ElectricBoxFxName}' is not currently converted to IW4.");
         if (result.FallbackImageNames.Count != 0)
             warnings.Add("warning: neutral fallback images: " + string.Join(", ", result.FallbackImageNames));
+        foreach (string sound in result.MissingSoundReferences)
+            warnings.Add($"Warning: Sound '{sound}' was excluded from the build because its source or a required sound was missing.");
         return new MapConversionReport(output, warnings);
     }
 }

@@ -11,7 +11,7 @@ internal static class CommandLineParser
         Usage:
           mapconverter to-xbox360 <ps3-map.ff> <imagefile7.tsv> <xbox-map.ff>
           mapconverter --game iw3 --platform ps3 --map <path> --load <path> --source-fastfiles <directory> --imagefile-index -1 --output <directory>
-          mapconverter --game iw3 --platform pc --map <path> --load <path> [--iwd <path>] [--source-fastfiles <directory>] [--source-library <directory>] [--allow-missing-sounds] [--imagefile-index <-1|1-20>] [--factions <profile>] --output <directory>
+          mapconverter --game iw3 --platform pc --map <path> --load <path> [--iwd <path>] [--source-fastfiles <directory>] [--source-library <directory>] [--imagefile-index <-1|1-20>] [--factions <profile>] --output <directory>
           mapconverter --game iw3 --platform pc --map <path> --world-template <iw4.ff> [--bootstrap-fastfile <iw4.ff>] --output <directory>
 
         Options:
@@ -41,9 +41,6 @@ internal static class CommandLineParser
                                      Per-map UI also reads ui_mp.ff and English
                                      StringEd files in english/localizedstrings
                                      beneath --source-library (or --source-fastfiles).
-          --allow-missing-sounds     Requires --source-library. Record absent sound
-                                     payloads as TODOs in source provenance and
-                                     continue with available sounds. Strict by default.
           --bootstrap-fastfile <ff>  Requires --world-template. Supplies native
                                      world/model materials and their dependencies.
                                      Full conversion includes the bundled gameplay
@@ -83,19 +80,10 @@ internal static class CommandLineParser
 
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         var helpRequested = false;
-        var allowMissingSounds = false;
 
         for (var index = 0; index < arguments.Count; index++)
         {
             var argument = arguments[index];
-
-            if (argument == "--allow-missing-sounds")
-            {
-                if (allowMissingSounds)
-                    return CommandLineParseResult.Failure("Option '--allow-missing-sounds' was specified more than once.");
-                allowMissingSounds = true;
-                continue;
-            }
 
             if (argument == "--help")
             {
@@ -181,12 +169,6 @@ internal static class CommandLineParser
             out var sourceLibraryDirectory);
         var hasImageFileIndex = values.TryGetValue("--imagefile-index", out var imageFileIndexValue);
 
-        if (allowMissingSounds && !hasSourceLibrary)
-        {
-            return CommandLineParseResult.Failure(
-                "Option '--allow-missing-sounds' requires '--source-library'.");
-        }
-
         if (worldOnly && hasSourceLibrary)
         {
             return CommandLineParseResult.Failure(
@@ -234,7 +216,6 @@ internal static class CommandLineParser
             iwdPath,
             sourceFastFileDirectory,
             sourceLibraryDirectory,
-            allowMissingSounds,
             values.GetValueOrDefault("--bootstrap-fastfile"),
             imageFileIndex,
             values["--output"],

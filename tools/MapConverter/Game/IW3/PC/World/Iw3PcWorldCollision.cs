@@ -408,10 +408,12 @@ internal static class Iw3PcWorldCollision
             if (aabbFirst + aabbNumber > aabbCount)
                 throw new InvalidDataException("Collision model AABB slice exceeds its table.");
             ushort[] brushes = CollectLeafBrushes(zone, clip, I32(zone, leaf + 36));
-            int firstBrush = brushes.Length == 0 ? 0 : brushes[0];
-            for (int brush = 0; brush < brushes.Length; brush++)
-                if (brushes[brush] != firstBrush + brush)
-                    throw new InvalidDataException("Collision model brushes are not contiguous.");
+            // IW3 spatially partitions a contiguous disk range, so traversal need not be sorted.
+            int firstBrush = brushes.Length == 0 ? 0 : brushes.Min();
+            if (brushes.Length > 0 && brushes.Max() - firstBrush + 1 != brushes.Length)
+                throw new InvalidDataException(
+                    $"Collision model {index} references {brushes.Length} brushes spanning " +
+                    $"{firstBrush}..{brushes.Max()}; a brush model requires one contiguous slice.");
             Put32(output, row + 32, aabbFirst);
             Put32(output, row + 36, aabbNumber);
             Put32(output, row + 40, firstBrush);

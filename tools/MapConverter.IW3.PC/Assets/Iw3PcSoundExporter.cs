@@ -20,7 +20,7 @@ public static class Iw3PcSoundExporter
         ArgumentNullException.ThrowIfNull(names);
         if (Directory.Exists(outputDirectory) || File.Exists(outputDirectory))
             throw new IOException($"Sound output path already exists: '{outputDirectory}'.");
-        var selected = names.ToHashSet(StringComparer.Ordinal);
+        var selected = names.ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (selected.Count != names.Count)
             throw new InvalidDataException("Sound selection contains duplicate names.");
         HashSet<int>? recordIds = selectedRecordIds?.ToHashSet();
@@ -85,7 +85,7 @@ public static class Iw3PcSoundExporter
                 int soundFile = zone.Pointer(row + 16);
                 if (soundFile == 0 || zone.Bytes(soundFile + 1, 1)[0] == 0)
                 {
-                    fields["MissingPayload"] = true;
+                    fields["MissingPayload"] = asset.Name;
                     rows.Add(fields);
                     continue;
                 }
@@ -114,10 +114,14 @@ public static class Iw3PcSoundExporter
                         loaded = provider.Offset;
                         payloadZone = source.Zone;
                     }
-                    if (loaded == 0)
-                        throw new InvalidDataException($"Loaded sound in '{asset.Name}' has no definition.");
-                    int length = checked((int)U32(payloadZone, loaded + 12));
-                    int data = payloadZone.Pointer(loaded + 40);
+                    int length = loaded == 0 ? 0 : checked((int)U32(payloadZone, loaded + 12));
+                    int data = loaded == 0 ? 0 : payloadZone.Pointer(loaded + 40);
+                    if (length == 0 && data == 0)
+                    {
+                        fields["MissingPayload"] = loadedName is null ? asset.Name : Iw3PcAsset.CanonicalName(loadedName);
+                        rows.Add(fields);
+                        continue;
+                    }
                     if (data == 0 || length is <= 0 or > 67108864)
                         throw new InvalidDataException($"Invalid loaded sound payload in '{asset.Name}'.");
                     string filename = $"loaded-{payloadIndex++}.pcm";

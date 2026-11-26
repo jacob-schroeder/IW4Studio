@@ -27,8 +27,8 @@
             <TextBlock Classes="fieldLabel" Text="Platform" />
             <ComboBox Name="PlatformPicker" SelectedIndex="0" HorizontalAlignment="Stretch"
                       AutomationProperties.Name="Source platform">
-              <ComboBoxItem Name="PcOption" Content="PC" Tag="{x:Static converter:SourcePlatform.Pc}" />
-              <ComboBoxItem Name="Ps3Option" Content="PS3" Tag="{x:Static converter:SourcePlatform.Ps3}" />
+              <ComboBoxItem Content="PC" Tag="{x:Static converter:SourcePlatform.Pc}" />
+              <ComboBoxItem Content="PS3" Tag="{x:Static converter:SourcePlatform.Ps3}" />
             </ComboBox>
           </StackPanel>
           <StackPanel Grid.Column="2" Spacing="5">
@@ -51,35 +51,39 @@
             <TextBox Name="LoadPath" PlaceholderText="mp_example_load.ff" AutomationProperties.Name="Load fastfile" />
           </DockPanel>
         </StackPanel>
-        <StackPanel Spacing="5" IsVisible="{Binding #PcOption.IsSelected}">
-          <TextBlock Classes="fieldLabel" Text="Texture archive (optional)" />
-          <DockPanel>
-            <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #IwdPath}" />
-            <TextBox Name="IwdPath" PlaceholderText="Map .iwd containing .iwi textures" AutomationProperties.Name="Texture archive" />
-          </DockPanel>
+        <StackPanel Name="PcInputs" Spacing="14">
+          <StackPanel Spacing="5">
+            <TextBlock Classes="fieldLabel" Text="Map IWD archive (optional)" />
+            <DockPanel>
+              <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #IwdPath}" />
+              <TextBox Name="IwdPath" PlaceholderText="Map .iwd containing .iwi textures" AutomationProperties.Name="Map IWD archive" />
+            </DockPanel>
+          </StackPanel>
+          <StackPanel Spacing="5">
+            <TextBlock Classes="fieldLabel" Text="COD4 PC source library (optional)" />
+            <DockPanel>
+              <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #PcLibraryPath}" />
+              <TextBox Name="PcLibraryPath" PlaceholderText="Folder containing stock fastfiles and IWD archives" AutomationProperties.Name="PC source library" />
+            </DockPanel>
+          </StackPanel>
         </StackPanel>
-        <StackPanel Spacing="5" IsVisible="{Binding #PcOption.IsSelected}">
-          <TextBlock Classes="fieldLabel" Text="COD4 PC source library (optional)" />
-          <DockPanel>
-            <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #PcLibraryPath}" />
-            <TextBox Name="PcLibraryPath" PlaceholderText="Folder containing stock fastfiles and IWD archives" AutomationProperties.Name="PC source library" />
-          </DockPanel>
-        </StackPanel>
-        <StackPanel Spacing="5" IsVisible="{Binding #Ps3Option.IsSelected}">
-          <TextBlock Classes="fieldLabel" Text="Stock PS3 fastfiles and packages" />
-          <DockPanel>
-            <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #Ps3StockPath}" />
-            <TextBox Name="Ps3StockPath" PlaceholderText="Defaults to the map fastfile’s folder" AutomationProperties.Name="PS3 stock files" />
-          </DockPanel>
-          <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource StudioTextMutedBrush}"
-                     Text="Use the folder containing code_post_gfx_mp.ff, common_mp.ff, ui_mp.ff, and packfile*.pak." />
-        </StackPanel>
-        <StackPanel Spacing="5" IsVisible="{Binding #Ps3Option.IsSelected}">
-          <TextBlock Classes="fieldLabel" Text="PS3 localization folder (if stored separately)" />
-          <DockPanel>
-            <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #Ps3StringsPath}" />
-            <TextBox Name="Ps3StringsPath" PlaceholderText="Folder containing english/localizedstrings" AutomationProperties.Name="PS3 localization folder" />
-          </DockPanel>
+        <StackPanel Name="Ps3Inputs" Spacing="14" IsVisible="False">
+          <StackPanel Spacing="5">
+            <TextBlock Classes="fieldLabel" Text="Stock PS3 fastfiles and packages" />
+            <DockPanel>
+              <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #Ps3StockPath}" />
+              <TextBox Name="Ps3StockPath" PlaceholderText="Defaults to the map fastfile’s folder" AutomationProperties.Name="PS3 stock files" />
+            </DockPanel>
+            <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource StudioTextMutedBrush}"
+                       Text="Use the folder containing code_post_gfx_mp.ff, common_mp.ff, ui_mp.ff, and packfile*.pak." />
+          </StackPanel>
+          <StackPanel Spacing="5">
+            <TextBlock Classes="fieldLabel" Text="PS3 localization folder (if stored separately)" />
+            <DockPanel>
+              <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #Ps3StringsPath}" />
+              <TextBox Name="Ps3StringsPath" PlaceholderText="Folder containing english/localizedstrings" AutomationProperties.Name="PS3 localization folder" />
+            </DockPanel>
+          </StackPanel>
         </StackPanel>
         <StackPanel Spacing="5">
           <TextBlock Classes="fieldLabel" Text="Destination folder" />

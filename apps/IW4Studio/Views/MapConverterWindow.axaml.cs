@@ -15,6 +15,17 @@ public sealed partial class MapConverterWindow : Window
     {
         InitializeComponent();
         Icon = AppIcon.Create();
+        PlatformPicker.SelectionChanged += (_, _) => UpdatePlatformInputs();
+        UpdatePlatformInputs();
+    }
+
+    private SourcePlatform? SelectedPlatform =>
+        PlatformPicker.SelectedItem is ComboBoxItem { Tag: SourcePlatform platform } ? platform : null;
+
+    private void UpdatePlatformInputs()
+    {
+        PcInputs.IsVisible = SelectedPlatform == SourcePlatform.Pc;
+        Ps3Inputs.IsVisible = SelectedPlatform == SourcePlatform.Ps3;
     }
 
     private async void Browse_Click(object? sender, RoutedEventArgs e)
@@ -61,7 +72,7 @@ public sealed partial class MapConverterWindow : Window
     {
         if (_conversion is not null ||
             SourceGamePicker.SelectedItem is not ComboBoxItem { Tag: SourceGame game } ||
-            PlatformPicker.SelectedItem is not ComboBoxItem { Tag: SourcePlatform platform })
+            SelectedPlatform is not { } platform)
             return;
 
         if (!ReadRequiredPath(MapPath, "Choose the map fastfile.", out string map) ||
@@ -73,11 +84,12 @@ public sealed partial class MapConverterWindow : Window
         try
         {
             bool ps3 = platform == SourcePlatform.Ps3;
+            string? sourceLibrary = OptionalPath(ps3 ? Ps3StringsPath : PcLibraryPath);
             var options = new MapConverterOptions(game, platform, map, load,
                 IwdPath: ps3 ? null : OptionalPath(IwdPath),
                 SourceFastFileDirectory: ps3 ? OptionalPath(Ps3StockPath) ?? Path.GetDirectoryName(Path.GetFullPath(map)) : null,
-                SourceLibraryDirectory: OptionalPath(ps3 ? Ps3StringsPath : PcLibraryPath),
-                AllowMissingSounds: false, BootstrapFastFilePath: null, ImageFileIndex: -1,
+                SourceLibraryDirectory: sourceLibrary,
+                BootstrapFastFilePath: null, ImageFileIndex: -1,
                 OutputDirectory: output, WorldTemplatePath: null);
 
             _conversion = cancellation;

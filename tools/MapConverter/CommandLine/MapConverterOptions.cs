@@ -21,7 +21,6 @@ public sealed record MapConverterOptions(
     string? IwdPath,
     string? SourceFastFileDirectory,
     string? SourceLibraryDirectory,
-    bool AllowMissingSounds,
     string? BootstrapFastFilePath,
     int? ImageFileIndex,
     string OutputDirectory,

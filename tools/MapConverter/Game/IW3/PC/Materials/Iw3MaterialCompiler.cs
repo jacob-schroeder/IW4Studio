@@ -718,7 +718,7 @@ internal static class Iw3MaterialCompiler
                     ParseCameraRegion(root, assetName),
                     stateEntries,
                     techniqueSetName,
-                    assetName);
+                    sourceName);
 
             var material = new MaterialAsset
             {
@@ -765,14 +765,14 @@ internal static class Iw3MaterialCompiler
             GfxCameraRegionType sourceCameraRegion,
             IReadOnlyList<MaterialStateBitsEntry> stateEntries,
             string techniqueSetName,
-            string assetName)
+            string sourceName)
     {
-        if (MaterialRules.ParticleCloudSort(sourceSortKey, sourceCameraRegion, techniqueSetName, assetName)
+        if (MaterialRules.ParticleCloudSort(sourceSortKey, sourceCameraRegion, techniqueSetName, sourceName)
             is { } cloudSort)
             return (cloudSort, sourceCameraRegion);
         // PC caulk_shadow uses the same four slots and states as IW4's native shadow-only material.
         if (sourceSortKey == 4 && sourceCameraRegion == GfxCameraRegionType.None &&
-            techniqueSetName == "wc_tools" && assetName is "w/caulk_shadow" or "wc/caulk_shadow")
+            techniqueSetName == "wc_tools" && sourceName is "w/caulk_shadow" or "wc/caulk_shadow")
             return ((MaterialSortKey)34, sourceCameraRegion);
         bool lit = stateEntries[(int)MaterialTechniqueType.Lit].StateBitsIndex != byte.MaxValue;
         bool emissive = stateEntries[(int)MaterialTechniqueType.Emissive].StateBitsIndex != byte.MaxValue;
@@ -789,7 +789,7 @@ internal static class Iw3MaterialCompiler
         if ((lit && emissive) || (!lit && !emissive && !ui && !shadow) ||
             sourceCameraRegion != expectedSourceRegion)
         {
-            throw MaterialError(assetName,
+            throw MaterialError(sourceName,
                 "source sort/camera routing does not match its lit, emissive, 2d, or shadow technique family");
         }
 
@@ -801,7 +801,7 @@ internal static class Iw3MaterialCompiler
             sourceSortKey, sourceCameraRegion, stateEntries);
         MaterialSortKey targetSortKey = sourceSortKey switch
         {
-            0 when emissive && techniqueSetName is
+            0 or 6 when emissive && techniqueSetName is
                 "distortion_scale" or "distortion_scale_zfeather" or
                 "sm2/distortion_scale" or "sm2/distortion_scale_zfeather" => MaterialSortKey.Distortion,
             3 when lit => MaterialSortKey.OpaqueAmbient,
@@ -809,6 +809,8 @@ internal static class Iw3MaterialCompiler
             4 when lit => MaterialSortKey.Opaque,
             4 when ui => MaterialSortKey.AdditiveBlend,
             5 when lit => MaterialSortKey.Sky,
+            6 when MaterialRules.SkyboxSort(sourceCameraRegion, techniqueSetName, sourceName, stateEntries)
+                is { } skyboxSort => skyboxSort,
             9 when lit => MaterialSortKey.DecalBottom1,
             10 when lit => MaterialSortKey.DecalBottom2,
             11 when lit => MaterialSortKey.DecalBottom3,
@@ -827,7 +829,7 @@ internal static class Iw3MaterialCompiler
             43 when lit => (MaterialSortKey)29,
             43 when emissive || ui => MaterialSortKey.AdditiveBlend,
             48 when emissive => MaterialSortKey.EffectAutoSort,
-            _ => throw MaterialError(assetName,
+            _ => throw MaterialError(sourceName,
                 $"source sort key {sourceSortKey} has no verified PS3 mapping for this technique family")
         };
         GfxCameraRegionType targetCameraRegion = lit

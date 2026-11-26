@@ -471,14 +471,8 @@ internal sealed class Iw3PcShaderCompiler
             return (assembly, false);
 
         string[] lines = assembly.Split('\n');
-        int[] instructions = Enumerable.Range(0, lines.Length)
-            .Where(index => !string.IsNullOrWhiteSpace(lines[index]) &&
-                !Regex.IsMatch(lines[index].TrimStart(), @"^(?:!!|#|OPTION\b)"))
-            .ToArray();
-        var constants = Regex.Matches(assembly, @"(?m)^#const (c\[\d+\]) = ([^\r\n]+)$")
-            .ToDictionary(match => match.Groups[1].Value, match => match.Groups[2].Value
-                .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                .Select(value => float.Parse(value, CultureInfo.InvariantCulture)).ToArray(), StringComparer.Ordinal);
+        var instructions = ReadAssemblyInstructions(lines);
+        var constants = ReadAssemblyConstants(assembly);
         var occupied = Regex.Matches(assembly, @"\bR(\d+)\b")
             .Select(match => int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture)).ToHashSet();
         int scratch = Enumerable.Range(0, 32).FirstOrDefault(register => !occupied.Contains(register), -1);
@@ -486,7 +480,7 @@ internal sealed class Iw3PcShaderCompiler
         for (int index = 0; index + 7 < instructions.Length; index++)
         {
             const string position = "v[vertex.position]";
-            string first = lines[instructions[index]].Trim();
+            string first = lines[instructions[index].Line].Trim();
             bool usesPositionW = first.StartsWith("DP4 ", StringComparison.Ordinal) &&
                 first.Contains(", " + position + ", ", StringComparison.Ordinal);
             string input = position;
@@ -505,30 +499,8 @@ internal sealed class Iw3PcShaderCompiler
                 firstDot++;
             }
 
-            if (firstDot + 7 >= instructions.Length)
-                continue;
-            Match[] dots = Enumerable.Range(0, 8).Select(offset => Regex.Match(lines[instructions[firstDot + offset]].Trim(),
-                @"^DP4 (R\d+|result\.position)\.([xyzw]), (R\d+|v\[vertex\.position\]), c\[(\d+)\];$")).ToArray();
-            if (dots.Any(dot => !dot.Success))
-                continue;
-            string world = dots[0].Groups[1].Value;
-            string output = dots[4].Groups[1].Value;
-            if (!Regex.IsMatch(world, @"^R\d+$") || world == input || output == world ||
-                (usesPositionW && output != "result.position") ||
-                dots.Take(4).Select(dot => dot.Groups[2].Value).Distinct().Count() != 4 ||
-                dots.Skip(4).Select(dot => dot.Groups[2].Value).Distinct().Count() != 4)
-                continue;
-            bool valid = true;
-            for (int dotIndex = 0; dotIndex < dots.Length; dotIndex++)
-            {
-                Match dot = dots[dotIndex];
-                int row = "xyzw".IndexOf(dot.Groups[2].Value, StringComparison.Ordinal);
-                valid &= dot.Groups[1].Value == (dotIndex < 4 ? world : output) &&
-                    dot.Groups[3].Value == (dotIndex < 4 ? input : world) &&
-                    int.Parse(dot.Groups[4].Value, CultureInfo.InvariantCulture) ==
-                    (dotIndex < 4 ? matrices.World : matrices.ViewProjection) + row;
-            }
-            if (!valid)
+            int[]? rows = FindPositionRows(instructions, firstDot, input, matrices);
+            if (rows is null)
                 continue;
             if (scratch < 0)
                 throw new InvalidDataException("The shader has no free temporary for native world-position arithmetic.");
@@ -537,15 +509,15 @@ internal sealed class Iw3PcShaderCompiler
             // COD4 PS3 vertcol_simple_tools (0x4d0..0x550) weights translation by input W.
             // Only the explicit (x,y,z,1) construction permits a plain ADD.
             // Work in PC dot-product rows here; LowerNativeWorldMatrix adapts the world layout.
-            for (int dotIndex = 0; dotIndex < dots.Length; dotIndex++)
+            for (int dotIndex = 0; dotIndex < rows.Length; dotIndex++)
             {
-                Match dot = dots[dotIndex];
-                string lane = dot.Groups[2].Value;
-                string destination = dot.Groups[1].Value + "." + lane;
-                string constant = "c[" + dot.Groups[4].Value + "]";
-                string source = dotIndex < 4 ? position : world;
+                var dot = instructions[rows[dotIndex]];
+                string destination = dot.Arguments[0];
+                char lane = destination[^1];
+                string constant = dot.Arguments[2];
+                string source = dotIndex < 4 ? position : dot.Arguments[1];
                 string accumulator = dotIndex < 4 ? destination : $"R{scratch}.{lane}";
-                lines[instructions[firstDot + dotIndex]] =
+                lines[dot.Line] =
                     $"MUL {accumulator}, {source}.y, {constant}.y;\n" +
                     $"MAD {accumulator}, {source}.x, {constant}.x, {accumulator};\n" +
                     $"MAD {accumulator}, {source}.z, {constant}.z, {accumulator};\n" +
@@ -554,13 +526,84 @@ internal sealed class Iw3PcShaderCompiler
                         : $"MAD {destination}, {source}.w, {constant}.w, {accumulator};");
             }
             lowered++;
-            index = firstDot + dots.Length - 1;
+            index = rows[^1];
         }
         if (lowered == 0)
             return (assembly, false);
         if (lowered != 1)
             throw new InvalidDataException("The shader requires one supported world-to-view-projection position chain.");
         return (string.Join('\n', lines), true);
+    }
+
+    private static int[]? FindPositionRows(
+        (int Line, string Opcode, string[] Arguments)[] instructions, int firstDot, string input,
+        (int World, int ViewProjection) matrices)
+    {
+        var rows = new List<int>(8);
+        var lanes = new HashSet<char>();
+        string? world = null, clip = null;
+        for (int i = firstDot; i < instructions.Length; i++)
+        {
+            var (_, opcode, args) = instructions[i];
+            if (args.Length < 2)
+                return null;
+            Match dest = Regex.Match(args[0], @"^(R\d+|result\.\w+(?:\[\d+\])?)(?:\.([xyzw]+))?$");
+            if (!dest.Success)
+                return null;
+            string register = dest.Groups[1].Value;
+            string mask = dest.Groups[2].Success ? dest.Groups[2].Value : "xyzw";
+
+            if (rows.Count == 8)
+            {
+                // A scheduled projection can reuse clip lanes for other work. Prove the
+                // completed vector survives until it is copied to the position output.
+                if (opcode == "MOV" && args.Length == 2 && args[0] == "result.position" && args[1] == clip)
+                    return rows.ToArray();
+                if (register == clip || register == "result.position")
+                    return null;
+            }
+            else if (opcode == "DP4")
+            {
+                bool projecting = rows.Count >= 4;
+                int firstRegister = projecting ? matrices.ViewProjection : matrices.World;
+                if (args.Length != 3 || mask.Length != 1 || args[1] != (projecting ? world : input) ||
+                    args[2] != $"c[{firstRegister + "xyzw".IndexOf(mask[0])}]" ||
+                    !lanes.Add(mask[0]))
+                    return null;
+                if (projecting)
+                {
+                    clip ??= register;
+                    if (register != clip || clip == world ||
+                        !(clip.StartsWith('R') || clip == "result.position") ||
+                        (input == "v[vertex.position]" && clip != "result.position"))
+                        return null;
+                }
+                else
+                {
+                    world ??= register;
+                    if (register != world || world == input || !world.StartsWith('R'))
+                        return null;
+                }
+                rows.Add(i);
+                if (rows.Count == 4)
+                    lanes.Clear();
+                if (rows.Count == 8 && (i == firstDot + 7 || clip == "result.position"))
+                    return rows.ToArray();
+                continue;
+            }
+            else if (rows.Count < 4 || register == world || (register == clip && mask.Any(lanes.Contains)))
+            {
+                return null;
+            }
+
+            // Only cross straight-line arithmetic. Keep varying writes and reads of
+            // intermediate clip lanes at their original instruction positions.
+            // MojoShader expands a saturated vertex fog output into MIN and MAX.
+            if (opcode is not ("MOV" or "DP3" or "MUL" or "MAD" or "ABS" or "RCP" or "RSQ" or "EX2"
+                or "MIN" or "MAX"))
+                return null;
+        }
+        return null;
     }
 
     private static string LowerNativeWorldMatrix(string assembly, int firstRegister)

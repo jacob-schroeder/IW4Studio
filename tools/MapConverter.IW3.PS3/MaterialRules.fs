@@ -60,6 +60,34 @@ module internal MaterialRules =
             Nullable MaterialSortKey.DecalTop3
         else Nullable()
 
+    /// COD4 sort.template assigns 6 to skybox sun/moon. IW3 sorts lit and
+    /// emissive passes separately; only lit geometry retains the early skybox order.
+    let SkyboxSort(sourceRegion: GfxCameraRegionType, setName: string, sourceName: string,
+                   entries: IReadOnlyList<MaterialStateBitsEntry>) : Nullable<MaterialSortKey> =
+        let family = if setName.StartsWith("sm2/", StringComparison.Ordinal) then setName.Substring(4) else setName
+        match sourceRegion with
+        | GfxCameraRegionType.LitOpaque -> Nullable MaterialSortKey.Skybox
+        | GfxCameraRegionType.Emissive ->
+            match family with
+            // COD4's effect template defaults to auto-sort. Native PS3
+            // gfx_smk_white_atlas_z3 and its additive counterpart both use 48.
+            | "effect" | "effect_add" | "effect_add_nofog" | "effect_add_nofog_eyeoffset"
+            | "effect_zfeather" | "effect_zfeather_nofog" | "effect_zfeather_add"
+            | "effect_zfeather_add_nofog" | "effect_zfeather_add_nofog_eyeoffset"
+            | "effect_zfeather_falloff_add" | "effect_zfeather_falloff_add_nofog" ->
+                Nullable MaterialSortKey.EffectAutoSort
+            // Native cloud_water and cloud_water_bubble use the blend bucket.
+            | "particle_cloud_add" | "particle_cloud_outdoor" | "particle_cloud_outdoor_add" ->
+                Nullable MaterialSortKey.AdditiveBlend
+            | _ -> Nullable()
+        | GfxCameraRegionType.None
+            when family = "2d" && sourceName.StartsWith("compass_map_mp_", StringComparison.OrdinalIgnoreCase) &&
+                 entries.Count = int MaterialTechniqueType.Count &&
+                 (entries |> Seq.mapi (fun index entry ->
+                     (entry.StateBitsIndex <> Byte.MaxValue) = (index = int MaterialTechniqueType.Unlit)) |> Seq.forall id) ->
+            Nullable MaterialSortKey.AdditiveBlend
+        | _ -> Nullable()
+
     /// Native PS3 IW4 materials/cloud_dust_mote.json has emissive
     /// particle_cloud at sort 34; its _sort sibling uses 50, so this route is
     /// deliberately limited to the matching COD4 material and source key.

@@ -95,7 +95,7 @@ internal sealed class Iw3PcEffectCompiler
                 "model" => new FxModelVisual { Model = AssetName(v.GetProperty("asset")) is { } name ? models[name] : null },
                 "sound" => new FxSoundVisual { SoundName = Text(v, "name") is { } name ? prefix + name.TrimStart(',') : null },
                 "effect" => new FxEffectVisual { EffectDef = Reference(v.GetProperty("asset")) },
-                "none" => new FxNoChildVisual(),
+                "none" => new FxNoChildVisual { Reserved = Int(v, "reserved") },
                 var kind => throw new InvalidDataException($"Unsupported PC FX visual '{kind}'.")
             }
         };
@@ -109,8 +109,10 @@ internal sealed class Iw3PcEffectCompiler
             JsonElement atlas = e.GetProperty("atlas"), spawn = e.GetProperty("spawn");
             JsonElement[] rows = Items(e.GetProperty("visuals")).ToArray();
             byte count = Byte(e, "visualCount");
-            if (rows.Length != count) throw new InvalidDataException("PC FX visual count differs from its payload.");
             bool mark = type.ResultValue == FxElemType.Decal;
+            bool inlineVisual = !mark && count <= 1;
+            if (rows.Length != (inlineVisual ? 1 : count))
+                throw new InvalidDataException("PC FX visual count differs from its payload.");
             return new FxElemDef
             {
                 Flags = new FxElemFlags(unchecked((int)e.GetProperty("flags").GetInt64())),
@@ -130,7 +132,7 @@ internal sealed class Iw3PcEffectCompiler
                     new FxElemVelStateSample(Frame(v.GetProperty("local")), Frame(v.GetProperty("world")))).ToArray(),
                 VisSamples = Items(e.GetProperty("visSamples")).Select(v =>
                     new FxElemVisStateSample(State(v.GetProperty("base")), State(v.GetProperty("amplitude")))).ToArray(),
-                Visuals = !mark && count == 1 ? Visual(rows[0]) : new(),
+                Visuals = inlineVisual ? Visual(rows[0]) : new(),
                 VisualArray = !mark && count > 1 ? rows.Select(Visual).ToArray() : [],
                 MarkVisualArray = mark ? rows.Select(v => new FxElemMarkVisuals
                 {

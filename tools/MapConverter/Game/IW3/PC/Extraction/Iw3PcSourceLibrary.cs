@@ -37,7 +37,6 @@ internal sealed class Iw3PcSourceLibrary
     private readonly Dictionary<string, IReadOnlyList<string>> _imageSources = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IReadOnlyList<string>> _soundSources = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _capturedSoundDefinitions = new(StringComparer.Ordinal);
-    private readonly List<string> _deferredSoundPaths = [];
     private int _exportSequence;
 
     private Iw3PcSourceLibrary(
@@ -51,12 +50,7 @@ internal sealed class Iw3PcSourceLibrary
     }
 
     internal IReadOnlyList<string> IwdPaths { get; }
-
-    internal void RecordMissingSound(string path)
-    {
-        if (!_deferredSoundPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
-            _deferredSoundPaths.Add(path);
-    }
+    internal SortedSet<string> MissingSoundReferences { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     internal void RecordSoundPayloadSource(string path, string archive)
     {
@@ -64,13 +58,15 @@ internal sealed class Iw3PcSourceLibrary
             _soundSources.Add(path, [archive]);
     }
 
-    internal async Task<(string Path, int RecordId)> ResolveSoundRecordAsync(string mapFF, string alias, CancellationToken token)
+    internal async Task<(string Path, int RecordId)?> ResolveSoundRecordAsync(string mapFF, string alias, CancellationToken token)
     {
         var errors = new SortedSet<string>(StringComparer.Ordinal);
         Node? node = await ResolveNamedAsync(_closures[ExistingPath(mapFF, directory: false)].Root,
             "sound", alias.ToLowerInvariant(), $"script sound:{alias}", errors, token).ConfigureAwait(false);
-        if (node is null || errors.Count != 0)
+        if (errors.Count != 0)
             throw new InvalidDataException(string.Join("\n", errors));
+        if (node is null)
+            return null;
         if (node.Source.IsPs3)
             throw new NotSupportedException($"PC sound '{alias}' resolves to a PS3 fastfile.");
         _capturedSoundDefinitions[alias] = node.Source.Path;
@@ -168,7 +164,6 @@ internal sealed class Iw3PcSourceLibrary
         string? customIwd,
         string libraryDirectory,
         string scratch,
-        bool allowMissingSounds,
         CancellationToken cancellationToken)
     {
         mapFF = ExistingPath(mapFF, directory: false);
@@ -224,7 +219,7 @@ internal sealed class Iw3PcSourceLibrary
         var errors = new SortedSet<string>(StringComparer.Ordinal);
         foreach (Source source in library._sources.Where(source => source.Role != "library"))
             await library.ResolveClosureAsync(source, errors, cancellationToken).ConfigureAwait(false);
-        library.ResolveStreamedSounds(errors, allowMissingSounds, cancellationToken);
+        library.ResolveStreamedSounds(cancellationToken);
         if (errors.Count != 0)
         {
             throw new InvalidDataException(
@@ -397,7 +392,7 @@ internal sealed class Iw3PcSourceLibrary
             }),
         CapturedSoundDefinitions = _capturedSoundDefinitions.OrderBy(pair => pair.Key, StringComparer.Ordinal)
             .Select(pair => new { Name = pair.Key, SourceFastFile = pair.Value }),
-        StreamedSoundTodos = _deferredSoundPaths.Order(StringComparer.Ordinal)
+        StreamedSoundTodos = MissingSoundReferences
             .Select(path => new
             {
                 Path = path, Status = "TODO",
@@ -494,7 +489,10 @@ internal sealed class Iw3PcSourceLibrary
     {
         if (!_providers.TryGetValue((type, key), out List<Node>? candidates))
         {
-            errors.Add($"Missing {type}:{key}; requested by {chain}.");
+            if (type is "sound" or "loadedsound")
+                MissingSoundReferences.Add(key);
+            else
+                errors.Add($"Missing {type}:{key}; requested by {chain}.");
             return null;
         }
         Node[] providers = candidates.Where(node => node.Source == requester).ToArray();
@@ -514,8 +512,7 @@ internal sealed class Iw3PcSourceLibrary
         return first;
     }
 
-    private void ResolveStreamedSounds(
-        SortedSet<string> errors, bool allowMissingSounds, CancellationToken cancellationToken)
+    private void ResolveStreamedSounds(CancellationToken cancellationToken)
     {
         Node[] nodes = _closures.Values.SelectMany(closure => closure.Nodes).Distinct().ToArray();
         string[] requests = nodes.SelectMany(node => node.Asset.StreamedSounds)
@@ -536,17 +533,7 @@ internal sealed class Iw3PcSourceLibrary
                 _soundSources.Add(pair.Key, pair.Value.Sources);
         }
         foreach (string missing in requests.Where(path => !_soundSources.ContainsKey(path)))
-        {
-            if (allowMissingSounds)
-            {
-                _deferredSoundPaths.Add(missing);
-                continue;
-            }
-            string requesters = string.Join(", ", nodes
-                .Where(node => node.Asset.StreamedSounds.Contains(missing, StringComparer.OrdinalIgnoreCase))
-                .Select(node => $"{node.Asset.Type}:{node.Asset.Name} in '{node.Source.Path}'"));
-            errors.Add($"Missing streamed sound '{missing}'; requested by {requesters}.");
-        }
+            MissingSoundReferences.Add(missing);
         cancellationToken.ThrowIfCancellationRequested();
     }
 
@@ -727,7 +714,7 @@ internal sealed class Iw3PcSourceLibrary
         !string.IsNullOrWhiteSpace(name) &&
         Iw3ZoneManifest.IsValidEntry(type, name.Trim()) && Iw3ZoneManifest.IsValidEntry(type, key);
 
-    private static IEnumerable<string> EnumerateLibraryFiles(string root, CancellationToken cancellationToken)
+    internal static IEnumerable<string> EnumerateLibraryFiles(string root, CancellationToken cancellationToken)
     {
         var paths = new SortedSet<string>(StringComparer.Ordinal);
         var seenFiles = new HashSet<string>(PathComparer);
