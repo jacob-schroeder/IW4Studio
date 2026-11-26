@@ -61,7 +61,8 @@ jobs:
       matrix:
         include:
           - platform: win_x64
-            runner: windows-latest
+            # This image pairs Clang 20 with the compatible VS 2022 standard library.
+            runner: windows-2022
             runtime: win-x64
             asset: iw4studio-win_x64.zip
           - platform: macos_arm64
