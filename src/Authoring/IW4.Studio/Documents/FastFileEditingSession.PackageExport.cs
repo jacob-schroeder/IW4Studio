@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using IW4.Game.Assets;
+using IW4.Game.Assets.Menu;
 using IW4.Game.Assets.XAnim;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
@@ -26,6 +27,19 @@ public sealed partial class FastFileEditingSession
         ArgumentNullException.ThrowIfNull(selections);
         if (selections.Count == 0)
             throw new ArgumentException("Select at least one asset row.", nameof(selections));
+        return PreviewAssetPackageExport(selections, null, token);
+    }
+
+    /// <summary>Exports one resolved Menu definition as the package's selected root.</summary>
+    public AssetPackageExportPreview PreviewMenuPackageExport(MenuDefAsset menu, CancellationToken token = default)
+    {
+        ArgumentNullException.ThrowIfNull(menu);
+        return PreviewAssetPackageExport([], menu, token);
+    }
+
+    private AssetPackageExportPreview PreviewAssetPackageExport(IReadOnlyList<WorkspaceAssetCatalogEntry> selections,
+        MenuDefAsset? selectedMenu, CancellationToken token)
+    {
         token.ThrowIfCancellationRequested();
         lock (_gate)
         {
@@ -33,15 +47,15 @@ public sealed partial class FastFileEditingSession
             var rows = new List<AssetPackageRow>();
             try
             {
-                return BuildAssetPackageExport(selections, rows, token);
+                return BuildAssetPackageExport(selections, rows, token, selectedMenu);
             }
             catch (Exception exception) when (exception is
                 InvalidDataException or InvalidOperationException or NotSupportedException or
                 ArgumentException or OverflowException or IOException or KeyNotFoundException)
             {
-                var first = selections[0];
-                rows.Add(new AssetPackageRow(null, first?.AssetType ?? XAssetType.PhysPreset,
-                    first?.OriginalName ?? first?.NormalizedName ?? "Selected rows",
+                var first = selections.FirstOrDefault();
+                rows.Add(new AssetPackageRow(null, selectedMenu?.SerializedAssetType ?? first?.AssetType ?? XAssetType.PhysPreset,
+                    selectedMenu?.Window.Name ?? first?.OriginalName ?? first?.NormalizedName ?? "Selected rows",
                     AssetPackageStatus.Blocked, exception.Message, []));
                 return new AssetPackageExportPreview(rows, bytes: null);
             }
@@ -51,7 +65,8 @@ public sealed partial class FastFileEditingSession
     private AssetPackageExportPreview BuildAssetPackageExport(
         IReadOnlyList<WorkspaceAssetCatalogEntry> selections,
         List<AssetPackageRow> rows,
-        CancellationToken token)
+        CancellationToken token,
+        MenuDefAsset? selectedMenu)
     {
         ZoneLinkRequest current = _revision.LinkRequest;
         var currentFullKeys = current.Assets.Providers
@@ -63,6 +78,7 @@ public sealed partial class FastFileEditingSession
             .ToDictionary(group => group.Key, group => group.First());
         bool CanReuseCurrent(AssetKey key, BaseAsset definition,
             LoadedXZone? owner) =>
+            !ReferenceEquals(definition, selectedMenu) &&
             definition.SerializedAssetType != XAssetType.XModelSurfs &&
             currentFrozenProviders.ContainsKey(key) &&
             ((owner is not null && !Workspace.IsBlank &&
@@ -94,13 +110,32 @@ public sealed partial class FastFileEditingSession
             }
             return keys.Contains(input.Key);
         }
-        var selectedRoots = new List<AssetPackageRoot>(selections.Count);
-        var nativeRoots = new List<LinkRoot>(selections.Count);
+        var selectedRoots = new List<AssetPackageRoot>(selections.Count + (selectedMenu is null ? 0 : 1));
+        var nativeRoots = new List<LinkRoot>(selectedRoots.Capacity);
         var explicitProviders = new Dictionary<AssetKey, (BaseAsset Definition, LoadedXZone? Owner)>();
         var explicitKeys = new HashSet<AssetKey>();
         var includedOwners = new HashSet<LoadedXZone>(ReferenceEqualityComparer.Instance);
         var queue = new Queue<(AssetKey Key, XAssetType Type, string Reason)>();
         int rootOrdinal = 0;
+        if (selectedMenu is not null)
+        {
+            string name = selectedMenu.SerializedAssetName ??
+                throw new InvalidDataException("The selected Menu has no serialized name.");
+            if (IsReferenceProvider(selectedMenu))
+                throw new InvalidDataException("Load the fastfile that defines this Menu before exporting it.");
+            AssetKey key = AssetKey.FromDefinition(selectedMenu);
+            LoadedXZone? owner = OwnerFor(selectedMenu, key);
+            selectedRoots.Add(new AssetPackageRoot(XAssetType.Menu, name, LinkRootIntent.Owned));
+            nativeRoots.Add(new LinkRoot($"package:selected:{rootOrdinal++}",
+                XAssetType.Menu, LinkRootIntent.Owned, key, name, null));
+            explicitKeys.Add(key);
+            explicitProviders.Add(key, (selectedMenu, owner));
+            if (owner is not null)
+                includedOwners.Add(owner);
+            else if (!Workspace.IsBlank)
+                includedOwners.Add(Workspace.LoadedZone);
+            queue.Enqueue((key, XAssetType.Menu, "Selected Menu"));
+        }
         foreach (WorkspaceAssetCatalogEntry selection in selections)
         {
             token.ThrowIfCancellationRequested();

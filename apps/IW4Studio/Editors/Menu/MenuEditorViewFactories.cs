@@ -1,4 +1,5 @@
 using IW4.Game.Zone;
+using IW4.Linker.Contracts;
 using IW4.Studio.Desktop.Editors.AssetReferences;
 using IW4.Studio.Desktop.ViewModels.Menu;
 using IW4.Studio.Documents;
@@ -54,18 +55,28 @@ public sealed class MenuEditorViewFactory : IAssetEditorViewFactory
 public sealed class MenuFileEditorViewFactory : IAssetEditorViewFactory
 {
     private readonly MenuEditingCoordinator _coordinator;
+    private readonly FastFileEditingSession _editingSession;
+    private readonly Func<AssetPackageImportPreview,
+        IReadOnlyDictionary<AssetKey, AssetPackageConflictChoice>, int> _applyPackageImport;
     private readonly AssetReferencePickerService _assetReferencePicker;
     private readonly IMenuPreviewMaterialResolver _materialResolver;
     private readonly IMenuTextResourceResolver _textResourceResolver;
 
     public MenuFileEditorViewFactory(
         MenuEditingCoordinator coordinator,
+        FastFileEditingSession editingSession,
+        Func<AssetPackageImportPreview,
+            IReadOnlyDictionary<AssetKey, AssetPackageConflictChoice>, int> applyPackageImport,
         AssetReferencePickerService assetReferencePicker,
         IMenuPreviewMaterialResolver materialResolver,
         IMenuTextResourceResolver textResourceResolver)
     {
         _coordinator = coordinator ??
             throw new ArgumentNullException(nameof(coordinator));
+        _editingSession = editingSession ??
+            throw new ArgumentNullException(nameof(editingSession));
+        _applyPackageImport = applyPackageImport ??
+            throw new ArgumentNullException(nameof(applyPackageImport));
         _assetReferencePicker = assetReferencePicker ??
             throw new ArgumentNullException(nameof(assetReferencePicker));
         _materialResolver = materialResolver ??
@@ -88,7 +99,8 @@ public sealed class MenuFileEditorViewFactory : IAssetEditorViewFactory
             _textResourceResolver,
             canSelectAssetReferences: true,
             isAssetReferenceResolved: _assetReferencePicker.IsResolved);
-        var view = new MenuFileEditorView(viewModel, _assetReferencePicker);
+        var view = new MenuFileEditorView(viewModel, _assetReferencePicker,
+            _editingSession, _applyPackageImport);
         return new AssetEditorViewHost(view, viewModel, usesWorkbenchScrollViewer: false);
     }
 }

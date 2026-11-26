@@ -67,6 +67,12 @@ public sealed partial class FastFileEditingSession
                 .Where(p => !p.IsReferencePlaceholder).GroupBy(p => PackageKey(p.AssetType, p.Name))
                 .ToDictionary(g => g.Key, g => g.First().Asset);
             var items = new List<AssetPackageImportItem>();
+            string? dependencyProfile = null;
+            if (!Workspace.IsBlank && Workspace.ZonePlanProfileName is null && declarations.Values.Any(m => !m.Included))
+            {
+                try { dependencyProfile = FastFileOpenProfiles.ResolveForTarget(Workspace.SourcePath); }
+                catch (NotSupportedException) { /* Custom zone names can still use definitions supplied by the user. */ }
+            }
             lock (_gate)
             {
                 RequirePackageRevision(revision);
@@ -95,10 +101,19 @@ public sealed partial class FastFileEditingSession
                             throw new InvalidDataException("Multiple destination rows have this name.");
                         if (previous is not null && previous.SerializedType != member.Type)
                             throw new InvalidDataException("The destination uses a different serialized type for this asset family.");
-                        if (!member.Included)
+                        if (!member.Included && previous is null && active?.HasDefinition != true)
                         {
-                            if (previous is null && active?.HasDefinition != true)
-                                throw new InvalidDataException("Load the fastfile supplying this required asset.");
+                            row = row with
+                            {
+                                Status = AssetPackageStatus.Blocked,
+                                IsMissingDependency = true,
+                                Detail = dependencyProfile is not null
+                                    ? "Choose Load dependencies to look for this asset in the destination’s fastfiles."
+                                    : "Import the package that defines this asset first, or include its definition in the source package."
+                            };
+                        }
+                        else if (!member.Included)
+                        {
                             bool addReference = root?.Intent == LinkRootIntent.External && target is null && previous is null;
                             row = row with
                             {
@@ -149,9 +164,63 @@ public sealed partial class FastFileEditingSession
                         reuse ? AssetPackageStatus.Reuse : AssetPackageStatus.Add, "Preserve the serialized row", []), r, null, null, null));
                 }
             }
-            return new(Document.DocumentId, revision, package, items.AsReadOnly(), graph);
+            return new(Document.DocumentId, revision, package, items.AsReadOnly(), graph, dependencyProfile, contents.SelectedRoots);
         }
         catch { package.Dispose(); throw; }
+    }
+
+    /// <summary>Checks the destination's normal load plan for external definitions without replacing the open document.</summary>
+    public IReadOnlyList<AssetPackageRow> LoadAssetPackageDependencies(AssetPackageImportPreview preview, CancellationToken token = default)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+        string profile = preview.DependencyProfile ?? throw new InvalidOperationException(
+            "This destination has no additional dependency load plan.");
+        void ValidatePreview()
+        {
+            RequirePackageRevision(preview.Revision);
+            if (preview.DocumentId != Document.DocumentId)
+                throw new InvalidOperationException("Open the package preview in this fastfile first.");
+            _ = preview.Package;
+            token.ThrowIfCancellationRequested();
+        }
+
+        lock (_gate)
+        {
+            ValidatePreview();
+            if (!preview.CanLoadDependencies) return preview.Rows;
+        }
+
+        using var loaded = new FastFileDocumentService(_ => token.ThrowIfCancellationRequested())
+            .Open(new(Workspace.SourcePath, new ZonePlan(profile)));
+        var sources = loaded.ActiveZones.Where(zone => !zone.IsTarget)
+            .ToDictionary(zone => zone.LoadResult.Context.ZoneOwner, zone => Path.GetFileName(zone.PhysicalPath));
+        var providers = loaded.LoadedZone.Context.AssetPool.Slots.Select(slot => slot.ActiveProvider)
+            .Where(p => !p.IsReferencePlaceholder && sources.ContainsKey(p.Owner))
+            .ToLookup(p => (p.AssetType, Key: PackageKey(p.AssetType, p.Name)), p => sources[p.Owner]);
+
+        lock (_gate)
+        {
+            ValidatePreview();
+            var items = preview.Items.ToArray();
+            for (int i = 0; i < items.Length; i++)
+            {
+                var item = items[i];
+                var row = item.Row;
+                if (!row.IsMissingDependency || row.Key is not { } key) continue;
+                string? source = providers[(row.Type, key)].FirstOrDefault();
+                bool addReference = item.Root?.Intent == LinkRootIntent.External && item.Destination?.TargetRowIdentity is null;
+                items[i] = item with { Row = source is null
+                    ? row with { Detail = "The destination’s loaded fastfiles do not define this asset. Import its defining package first, or include it in the source package." }
+                    : row with
+                    {
+                        IsMissingDependency = false,
+                        Status = addReference ? AssetPackageStatus.Add : AssetPackageStatus.Reuse,
+                        Detail = addReference ? $"Add a reference to {source}" : $"Supplied by {source}"
+                    } };
+            }
+            preview.UpdateItems(items);
+            return preview.Rows;
+        }
     }
 
     private static AssetKey PackageKey(XAssetType type, string name) =>

@@ -2,15 +2,22 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using IW4.Game.Zone;
+using IW4.Linker.Contracts;
 using IW4.Studio.Desktop.Editors.AssetReferences;
 using IW4.Studio.Desktop.Editors.Menu.Behavior;
 using IW4.Studio.Desktop.ViewModels.Menu;
+using IW4.Studio.Desktop.Workbench.Tools.FastFileAssets;
+using IW4.Studio.Documents;
 
 namespace IW4.Studio.Desktop.Editors.Menu;
 
 public sealed partial class MenuFileEditorView : UserControl
 {
     private AssetReferencePickerService? _assetReferencePicker;
+    private FastFileEditingSession? _editingSession;
+    private Func<AssetPackageImportPreview,
+        IReadOnlyDictionary<AssetKey, AssetPackageConflictChoice>, int>? _applyPackageImport;
+    private bool _packageOperationInProgress;
 
     public MenuFileEditorView() => InitializeComponent();
 
@@ -33,12 +40,19 @@ public sealed partial class MenuFileEditorView : UserControl
 
     internal MenuFileEditorView(
         MenuFileEditorViewModel viewModel,
-        AssetReferencePickerService assetReferencePicker)
+        AssetReferencePickerService assetReferencePicker,
+        FastFileEditingSession editingSession,
+        Func<AssetPackageImportPreview,
+            IReadOnlyDictionary<AssetKey, AssetPackageConflictChoice>, int> applyPackageImport)
         : this()
     {
         ArgumentNullException.ThrowIfNull(viewModel);
         ArgumentNullException.ThrowIfNull(assetReferencePicker);
+        ArgumentNullException.ThrowIfNull(editingSession);
+        ArgumentNullException.ThrowIfNull(applyPackageImport);
         _assetReferencePicker = assetReferencePicker;
+        _editingSession = editingSession;
+        _applyPackageImport = applyPackageImport;
         DataContext = viewModel;
         if (viewModel.MenuCount == 1 && viewModel.Designer.HasDocument)
             NavigationTabs.SelectedItem = ItemOutlineTab;
@@ -142,5 +156,73 @@ public sealed partial class MenuFileEditorView : UserControl
             viewModel.ValidateNewMenuName);
         if (!string.IsNullOrWhiteSpace(name))
             viewModel.DuplicateSelectedRegistration(name);
+    }
+
+    private async void ExportSelectedMenu_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (_packageOperationInProgress ||
+            DataContext is not MenuFileEditorViewModel { CanExportSelectedMenu: true } viewModel ||
+            _editingSession is null ||
+            TopLevel.GetTopLevel(this) is not Window owner)
+            return;
+
+        e.Handled = true;
+        _packageOperationInProgress = true;
+        try
+        {
+            var menu = viewModel.CaptureSelectedMenuForPackage();
+            await AssetPackageDesktopFlow.ExportMenuAsync(
+                owner, _editingSession, menu, viewModel.ReportPackageOperation);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+                   InvalidDataException or InvalidOperationException or NotSupportedException or
+                   ArgumentException or OverflowException or KeyNotFoundException)
+        {
+            viewModel.ReportPackageOperation($"Menu package export failed. {exception.Message}");
+        }
+        finally
+        {
+            _packageOperationInProgress = false;
+        }
+    }
+
+    private async void ImportAndRegister_Click(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (_packageOperationInProgress ||
+            DataContext is not MenuFileEditorViewModel { CanAddRegistration: true } viewModel ||
+            _editingSession is null ||
+            _applyPackageImport is null ||
+            TopLevel.GetTopLevel(this) is not Window owner)
+            return;
+
+        e.Handled = true;
+        _packageOperationInProgress = true;
+        string? importedName = null;
+        try
+        {
+            importedName = await AssetPackageDesktopFlow.ImportAsync(
+                owner, _editingSession, _applyPackageImport,
+                viewModel.ReportPackageOperation, requireSingleMenu: true);
+            if (importedName is not null)
+                viewModel.RegisterImportedMenu(importedName);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+                   InvalidDataException or InvalidOperationException or NotSupportedException or
+                   ArgumentException or OverflowException or KeyNotFoundException)
+        {
+            viewModel.ReportPackageOperation(importedName is null
+                ? $"Menu package import failed. {exception.Message}"
+                : $"Imported Menu '{importedName}', but registration failed. Use Add menu to register it later. {exception.Message}");
+        }
+        finally
+        {
+            _packageOperationInProgress = false;
+        }
     }
 }

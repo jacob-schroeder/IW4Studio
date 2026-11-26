@@ -62,23 +62,7 @@ public sealed partial class MenuEditingCoordinator
             .ToArray();
         if (definitions.Length == 0)
         {
-            LinkAssetPool liveAssets = _session.LinkRequest.Assets;
-            var initialProviders = new HashSet<LinkAssetProvider>(
-                _session.Workspace.InitialLinkRequest.Assets.Providers,
-                ReferenceEqualityComparer.Instance);
-            MenuDefAsset? provider = _session.Document.Rows
-                .Concat(_session.Workspace.AssetCatalog.DependencyEntries)
-                .Where(entry => entry.AssetType == XAssetType.Menu &&
-                    entry.Access == WorkspaceAssetAccess.ReadOnly &&
-                    (entry.ProviderZone?.IsTarget != true ||
-                        entry.Definition is { } targetProvider &&
-                        liveAssets.Providers.Any(candidate =>
-                            candidate.Key == AssetKey.FromDefinition(targetProvider) &&
-                            !candidate.IsReferencePlaceholder &&
-                            initialProviders.Contains(candidate))))
-                .Select(entry => entry.Definition as MenuDefAsset)
-                .FirstOrDefault(menu => menu is not null &&
-                    Normalize(menu.Window.Name) == normalizedName);
+            MenuDefAsset? provider = FindReadOnlyProvider(normalizedName);
             if (provider is not null)
             {
                 MenuEditorSnapshot providerSnapshot = MenuAssetProjector.Project(
@@ -164,6 +148,62 @@ public sealed partial class MenuEditingCoordinator
             row.Current.Menus[index].CanonicalMenu?.Window.Name ??
             throw new InvalidDataException("The MenuFile registration has no name.");
         return ResolveMenu(name);
+    }
+
+    public MenuDefAsset CaptureMenuFileRegistrationForPackage(
+        TargetZoneRowIdentity rowIdentity,
+        MenuRegistrationId registrationId)
+    {
+        ThrowIfDisposed();
+        MenuFileRow row = RequireMenuFile(rowIdentity);
+        int index = RegistrationIndex(row.Identity, registrationId);
+        MenuFileRegistrationIdentity registration = row.Identity.Registrations[index];
+        MenuDefAsset? selectedMenu = row.Current.Menus[index].CanonicalMenu;
+        if (registration.MaterializesDefinition && selectedMenu?.Window.Name is { } inlineName && !inlineName.StartsWith(','))
+            return selectedMenu;
+        string name = registration.Name ??
+            selectedMenu?.Window.Name ??
+            throw new InvalidDataException("The selected Menu registration has no name.");
+        MenuAuthorityResolutionSnapshot resolution = ResolveMenu(name);
+        if (resolution.Kind == MenuAuthorityResolutionKind.Conflict)
+            throw new InvalidOperationException(
+                $"Resolve the conflicting definitions for Menu '{name}' before exporting it.");
+        return resolution.Owner switch
+        {
+            { Kind: MenuAuthorityOccurrenceKind.TopLevelDefinition } owner =>
+                RequireMenu(owner.RowIdentity).Current,
+            { Kind: MenuAuthorityOccurrenceKind.MenuFileInlineDefinition } owner =>
+                RequireMenuFile(owner.RowIdentity).Current.Menus[owner.RegistrationIndex]
+                    .CanonicalMenu ?? throw new InvalidDataException(
+                        "The selected inline Menu definition is unavailable."),
+            null when resolution.Kind == MenuAuthorityResolutionKind.ReadOnlyProvider =>
+                FindReadOnlyProvider(resolution.NormalizedName) ??
+                throw new InvalidDataException(
+                    "The selected Menu provider is no longer available."),
+            _ => throw new InvalidOperationException(
+                $"Menu '{name}' has no resolved definition to export.")
+        };
+    }
+
+    private MenuDefAsset? FindReadOnlyProvider(string normalizedName)
+    {
+        LinkAssetPool liveAssets = _session.LinkRequest.Assets;
+        var initialProviders = new HashSet<LinkAssetProvider>(
+            _session.Workspace.InitialLinkRequest.Assets.Providers,
+            ReferenceEqualityComparer.Instance);
+        return _session.Document.Rows
+            .Concat(_session.Workspace.AssetCatalog.DependencyEntries)
+            .Where(entry => entry.AssetType == XAssetType.Menu &&
+                entry.Access == WorkspaceAssetAccess.ReadOnly &&
+                (entry.ProviderZone?.IsTarget != true ||
+                    entry.Definition is { } targetProvider &&
+                    liveAssets.Providers.Any(candidate =>
+                        candidate.Key == AssetKey.FromDefinition(targetProvider) &&
+                        !candidate.IsReferencePlaceholder &&
+                        initialProviders.Contains(candidate))))
+            .Select(entry => entry.Definition as MenuDefAsset)
+            .FirstOrDefault(menu => menu is not null &&
+                Normalize(menu.Window.Name) == normalizedName);
     }
 
     public MenuFileEditorSnapshot ReadMenuFile(

@@ -140,7 +140,7 @@
                            FontSize="12"
                            Foreground="{DynamicResource StudioTextMutedBrush}" />
 
-                <Grid Grid.Row="4" RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,*"
+                <Grid Grid.Row="4" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,*"
                       RowSpacing="4" ColumnSpacing="4">
                   <Grid.Styles>
                     <Style Selector="Button">
@@ -171,6 +171,14 @@
                   <Button Grid.Row="2" Grid.Column="1" Content="Move down"
                           Command="{Binding MoveRegistrationDownCommand}"
                           ToolTip.Tip="Move registration down" />
+                  <Button Grid.Row="3" Grid.ColumnSpan="2" Content="Export selected menu…"
+                          IsEnabled="{Binding CanExportSelectedMenu}"
+                          Click="ExportSelectedMenu_Click"
+                          ToolTip.Tip="Share this Menu and its dependencies as an .iw4pkg file" />
+                  <Button Grid.Row="4" Grid.ColumnSpan="2" Content="Import and register…"
+                          IsEnabled="{Binding CanAddRegistration}"
+                          Click="ImportAndRegister_Click"
+                          ToolTip.Tip="Import one Menu package and register it in this MenuFile" />
                 </Grid>
               </Grid>
             </Border>

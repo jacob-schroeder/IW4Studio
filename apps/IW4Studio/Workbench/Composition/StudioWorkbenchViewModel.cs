@@ -124,6 +124,8 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
                 _menuTextResourceResolver));
             editorViewRegistry.Register(new MenuFileEditorViewFactory(
                 _menuEditingCoordinator,
+                editingSession,
+                ApplyAssetPackageImport,
                 assetReferencePicker,
                 menuMaterialResolver,
                 _menuTextResourceResolver));

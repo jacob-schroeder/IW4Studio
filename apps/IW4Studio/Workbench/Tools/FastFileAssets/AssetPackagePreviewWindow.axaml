@@ -3,7 +3,7 @@
         xmlns:fastfileAssets="using:IW4.Studio.Desktop.Workbench.Tools.FastFileAssets"
         x:Class="IW4.Studio.Desktop.Workbench.Tools.FastFileAssets.AssetPackagePreviewWindow"
         x:DataType="fastfileAssets:AssetPackagePreviewWindow"
-        Title="Material package"
+        Title="Asset package"
         Width="690" Height="580" MinWidth="500" MinHeight="360"
         ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
   <Grid RowDefinitions="Auto,*,Auto" Background="{DynamicResource StudioBackgroundBrush}">
@@ -12,8 +12,18 @@
                  Foreground="{DynamicResource StudioTextBrush}" />
       <TextBlock x:Name="SummaryText" FontSize="11" TextWrapping="Wrap"
                  Foreground="{DynamicResource StudioTextMutedBrush}" />
+      <TextBlock x:Name="BlockedSummaryText" FontSize="11" TextWrapping="Wrap"
+                 Foreground="{DynamicResource StudioErrorBrush}" />
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,6,0,0">
+        <CheckBox x:Name="ShowBlockedOnlyCheckBox" Content="Show blocked only"
+                  IsCheckedChanged="ShowBlockedOnlyCheckBox_Changed" />
+        <Button x:Name="ReplaceAllButton" Grid.Column="1" Content="Replace all conflicts"
+                Click="ReplaceAllButton_Click" />
+        <Button x:Name="KeepAllButton" Grid.Column="2" Content="Keep all existing"
+                Click="KeepAllButton_Click" />
+      </Grid>
     </StackPanel>
-    <ListBox Grid.Row="1" Margin="20,0" ItemsSource="{Binding Rows}"
+    <ListBox x:Name="AssetRowsList" Grid.Row="1" Margin="20,0"
              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="fastfileAssets:AssetPackageRowViewModel">
@@ -43,12 +53,14 @@
     </ListBox>
     <Border Grid.Row="2" Padding="20,12" BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
         <TextBlock x:Name="ErrorText" VerticalAlignment="Center" TextWrapping="Wrap"
                    Foreground="{DynamicResource StudioErrorBrush}" FontSize="11" />
-        <Button x:Name="CancelButton" Grid.Column="1" Content="Cancel" MinWidth="86"
+        <Button x:Name="LoadDependenciesButton" Grid.Column="1" Content="Load dependencies…" MinWidth="140"
+                Classes="primary" Click="LoadDependenciesButton_Click" />
+        <Button x:Name="CancelButton" Grid.Column="2" Content="Cancel" MinWidth="86"
                 IsCancel="True" Click="CancelButton_Click" />
-        <Button x:Name="ConfirmButton" Grid.Column="2" Content="Continue" MinWidth="110"
+        <Button x:Name="ConfirmButton" Grid.Column="3" Content="Continue" MinWidth="110"
                 Classes="primary" Click="ConfirmButton_Click" />
       </Grid>
     </Border>

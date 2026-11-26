@@ -67,18 +67,20 @@ public sealed partial class MenuEditingCoordinator : IDisposable
 
             if (entry.Access == WorkspaceAssetAccess.Editable &&
                 entry.AssetType == XAssetType.Menu &&
-                !_menus.ContainsKey(identity) &&
+                (!_menus.TryGetValue(identity, out MenuRow? existingMenu) ||
+                 !ReferenceEquals(existingMenu.SourceEntry, entry)) &&
                 _session.CaptureCurrentDefinition(identity) is MenuDefAsset menu)
             {
-                _menus.Add(identity, new MenuRow(menu));
+                _menus[identity] = new MenuRow(entry, menu);
                 changed = true;
             }
             else if (entry.Access == WorkspaceAssetAccess.Editable &&
                 entry.AssetType == XAssetType.MenuFile &&
-                !_menuFiles.ContainsKey(identity) &&
+                (!_menuFiles.TryGetValue(identity, out MenuFileRow? existingFile) ||
+                 !ReferenceEquals(existingFile.SourceEntry, entry)) &&
                 _session.CaptureCurrentDefinition(identity) is MenuFileAsset menuFile)
             {
-                _menuFiles.Add(identity, new MenuFileRow(menuFile));
+                _menuFiles[identity] = new MenuFileRow(entry, menuFile);
                 changed = true;
             }
         }
@@ -130,24 +132,28 @@ public sealed partial class MenuEditingCoordinator : IDisposable
 
     private sealed class MenuRow
     {
-        public MenuRow(MenuDefAsset baseline)
+        public MenuRow(WorkspaceAssetCatalogEntry sourceEntry, MenuDefAsset baseline)
         {
+            SourceEntry = sourceEntry;
             Current = baseline;
             Identity = MenuDocumentIdentity.Create(Current);
         }
 
+        public WorkspaceAssetCatalogEntry SourceEntry { get; }
         public MenuDefAsset Current { get; set; }
         public MenuDocumentIdentity Identity { get; set; }
     }
 
     private sealed class MenuFileRow
     {
-        public MenuFileRow(MenuFileAsset baseline)
+        public MenuFileRow(WorkspaceAssetCatalogEntry sourceEntry, MenuFileAsset baseline)
         {
+            SourceEntry = sourceEntry;
             Current = baseline;
             Identity = MenuFileDocumentIdentity.Create(Current);
         }
 
+        public WorkspaceAssetCatalogEntry SourceEntry { get; }
         public MenuFileAsset Current { get; set; }
         public MenuFileDocumentIdentity Identity { get; set; }
     }

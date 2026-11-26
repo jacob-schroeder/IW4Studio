@@ -109,6 +109,9 @@ public sealed class MenuFileEditorViewModel
     public bool CanDuplicateRegistration =>
         CanAddRegistration &&
         SelectedRegistration is { IsEditableDefinition: true };
+    public bool CanExportSelectedMenu =>
+        SelectedRegistration is { } selected && !Designer.HasStagedInput &&
+        (IsEditable || ReadOnlyRegistrationMenu(selected) is not null);
 
     public string Name =>
         _snapshot?.Name
@@ -147,6 +150,7 @@ public sealed class MenuFileEditorViewModel
             OnPropertyChanged(nameof(HasSelectedRegistration));
             OnPropertyChanged(nameof(CanRetargetRegistration));
             OnPropertyChanged(nameof(CanDuplicateRegistration));
+            OnPropertyChanged(nameof(CanExportSelectedMenu));
             OnPropertyChanged(nameof(EditorProperties));
             NotifyCommandsChanged();
         }
@@ -211,6 +215,46 @@ public sealed class MenuFileEditorViewModel
 
     internal void RequestPropertiesReveal() =>
         PropertiesRevealRequested?.Invoke(this, EventArgs.Empty);
+
+    public MenuDefAsset CaptureSelectedMenuForPackage()
+    {
+        if (!CanExportSelectedMenu || SelectedRegistration is not { } selected)
+        {
+            throw new InvalidOperationException(
+                "Select a Menu registration and apply staged changes before exporting it.");
+        }
+        if (ReadOnlyRegistrationMenu(selected) is { } menu)
+            return menu;
+        if (_rowIdentity is not { } rowIdentity)
+            throw new InvalidOperationException("This MenuFile has no editable target row.");
+        return _coordinator.CaptureMenuFileRegistrationForPackage(
+            rowIdentity, selected.Id);
+    }
+
+    private MenuDefAsset? ReadOnlyRegistrationMenu(MenuFileRegistrationViewModel selected)
+    {
+        if (Mode != WorkspaceAssetAccess.ReadOnly || _session.Definition is not MenuFileAsset file)
+            return null;
+        var registration = file.Menus[selected.Index];
+        var physical = registration.SourceMenu;
+        var menu = physical?.Window.Name is { } name && !name.StartsWith(',') ? physical : registration.CanonicalMenu;
+        return menu?.Window.Name is { } resolved && !resolved.StartsWith(',') && SameLogicalName(resolved, selected.MenuName)
+            ? menu : null;
+    }
+
+    public void ReportPackageOperation(string message) => StatusMessage = message;
+
+    public void RegisterImportedMenu(string menuName)
+    {
+        if (Registrations.Any(registration => SameLogicalName(registration.MenuName, menuName)))
+            StatusMessage = $"Menu '{menuName}' is already registered in this MenuFile.";
+        else if (!CanAddRegistration)
+            StatusMessage = $"Apply staged changes, then use Add menu to register '{menuName}'.";
+        else if (_coordinator.ResolveMenu(menuName).Kind == MenuAuthorityResolutionKind.Unavailable)
+            StatusMessage = $"The destination still needs the definition for '{menuName}'. Import the menu with Replace existing, then register it.";
+        else
+            AddExistingMenu(menuName);
+    }
 
     public void AddExistingMenu(string menuName, int? insertIndex = null)
     {
@@ -490,6 +534,7 @@ public sealed class MenuFileEditorViewModel
         OnPropertyChanged(nameof(CanAddRegistration));
         OnPropertyChanged(nameof(CanRetargetRegistration));
         OnPropertyChanged(nameof(CanDuplicateRegistration));
+        OnPropertyChanged(nameof(CanExportSelectedMenu));
         OnPropertyChanged(nameof(EditorProperties));
     }
 
@@ -651,6 +696,7 @@ public sealed class MenuFileEditorViewModel
             OnPropertyChanged(nameof(CanAddRegistration));
             OnPropertyChanged(nameof(CanRetargetRegistration));
             OnPropertyChanged(nameof(CanDuplicateRegistration));
+            OnPropertyChanged(nameof(CanExportSelectedMenu));
             NotifyCommandsChanged();
             if (!Designer.HasStagedInput && _pendingCoordinatorRefresh)
                 RefreshFromCoordinator();
@@ -702,6 +748,7 @@ public sealed class MenuFileEditorViewModel
         OnPropertyChanged(nameof(CanAddRegistration));
         OnPropertyChanged(nameof(CanRetargetRegistration));
         OnPropertyChanged(nameof(CanDuplicateRegistration));
+        OnPropertyChanged(nameof(CanExportSelectedMenu));
         OnPropertyChanged(nameof(EditorProperties));
         OnPropertyChanged(nameof(InspectorSelection));
         NotifyCommandsChanged();

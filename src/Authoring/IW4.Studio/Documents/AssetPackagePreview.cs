@@ -10,7 +10,10 @@ public enum AssetPackageStatus { Included, Required, Add, Reuse, Conflict, Block
 public enum AssetPackageConflictChoice { KeepExisting, Replace }
 
 public sealed record AssetPackageRow(AssetKey? Key, XAssetType Type, string Name,
-    AssetPackageStatus Status, string Detail, IReadOnlyList<string> UsedBy, bool CanReplace = false);
+    AssetPackageStatus Status, string Detail, IReadOnlyList<string> UsedBy, bool CanReplace = false)
+{
+    public bool IsMissingDependency { get; internal init; }
+}
 
 public sealed class AssetPackageExportPreview
 {
@@ -89,17 +92,29 @@ public sealed class AssetPackageImportPreview : IDisposable
     internal Guid DocumentId { get; }
     internal long Revision { get; }
     internal WorkspaceAssetDependencyIndex Dependencies { get; }
-    internal IReadOnlyList<AssetPackageImportItem> Items { get; }
-    public IReadOnlyList<AssetPackageRow> Rows { get; }
+    internal IReadOnlyList<AssetPackageImportItem> Items { get; private set; }
+    public IReadOnlyList<AssetPackageRow> Rows { get; private set; }
+    internal string? DependencyProfile { get; }
+    public bool CanLoadDependencies => DependencyProfile is not null && Rows.Any(row => row.IsMissingDependency);
+    public IReadOnlyList<AssetPackageRoot> SelectedRoots { get; }
 
     internal AssetPackageImportPreview(Guid documentId, long revision, AssetPackageZone package,
-        IReadOnlyList<AssetPackageImportItem> items, WorkspaceAssetDependencyIndex dependencies)
+        IReadOnlyList<AssetPackageImportItem> items, WorkspaceAssetDependencyIndex dependencies,
+        string? dependencyProfile, IReadOnlyList<AssetPackageRoot> selectedRoots)
     {
         DocumentId = documentId;
         Revision = revision;
         _package = package;
-        Items = items;
         Dependencies = dependencies;
+        DependencyProfile = dependencyProfile;
+        SelectedRoots = selectedRoots;
+        Items = items;
+        Rows = Array.AsReadOnly(items.Select(item => item.Row).ToArray());
+    }
+
+    internal void UpdateItems(AssetPackageImportItem[] items)
+    {
+        Items = Array.AsReadOnly(items);
         Rows = Array.AsReadOnly(items.Select(item => item.Row).ToArray());
     }
 
