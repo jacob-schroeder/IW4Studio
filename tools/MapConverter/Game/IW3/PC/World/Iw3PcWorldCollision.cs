@@ -10,7 +10,7 @@ internal static class Iw3PcWorldCollision
 {
     private sealed record MaterialRow(string Name, int SurfaceFlags, int Contents);
 
-    internal static ushort[] AddLumps(Iw3PcZone zone, int clip, int gfx,
+    internal static (ushort[] SurfaceMaterials, IReadOnlySet<string> DecalMaterials) AddLumps(Iw3PcZone zone, int clip, int gfx,
         List<(D3dbspLumpType Type, byte[] Data)> lumps, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(zone);
@@ -58,14 +58,19 @@ internal static class Iw3PcWorldCollision
         int dpvsSurfaces = Required(zone, gfx + 580 + 80, surfaceCount, "render surfaces");
         if (surfaceCount == 0) throw new InvalidDataException("GfxWorld has no render surfaces.");
         var renderMaterialIndices = new ushort[surfaceCount];
+        var decalMaterials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (int index = 0; index < surfaceCount; index++)
         {
             token.ThrowIfCancellationRequested();
-            int material = Required(zone, dpvsSurfaces + index * 48 + 16, 1, "render surface material");
+            int surface = dpvsSurfaces + index * 48;
+            int material = Required(zone, surface + 16, 1, "render surface material");
             string name = zone.String(material);
             if (name.StartsWith(",", StringComparison.Ordinal)) name = name[1..];
             if (name.Length == 0 || name.Contains(','))
                 throw new InvalidDataException($"Render surface {index} has an invalid material name.");
+            // R_BuildNoDecalSubModels marks a surface whose triangles overlay earlier geometry.
+            if ((zone.Bytes(surface + 23, 1)[0] & 2) != 0)
+                decalMaterials.Add(name);
             if (name.StartsWith("wc/", StringComparison.Ordinal)) name = name[3..];
             if (name.Length is 0 or >= 64 || Encoding.Latin1.GetByteCount(name) >= 64)
                 throw new InvalidDataException($"Render surface {index} has an invalid target material name.");
@@ -121,7 +126,7 @@ internal static class Iw3PcWorldCollision
         AddOptional(lumps, D3dbspLumpType.CollisionPartitions, partitions);
         AddOptional(lumps, D3dbspLumpType.CollisionAabbs, aabbs);
         lumps.Add((D3dbspLumpType.Models, models));
-        return renderMaterialIndices;
+        return (renderMaterialIndices, decalMaterials);
     }
 
     private static (byte[], byte[], byte[], byte[]) EncodeBrushes(Iw3PcZone zone, int clip,

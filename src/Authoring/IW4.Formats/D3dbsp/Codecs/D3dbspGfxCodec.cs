@@ -125,7 +125,10 @@ internal static partial class D3dbspGfxCodec
         GfxImageAsset? outdoorImage = null,
         IReadOnlyList<float>? outdoorLookupMatrix = null,
         IReadOnlyDictionary<string, float>? materialDisplacements = null,
-        int[]? staticModelDrawStarts = null)
+        int[]? staticModelDrawStarts = null,
+        D3dbspStaticModelVisibility? staticModelVisibility = null,
+        IReadOnlyList<GfxSky>? sourceSkies = null,
+        Sunflare? sourceSun = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
         ArgumentNullException.ThrowIfNull(file);
@@ -403,6 +406,26 @@ internal static partial class D3dbspGfxCodec
         var shadowStaticModelIndices = Enumerable.Range(0, primaryLightCount)
             .Select(_ => new List<ushort>())
             .ToArray();
+        int authoredShadowDrawCount = 0;
+        if (staticModelVisibility?.ShadowCastersByLight is { } casterLists)
+        {
+            if (casterLists.Count != primaryLightCount)
+                throw new InvalidDataException("Authored shadow caster lists must match the primary light table.");
+            int placementCount = staticModelVisibility.PlacementBounds.Count;
+            authoredShadowDrawCount = staticModelDrawStarts?[placementCount] ?? placementCount;
+            for (int light = 0; light < casterLists.Count; light++)
+            {
+                foreach (ushort placement in casterLists[light])
+                {
+                    if (placement >= placementCount)
+                        throw new InvalidDataException($"Primary light {light} references missing static placement {placement}.");
+                    int first = staticModelDrawStarts?[placement] ?? placement;
+                    int end = staticModelDrawStarts?[placement + 1] ?? placement + 1;
+                    for (int draw = first; draw < end; draw++)
+                        shadowStaticModelIndices[light].Add(checked((ushort)draw));
+                }
+            }
+        }
         for (int index = 0; index < staticModelCount; index++)
         {
             GfxStaticModelInst instance = staticModelInstances[index] ??
@@ -441,7 +464,8 @@ internal static partial class D3dbspGfxCodec
                         $"Render static-model draw instance {index} references primary light " +
                         $"{draw.PrimaryLightIndex}; the table has {primaryLightCount} rows.");
                 }
-                shadowStaticModelIndices[draw.PrimaryLightIndex].Add(checked((ushort)index));
+                if (index >= authoredShadowDrawCount)
+                    shadowStaticModelIndices[draw.PrimaryLightIndex].Add(checked((ushort)index));
             }
         }
 
@@ -545,7 +569,7 @@ internal static partial class D3dbspGfxCodec
             // Opaque/sky ends at sortKeyLitDecal; lit decals/translucency ends
             // at sortKeyEffectDecal, followed by the emissive draw range.
         }
-        GfxSky[] skies = sortedSurfaceIndices
+        GfxSky[] skies = sourceSkies is not null ? sourceSkies.ToArray() : sortedSurfaceIndices
             .Select((surfaceIndex, sortedPosition) => new
             {
                 Material = surfaces[surfaceIndex].Material,
@@ -588,6 +612,14 @@ internal static partial class D3dbspGfxCodec
                 };
             })
             .ToArray();
+        foreach (GfxSky sky in skies)
+        {
+            if (sky.SkySurfCount != sky.SkyStartSurfs.Count ||
+                sky.SkyStartSurfs.Any(position => position < 0 || position >= sortedSurfaceIndices.Length))
+                throw new InvalidDataException("Source sky has invalid sorted surface positions.");
+            if (sky.SkySurfCount != 0 && sky.SkyImage is null)
+                throw new InvalidDataException("Source sky surfaces have no image.");
+        }
         IReadOnlyList<GfxLightmapArray> outputLightmaps;
         if (needsFullbrightLightmap)
         {
@@ -681,7 +713,7 @@ internal static partial class D3dbspGfxCodec
             Mins = [world.MidPoint.X, world.MidPoint.Y, world.MidPoint.Z],
             Maxs = [world.HalfSize.X, world.HalfSize.Y, world.HalfSize.Z],
             Checksum = checksum,
-            Sun = new Sunflare { SunFxPosition = [0, 0, 0] },
+            Sun = sourceSun ?? new Sunflare { SunFxPosition = [0, 0, 0] },
             OutdoorLookupMatrix = outdoorLookupMatrix is { Count: > 0 }
                 ? outdoorLookupMatrix
                 : new float[16],

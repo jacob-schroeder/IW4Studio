@@ -7,12 +7,12 @@ using MapConverter.IW3.PC.Assets.XModel;
 using MapConverter.IW3.PC.Assets.World;
 using MapConverter.IW3.PC.Readers;
 using MapConverter.IW3.PC.Readers.World;
-using MapConverter.IW3.PC.Rules;
 
 namespace MapConverter.Game.IW3.PC.World;
 
 internal sealed record Iw3PcWorldExtraction(Iw3DynamicEntitySourceData DynamicEntities,
-    Iw3XModelCollisionSourceData ModelCollision, Iw3PcWorldLightingInfo? Lighting);
+    Iw3XModelCollisionSourceData ModelCollision, Iw3PcWorldLightingInfo? Lighting,
+    D3dbspStaticModelVisibility? StaticModelVisibility, IReadOnlySet<string> DecalMaterials);
 
 internal static class Iw3PcWorldConverter
 {
@@ -22,17 +22,21 @@ internal static class Iw3PcWorldConverter
         var source = new Iw3PcWorldSource(zone, modelSources ?? new Dictionary<string, Iw3PcModelProvider>());
         var dynamics = source.ReadDynamicEntities(token);
         var lumps = new List<(D3dbspLumpType Type, byte[] Data)>();
-        ushort[] materials = Iw3PcWorldCollision.AddLumps(zone, source.Clip.Offset, source.Graphics.Offset, lumps, token);
-        Iw3PcWorldGraphics.AddLumps(zone, source.Graphics.Offset, source.Common.Offset, materials, lumps, token);
-        lumps.Add((D3dbspLumpType.Entities, EncodeEntities(source, token)));
+        var (materials, decalMaterials) = Iw3PcWorldCollision.AddLumps(zone, source.Clip.Offset, source.Graphics.Offset, lumps, token);
+        var (entities, modelIndexBySource, placementBounds) = EncodeEntities(source, textured, token);
+        Iw3PcWorldGraphics.AddLumps(zone, source.Graphics.Offset, source.Common.Offset, materials, modelIndexBySource, lumps, token);
+        lumps.Add((D3dbspLumpType.Entities, entities));
         var collision = source.ReadCollision(token);
         var lighting = textured ? Iw3PcWorldLightingInfoReader.Read(zone, source.Graphics.Offset) : null;
         token.ThrowIfCancellationRequested();
         D3dbspFile.Create(lumps).Write(bspPath);
-        return new(dynamics, collision, lighting);
+        var visibility = textured ? new D3dbspStaticModelVisibility(placementBounds,
+            source.ReadShadowModelIndices()) : null;
+        return new(dynamics, collision, lighting, visibility, decalMaterials);
     }
 
-    private static byte[] EncodeEntities(Iw3PcWorldSource source, CancellationToken token)
+    private static (byte[] Entities, int[] ModelIndexBySource, IReadOnlyList<Bounds> Bounds) EncodeEntities(
+        Iw3PcWorldSource source, bool includeRenderModels, CancellationToken token)
     {
         byte[] retained = D3dbspAssetLinker.FilterEntities(source.EntityText(), entities =>
         {
@@ -52,17 +56,38 @@ internal static class Iw3PcWorldConverter
         using var output = new MemoryStream();
         output.Write(retained);
         if (retained.Length > 0 && retained[^1] != (byte)'\n') output.WriteByte((byte)'\n');
-        int index = -1;
+        var modelIndexBySource = new List<int>();
+        var placementBounds = new List<Bounds>();
         foreach (var placement in source.StaticPlacements())
         {
-            index++;
+            int index = modelIndexBySource.Count;
             token.ThrowIfCancellationRequested();
             if (placement.Name.Length >= 64 || placement.Name.IndexOfAny(['"', '\r', '\n']) >= 0)
                 throw new InvalidDataException($"Invalid IW3 PC static model name '{placement.Name}'.");
-            var name = Iw3PcModelRules.StaticEntityModelName(placement.Name);
-            if (name == null) continue;
+            // Source order is shared by the cell trees, shadow lists and misc_model entries.
+            modelIndexBySource.Add(includeRenderModels ? index : -1);
             if (placement.Scale <= 0 || (placement.Flags & ~1) != 0)
                 throw new InvalidDataException($"Invalid scale or flags for IW3 PC static placement {index} ('{placement.Name}').");
+            if (!float.IsFinite(placement.CullDistance) || placement.CullDistance < 0)
+                throw new InvalidDataException($"Invalid cull distance for IW3 PC static placement {index} ('{placement.Name}').");
+            ushort cullDistance = placement.CullDistance >= ushort.MaxValue
+                ? ushort.MaxValue : (ushort)placement.CullDistance;
+            var lightingOrigin = new float[3];
+            var halfSize = new float[3];
+            for (int component = 0; component < 3; component++)
+            {
+                float min = placement.BoundsMins[component], max = placement.BoundsMaxs[component];
+                if (!float.IsFinite(min) || !float.IsFinite(max) || min > max)
+                    throw new InvalidDataException($"Invalid bounds for IW3 PC static placement {index} ('{placement.Name}').");
+                lightingOrigin[component] = (float)(((double)min + max) * 0.5);
+                halfSize[component] = (float)(((double)max - min) * 0.5);
+            }
+            if (includeRenderModels)
+                placementBounds.Add(new Bounds
+                {
+                    MidPoint = new Vec3 { X = lightingOrigin[0], Y = lightingOrigin[1], Z = lightingOrigin[2] },
+                    HalfSize = new Vec3 { X = halfSize[0], Y = halfSize[1], Z = halfSize[2] }
+                });
             var axis = new Vec3[3];
             for (int row = 0; row < 3; row++)
                 axis[row] = new() { X = placement.Axis[row * 3], Y = placement.Axis[row * 3 + 1], Z = placement.Axis[row * 3 + 2] };
@@ -71,18 +96,22 @@ internal static class Iw3PcWorldConverter
 
                 {
                 "classname" "misc_model"
-                "model" "{{name.Value}}"
+                "model" "{{placement.Name}}"
                 "origin" "{{placement.Origin[0]:g9}} {{placement.Origin[1]:g9}} {{placement.Origin[2]:g9}}"
                 "angles" "{{angles.X:g9}} {{angles.Y:g9}} {{angles.Z:g9}}"
                 "modelscale" "{{placement.Scale:g9}}"
                 "spawnflags" "{{(placement.Flags & 1) * 2}}"
+                "cullDist" "{{cullDistance}}"
+                "reflectionProbeIndex" "{{placement.ReflectionProbeIndex}}"
+                "lightingOrigin" "{{lightingOrigin[0]:g9}} {{lightingOrigin[1]:g9}} {{lightingOrigin[2]:g9}}"
+                "gndLt" "{{placement.GroundLighting[2]:X2}}{{placement.GroundLighting[1]:X2}}{{placement.GroundLighting[0]:X2}}{{placement.GroundLighting[3]:X2}}{{placement.PrimaryLightIndex:X2}}"
                 }
 
                 """);
             output.Write(Encoding.Latin1.GetBytes(block));
         }
         output.WriteByte(0);
-        return output.ToArray();
+        return (output.ToArray(), modelIndexBySource.ToArray(), placementBounds);
     }
 
 }

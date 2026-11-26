@@ -126,6 +126,27 @@ internal sealed class Iw3PcWorldSource
         return new(Clip.Name, lists);
     }
 
+    internal ushort[][]? ReadShadowModelIndices()
+    {
+        int table = zone.Pointer(Graphics.Offset + 572);
+        if (table == 0) return null;
+        int lightCount = zone.Int32(Graphics.Offset + 220);
+        var byLight = new ushort[lightCount][];
+        for (int light = 0; light < lightCount; light++)
+        {
+            int row = checked(table + light * 12);
+            int count = zone.UInt16(row + 2);
+            int list = zone.Pointer(row + 8);
+            if (count != 0 && list == 0)
+                throw new InvalidDataException($"IW3 PC primary light {light} is missing its static shadow casters.");
+            var ids = new ushort[count];
+            for (int i = 0; i < ids.Length; i++)
+                ids[i] = zone.UInt16(checked(list + i * 2));
+            byLight[light] = ids;
+        }
+        return byLight;
+    }
+
     private string? AssetName(int field)
     {
         int target = zone.Pointer(field);
@@ -135,15 +156,21 @@ internal sealed class Iw3PcWorldSource
         return name;
     }
 
-    internal IEnumerable<(string Name, float[] Origin, float[] Axis, float Scale, byte Flags)> StaticPlacements()
+    internal IEnumerable<(string Name, float[] Origin, float[] Axis, float Scale, byte Flags,
+        float CullDistance, byte ReflectionProbeIndex, byte PrimaryLightIndex,
+        float[] BoundsMins, float[] BoundsMaxs, byte[] GroundLighting)> StaticPlacements()
     {
         int count = zone.Int32(Graphics.Offset + 580), table = zone.Pointer(Graphics.Offset + 668);
-        if (count < 0 || count != 0 && table == 0) throw new InvalidDataException("Invalid IW3 PC static model table.");
+        int instances = zone.Pointer(Graphics.Offset + 656);
+        if (count < 0 || count != 0 && (table == 0 || instances == 0))
+            throw new InvalidDataException("Invalid IW3 PC static model table.");
         for (int i = 0; i < count; i++)
         {
-            int row = checked(table + i * 76);
+            int row = checked(table + i * 76), instance = checked(instances + i * 28);
             yield return (IncludeModel(zone.Pointer(row + 56)), zone.Floats(row + 4, 3), zone.Floats(row + 16, 9),
-                zone.Floats(row + 52, 1)[0], zone.Bytes(row + 72, 1)[0]);
+                zone.Floats(row + 52, 1)[0], zone.Bytes(row + 72, 1)[0],
+                zone.Floats(row, 1)[0], zone.Bytes(row + 68, 1)[0], zone.Bytes(row + 69, 1)[0],
+                zone.Floats(instance, 3), zone.Floats(instance + 12, 3), zone.Bytes(instance + 24, 4).ToArray());
         }
     }
 }

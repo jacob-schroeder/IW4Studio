@@ -4,6 +4,7 @@ using MapConverter.Game.IW3.PC.World;
 using MapConverter.IW3.PC.Assets.XModel;
 using MapConverter.IW3.PC.Assets.World;
 using System.Globalization;
+using System.Buffers.Binary;
 using System.Text;
 using System.Text.RegularExpressions;
 using D3dbspLinker.Conversion;
@@ -200,6 +201,8 @@ internal static class Iw3PcMapConverter
             Iw3WorldObjectiveCompilation? objectives = null;
             IReadOnlyList<GfxLightmapArray> lightmaps = [];
             GfxImageAsset? outdoorImage = null;
+            GfxImageAsset? skyImage = null;
+            Sunflare? sourceSun = null;
             float[] outdoorLookupMatrix = [];
             string? materialProviderPath = bootstrapPath;
             if (textured)
@@ -227,12 +230,14 @@ internal static class Iw3PcMapConverter
                 materialProviderPath = Path.Combine(scratchDirectory, "world-materials.ff");
                 stagedImagePath = Path.Combine(scratchDirectory, "world-images.pak");
                 bool hasImagePackage;
-                (texturedMaterialCount, defaultMaterialNames, fallbackImageNames, hudMaterialNames, hudScriptPath, hasImagePackage) =
+                (texturedMaterialCount, defaultMaterialNames, fallbackImageNames, hudMaterialNames, hudScriptPath, hasImagePackage,
+                    skyImage, sourceSun) =
                     BuildWorldTextureProvider(bspPath, world.ModelCollision, assetDirectory, mapName,
                         bootstrapPath ?? throw new InvalidOperationException("Missing material bootstrap."),
                         iwdPath, sourceFastFileDirectory,
                         options.ImageFileIndex ?? throw new InvalidOperationException("Missing imagefile index."),
-                        materialProviderPath, stagedImagePath, lightmaps, outdoorImage, loadZone, damageFx, objectives);
+                        materialProviderPath, stagedImagePath, lightmaps, outdoorImage, world.Lighting,
+                        loadZone, damageFx, objectives);
                 if (!hasImagePackage)
                 {
                     stagedImagePath = null;
@@ -312,7 +317,10 @@ internal static class Iw3PcMapConverter
                 assetLibraryDirectory: null, rawFilePaths: rawFilePaths,
                 lightmapImageNames: lightmapImageNames, outdoorImageName: outdoorImageName,
                 outdoorLookupMatrix: outdoorLookupMatrix,
+                sourceSkies: textured ? CreateSourceSkies(world.Lighting, skyImage) : null,
+                sourceSun: sourceSun,
                 staticScriptModelNames: textured ? WorldOnlyVehicleModels : new HashSet<string>(StringComparer.Ordinal),
+                staticModelVisibility: world.StaticModelVisibility,
                 cancellationToken: cancellationToken,
                 progress: new Progress<string>());
             if (!File.Exists(stagedMapPath) || new FileInfo(stagedMapPath).Length == 0)
@@ -346,18 +354,70 @@ internal static class Iw3PcMapConverter
             lighting.OutdoorLookupMatrix);
     }
 
+    private static IReadOnlyList<GfxSky> CreateSourceSkies(
+        Iw3PcWorldLightingInfo? lighting, GfxImageAsset? skyImage)
+    {
+        ArgumentNullException.ThrowIfNull(lighting);
+        if (lighting.SkyImageName is null && lighting.SkyStartSurfs.Length == 0)
+            return [];
+        if (skyImage is null)
+            throw new InvalidDataException("The authored IW3 sky has no resolved image.");
+        return [new GfxSky
+        {
+            SkySurfCount = lighting.SkyStartSurfs.Length,
+            SkyStartSurfs = lighting.SkyStartSurfs,
+            SkyImage = skyImage,
+            SkySamplerState = lighting.SkySamplerState << 24
+        }];
+    }
+
+    private static Sunflare CreateSourceSun(Iw3PcWorldLightingInfo lighting,
+        IReadOnlyList<MaterialAsset> materials,
+        IReadOnlyDictionary<string, MaterialAsset>? materialsBySourceName = null)
+    {
+        byte[] bytes = lighting.Sun;
+        float F(int offset) => BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(offset, 4));
+        int I(int offset) => BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(offset, 4));
+        MaterialAsset? Material(string? sourceName)
+        {
+            if (bytes[0] == 0 || sourceName is null) return null;
+            string normalizedSourceName = NormalizeTargetAssetName(sourceName, "sun material");
+            if (materialsBySourceName is not null &&
+                materialsBySourceName.TryGetValue(normalizedSourceName, out MaterialAsset? authored))
+                return authored;
+            string targetName = ToIw4MaterialName(normalizedSourceName);
+            return materials.FirstOrDefault(material => material.Info.Name == targetName) ??
+                throw new InvalidDataException($"The IW3 sun material '{sourceName}' has no compiled IW4 provider.");
+        }
+        return new Sunflare
+        {
+            HasValidDataRaw = Sunflare.EncodeHasValidData(bytes[0] != 0),
+            SpriteMaterial = Material(lighting.SunSpriteMaterialName),
+            FlareMaterial = Material(lighting.SunFlareMaterialName),
+            SpriteSize = F(12), FlareMinSize = F(16), FlareMinDot = F(20),
+            FlareMaxSize = F(24), FlareMaxDot = F(28), FlareMaxAlpha = F(32),
+            FlareFadeInTime = I(36), FlareFadeOutTime = I(40),
+            BlindMinDot = F(44), BlindMaxDot = F(48), BlindMaxDarken = F(52),
+            BlindFadeInTime = I(56), BlindFadeOutTime = I(60),
+            GlareMinDot = F(64), GlareMaxDot = F(68), GlareMaxLighten = F(72),
+            GlareFadeInTime = I(76), GlareFadeOutTime = I(80),
+            SunFxPosition = [F(84), F(88), F(92)]
+        };
+    }
+
     private static (int TexturedMaterialCount, IReadOnlyList<string> DefaultMaterialNames,
         IReadOnlyList<string> FallbackImageNames,
         IReadOnlyList<string> HudMaterialNames,
-        string? HudScriptPath, bool HasImagePackage) BuildWorldTextureProvider(
+        string? HudScriptPath, bool HasImagePackage, GfxImageAsset? SkyImage, Sunflare? Sun) BuildWorldTextureProvider(
         string bspPath, Iw3XModelCollisionSourceData modelCollisionSource, string assetDirectory, string mapName, string bootstrapPath,
         string? iwdPath, string? sourceFastFileDirectory, int imageFileIndex,
         string providerPath, string imagePath, IReadOnlyList<GfxLightmapArray> lightmaps,
-        GfxImageAsset outdoorImage,
+        GfxImageAsset outdoorImage, Iw3PcWorldLightingInfo? lighting,
         (string AssetDirectory, string Name, string OutputPath)? loadZone,
         Iw3WorldFxCompilation damageFx, Iw3WorldObjectiveCompilation? objectives)
     {
         IReadOnlyList<string> worldNames = D3dbspAssetLinker.ReadWorldMaterialNames(bspPath);
+        ArgumentNullException.ThrowIfNull(lighting);
         Iw3ZoneManifest manifest = Iw3ZoneManifest.Read(
             Path.Combine(assetDirectory, "zone_source", mapName + ".zone"));
         IReadOnlyList<string> staticModelNames = Iw3StaticModelNameReader
@@ -377,6 +437,14 @@ internal static class Iw3PcMapConverter
             .ToDictionary(ToIw4MaterialName, StringComparer.Ordinal);
         HashSet<string> ownedMaterialNames = OwnedNames(manifest, "material")
             .ToHashSet(StringComparer.Ordinal);
+        string[] sunSourceNames = lighting.Sun[0] == 0 ? [] :
+            new[] { lighting.SunSpriteMaterialName, lighting.SunFlareMaterialName }
+                .OfType<string>()
+                .Select(name => NormalizeTargetAssetName(name, "sun material"))
+                .Distinct(StringComparer.Ordinal).ToArray();
+        Dictionary<string, string> sunOwnedSources = sunSourceNames
+            .Where(ownedMaterialNames.Contains)
+            .ToDictionary(ToIw4MaterialName, name => name, StringComparer.Ordinal);
         var ownedSources = ownedMaterialNames.GroupBy(name =>
                 D3dbspAssetLinker.GetWorldMaterialName(name.StartsWith("wc/", StringComparison.Ordinal)
                     ? name[3..] : name), StringComparer.Ordinal)
@@ -399,6 +467,7 @@ internal static class Iw3PcMapConverter
         var waterSourcesByMaterial = new Dictionary<string, string>(StringComparer.Ordinal);
         var requirements = new Dictionary<string, ImageRequirement>(StringComparer.OrdinalIgnoreCase);
         var defaultMaterialNames = new List<string>();
+        var skySrgbPolicies = new HashSet<bool>();
         (string? compassMaterialName, float? compassMaxRange) = ReadSourceCompass(assetDirectory, mapName);
         Iw3IwdImageRequest? compassImageRequest = null;
         string[] hudMaterialNames = ReadCallsignMaterialNames(bootstrap, nativeTemplates);
@@ -423,7 +492,8 @@ internal static class Iw3PcMapConverter
                     throw new InvalidDataException($"The material bootstrap does not own the native HUD material '{name}'.");
             }
         }
-        string[] materialNames = [.. worldNames, .. modelSourcesByMaterial.Keys];
+        string[] materialNames = [.. worldNames, .. modelSourcesByMaterial.Keys,
+            .. sunOwnedSources.Keys.Except(worldNames).Except(modelSourcesByMaterial.Keys)];
         foreach (string targetName in materialNames)
         {
             bool isModel = modelSourcesByMaterial.TryGetValue(targetName, out string? modelSourceName);
@@ -443,7 +513,9 @@ internal static class Iw3PcMapConverter
                 continue;
             }
             string[] sourceNames;
-            if (isModel)
+            if (sunOwnedSources.TryGetValue(targetName, out string? sunSourceName))
+                sourceNames = [sunSourceName];
+            else if (isModel)
                 sourceNames = modelSourceName is not null && ownedMaterialNames.Contains(modelSourceName) ? [modelSourceName] : [];
             else
                 sourceNames = ownedSources.GetValueOrDefault(targetName) ?? [];
@@ -481,10 +553,17 @@ internal static class Iw3PcMapConverter
                 if (template.Textures.Any(texture => texture.Semantic == TextureSemantic.WaterMap))
                     waterSourcesByMaterial.Add(targetName, sourcePath);
             }
-            // A sky's cube image, sampler, and native shaders form one contract.
-            // Do not replace it with an unrelated source projection or fallback.
             if ((template.Info.GameFlags & MaterialGameFlags.Sky) != 0)
+            {
+                Iw3IwdImageRequest[] skyColors = inspection.ImageRequirements
+                    .Where(image => image.Semantic == TextureSemantic.ColorMap).ToArray();
+                if (skyColors.Length != 1)
+                    throw new InvalidDataException($"Source sky material '{targetName}' requires one color-map image.");
+                skySrgbPolicies.Add(skyColors[0].UseSrgbReads);
+                bindingsByMaterial.Add(targetName, skyColors);
+                AddImageRequirement(requirements, skyColors[0], null);
                 continue;
+            }
             Iw3IwdImageRequest[] colors = inspection.ImageRequirements
                 .Where(image => image.Semantic == TextureSemantic.ColorMap).ToArray();
             if (colors.Length != 1)
@@ -541,12 +620,19 @@ internal static class Iw3PcMapConverter
             imageSources.Add((loadManifest, loadInput.AssetDirectory));
             loadRawFiles = CompileRawFiles(loadInput.AssetDirectory, loadManifest, loadInput.Name, out _);
         }
+        string? skyName = NormalizeSourceReferenceName(lighting.SkyImageName, "sky image");
+        if (skyName is not null)
+            AddSkyImageRequirement(requirements, skyName, skySrgbPolicies);
         ImageCompilationGraph images = CompileImages(requirements,
             imageSources, iwdPath, sourceFastFileDirectory, imageFileIndex,
             useFallbackImages: true);
         if (loadZone is { } loadOutput)
             File.WriteAllBytes(loadOutput.OutputPath,
                 BuildLoadFastFile(loadOutput.Name, loadImageNames, images, loadRawFiles));
+        GfxImageAsset? skyImage = skyName is not null ? images.AssetsBySourceName[skyName] : null;
+        if (skyImage is not null && (IsExternal(skyImage) || skyImage.MapType != MapType.Cube ||
+            images.FallbackImageNames.Contains(skyName, StringComparer.OrdinalIgnoreCase)))
+            throw new InvalidDataException("The authored IW3 sky image requires source-owned cubemap pixels.");
         var materials = new List<MaterialAsset>(materialNames.Length);
         var modelMappings = new Dictionary<string, Iw3XModelMaterialMapping>(StringComparer.Ordinal);
         int texturedMaterialCount = 0;
@@ -564,6 +650,8 @@ internal static class Iw3PcMapConverter
                     GfxImageAsset image = images.AssetsBySourceName[binding.ImageName];
                     if (IsExternal(image))
                         throw new InvalidDataException($"Material '{targetName}' is missing {binding.Semantic} image '{binding.ImageName}'.");
+                    if (!isModel && (template.Info.GameFlags & MaterialGameFlags.Sky) != 0 && image.MapType != MapType.Cube)
+                        throw new InvalidDataException($"Source sky material '{targetName}' requires a cubemap color image for its native shader.");
                     replacements.Add(binding.Semantic, image);
                 }
             }
@@ -626,7 +714,8 @@ internal static class Iw3PcMapConverter
         // The intermediate fastfile must own the static models, named lighting
         // images, and native faction materials consumed by the world linker.
         BaseAsset[] authoredRoots = materials.Cast<BaseAsset>()
-            .Concat(models.Models).Concat(lightingImages).ToArray();
+            .Concat(models.Models).Concat(lightingImages)
+            .Concat(new[] { skyImage }.OfType<GfxImageAsset>()).ToArray();
         HashSet<AssetKey> authoredKeys = authoredRoots.Select(AssetKey.FromDefinition).ToHashSet();
         MaterialAsset[] nativeMaterialRoots = nativeTemplates
             .Where(material => !authoredKeys.Contains(AssetKey.FromDefinition(material))).ToArray();
@@ -647,7 +736,8 @@ internal static class Iw3PcMapConverter
             file.Write(imagePackage.Bytes.Span);
         }
         return (texturedMaterialCount, defaultMaterialNames, images.FallbackImageNames,
-            hudMaterialNames, hudScriptPath, images.Package is not null);
+            hudMaterialNames, hudScriptPath, images.Package is not null,
+            skyImage, CreateSourceSun(lighting, [.. materials, .. nativeTemplates]));
     }
 
     private static string[] ReadCallsignMaterialNames(
@@ -915,6 +1005,21 @@ internal static class Iw3PcMapConverter
                 out Dictionary<string, ImageRequirement> imageRequirements,
                 out HashSet<string> mapImageNames,
                 out HashSet<string> loadImageNames);
+            Iw3PcWorldLightingInfo sourceLighting = extraction.World.Lighting ??
+                throw new InvalidDataException("The IW3 PC world has no lighting metadata.");
+            string? sourceSkyImageName = NormalizeSourceReferenceName(sourceLighting.SkyImageName, "sky image");
+            if (sourceSkyImageName is not null)
+            {
+                var skySrgbPolicies = materialSources.Where(source => source.Zone == ZoneRole.Map)
+                    .Select(source => source.Inspection).OfType<Iw3MaterialSourceInspection>()
+                    .Where(inspection =>
+                        (inspection.GameFlags & MaterialGameFlags.Sky) != 0)
+                    .SelectMany(inspection => inspection.ImageRequirements)
+                    .Where(image => image.Semantic == TextureSemantic.ColorMap)
+                    .Select(image => image.UseSrgbReads);
+                AddSkyImageRequirement(imageRequirements, sourceSkyImageName, skySrgbPolicies);
+                mapImageNames.Add(sourceSkyImageName);
+            }
 
             string ownedAssetNamePrefix = $"iw3/{paths.MapName}/";
             ImageCompilationGraph images = CompileImages(
@@ -926,6 +1031,10 @@ internal static class Iw3PcMapConverter
                 sourceLibrary: extraction.SourceLibrary,
                 ownedAssetNamePrefix: ownedAssetNamePrefix,
                 nativeStreamParts: nativeMaterials.ImageStreamPayloads);
+            GfxImageAsset? sourceSkyImage = sourceSkyImageName is not null
+                ? images.AssetsBySourceName[sourceSkyImageName] : null;
+            if (sourceSkyImage is not null && (IsExternal(sourceSkyImage) || sourceSkyImage.MapType != MapType.Cube))
+                throw new InvalidDataException("The authored IW3 sky image requires source-owned cubemap pixels.");
 
             TechniqueCompilationGraph techniques = CompileTechniques(
                 extraction,
@@ -938,7 +1047,23 @@ internal static class Iw3PcMapConverter
                 images.AssetsBySourceName,
                 techniques.AssetsByName,
                 modelMaterialNames,
+                extraction.World.DecalMaterials,
                 ownedAssetNamePrefix);
+            if (sourceLighting.Sun[0] != 0)
+            {
+                foreach (string sourceName in new[] { sourceLighting.SunSpriteMaterialName,
+                    sourceLighting.SunFlareMaterialName }.OfType<string>())
+                {
+                    string targetName = ToIw4MaterialName(
+                        NormalizeTargetAssetName(sourceName, "sun material"));
+                    if (materials.MapMaterials.Any(material => material.Info.Name == targetName))
+                        continue;
+                    if (File.Exists(nativeMaterials.ResolveMaterialSourcePath(targetName)))
+                        nativeMaterials.LoadMaterial(targetName);
+                }
+                nativeAssets = nativeAssets.Concat(nativeMaterials.Assets)
+                    .DistinctBy(AssetKey.FromDefinition).ToArray();
+            }
 
             Iw3XModelExportImportResult xmodels =
                 Iw3XModelExportImporter.Import(
@@ -990,11 +1115,16 @@ internal static class Iw3PcMapConverter
                 {
                     SourceEntities = modelReferences.RewrittenEntities,
                     StaticModelRenderParts = xmodels.StaticPartsBySourceName,
+                    StaticModelVisibility = extraction.World.StaticModelVisibility,
                     UseSourceMaterials = true,
                     AvailableMaterials = materials.MapMaterials,
                     Lightmaps = lighting.Lightmaps,
                     OutdoorImage = lighting.OutdoorImage,
                     OutdoorLookupMatrix = lighting.OutdoorLookupMatrix,
+                    SourceSkies = CreateSourceSkies(sourceLighting, sourceSkyImage),
+                    SourceSun = CreateSourceSun(sourceLighting,
+                        [.. materials.MapMaterials, .. nativeAssets.OfType<MaterialAsset>()],
+                        materials.BySourceName),
                     DynamicEntityDefinitions = dynamicEntities.Definitions
                 });
 
@@ -1361,6 +1491,16 @@ internal static class Iw3PcMapConverter
                 AddImageRequirement(imageRequirements, request, water);
             }
         }
+    }
+
+    private static void AddSkyImageRequirement(IDictionary<string, ImageRequirement> requirements,
+        string skyImage, IEnumerable<bool> sourceSrgbPolicies)
+    {
+        if (requirements.ContainsKey(skyImage)) return;
+        bool[] policies = sourceSrgbPolicies.Distinct().ToArray();
+        if (policies.Length != 1)
+            throw new InvalidDataException($"The IW3 sky image '{skyImage}' has no unambiguous source cubemap sRGB policy.");
+        AddImageRequirement(requirements, new Iw3IwdImageRequest(skyImage, TextureSemantic.ColorMap, policies[0]), null);
     }
 
     private static void AddImageRequirement(
@@ -1784,6 +1924,7 @@ internal static class Iw3PcMapConverter
         IReadOnlyDictionary<string, GfxImageAsset> images,
         IReadOnlyDictionary<string, MaterialTechniqueSetAsset> techniqueSets,
         IReadOnlyList<string> staticModelMaterialNames,
+        IReadOnlySet<string> decalMaterials,
         string ownedAssetNamePrefix)
     {
         HashSet<string> modelMaterialNames = staticModelMaterialNames.ToHashSet(StringComparer.Ordinal);
@@ -1818,6 +1959,7 @@ internal static class Iw3PcMapConverter
                 images,
                 requiresRuntimeTechniqueState,
                 techniqueSet,
+                usedOnWorldDecal: decalMaterials.Contains(source.SourceName),
                 targetName: modelMaterialNames.Contains(source.SourceName)
                     ? ownedAssetNamePrefix + source.TargetName
                     : source.TargetName);

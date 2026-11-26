@@ -43,8 +43,8 @@ internal static class D3dbspImageCodec
     private const int ReflectionProbeFacePixelByteCount = GfxReflectionProbeCodec.ReflectionProbeFacePixelByteCount;
     private const int ReflectionProbeFaceStride = GfxReflectionProbeCodec.ReflectionProbeFaceStride;
     private const int ReflectionProbeRuntimeByteCount = GfxReflectionProbeCodec.ReflectionProbeRuntimeByteCount;
-    private const int ReflectionProbeDiskPixelByteCount = 131_064;
-    private const int ReflectionProbeDiskRowByteCount = 131_140;
+    internal const int ReflectionProbeDiskPixelByteCount = 131_064;
+    internal const int ReflectionProbeDiskRowByteCount = 131_140;
     private const int ReflectionProbeColorCorrectionNameByteCount = 64;
 
     private const uint PrimaryLightmapFormatKey = 0x01A9FF81;
@@ -356,7 +356,7 @@ internal static class D3dbspImageCodec
         return authoredCount;
     }
 
-    private static int ReflectionProbeDiskMipOffset(int face, int mip)
+    internal static int ReflectionProbeDiskMipOffset(int face, int mip)
     {
         if (mip == 0) return checked(face * ReflectionProbeTopMipByteCount);
         int offset = checked(ReflectionProbeFaceCount * ReflectionProbeTopMipByteCount +

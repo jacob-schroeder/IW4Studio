@@ -6,7 +6,7 @@
   <Application.Resources>
     <ControlTheme x:Key="StudioWindowDecorations" TargetType="WindowDrawnDecorations"
                   BasedOn="{StaticResource {x:Type WindowDrawnDecorations}}">
-      <!-- Both studio windows draw their title beside the native caption buttons. -->
+      <!-- Studio windows draw their title beside the native caption buttons. -->
       <Style Selector="^ /template/ Panel#PART_TitleTextPanel">
         <Setter Property="Opacity" Value="0" />
       </Style>

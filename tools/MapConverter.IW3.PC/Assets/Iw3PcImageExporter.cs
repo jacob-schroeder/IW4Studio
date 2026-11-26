@@ -36,19 +36,20 @@ internal static class Iw3PcImageExporter
             throw new NotSupportedException($"D3D9 image format 0x{format:X8} in '{asset.Name}' has no IWI6 representation.");
         bool mipmaps = (flags & 2) == 0;
         var levels = new List<(int Offset, int Size)>();
-        int sourceOffset = 0;
+        int faceByteCount = 0;
         int faces = cube ? 6 : 1;
         for (int w = width, h = height, d = depth; ;
             w = Math.Max(1, w / 2), h = Math.Max(1, h / 2), d = Math.Max(1, d / 2))
         {
-            int bytes = bytesPerBlock == 0 ? checked(w * h * d * bytesPerPixel * faces) :
-                checked(((w + 3) / 4) * ((h + 3) / 4) * d * bytesPerBlock * faces);
-            levels.Add((sourceOffset, bytes));
-            sourceOffset = checked(sourceOffset + bytes);
+            int bytes = bytesPerBlock == 0 ? checked(w * h * d * bytesPerPixel) :
+                checked(((w + 3) / 4) * ((h + 3) / 4) * d * bytesPerBlock);
+            levels.Add((faceByteCount, bytes));
+            faceByteCount = checked(faceByteCount + bytes);
             if (!mipmaps || (w == 1 && h == 1 && d == 1)) break;
         }
-        if (sourceOffset != size)
-            throw new InvalidDataException($"Embedded IW3 image '{asset.Name}' has {size} bytes; expected {sourceOffset}.");
+        int expectedSize = checked(faces * faceByteCount);
+        if (expectedSize != size)
+            throw new InvalidDataException($"Embedded IW3 image '{asset.Name}' has {size} bytes; expected {expectedSize}.");
         ReadOnlySpan<byte> pixels = zone.Bytes(load + 16, size);
         byte[] result = new byte[checked(Iwi6Header.Size + size)];
         var header = new Iwi6Header(iwiFormat,
@@ -58,8 +59,13 @@ internal static class Iw3PcImageExporter
         for (int level = levels.Count - 1; level >= 0; level--)
         {
             (int offset, int length) = levels[level];
-            pixels.Slice(offset, length).CopyTo(result.AsSpan(destination, length));
-            destination += length;
+            // PC fastfiles store a full, top-first mip chain per face.
+            // IWI6 stores all faces of each mip together, smallest mip first.
+            for (int face = 0; face < faces; face++)
+            {
+                pixels.Slice(face * faceByteCount + offset, length).CopyTo(result.AsSpan(destination, length));
+                destination += length;
+            }
             if (level < 4)
                 header.FileSizeForPicmip[level] = (uint)destination;
         }

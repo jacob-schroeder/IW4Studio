@@ -311,7 +311,10 @@ internal static partial class FastFileConverter
         bool compressRawFiles = false,
         bool compactAirbornePrecache = false,
         IReadOnlyCollection<string>? additionalWeaponNames = null,
-        IReadOnlyDictionary<string, string>? localizedText = null)
+        IReadOnlyDictionary<string, string>? localizedText = null,
+        D3dbspStaticModelVisibility? staticModelVisibility = null,
+        IReadOnlyList<GfxSky>? sourceSkies = null,
+        Sunflare? sourceSun = null)
     {
         ArgumentNullException.ThrowIfNull(dependencyFastFiles);
         ArgumentNullException.ThrowIfNull(providerFastFiles);
@@ -622,6 +625,7 @@ internal static partial class FastFileConverter
                 UseCompiledLighting = useCompiledLighting,
                 StaticScriptModelNames = staticScriptModelNames,
                 UseStaticModelCollisionTree = useStaticModelCollisionTree,
+                StaticModelVisibility = staticModelVisibility,
                 AvailableMaterials = availableMaterials.Values.ToArray(),
                 AvailableImages = availableImages,
                 MaterialDisplacements = waterDefinitions.Values.Where(definition => definition.Ocean is not null)
@@ -629,6 +633,8 @@ internal static partial class FastFileConverter
                 Lightmaps = lightmaps,
                 OutdoorImage = outdoorImage,
                 OutdoorLookupMatrix = outdoorLookupMatrix,
+                SourceSkies = sourceSkies,
+                SourceSun = sourceSun,
                 RuntimeEntityPropertiesToRemove = new HashSet<string>(StringComparer.Ordinal)
                 {
                     WaterMaterialAuthoring.MapPropertyName,

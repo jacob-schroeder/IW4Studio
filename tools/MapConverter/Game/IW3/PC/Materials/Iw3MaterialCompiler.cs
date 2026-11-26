@@ -657,6 +657,7 @@ internal static class Iw3MaterialCompiler
         IReadOnlyDictionary<string, GfxImageAsset> images,
         bool requiresRuntimeTechniqueState,
         MaterialTechniqueSetAsset? resolvedTechniqueSet,
+        bool usedOnWorldDecal = false,
         string? targetName = null)
     {
         string assetName = targetName ?? sourceName;
@@ -690,15 +691,12 @@ internal static class Iw3MaterialCompiler
 
             byte atlasRows = sourceInspection.TextureAtlasRowCount;
             byte atlasColumns = sourceInspection.TextureAtlasColumnCount;
-            MaterialGameFlags gameFlags = sourceInspection.GameFlags;
-            // IW3 PC draws static-model shadows with the surface's own material.
-            // On IW4 PS3 a shared opaque caster would discard its alpha test.
-            if (GetModelTechniqueFamily(techniqueSetName) is not null)
-            {
-                byte depthState = stateEntries[(int)MaterialTechniqueType.BuildShadowmapDepth].StateBitsIndex;
-                if (depthState != byte.MaxValue)
-                    gameFlags = MaterialRules.AlphaTestedCasterFlags(gameFlags, stateBits[depthState]);
-            }
+            // IW3 PC builds its caster token from 0x40 alone. IW4 PS3 also
+            // interprets 0x80 as a caster, so derive that route from the shadow pass.
+            MaterialGameFlags gameFlags = sourceInspection.GameFlags & ~MaterialGameFlags.MaterialSpecificShadowCaster;
+            byte depthState = stateEntries[(int)MaterialTechniqueType.BuildShadowmapDepth].StateBitsIndex;
+            if (depthState != byte.MaxValue)
+                gameFlags = MaterialRules.AlphaTestedCasterFlags(gameFlags, stateBits[depthState]);
             byte sortKey = RequireByte(root, "sortKey", "sortKey");
             if (sortKey >= 0x40)
             {
@@ -712,13 +710,17 @@ internal static class Iw3MaterialCompiler
                 "surfaceTypeBits",
                 "surfaceTypeBits");
             byte stateFlags = RequireByte(root, "stateFlags", "stateFlags");
+            byte litState = stateEntries[(int)MaterialTechniqueType.Lit].StateBitsIndex;
+            GfxStateBits? decalState = usedOnWorldDecal && litState != byte.MaxValue &&
+                (gameFlags & MaterialGameFlags.Sky) == 0 ? stateBits[litState] : null;
             (MaterialSortKey targetSortKey, GfxCameraRegionType cameraRegion) =
                 ConvertSortAndCameraRegion(
                     sortKey,
                     ParseCameraRegion(root, assetName),
                     stateEntries,
                     techniqueSetName,
-                    sourceName);
+                    sourceName,
+                    decalState);
 
             var material = new MaterialAsset
             {
@@ -765,7 +767,8 @@ internal static class Iw3MaterialCompiler
             GfxCameraRegionType sourceCameraRegion,
             IReadOnlyList<MaterialStateBitsEntry> stateEntries,
             string techniqueSetName,
-            string sourceName)
+            string sourceName,
+            GfxStateBits? decalState = null)
     {
         if (MaterialRules.ParticleCloudSort(sourceSortKey, sourceCameraRegion, techniqueSetName, sourceName)
             is { } cloudSort)
@@ -809,8 +812,8 @@ internal static class Iw3MaterialCompiler
             4 when lit => MaterialSortKey.Opaque,
             4 when ui => MaterialSortKey.AdditiveBlend,
             5 when lit => MaterialSortKey.Sky,
-            6 when MaterialRules.SkyboxSort(sourceCameraRegion, techniqueSetName, sourceName, stateEntries)
-                is { } skyboxSort => skyboxSort,
+            6 when MaterialRules.SortKeySix(sourceCameraRegion, techniqueSetName, sourceName, stateEntries, decalState)
+                is { } earlySort => earlySort,
             9 when lit => MaterialSortKey.DecalBottom1,
             10 when lit => MaterialSortKey.DecalBottom2,
             11 when lit => MaterialSortKey.DecalBottom3,

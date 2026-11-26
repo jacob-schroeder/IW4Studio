@@ -31,6 +31,7 @@ public sealed record D3dbspLinkRequest(
     public bool UseSourceMaterials { get; init; }
     public bool UseCompiledLighting { get; init; }
     public bool UseStaticModelCollisionTree { get; init; }
+    public D3dbspStaticModelVisibility? StaticModelVisibility { get; init; }
     public IReadOnlyDictionary<string, XModelAsset[]> StaticModelRenderParts { get; init; } =
         new Dictionary<string, XModelAsset[]>(StringComparer.Ordinal);
     public IReadOnlySet<string> StaticScriptModelNames { get; init; } = new HashSet<string>(StringComparer.Ordinal);
@@ -43,6 +44,8 @@ public sealed record D3dbspLinkRequest(
     public IReadOnlyList<GfxLightmapArray> Lightmaps { get; init; } = [];
     public GfxImageAsset? OutdoorImage { get; init; }
     public IReadOnlyList<float> OutdoorLookupMatrix { get; init; } = [];
+    public IReadOnlyList<GfxSky>? SourceSkies { get; init; }
+    public Sunflare? SourceSun { get; init; }
     public byte[]? SourceEntities { get; init; }
     public IReadOnlySet<string> RuntimeEntityPropertiesToRemove { get; init; } =
         new HashSet<string>(StringComparer.Ordinal);
@@ -239,7 +242,8 @@ public static class D3dbspAssetLinker
                     request.StaticModelRenderParts,
                     reflectionProbeOrigins,
                     comWorld.PrimaryLightCount,
-                    request.UseStaticModelCollisionTree);
+                    request.UseStaticModelCollisionTree,
+                    request.StaticModelVisibility?.PlacementBounds);
 
         IReadOnlyList<CPlane> planes = D3dbspCollisionCodec.DecodePlanes(
             file.GetRequiredData(D3dbspLumpType.Planes));
@@ -446,7 +450,10 @@ public static class D3dbspAssetLinker
             outdoorImage: request.OutdoorImage,
             outdoorLookupMatrix: request.OutdoorLookupMatrix,
             materialDisplacements: request.MaterialDisplacements,
-            staticModelDrawStarts: staticModelDrawStarts);
+            staticModelDrawStarts: staticModelDrawStarts,
+            staticModelVisibility: request.StaticModelVisibility,
+            sourceSkies: request.SourceSkies,
+            sourceSun: request.SourceSun);
 
         var fxWorld = new FxWorldAsset
         {
@@ -476,6 +483,8 @@ public static class D3dbspAssetLinker
                 .OfType<GfxImageAsset>()
                 .Where(image => image.Name is { Length: > 0 } name && name[0] != ','))
             .Concat(new[] { gfxWorld.OutdoorImage }.OfType<GfxImageAsset>())
+            .Concat(gfxWorld.Skies.Select(sky => sky.SkyImage).OfType<GfxImageAsset>()
+                .Where(image => image.Name is { Length: > 0 } name && name[0] != ','))
             .DistinctBy(asset => (asset.SerializedAssetType, asset.SerializedAssetName))
             .ToArray();
         // Collision-only material rows remain in the clip map without adding
@@ -491,6 +500,8 @@ public static class D3dbspAssetLinker
                 new[] { lightmap.Primary, lightmap.Secondary }
                     .OfType<GfxImageAsset>()
                     .Where(image => image.Name is { Length: > 0 } name && name[0] == ',')))
+            .Concat(new BaseAsset?[] { gfxWorld.Sun.SpriteMaterial, gfxWorld.Sun.FlareMaterial }
+                .OfType<BaseAsset>())
             .Concat(xmodelReferences)
             .Concat(glassSystem.Defs.SelectMany(definition =>
                 new BaseAsset?[] { definition.Material, definition.MaterialShattered, definition.PhysPreset })
@@ -725,11 +736,15 @@ public static class D3dbspAssetLinker
             IReadOnlyDictionary<string, XModelAsset[]> renderParts,
             IReadOnlyList<GfxReflectionProbe> reflectionProbes,
             int primaryLightCount,
-            bool useStaticModelCollisionTree)
+            bool useStaticModelCollisionTree,
+            IReadOnlyList<Bounds>? placementBounds)
     {
         ArgumentNullException.ThrowIfNull(sourceModels);
         ArgumentNullException.ThrowIfNull(availableXModels);
         ArgumentNullException.ThrowIfNull(reflectionProbes);
+        // DecodeStaticModels keeps the misc_model prefix ahead of any added script props.
+        if (placementBounds is not null && placementBounds.Count != sourceModels.Count(model => !model.IsScriptModel))
+            throw new InvalidDataException("Authored render bounds must match the static model placement count.");
         if (sourceModels.Count > ushort.MaxValue)
         {
             throw new InvalidDataException(
@@ -790,10 +805,9 @@ public static class D3dbspAssetLinker
             ValidateStaticModel(source, xmodel, index, primaryLightCount, reflectionProbes.Count,
                 validateDrawLimit: parts is null);
             // Use the original model for placement, lighting and collision. Only its render rows are split.
-            Bounds renderBounds = TransformBounds(
-                xmodel.Bounds,
-                source,
-                $"Static model {index} render bounds");
+            Bounds renderBounds = placementBounds is not null && !source.IsScriptModel
+                ? placementBounds[index]
+                : TransformBounds(xmodel.Bounds, source, $"Static model {index} render bounds");
             Vec3 lightingOrigin = source.LightingOrigin ?? renderBounds.MidPoint;
             var instance = new GfxStaticModelInst
             {
@@ -1502,15 +1516,6 @@ public static class D3dbspAssetLinker
             throw new NotSupportedException(
                 "Strict fastfile conversion currently requires exactly one compiled render cell.");
         }
-        D3dbspLumpType selectedAabbType = file.HasLump(D3dbspLumpType.UnlayeredAabbTrees)
-            ? D3dbspLumpType.UnlayeredAabbTrees
-            : D3dbspLumpType.AabbTrees;
-        if (file.GetRequiredData(selectedAabbType).Length != 12)
-        {
-            throw new NotSupportedException(
-                "Strict fastfile conversion requires one terminal render AABB row.");
-        }
-
         foreach (D3dbspLumpType type in new[]
                  {
                      D3dbspLumpType.CullGroups,

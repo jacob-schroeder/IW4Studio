@@ -1,4 +1,6 @@
 using System.Buffers.Binary;
+using IW4.Formats.Codecs.D3dbsp;
+using IW4.Game.Codecs.GfxMap;
 
 namespace MapConverter.Game.IW3.PC.World;
 
@@ -54,8 +56,9 @@ internal static partial class Iw3PcWorldGraphics
 
         private byte[] EncodeProbes(int probes, int count)
         {
-            const int edge = 64, faces = 6, topMipBytes = edge * edge * 4;
-            const int facePixels = 21844, diskPixels = 131064, diskRow = 131140;
+            const int edge = GfxReflectionProbeCodec.ReflectionProbeEdgeLength;
+            const int diskPixels = D3dbspImageCodec.ReflectionProbeDiskPixelByteCount;
+            const int diskRow = D3dbspImageCodec.ReflectionProbeDiskRowByteCount;
             var result = new byte[checked((count - 1) * diskRow)];
             for (int index = 1; index < count; index++)
             {
@@ -64,27 +67,20 @@ internal static partial class Iw3PcWorldGraphics
                 int image = Required(probe + 12, "reflection-probe image");
                 int load = Required(image + 4, "reflection-probe cubemap");
                 if (B(image) != 5 || U16(image + 24) != edge || U16(image + 26) != edge ||
-                    U16(image + 28) != 1 || I32(load + 12) != diskPixels)
+                    U16(image + 28) != 1 || I32(load + 8) != 21 || I32(load + 12) != diskPixels)
                     throw new InvalidDataException($"IW3 PC reflection probe {index} is not a resident 64x64 RGBA cubemap.");
                 ReadOnlySpan<byte> pixels = zone.Bytes(load + 16, diskPixels);
                 int row = (index - 1) * diskRow;
                 for (int axis = 0; axis < 3; axis++) WF(result, row + axis * 4, F32(probe + axis * 4));
-                Span<byte> output = result.AsSpan(row + 76, diskPixels);
-                int sourceMip = 0;
-                for (int mip = 0; mip < 7; mip++)
+                Span<byte> output = result.AsSpan(row + diskRow - diskPixels, diskPixels);
+                // IW3's Load_Texture uploads each face's complete mip chain before the next face.
+                int source = 0;
+                for (int face = 0; face < GfxReflectionProbeCodec.ReflectionProbeFaceCount; face++)
                 {
-                    int side = Math.Max(1, edge >> mip), mipBytes = side * side * 4;
-                    for (int face = 0; face < faces; face++)
+                    for (int mip = 0; mip < GfxReflectionProbeCodec.ReflectionProbeMipCount; mip++)
                     {
-                        int source = sourceMip + face * mipBytes;
-                        int tail = 0;
-                        for (int previous = 1; previous < mip; previous++)
-                        {
-                            int previousSide = Math.Max(1, edge >> previous);
-                            tail += previousSide * previousSide * 4;
-                        }
-                        int destination = mip == 0 ? face * topMipBytes :
-                            faces * topMipBytes + face * (facePixels - topMipBytes) + tail;
+                        int side = edge >> mip, mipBytes = side * side * 4;
+                        int destination = D3dbspImageCodec.ReflectionProbeDiskMipOffset(face, mip);
                         for (int pixel = 0; pixel < mipBytes; pixel += 4)
                         {
                             double alpha = pixels[source + pixel + 3] / 255.0;
@@ -96,11 +92,9 @@ internal static partial class Iw3PcWorldGraphics
                             }
                             output[destination + pixel + 3] = pixels[source + pixel + 3];
                         }
+                        source += mipBytes;
                     }
-                    sourceMip += faces * mipBytes;
                 }
-                if (sourceMip != diskPixels)
-                    throw new InvalidDataException("IW3 PC reflection probe mip extents do not cover its payload.");
             }
             return result;
         }

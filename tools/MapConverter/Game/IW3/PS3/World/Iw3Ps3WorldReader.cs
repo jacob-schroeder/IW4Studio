@@ -509,7 +509,7 @@ internal static partial class Iw3Ps3FastFileCatalog
             Add(dependencies, flare);
             return new Sunflare
             {
-                HasValidDataRaw = _data[start] == 0 ? 0u : 1u,
+                HasValidDataRaw = Sunflare.EncodeHasValidData(_data[start] != 0),
                 SpriteMaterial = WorldAsset<MaterialAsset>(sprite, "sun sprite material"),
                 FlareMaterial = WorldAsset<MaterialAsset>(flare, "sun flare material"),
                 SpriteSize = WorldFloat(start + 12),

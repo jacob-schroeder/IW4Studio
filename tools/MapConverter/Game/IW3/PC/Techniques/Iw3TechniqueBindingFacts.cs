@@ -203,8 +203,10 @@ internal static class Iw3TechniqueBindingFacts
                 MaterialTextureSource.LightAttenuation,
                 MaterialUpdateFrequency.PerObject),
             ["outdoor"] = Sampler(MaterialTextureSource.Outdoor),
+            // IW3 PC's floatz_build writes clip W to this texture. IW4 PS3
+            // reconstructs that distance in processed_floatz after resolving depth.
             ["floatZSampler"] = Sampler(
-                MaterialTextureSource.FloatZ,
+                MaterialTextureSource.ProcessedFloatZ,
                 flags: MaterialTechniqueFlags.UsesFloatZ),
             ["processedFloatZSampler"] = Sampler(
                 MaterialTextureSource.ProcessedFloatZ,

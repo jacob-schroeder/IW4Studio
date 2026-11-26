@@ -10,6 +10,9 @@ public sealed class Sunflare
 {
     public const int SerializedSize = 0x60;
 
+    // The validity byte is at offset zero, followed by three padding bytes.
+    public static uint EncodeHasValidData(bool enabled) => enabled ? 0x01000000u : 0u;
+
     public uint HasValidDataRaw { get; init; }
     public bool HasValidData => HasValidDataRaw != 0;
     public XPointer<MaterialAsset> SpriteMaterialPointer { get; init; }

@@ -60,12 +60,22 @@ module internal MaterialRules =
             Nullable MaterialSortKey.DecalTop3
         else Nullable()
 
-    /// COD4 sort.template assigns 6 to skybox sun/moon. IW3 sorts lit and
-    /// emissive passes separately; only lit geometry retains the early skybox order.
-    let SkyboxSort(sourceRegion: GfxCameraRegionType, setName: string, sourceName: string,
-                   entries: IReadOnlyList<MaterialStateBitsEntry>) : Nullable<MaterialSortKey> =
+    /// Some PC maps also use the early skybox key for painted world layers.
+    /// Native IW4 terrain blends such as me_asphalt_road1_blend use the first
+    /// lit decal bucket; preserve the layer's early order within that phase.
+    let SortKeySix(sourceRegion: GfxCameraRegionType, setName: string, sourceName: string,
+                   entries: IReadOnlyList<MaterialStateBitsEntry>, decalState: GfxStateBits) : Nullable<MaterialSortKey> =
         let family = if setName.StartsWith("sm2/", StringComparison.Ordinal) then setName.Substring(4) else setName
         match sourceRegion with
+        | GfxCameraRegionType.LitOpaque when not (isNull decalState) ->
+            let rgb = decalState.LoadBits[0]
+            let operation = (rgb &&& GfxStateBitsEncoding.BlendOperationRgbMask) >>> GfxStateBitsEncoding.BlendOperationRgbShift
+            let destination = (rgb &&& GfxStateBitsEncoding.DestinationBlendRgbMask) >>> GfxStateBitsEncoding.DestinationBlendRgbShift
+            let source = (rgb &&& GfxStateBitsEncoding.SourceBlendRgbMask) >>> GfxStateBitsEncoding.SourceBlendRgbShift
+            let alphaBlend = operation = uint32 GfxBlendOperation.Add && destination = uint32 GfxBlend.InverseSourceAlpha &&
+                             (source = uint32 GfxBlend.One || source = uint32 GfxBlend.SourceAlpha)
+            let writesDepth = (decalState.LoadBits[1] &&& uint32 GfxStateBits1Flags.DepthWrite) <> 0u
+            Nullable (if alphaBlend && not writesDepth then MaterialSortKey.DecalBottom1 else MaterialSortKey.Skybox)
         | GfxCameraRegionType.LitOpaque -> Nullable MaterialSortKey.Skybox
         | GfxCameraRegionType.Emissive ->
             match family with

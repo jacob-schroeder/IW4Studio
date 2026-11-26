@@ -7,21 +7,23 @@ namespace MapConverter.Game.IW3.PC.World;
 internal static partial class Iw3PcWorldGraphics
 {
     internal static void AddLumps(Iw3PcZone zone, int gfx, int com, ushort[] materialIndices,
+        int[] modelIndexBySource,
         List<(D3dbspLumpType Type, byte[] Data)> lumps, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(zone);
         ArgumentNullException.ThrowIfNull(materialIndices);
+        ArgumentNullException.ThrowIfNull(modelIndexBySource);
         ArgumentNullException.ThrowIfNull(lumps);
         var graphics = new Graphics(zone, gfx, com, token);
         Lighting lighting = graphics.EncodeLighting();
         Render render = graphics.EncodeRender(materialIndices, lighting.ProbeCount);
+        (byte[] cells, byte[] spatial) = graphics.EncodeSpatial(modelIndexBySource, render, lighting.ProbeCount);
         var pending = new List<(D3dbspLumpType Type, byte[] Data)>
         {
             (D3dbspLumpType.LightGridEntries, lighting.GridEntries),
             (D3dbspLumpType.LightGridColors, lighting.GridColors),
-            (D3dbspLumpType.UnlayeredAabbTrees, EncodeAabbTree(materialIndices.Length)),
-            (D3dbspLumpType.Cells, EncodeCell(render, lighting.ProbeCount)),
-            (D3dbspLumpType.Visibility, EncodeVisibility()),
+            (D3dbspLumpType.Cells, cells),
+            (D3dbspLumpType.RenderSpatial, spatial),
             (D3dbspLumpType.ReflectionProbes, lighting.Probes),
             (D3dbspLumpType.PrimaryLights, graphics.EncodePrimaryLights()),
             (D3dbspLumpType.LightGridHeader, lighting.GridHeader),
@@ -37,37 +39,6 @@ internal static partial class Iw3PcWorldGraphics
             pending.Add((D3dbspLumpType.LightRegionAxes, lighting.RegionAxes));
         }
         lumps.AddRange(pending);
-    }
-
-    private static byte[] EncodeAabbTree(int surfaceCount)
-    {
-        var data = new byte[12];
-        W32(data, 4, surfaceCount);
-        return data;
-    }
-
-    private static byte[] EncodeVisibility()
-    {
-        byte[] data = Enumerable.Repeat((byte)0xff, 16).ToArray();
-        W32(data, 0, 1);
-        W32(data, 4, 8);
-        return data;
-    }
-
-    private static byte[] EncodeCell(Render render, int probeCount)
-    {
-        if (probeCount is < 1 or > 68)
-            throw new InvalidDataException("Canonical render cell cannot hold the reflection probes.");
-        var data = new byte[112];
-        for (int axis = 0; axis < 3; axis++)
-        {
-            WF(data, axis * 4, render.Mins[axis]);
-            WF(data, 12 + axis * 4, render.Maxs[axis]);
-        }
-        data[44] = (byte)(probeCount == 1 ? 1 : probeCount - 1);
-        for (int probe = 1; probe < probeCount; probe++)
-            data[44 + probe] = (byte)probe;
-        return data;
     }
 
     private sealed partial class Graphics
@@ -189,8 +160,6 @@ internal static partial class Iw3PcWorldGraphics
             byte[] indexBytes = zone.Bytes(indices, checked(indexCount * 2)).ToArray();
             var drawVerts = new byte[checked(vertexCount * 68)];
             var triangles = new byte[checked(surfaceCount * 24)];
-            float[] mins = [float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity];
-            float[] maxs = [float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity];
             for (int index = 0; index < vertexCount; index++)
             {
                 token.ThrowIfCancellationRequested();
@@ -201,8 +170,6 @@ internal static partial class Iw3PcWorldGraphics
                 {
                     float position = F32(source + axis * 4);
                     Finite(position, "render position");
-                    mins[axis] = Math.Min(mins[axis], position);
-                    maxs[axis] = Math.Max(maxs[axis], position);
                     WF(drawVerts, row + axis * 4, position);
                     WF(drawVerts, row + 12 + axis * 4, normal[axis]);
                     WF(drawVerts, row + 44 + axis * 4, tangent[axis]);
@@ -248,12 +215,7 @@ internal static partial class Iw3PcWorldGraphics
                     if (BinaryPrimitives.ReadUInt16LittleEndian(indexBytes.AsSpan((baseIndex + local) * 2)) >= localVerts)
                         throw new InvalidDataException($"IW3 PC render surface {index} has a nonlocal index.");
             }
-            for (int axis = 0; axis < 3; axis++)
-            {
-                mins[axis] -= 1f;
-                maxs[axis] += 1f;
-            }
-            return new Render(triangles, drawVerts, indexBytes, mins, maxs);
+            return new Render(triangles, drawVerts, indexBytes);
         }
 
         private float[] UnitVector(int source)
@@ -265,7 +227,7 @@ internal static partial class Iw3PcWorldGraphics
         }
     }
 
-    private sealed record Render(byte[] Triangles, byte[] Vertices, byte[] Indices, float[] Mins, float[] Maxs);
+    private sealed record Render(byte[] Triangles, byte[] Vertices, byte[] Indices);
     private static void W16(byte[] data, int offset, int value) =>
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(offset), checked((ushort)value));
     private static void W32(byte[] data, int offset, int value) =>

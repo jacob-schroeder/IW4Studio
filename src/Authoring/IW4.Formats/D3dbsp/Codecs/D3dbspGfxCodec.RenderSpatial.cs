@@ -14,30 +14,38 @@ internal static partial class D3dbspGfxCodec
     public static (byte[] Cells, byte[] RenderSpatial) EncodeRenderSpatial(GfxWorldAsset world)
     {
         ArgumentNullException.ThrowIfNull(world);
-        int cellCount = world.DpvsPlanes.CellCount;
-        if (cellCount <= 1 || cellCount >= ushort.MaxValue ||
-            world.Cells.Count != cellCount || world.CellTrees.Count != cellCount)
-            throw new InvalidDataException("Multi-cell render spatial rows must agree with DpvsPlanes.CellCount.");
         if (world.Dpvs.SModelCount != 0)
             throw new NotSupportedException("Multi-cell d3dbsp encoding currently supports no authored static models.");
         int staticCount = checked((int)world.Dpvs.StaticSurfaceCount);
         if (world.Models[0].StartSurfIndex != 0 || world.Models[0].SurfaceCount != staticCount ||
-            world.Dpvs.SortedSurfIndex.Count != staticCount ||
-            world.Dpvs.SortedSurfIndex.Any(index => index >= staticCount) ||
-            world.Dpvs.SortedSurfIndex.Distinct().Count() != world.Dpvs.SortedSurfIndex.Count)
-            throw new InvalidDataException("Multi-cell d3dbsp encoding requires a complete permutation of world surface indices.");
-        if (world.DpvsPlanes.Nodes.Count == 0)
-            throw new InvalidDataException("The multi-cell render camera partition has no root node.");
-        ValidateRenderPartition(world.DpvsPlanes.Nodes.ToArray(), cellCount, world.DpvsPlanes.Planes.Count);
+            world.Dpvs.SortedSurfIndex.Count != staticCount || world.Dpvs.SortedSurfIndex.Any(index => index >= staticCount))
+            throw new InvalidDataException("Render spatial surface slots must address the world-model surface prefix.");
+        var authoredIndices = world.Dpvs.AuthoredSurfaceIndexByRuntimeSlot;
+        IReadOnlyList<ushort> sortedSurfaces = authoredIndices.Count == 0 ? world.Dpvs.SortedSurfIndex :
+            world.Dpvs.SortedSurfIndex.Select(surface => checked((ushort)authoredIndices[surface])).ToArray();
+        return EncodeRenderSpatial(world.DpvsPlanes, world.Cells, world.CellTrees, sortedSurfaces, 0);
+    }
+
+    internal static (byte[] Cells, byte[] RenderSpatial) EncodeRenderSpatial(
+        GfxWorldDpvsPlanes partition, IReadOnlyList<GfxCell> cells, IReadOnlyList<GfxCellTree> cellTrees,
+        IReadOnlyList<ushort> sortedSurfaces, int authoredModelCount)
+    {
+        int cellCount = partition.CellCount;
+        if (cellCount < 1 || cellCount >= ushort.MaxValue || cells.Count != cellCount || cellTrees.Count != cellCount)
+            throw new InvalidDataException("Render spatial rows must agree with DpvsPlanes.CellCount.");
+        if (sortedSurfaces.Any(index => index >= sortedSurfaces.Count) ||
+            sortedSurfaces.Distinct().Count() != sortedSurfaces.Count)
+            throw new InvalidDataException("Render spatial slots must contain a permutation of world surface indices.");
+        ValidateRenderPartition(partition.Nodes.ToArray(), cellCount, partition.Planes.Count);
 
         var cellData = new byte[checked(cellCount * DiskCellSize)];
         using var spatialStream = new MemoryStream();
         using var writer = new BinaryWriter(spatialStream);
         writer.Write("IW4PS3S\u0001"u8);
-        writer.Write(checked((uint)world.DpvsPlanes.Planes.Count));
-        writer.Write(checked((uint)world.DpvsPlanes.Nodes.Count));
-        writer.Write(0u); // Authored static-model prefix; MapModelCompiler appends models later.
-        foreach (DpvsPlane plane in world.DpvsPlanes.Planes)
+        writer.Write(checked((uint)partition.Planes.Count));
+        writer.Write(checked((uint)partition.Nodes.Count));
+        writer.Write(checked((uint)authoredModelCount));
+        foreach (DpvsPlane plane in partition.Planes)
         {
             WriteFinite(writer, plane.NormalX, "Render plane normal");
             WriteFinite(writer, plane.NormalY, "Render plane normal");
@@ -47,15 +55,14 @@ internal static partial class D3dbspGfxCodec
             writer.Write(plane.SignBits);
             writer.Write(plane.Pad12);
         }
-        foreach (ushort node in world.DpvsPlanes.Nodes)
+        foreach (ushort node in partition.Nodes)
             writer.Write(node);
-        var authoredIndices = world.Dpvs.AuthoredSurfaceIndexByRuntimeSlot;
-        foreach (ushort surface in world.Dpvs.SortedSurfIndex)
-            writer.Write(authoredIndices.Count == 0 ? surface : checked((ushort)authoredIndices[surface]));
+        foreach (ushort surface in sortedSurfaces)
+            writer.Write(surface);
 
         for (int index = 0; index < cellCount; index++)
         {
-            GfxCell cell = world.Cells[index] ?? throw new InvalidDataException($"Render cell {index} is null.");
+            GfxCell cell = cells[index] ?? throw new InvalidDataException($"Render cell {index} is null.");
             if (cell.PortalCount != cell.Portals.Count || cell.ReflectionProbeCount != cell.ReflectionProbes.Count ||
                 cell.Pad21.Count is not (0 or 3) || cell.Pad21.Any(value => value != 0) || cell.ReflectionProbes.Count > DiskCellSize - 45)
                 throw new InvalidDataException($"Render cell {index} has inconsistent or unsupported metadata.");
@@ -68,30 +75,78 @@ internal static partial class D3dbspGfxCodec
             for (int probe = 0; probe < cell.ReflectionProbes.Count; probe++)
                 row[45 + probe] = cell.ReflectionProbes[probe];
 
-            IReadOnlyList<GfxAabbTree> trees = world.CellTrees[index].AabbTrees;
-            if (trees.Count != 1)
-                throw new NotSupportedException($"Render cell {index} must contain exactly one terminal AABB tree.");
-            GfxAabbTree tree = trees[0];
-            if (tree.ChildCount != 0 || tree.ChildrenOffset != 0 || tree.SModelIndexCount != 0 || tree.SModelIndexes.Count != 0)
-                throw new NotSupportedException($"Render cell {index} AABB must be a terminal tree with no static models.");
-            if (tree.SurfaceCount > GfxAabbTree.MaxIndexCount)
-                throw new InvalidDataException($"Render cell {index} exceeds the PS3 AABB surface-list limit.");
-            ValidateSlice(tree.StartSurfIndex, tree.SurfaceCount, world.Dpvs.SortedSurfIndex.Count,
-                $"Render cell {index} AABB surface");
-            writer.Write(1u); // tree count
+            IReadOnlyList<GfxAabbTree> trees = cellTrees[index].AabbTrees;
+            writer.Write(checked((uint)trees.Count));
             writer.Write(checked((uint)cell.Portals.Count));
-            writer.Write(0u); // root model-index count
-            WriteBounds(writer, tree.Bounds, $"Render cell {index} AABB");
-            writer.Write((ushort)0);
-            writer.Write(tree.SurfaceCount);
-            writer.Write(tree.StartSurfIndex);
-            writer.Write((ushort)0);
-            writer.Write(0u); // model-list offset
-            writer.Write(0u); // child offset
+            WriteSpatialCellTrees(writer, trees, index, sortedSurfaces.Count, authoredModelCount);
             foreach (GfxPortal portal in cell.Portals)
                 WriteSpatialPortal(writer, portal, index, cellCount);
         }
         return (cellData, spatialStream.ToArray());
+    }
+
+    private static void WriteSpatialCellTrees(BinaryWriter writer, IReadOnlyList<GfxAabbTree> trees,
+        int cell, int surfaceCount, int authoredModelCount)
+    {
+        if (trees.Count == 0)
+            throw new InvalidDataException($"Render cell {cell} has no root AABB.");
+        // IW4 rewrites static-model IDs in the root list during post-load sorting.
+        // Give each subtree a contiguous slice of that storage, even when the donor
+        // stores its node lists independently and in a different order.
+        var rootModels = new ushort[trees[0].SModelIndexCount];
+        var modelStarts = new int[trees.Count];
+        Array.Fill(modelStarts, -1);
+        modelStarts[0] = 0;
+        for (int index = 0; index < trees.Count; index++)
+        {
+            GfxAabbTree tree = trees[index];
+            string path = $"Render cell {cell} AABB {index}";
+            if (modelStarts[index] < 0 || tree.SModelIndexes.Count != tree.SModelIndexCount ||
+                tree.SModelIndexCount > GfxAabbTree.MaxIndexCount || tree.SurfaceCount > GfxAabbTree.MaxIndexCount)
+                throw new InvalidDataException($"{path} is unreachable or has invalid index counts.");
+            ValidateSlice(tree.StartSurfIndex, tree.SurfaceCount, surfaceCount, $"{path} surfaces");
+            if (tree.ChildrenOffset % GfxAabbTree.SerializedSize != 0 ||
+                (tree.ChildCount == 0 ? tree.ChildrenOffset != 0 : tree.ChildrenOffset <= 0))
+                throw new InvalidDataException($"{path} has an invalid child offset.");
+            int write = modelStarts[index];
+            var remaining = tree.SModelIndexes.ToHashSet();
+            if (remaining.Count != tree.SModelIndexCount || remaining.Any(id => id >= authoredModelCount))
+                throw new InvalidDataException($"{path} contains duplicate or out-of-range static model IDs.");
+            if (tree.ChildCount != 0)
+            {
+                int first = checked(index + tree.ChildrenOffset / GfxAabbTree.SerializedSize);
+                ValidateSlice(first, tree.ChildCount, trees.Count, $"{path} children");
+                for (int child = first; child < first + tree.ChildCount; child++)
+                {
+                    if (modelStarts[child] >= 0)
+                        throw new InvalidDataException($"{path} shares child {child} with another AABB.");
+                    modelStarts[child] = write;
+                    foreach (ushort model in trees[child].SModelIndexes)
+                    {
+                        if (!remaining.Remove(model))
+                            throw new InvalidDataException($"{path} cannot assign static model {model} to a unique child slice.");
+                        write++;
+                    }
+                }
+            }
+            foreach (ushort model in tree.SModelIndexes)
+                if (remaining.Contains(model))
+                    rootModels[write++] = model;
+        }
+        writer.Write(checked((uint)rootModels.Length));
+        foreach (ushort model in rootModels)
+            writer.Write(model);
+        for (int index = 0; index < trees.Count; index++)
+        {
+            GfxAabbTree tree = trees[index];
+            WriteBounds(writer, tree.Bounds, $"Render cell {cell} AABB {index}");
+            writer.Write(tree.ChildCount);
+            writer.Write(tree.SurfaceCount);
+            writer.Write(tree.StartSurfIndex);
+            writer.Write(tree.SModelIndexCount);
+            writer.Write(checked((uint)modelStarts[index]));
+            writer.Write(checked((uint)(tree.ChildrenOffset / GfxAabbTree.SerializedSize)));
+        }
     }
 
     private static void WriteSpatialPortal(BinaryWriter writer, GfxPortal portal, int cellIndex, int cellCount)

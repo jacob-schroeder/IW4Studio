@@ -2,8 +2,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:converter="clr-namespace:MapConverter.CommandLine;assembly=MapConverter"
         x:Class="IW4.Studio.Desktop.Views.MapConverterWindow"
-        Title="Map Converter" Width="700" Height="670" MinWidth="500" MinHeight="410"
-        WindowStartupLocation="CenterOwner" Background="{DynamicResource StudioBackgroundBrush}">
+        Title="IW4 Studio / Map Converter" Width="700" Height="670" MinWidth="500" MinHeight="410"
+        WindowDecorationsTheme="{StaticResource StudioWindowDecorations}"
+        ExtendClientAreaToDecorationsHint="True" ExtendClientAreaTitleBarHeightHint="44"
+        WindowStartupLocation="CenterOwner" Background="{DynamicResource StudioWindowGradientBrush}">
   <Window.Styles>
     <Style Selector="TextBlock.fieldLabel">
       <Setter Property="FontWeight" Value="SemiBold" />
@@ -12,8 +14,18 @@
       <Setter Property="Margin" Value="8,0,0,0" />
     </Style>
   </Window.Styles>
-  <Grid Margin="24" RowDefinitions="*,Auto,Auto" RowSpacing="14">
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+  <Grid Margin="{Binding $parent[Window].OffScreenMargin}" RowDefinitions="44,*,Auto,Auto" RowSpacing="14">
+    <Border Classes="studioTitleBar" Background="Transparent" WindowDecorationProperties.ElementRole="TitleBar">
+      <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <Border Width="26" Height="26" CornerRadius="5" ClipToBounds="True">
+          <Image Source="/Resources/logo_simple.png" Stretch="UniformToFill" />
+        </Border>
+        <TextBlock Text="IW4 Studio" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <TextBlock Text="/" Opacity="0.6" VerticalAlignment="Center" />
+        <TextBlock Text="Map Converter" FontSize="13" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+    <ScrollViewer Grid.Row="1" Margin="24,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <StackPanel Name="Inputs" Spacing="14">
         <Grid ColumnDefinitions="2*,*,*" ColumnSpacing="12">
           <StackPanel Spacing="5">
@@ -95,10 +107,10 @@
       </StackPanel>
     </ScrollViewer>
 
-    <TextBox Grid.Row="1" Name="Report" IsVisible="False" IsReadOnly="True" AcceptsReturn="True"
+    <TextBox Grid.Row="2" Margin="24,0" Name="Report" IsVisible="False" IsReadOnly="True" AcceptsReturn="True"
              MinHeight="76" MaxHeight="138" TextWrapping="Wrap" ScrollViewer.VerticalScrollBarVisibility="Auto"
              AutomationProperties.Name="Conversion details" />
-    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+    <Grid Grid.Row="3" Margin="24,0,24,24" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
       <StackPanel VerticalAlignment="Center" Spacing="5">
         <TextBlock Name="Status" TextWrapping="Wrap" />
         <ProgressBar Name="Progress" Height="3" IsVisible="False" />

@@ -44,6 +44,6 @@
            Text="Cannot build the shader library for $(ShaderRid) on $(NETCoreSdkPortableRuntimeIdentifier). Use a build host for the target OS (and target architecture on Linux)." />
     <MakeDir Directories="$(ShaderObj)" />
     <Exec Command="&quot;$(ShaderCC)&quot; -std=gnu99 -O2 -DNDEBUG -DDECLSPEC= $(ShaderFlags) $(ShaderProfiles) -I Native/ThirdParty/MojoShader -I Native/ThirdParty/MojoShader/profiles -c &quot;%(ShaderC.Identity)&quot; -o &quot;$(ShaderObj)/%(ShaderC.Filename).o&quot;" />
-    <Exec Command="&quot;$(ShaderCXX)&quot; -std=c++11 -O2 -DNDEBUG $(ShaderFlags) -I Native/ThirdParty/CgComp/include $(ShaderLink) @(ShaderCpp->'&quot;%(Identity)&quot;', ' ') @(ShaderC->'&quot;$(ShaderObj)/%(Filename).o&quot;', ' ') -o &quot;$(ShaderObj)/$(ShaderLibrary)&quot;" />
+    <Exec Command="&quot;$(ShaderCXX)&quot; -std=c++14 -O2 -DNDEBUG $(ShaderFlags) -I Native/ThirdParty/CgComp/include $(ShaderLink) @(ShaderCpp->'&quot;%(Identity)&quot;', ' ') @(ShaderC->'&quot;$(ShaderObj)/%(Filename).o&quot;', ' ') -o &quot;$(ShaderObj)/$(ShaderLibrary)&quot;" />
   </Target>
 </Project>
