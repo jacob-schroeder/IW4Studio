@@ -133,7 +133,7 @@ internal static class GscDocumentIndexer
                     definitionBySymbol,
                     cancellationToken)
                 .ToArray(),
-            ExtractFunctionReferences(snapshot, model.SyntaxTree.Root, developer: false, nativeKind: null).ToArray());
+            ExtractFunctionReferences(snapshot, model.SyntaxTree).ToArray());
 
         GscSymbolDefinition AddDefinition(
             GscSymbol symbol,
@@ -295,36 +295,32 @@ internal static class GscDocumentIndexer
 
     private static IEnumerable<GscPendingFunctionReference> ExtractFunctionReferences(
         GscDocumentSnapshot snapshot,
-        GscSyntaxNode root,
-        bool developer,
-        Iw4GscBuiltInKind? nativeKind)
+        GscSyntaxTree tree)
     {
-        if (root.Production == GscProduction.TopLevelItemListAppend)
+        bool developer = false;
+        var items = GscSemanticSyntax.Node(tree.Root.Children[2]);
+        foreach (GscSyntaxNode item in GscSemanticSyntax.EnumerateTopLevelItems(items))
         {
-            // Top-level developer sections affect subsequent siblings, so process
-            // each item to completion before advancing the section state.
-            foreach (GscSyntaxNode item in GscSemanticSyntax.EnumerateTopLevelItems(root))
+            if (item.Production == GscProduction.DeveloperSectionOpen)
+                developer = true;
+            else if (item.Production == GscProduction.DeveloperSectionClose)
+                developer = false;
+            else
             {
-                if (item.Production == GscProduction.DeveloperSectionOpen) developer = true;
-                else if (item.Production == GscProduction.DeveloperSectionClose) developer = false;
-                else foreach (GscPendingFunctionReference reference in Traverse(item, developer, null))
+                foreach (GscPendingFunctionReference reference in Traverse(item, developer))
                     yield return reference;
             }
-            yield break;
         }
-        foreach (GscPendingFunctionReference reference in Traverse(root, developer, nativeKind))
-            yield return reference;
 
         IEnumerable<GscPendingFunctionReference> Traverse(
             GscSyntaxNode start,
-            bool initialDeveloper,
-            Iw4GscBuiltInKind? initialNativeKind)
+            bool initialDeveloper)
         {
             var pending = new Stack<(
                 GscSyntaxNode Node,
                 bool Developer,
                 Iw4GscBuiltInKind? NativeKind)>();
-            pending.Push((start, initialDeveloper, initialNativeKind));
+            pending.Push((start, initialDeveloper, null));
 
             while (pending.Count != 0)
             {
@@ -388,15 +384,21 @@ internal static class GscDocumentIndexer
                     }
 
                     string sourceName = GscSemanticSyntax.Text(snapshot.Source, nameToken);
+                    IReadOnlyList<Iw4GscBuiltInDefinition> builtIns = [];
+                    if (target is null && nodeNativeKind is { } expectedKind)
+                    {
+                        builtIns = Iw4GscBuiltInCatalog.Multiplayer.FindCallablesByName(sourceName);
+                        if (kind == GscWorkspaceReferenceKind.Call && builtIns.Any(definition => definition.Kind != expectedKind))
+                            builtIns = Array.AsReadOnly(builtIns
+                                .Where(definition => definition.Kind == expectedKind).ToArray());
+                    }
                     yield return new GscPendingFunctionReference(
                         new GscSourceLocation(snapshot.Path, nameToken.Token.Span),
                         GscSemanticSyntax.IdentifierText(snapshot.Source, nameToken),
                         sourceName,
                         kind,
                         target,
-                        target is null && nodeNativeKind is { } expectedKind &&
-                            Iw4GscBuiltInCatalog.Multiplayer.FindCallablesByName(sourceName)
-                                .Any(definition => kind == GscWorkspaceReferenceKind.FunctionReference || definition.Kind == expectedKind),
+                        builtIns,
                         nodeDeveloper);
                 }
 

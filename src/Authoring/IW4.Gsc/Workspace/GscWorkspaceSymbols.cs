@@ -1,4 +1,5 @@
 using IW4.Gsc.Analysis;
+using IW4.Gsc.BuiltIns;
 using IW4.Gsc.Semantics;
 using IW4.Gsc.Syntax;
 
@@ -85,7 +86,8 @@ public sealed class GscSymbolReference
         string sourceName,
         GscWorkspaceReferenceKind kind,
         IEnumerable<GscSymbolId> targets,
-        GscScriptPath? qualifiedTargetPath = null)
+        GscScriptPath? qualifiedTargetPath = null,
+        IReadOnlyList<Iw4GscBuiltInDefinition>? builtInTargets = null)
     {
         Location = location ?? throw new ArgumentNullException(nameof(location));
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -96,6 +98,7 @@ public sealed class GscSymbolReference
         Kind = kind;
         _targets = Array.AsReadOnly(targets.Distinct().ToArray());
         QualifiedTargetPath = qualifiedTargetPath;
+        BuiltInTargets = builtInTargets ?? [];
     }
 
     public GscSourceLocation Location { get; }
@@ -108,6 +111,8 @@ public sealed class GscSymbolReference
     public GscWorkspaceReferenceKind Kind { get; }
 
     public IReadOnlyList<GscSymbolId> Targets => _targets;
+
+    public IReadOnlyList<Iw4GscBuiltInDefinition> BuiltInTargets { get; }
 
     /// <summary>
     /// The script named before <c>::</c>, or null for a local/native-style

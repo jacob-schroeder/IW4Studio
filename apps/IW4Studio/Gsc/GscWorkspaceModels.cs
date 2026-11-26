@@ -1,5 +1,4 @@
 using IW4.Game.Zone;
-using IW4.Gsc.Analysis;
 using IW4.Gsc.Syntax;
 using IW4.Gsc.Workspace;
 using IW4.Runtime.Assets;
@@ -134,13 +133,6 @@ public sealed class GscWorkspaceSnapshot
     /// applied authoring drafts.
     /// </summary>
     public GscWorkspaceIndex Index { get; }
-
-    public GscAnalysisResult GetAnalysis(string assetName)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(assetName);
-        return Index.GetAnalysis(GscScriptPath.FromAssetName(
-            XAssetStableIdentity.GetLookupSpelling(assetName)));
-    }
 
     internal GscWorkspaceSnapshot WithDocument(
         GscDocumentSnapshot document,

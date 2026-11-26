@@ -30,7 +30,7 @@ internal static class GscWorkspaceResolver
             cancellationToken.ThrowIfCancellationRequested();
             var diagnostics = source.Analysis.Diagnostics.ToList();
             var references = new List<GscSymbolReference>(source.References);
-            var visible = source.Functions.Where(function => !function.DeveloperOnly).GroupBy(function => function.Name)
+            var visible = source.Functions.GroupBy(function => function.Name)
                 .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
             bool unavailableInclude = false;
             var includes = new HashSet<GscScriptPath>();
@@ -48,14 +48,15 @@ internal static class GscWorkspaceResolver
                 // TU1.11 imports a file's own function positions. Imported positions
                 // live in a temporary link table and are not re-exported. Defines
                 // are cleared at 0x20AC3C before dependencies are loaded.
-                foreach (GscFunctionDefinition function in imported.Functions.Where(function => !function.DeveloperOnly))
+                foreach (GscFunctionDefinition function in imported.Functions)
                 {
                     if (!visible.TryGetValue(function.Name, out List<GscFunctionDefinition>? definitions))
                         visible.Add(function.Name, [function]);
                     else
                     {
-                        Error(GscDiagnosticCodes.FunctionAlreadyDefined, include.Location.Span,
-                            $"function '{function.Name}' already defined");
+                        if (!function.DeveloperOnly && definitions.Any(existing => !existing.DeveloperOnly))
+                            Error(GscDiagnosticCodes.FunctionAlreadyDefined, include.Location.Span,
+                                $"function '{function.Name}' already defined");
                         definitions.Add(function);
                     }
                 }
@@ -66,31 +67,34 @@ internal static class GscWorkspaceResolver
                 cancellationToken.ThrowIfCancellationRequested();
                 GscFunctionDefinition[] targets = [];
                 bool available = true;
-                if (!pending.Native && !pending.Developer)
+                if (pending.BuiltInTargets.Count == 0)
                 {
+                    IEnumerable<GscFunctionDefinition> candidates = [];
                     if (pending.QualifiedTarget is { } path)
                     {
                         if (sources.TryGetValue(path, out GscWorkspaceSourceDocument? target) &&
                             target.Analysis.SemanticModel is not null)
-                            targets = target.Functions.Where(function => function.Name == pending.Name && !function.DeveloperOnly).ToArray();
+                            candidates = target.Functions.Where(function => function.Name == pending.Name);
                         else
                         {
                             available = false;
-                            if (target is null)
+                            if (!pending.Developer && target is null)
                                 Incomplete(pending.Location.Span, $"Cannot validate reference to '{path}': its source is not loaded.");
                         }
                     }
                     else
                     {
-                        targets = visible.TryGetValue(pending.Name, out List<GscFunctionDefinition>? definitions)
-                            ? definitions.ToArray() : [];
+                        if (visible.TryGetValue(pending.Name, out List<GscFunctionDefinition>? definitions))
+                            candidates = definitions;
                         available = !unavailableInclude;
                     }
-                    if (targets.Length == 0 && available)
-                        Error(GscDiagnosticCodes.UnknownFunction, pending.Location.Span, "unknown function");
+                    targets = candidates.Where(function => pending.Developer || !function.DeveloperOnly).ToArray();
+                    if (!pending.Developer && targets.Length == 0 && available)
+                        Error(GscDiagnosticCodes.UnknownFunction, pending.Location.Span,
+                            $"unknown function '{pending.SourceName}'");
                 }
                 references.Add(new GscSymbolReference(pending.Location, pending.Name, pending.SourceName,
-                    pending.Kind, targets.Select(target => target.Symbol.Id), pending.QualifiedTarget));
+                    pending.Kind, targets.Select(target => target.Symbol.Id), pending.QualifiedTarget, pending.BuiltInTargets));
             }
 
             foreach (var reference in animationReferences[source.Snapshot.Path])
@@ -114,7 +118,6 @@ internal static class GscWorkspaceResolver
                     Error(GscDiagnosticCodes.AnimationTreeError, reference.Span,
                         $"animation '{name}' not defined in anim tree '{reference.Tree}'");
             }
-            CheckPrecache(source, 0, new HashSet<GscScriptPath>());
             var analysis = new GscAnalysisResult(source.Analysis.Tokens,
                 diagnostics.DistinctBy(diagnostic => (diagnostic.Code, diagnostic.Span, diagnostic.Message))
                     .OrderBy(diagnostic => diagnostic.Span.Start).ThenBy(diagnostic => diagnostic.Code, StringComparer.Ordinal),
@@ -128,80 +131,8 @@ internal static class GscWorkspaceResolver
             void Add(string code, GscTextSpan span, string message, GscDiagnosticSeverity severity) =>
                 diagnostics.Add(new GscDiagnostic(code, GscDiagnosticStage.Semantic, severity,
                     span, source.Snapshot.Source.GetLinePositionSpan(span), message));
-
-            // Precache entries are reserved for every include/far reference, not
-            // unique file names; the reservation persists along recursive loads.
-            void CheckPrecache(GscWorkspaceSourceDocument document, int reserved, HashSet<GscScriptPath> loaded)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (!loaded.Add(document.Snapshot.Path)) return;
-                var dependencies = document.Includes.Select(include => (Path: (GscScriptPath?)include.TargetPath, include.Location.Span, Developer: false))
-                    .Concat(document.FunctionReferences
-                        .Where(reference => reference.QualifiedTarget is not null)
-                        .Select(reference => (Path: reference.QualifiedTarget, reference.Location.Span, reference.Developer))).ToArray();
-                if (reserved + dependencies.Length > 1024)
-                {
-                    GscTextSpan span = document == source && dependencies.Length != 0
-                        ? dependencies[Math.Clamp(1024 - reserved, 0, dependencies.Length - 1)].Span
-                        : new GscTextSpan(0, Math.Min(1, source.Snapshot.Source.Length));
-                    Error(GscDiagnosticCodes.CompilerCapacityExceeded, span, "MAX_PRECACHE_ENTRIES exceeded");
-                    return;
-                }
-                int activeCount = dependencies.Count(dependency => !dependency.Developer);
-                foreach (var dependency in dependencies)
-                    if (!dependency.Developer && dependency.Path is { } path &&
-                        sources.TryGetValue(path, out GscWorkspaceSourceDocument? child))
-                        CheckPrecache(child, reserved + activeCount, loaded);
-            }
         }
-        // A dependency must compile too. Keep its own source locations in its
-        // document and attach a summary to the caller's include/reference.
-        var resolved = new Dictionary<GscScriptPath, GscIndexedDocument>(result);
-        foreach (GscWorkspaceSourceDocument source in sources.Values)
-        {
-            GscIndexedDocument document = result[source.Snapshot.Path];
-            var diagnostics = document.Analysis.Diagnostics.ToList();
-            foreach (var dependency in Dependencies(source).Distinct())
-            {
-                var visited = new HashSet<GscScriptPath> { source.Snapshot.Path };
-                var pending = new Stack<GscScriptPath>();
-                pending.Push(dependency.Path);
-                (GscScriptPath Path, GscDiagnostic Diagnostic)? finding = null;
-                while (pending.TryPop(out GscScriptPath? path))
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (!visited.Add(path) || !result.TryGetValue(path, out GscIndexedDocument? target)) continue;
-                    GscDiagnostic? error = target.Analysis.Diagnostics.FirstOrDefault(diagnostic =>
-                        diagnostic.Severity == GscDiagnosticSeverity.Error);
-                    if (error is not null) { finding = (path, error); break; }
-                    GscDiagnostic? incomplete = target.Analysis.Diagnostics.FirstOrDefault(diagnostic =>
-                        diagnostic.Code == GscDiagnosticCodes.ValidationIncomplete);
-                    if (incomplete is not null) finding ??= (path, incomplete);
-                    foreach (var next in Dependencies(sources[path])) pending.Push(next.Path);
-                }
-                if (finding is not { } issue) continue;
-                bool isError = issue.Diagnostic.Severity == GscDiagnosticSeverity.Error;
-                diagnostics.Add(new GscDiagnostic(
-                    isError ? GscDiagnosticCodes.DependencyCompilationError : GscDiagnosticCodes.ValidationIncomplete,
-                    GscDiagnosticStage.Semantic, issue.Diagnostic.Severity, dependency.Span,
-                    source.Snapshot.Source.GetLinePositionSpan(dependency.Span),
-                    isError ? $"Script '{issue.Path}' has a compilation error: {issue.Diagnostic.Message}"
-                        : $"Validation of script '{issue.Path}' is incomplete: {issue.Diagnostic.Message}"));
-            }
-            if (diagnostics.Count == document.Analysis.Diagnostics.Count) continue;
-            resolved[source.Snapshot.Path] = new GscIndexedDocument(source.Snapshot,
-                new GscAnalysisResult(document.Analysis.Tokens,
-                    diagnostics.OrderBy(diagnostic => diagnostic.Span.Start), document.Analysis.SemanticModel),
-                document.Definitions, document.References, document.Includes, document.Functions, document.ObservedFields);
-        }
-        return resolved;
-    }
-
-    private static IEnumerable<(GscScriptPath Path, GscTextSpan Span)> Dependencies(GscWorkspaceSourceDocument source)
-    {
-        foreach (GscIncludeReference include in source.Includes) yield return (include.TargetPath, include.Location.Span);
-        foreach (GscPendingFunctionReference reference in source.FunctionReferences)
-            if (!reference.Developer && reference.QualifiedTarget is { } path) yield return (path, reference.Location.Span);
+        return result;
     }
 
     internal static IEnumerable<(string Tree, string? Name, GscTextSpan Span)> FindAnimationReferences(

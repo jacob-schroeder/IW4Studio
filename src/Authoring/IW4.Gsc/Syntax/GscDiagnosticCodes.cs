@@ -36,6 +36,5 @@ public static class GscDiagnosticCodes
     public const string CompilerCapacityExceeded = "GSC2027";
     public const string UnknownFunction = "GSC2028";
     public const string AnimationTreeError = "GSC2029";
-    public const string DependencyCompilationError = "GSC2030";
     public const string ValidationIncomplete = "GSC3001";
 }

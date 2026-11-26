@@ -1025,16 +1025,12 @@ public class RawFileEditorViewModel
 
             IsAnalyzingGsc = true;
             GscAnalysisStatusMessage = activeStatusMessage;
-            GscAnalysisResult result = await Task.Run(
+            IReadOnlyList<EditorSourceDiagnostic> diagnostics = await Task.Run(
                 () => AnalyzeAuthoritativeGscSnapshot(operation, cancellationToken),
                 cancellationToken);
             if (!OwnsGscAnalysis(operation))
                 return null;
 
-            IReadOnlyList<EditorSourceDiagnostic> diagnostics =
-                Array.AsReadOnly(result.Diagnostics
-                    .Select(ToEditorDiagnostic)
-                    .ToArray());
             var outcome = new GscAnalysisOutcome(diagnostics, FailureMessage: null);
             SourceDiagnostics = diagnostics;
             GscAnalysisStatusMessage = CreateGscAnalysisStatusMessage(outcome);
@@ -1102,20 +1098,6 @@ public class RawFileEditorViewModel
         return true;
     }
 
-    private static EditorSourceDiagnostic ToEditorDiagnostic(
-        GscDiagnostic diagnostic) =>
-        new(
-            diagnostic.Code,
-            diagnostic.Severity == GscDiagnosticSeverity.Error
-                ? EditorSourceDiagnosticSeverity.Error
-                : EditorSourceDiagnosticSeverity.Warning,
-            diagnostic.Message,
-            new EditorTextLocation(
-                diagnostic.Span.Start,
-                diagnostic.Span.Length,
-                diagnostic.LineSpan.Start.Line,
-                diagnostic.LineSpan.Start.Character));
-
     private static GscSourceText CreateGscSourceText(
         string source,
         RawFileTextEncoding? encoding)
@@ -1137,7 +1119,7 @@ public class RawFileEditorViewModel
         return new GscSourceText(source);
     }
 
-    private GscAnalysisResult AnalyzeAuthoritativeGscSnapshot(
+    private IReadOnlyList<EditorSourceDiagnostic> AnalyzeAuthoritativeGscSnapshot(
         GscAnalysisOperation operation,
         CancellationToken cancellationToken)
     {
@@ -1148,9 +1130,12 @@ public class RawFileEditorViewModel
         {
             GscAnalysisResult local = _gscAnalyzer.Analyze(sourceText, cancellationToken);
             var span = new GscTextSpan(0, Math.Min(1, sourceText.Length));
-            return new GscAnalysisResult(local.Tokens, local.Diagnostics.Append(new GscDiagnostic(
+            var unavailable = new GscDiagnostic(
                 GscDiagnosticCodes.ValidationIncomplete, GscDiagnosticStage.Semantic, GscDiagnosticSeverity.Warning,
-                span, sourceText.GetLinePositionSpan(span), "Script and animation dependencies could not be checked: the GSC workspace is unavailable.")));
+                span, sourceText.GetLinePositionSpan(span), "Script and animation dependencies could not be checked: the GSC workspace is unavailable.");
+            return local.Diagnostics.Append(unavailable)
+                .Select(diagnostic => EditorSourceDiagnostic.FromGsc(diagnostic))
+                .ToArray();
         }
 
         return _gscAnalysisLanguageSession.Analyze(
@@ -1166,15 +1151,13 @@ public class RawFileEditorViewModel
         if (outcome.FailureMessage is { } failureMessage)
             return $"GSC analysis failed: {failureMessage}";
 
-        int errorCount = outcome.Diagnostics.Count(diagnostic =>
-            diagnostic.Severity == EditorSourceDiagnosticSeverity.Error);
-        int warningCount = outcome.Diagnostics.Count - errorCount;
-        if (outcome.Diagnostics.Any(diagnostic => diagnostic.Code == GscDiagnosticCodes.ValidationIncomplete))
-            return $"GSC validation incomplete: {CreateFindingCountText(errorCount, warningCount)}. See diagnostics for unavailable dependencies.";
-        if (errorCount == 0 && warningCount == 0)
+        if (outcome.Diagnostics.Count == 0)
             return "No GSC compilation errors found in the available source.";
 
-        return $"GSC check found {CreateFindingCountText(errorCount, warningCount)}.";
+        string counts = DescribeFindings(outcome.Diagnostics);
+        if (outcome.Diagnostics.Any(diagnostic => diagnostic.Code == GscDiagnosticCodes.ValidationIncomplete))
+            return $"GSC validation incomplete: {counts}. See diagnostics for unavailable dependencies.";
+        return $"GSC check found {counts}.";
     }
 
     private static string CreateApplyStatusMessage(
@@ -1193,14 +1176,22 @@ public class RawFileEditorViewModel
         if (outcome.FailureMessage is { } failureMessage)
             return $"{applied} GSC check was unavailable: {failureMessage}";
 
-        int errorCount = outcome.Diagnostics.Count(diagnostic =>
-            diagnostic.Severity == EditorSourceDiagnosticSeverity.Error);
-        int warningCount = outcome.Diagnostics.Count - errorCount;
-        if (errorCount == 0 && warningCount == 0)
+        if (outcome.Diagnostics.Count == 0)
             return $"{applied} GSC check passed.";
 
-        return $"{applied} GSC check reported " +
-            $"{CreateFindingCountText(errorCount, warningCount)}; findings are advisory.";
+        return $"{applied} GSC check reported {DescribeFindings(outcome.Diagnostics)}. Findings are advisory.";
+    }
+
+    private static string DescribeFindings(IReadOnlyList<EditorSourceDiagnostic> diagnostics)
+    {
+        var summaries = new List<string>();
+        foreach (var group in diagnostics.GroupBy(diagnostic => diagnostic.DependencyPath is not null))
+        {
+            int errors = group.Count(diagnostic => diagnostic.Severity == EditorSourceDiagnosticSeverity.Error);
+            string count = CreateFindingCountText(errors, group.Count() - errors);
+            summaries.Add(group.Key ? $"{count} in dependencies" : $"{count} in this script");
+        }
+        return string.Join(", ", summaries);
     }
 
     private static string CreateFindingCountText(

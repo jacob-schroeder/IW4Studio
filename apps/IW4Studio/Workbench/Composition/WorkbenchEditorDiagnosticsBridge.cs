@@ -1,5 +1,8 @@
 using System.ComponentModel;
+using IW4.Gsc.Syntax;
+using IW4.Gsc.Workspace;
 using IW4.Studio.Desktop.Editors;
+using IW4.Studio.Desktop.Editors.Gsc;
 using IW4.Studio.Desktop.ViewModels;
 using IW4.Studio.Desktop.Workbench.Tools.Diagnostics;
 using IW4.Studio.Desktop.Workbench.Tools.GscFindings;
@@ -18,19 +21,23 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
     private readonly EditorViewModel _editor;
     private readonly DiagnosticsAggregator _diagnostics;
     private readonly GscFindingsToolViewModel _gscFindings;
+    private readonly IGscSourceNavigator _gscSourceNavigator;
     private INotifyPropertyChanged? _observedHostedViewModel;
     private bool _disposed;
 
     public WorkbenchEditorDiagnosticsBridge(
         EditorViewModel editor,
         DiagnosticsAggregator diagnostics,
-        GscFindingsToolViewModel gscFindings)
+        GscFindingsToolViewModel gscFindings,
+        IGscSourceNavigator gscSourceNavigator)
     {
         _editor = editor ?? throw new ArgumentNullException(nameof(editor));
         _diagnostics = diagnostics
             ?? throw new ArgumentNullException(nameof(diagnostics));
         _gscFindings = gscFindings
             ?? throw new ArgumentNullException(nameof(gscFindings));
+        _gscSourceNavigator = gscSourceNavigator
+            ?? throw new ArgumentNullException(nameof(gscSourceNavigator));
         _editor.PropertyChanged += Editor_PropertyChanged;
         _gscFindings.FindingActivated += GscFindings_FindingActivated;
         ObserveHostedViewModel(
@@ -196,6 +203,13 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
         object? sender,
         GscFindingActivatedEventArgs args)
     {
+        if (args.Finding.DependencyPath is { } path)
+        {
+            _gscSourceNavigator.NavigateTo(new GscSourceLocation(path,
+                new GscTextSpan(args.Finding.Location.Start, args.Finding.Location.Length)));
+            return;
+        }
+
         if (_editor.SelectedEditorHost?.HostedView is IEditorTextNavigator navigator)
             navigator.NavigateTo(args.Finding.Location);
     }

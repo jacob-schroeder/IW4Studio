@@ -1,4 +1,5 @@
 using IW4.Gsc.Analysis;
+using IW4.Gsc.BuiltIns;
 
 namespace IW4.Gsc.Workspace;
 
@@ -18,5 +19,5 @@ internal sealed record GscPendingFunctionReference(
     string SourceName,
     GscWorkspaceReferenceKind Kind,
     GscScriptPath? QualifiedTarget,
-    bool Native,
+    IReadOnlyList<Iw4GscBuiltInDefinition> BuiltInTargets,
     bool Developer);

@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using IW4.Gsc.Syntax;
+using IW4.Gsc.Workspace;
 
 namespace IW4.Studio.Desktop.Editors;
 
@@ -44,7 +46,7 @@ public enum EditorSourceDiagnosticSeverity
 
 /// <summary>
 /// Immutable source-language diagnostic addressed to the current editor
-/// buffer rather than to an authored asset field.
+/// buffer or a dependency script rather than to an authored asset field.
 /// </summary>
 public sealed record EditorSourceDiagnostic
 {
@@ -52,7 +54,8 @@ public sealed record EditorSourceDiagnostic
         string code,
         EditorSourceDiagnosticSeverity severity,
         string message,
-        EditorTextLocation location)
+        EditorTextLocation location,
+        GscScriptPath? dependencyPath = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(code);
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
@@ -63,6 +66,7 @@ public sealed record EditorSourceDiagnostic
         Severity = severity;
         Message = message;
         Location = location;
+        DependencyPath = dependencyPath;
     }
 
     public string Code { get; }
@@ -72,6 +76,26 @@ public sealed record EditorSourceDiagnostic
     public string Message { get; }
 
     public EditorTextLocation Location { get; }
+
+    public GscScriptPath? DependencyPath { get; }
+
+    public string DisplayLocation => DependencyPath is { } path
+        ? $"{path.Value}: {Location.DisplayText}"
+        : Location.DisplayText;
+
+    internal static EditorSourceDiagnostic FromGsc(GscDiagnostic diagnostic, GscScriptPath? dependencyPath = null) =>
+        new(
+            diagnostic.Code,
+            diagnostic.Severity == GscDiagnosticSeverity.Error
+                ? EditorSourceDiagnosticSeverity.Error
+                : EditorSourceDiagnosticSeverity.Warning,
+            diagnostic.Message,
+            new EditorTextLocation(
+                diagnostic.Span.Start,
+                diagnostic.Span.Length,
+                diagnostic.LineSpan.Start.Line,
+                diagnostic.LineSpan.Start.Character),
+            dependencyPath);
 }
 
 /// <summary>

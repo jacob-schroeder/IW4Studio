@@ -126,6 +126,69 @@ public sealed class GscWorkspaceIndex
     public GscAnalysisResult GetAnalysis(GscScriptPath path) =>
         GetDocument(path).Analysis;
 
+    /// <summary>Checks a script and its loaded dependencies, retaining the source of each finding.</summary>
+    public IReadOnlyList<(GscScriptPath Path, GscDiagnostic Diagnostic)> GetCompilationDiagnostics(
+        GscScriptPath path,
+        CancellationToken cancellationToken = default)
+    {
+        const int precacheLimit = 1024;
+        var findings = new List<(GscScriptPath Path, GscDiagnostic Diagnostic)>();
+        var loaded = new HashSet<GscScriptPath>();
+        var beyondPrecacheLimit = new Queue<GscIndexedDocument>();
+        Visit(GetDocument(path), reserved: 0);
+        // A failed load has no child reservation. Its indexed sources can still
+        // have findings of their own, including when reached only by this route.
+        while (beyondPrecacheLimit.TryDequeue(out var remaining))
+            Visit(remaining, reserved: null);
+        return findings
+            .OrderBy(finding => finding.Path != path)
+            .ThenBy(finding => finding.Path.Value, StringComparer.Ordinal)
+            .ThenBy(finding => finding.Diagnostic.Span.Start)
+            .ToArray();
+
+        void Visit(GscIndexedDocument document, int? reserved)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!loaded.Add(document.Path))
+                return;
+
+            foreach (GscDiagnostic diagnostic in document.Analysis.Diagnostics)
+                findings.Add((document.Path, diagnostic));
+
+            GscWorkspaceSourceDocument source = _sources[document.Path];
+            var dependencies = new List<(GscScriptPath Path, GscTextSpan Span, bool Developer)>();
+            foreach (GscIncludeReference include in source.Includes)
+                dependencies.Add((include.TargetPath, include.Location.Span, false));
+            foreach (GscPendingFunctionReference reference in source.FunctionReferences)
+            {
+                if (reference.QualifiedTarget is { } target)
+                    dependencies.Add((target, reference.Location.Span, reference.Developer));
+            }
+
+            // Includes and far references each reserve an entry, even repeated paths.
+            int? childReserved = reserved + dependencies.Count(dependency => !dependency.Developer);
+            if (reserved is int used && dependencies.Count > precacheLimit - used)
+            {
+                GscTextSpan span = dependencies[precacheLimit - used].Span;
+                findings.Add((document.Path, new GscDiagnostic(
+                    GscDiagnosticCodes.CompilerCapacityExceeded, GscDiagnosticStage.Semantic,
+                    GscDiagnosticSeverity.Error, span, document.Snapshot.Source.GetLinePositionSpan(span),
+                    "MAX_PRECACHE_ENTRIES exceeded")));
+                childReserved = null;
+            }
+
+            foreach (var dependency in dependencies)
+            {
+                if (dependency.Developer || !_documentsByPath.TryGetValue(dependency.Path, out var child))
+                    continue;
+                if (childReserved.HasValue)
+                    Visit(child, childReserved);
+                else
+                    beyondPrecacheLimit.Enqueue(child);
+            }
+        }
+    }
+
     public GscIndexedDocument GetDocument(GscScriptPath path)
     {
         ArgumentNullException.ThrowIfNull(path);

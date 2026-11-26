@@ -180,7 +180,8 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
                 new WorkbenchEditorDiagnosticsBridge(
                     Editor,
                     Diagnostics,
-                    GscFindings);
+                    GscFindings,
+                    _gscSourceNavigation);
             constructionResources.Add(_editorDiagnosticsBridge);
             LivePreview = new MapRenderToolViewModel(workspace);
             constructionResources.Add(LivePreview);

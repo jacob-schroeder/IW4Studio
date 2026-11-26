@@ -27,14 +27,19 @@ internal sealed class GscEditorLanguageSession
     internal GscEditorLanguageSession(GscWorkspaceIndexService workspace) =>
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
 
-    internal GscAnalysisResult Analyze(
+    internal IReadOnlyList<EditorSourceDiagnostic> Analyze(
         string assetName,
         GscSourceText source,
         long bufferVersion,
-        CancellationToken cancellationToken) =>
-        GetSnapshots(assetName, source, bufferVersion, cancellationToken)
-            .Editor
-            .GetAnalysis(assetName);
+        CancellationToken cancellationToken)
+    {
+        GscWorkspaceSnapshot snapshot = GetSnapshots(assetName, source, bufferVersion, cancellationToken).Editor;
+        GscScriptPath path = GetScriptPath(assetName);
+        return snapshot.Index.GetCompilationDiagnostics(path, cancellationToken)
+            .Select(finding => EditorSourceDiagnostic.FromGsc(
+                finding.Diagnostic, finding.Path == path ? null : finding.Path))
+            .ToArray();
+    }
 
     internal void FindDefinitions(
         string assetName,
@@ -50,7 +55,7 @@ internal sealed class GscEditorLanguageSession
             source,
             bufferVersion,
             cancellationToken).Editor;
-        GscScriptPath path = GscScriptPath.FromAssetName(assetName);
+        GscScriptPath path = GetScriptPath(assetName);
         definitions = snapshot.Index.FindDefinitions(path, sourceOffset).ToArray();
         if (definitions.Length == 0 && sourceOffset > 0)
         {
@@ -98,7 +103,7 @@ internal sealed class GscEditorLanguageSession
                 source,
                 bufferVersion,
                 cancellationToken);
-        GscScriptPath currentPath = GscScriptPath.FromAssetName(assetName);
+        GscScriptPath currentPath = GetScriptPath(assetName);
         GscAnalysisResult analysis = overlay.Index.GetAnalysis(currentPath);
         GscCompletionContext? context = GscCompletionContextQueries.Find(
             source.Text,
@@ -226,7 +231,7 @@ internal sealed class GscEditorLanguageSession
         if (call is null)
             return null;
 
-        GscScriptPath currentPath = GscScriptPath.FromAssetName(assetName);
+        GscScriptPath currentPath = GetScriptPath(assetName);
         GscScriptPath? targetPath = ResolveQualifier(currentPath, call.Qualifier);
         if (call.Qualifier is not null && targetPath is null)
             return null;
@@ -302,7 +307,7 @@ internal sealed class GscEditorLanguageSession
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        GscScriptPath path = GscScriptPath.FromAssetName(assetName);
+        GscScriptPath path = GetScriptPath(assetName);
         lock (_sync)
         {
             GscWorkspaceSnapshot baseSnapshot = _workspace.GetSnapshot(
@@ -316,10 +321,7 @@ internal sealed class GscEditorLanguageSession
                 return (_cachedBaseSnapshot!, _cachedSnapshot);
             }
 
-            var document = new GscDocumentSnapshot(
-                GscScriptPath.FromAssetName(
-                    XAssetStableIdentity.GetLookupSpelling(assetName)),
-                source);
+            var document = new GscDocumentSnapshot(path, source);
             GscWorkspaceSnapshot editorSnapshot = baseSnapshot.WithDocument(
                 document,
                 cancellationToken);
@@ -331,6 +333,9 @@ internal sealed class GscEditorLanguageSession
             return (baseSnapshot, editorSnapshot);
         }
     }
+
+    private static GscScriptPath GetScriptPath(string assetName) =>
+        GscScriptPath.FromAssetName(XAssetStableIdentity.GetLookupSpelling(assetName));
 
     private static bool HasSyntaxErrors(
         GscWorkspaceSnapshot snapshot,
@@ -522,29 +527,14 @@ internal sealed class GscEditorLanguageSession
         string assetName,
         int sourceOffset)
     {
-        GscScriptPath path = GscScriptPath.FromAssetName(assetName);
+        GscScriptPath path = GetScriptPath(assetName);
         GscIndexedDocument document = snapshot.Index.GetDocument(path);
-        GscSymbolReference[] references = document.References
-            .Where(reference =>
-                reference.Kind == GscWorkspaceReferenceKind.Call &&
-                reference.Targets.Count == 0 &&
-                reference.QualifiedTargetPath is null &&
-                Contains(reference.Location.Span, sourceOffset))
-            .ToArray();
-        if (references.Length == 0 && sourceOffset > 0)
-        {
-            references = document.References
-                .Where(reference =>
-                    reference.Kind == GscWorkspaceReferenceKind.Call &&
-                    reference.Targets.Count == 0 &&
-                    reference.QualifiedTargetPath is null &&
-                    Contains(reference.Location.Span, sourceOffset - 1))
-                .ToArray();
-        }
+        Iw4GscBuiltInDefinition[] builtIns = At(sourceOffset);
+        return builtIns.Length == 0 && sourceOffset > 0 ? At(sourceOffset - 1) : builtIns;
 
-        return references
-            .SelectMany(reference => Iw4GscBuiltInCatalog.Multiplayer
-                .FindCallablesByName(reference.Name))
+        Iw4GscBuiltInDefinition[] At(int offset) => document.References
+            .Where(reference => Contains(reference.Location.Span, offset))
+            .SelectMany(reference => reference.BuiltInTargets)
             .Distinct()
             .ToArray();
     }

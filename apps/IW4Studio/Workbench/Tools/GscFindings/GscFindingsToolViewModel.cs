@@ -11,7 +11,7 @@ public sealed class GscFindingActivatedEventArgs : EventArgs
     public EditorSourceDiagnostic Finding { get; }
 }
 
-/// <summary>Findings from the selected editor's most recent GSC syntax check.</summary>
+/// <summary>Findings from the selected editor's most recent GSC analysis.</summary>
 public sealed class GscFindingsToolViewModel : ObservableObject
 {
     private IReadOnlyList<EditorSourceDiagnostic> _items = [];
@@ -52,8 +52,8 @@ public sealed class GscFindingsToolViewModel : ObservableObject
     public string ResultText => DocumentName.Length == 0
         ? "No GSC findings for the selected editor."
         : Count == 1
-            ? $"1 finding in '{DocumentName}'"
-            : $"{Count:N0} findings in '{DocumentName}'";
+            ? $"1 finding for '{DocumentName}'"
+            : $"{Count:N0} findings for '{DocumentName}'";
 
     public void Replace(
         string documentName,

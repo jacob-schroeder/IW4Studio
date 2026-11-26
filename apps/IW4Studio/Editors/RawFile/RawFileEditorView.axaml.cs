@@ -558,7 +558,7 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
     private void RefreshDiagnosticMarkers() =>
         _diagnosticRenderer?.Replace(
             _viewModel?.IsGscSource == true
-                ? _viewModel.SourceDiagnostics
+                ? _viewModel.SourceDiagnostics.Where(diagnostic => diagnostic.DependencyPath is null).ToArray()
                 : []);
 
     private void SynchronizeEditorText()
