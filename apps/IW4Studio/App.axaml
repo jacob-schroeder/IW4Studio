@@ -3,6 +3,15 @@
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="IW4.Studio.Desktop.App"
              Name="IW4 Studio">
+  <Application.Resources>
+    <ControlTheme x:Key="StudioWindowDecorations" TargetType="WindowDrawnDecorations"
+                  BasedOn="{StaticResource {x:Type WindowDrawnDecorations}}">
+      <!-- Both studio windows draw their title beside the native caption buttons. -->
+      <Style Selector="^ /template/ Panel#PART_TitleTextPanel">
+        <Setter Property="Opacity" Value="0" />
+      </Style>
+    </ControlTheme>
+  </Application.Resources>
   <Application.Styles>
     <FluentTheme />
     <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
@@ -21,6 +30,13 @@
       <Setter Property="Background" Value="{DynamicResource StudioBackgroundBrush}" />
       <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
       <Setter Property="FontFamily" Value="{DynamicResource StudioFontFamily}" />
+    </Style>
+
+    <Style Selector="Border.studioTitleBar">
+      <Setter Property="Padding" Value="12,0" />
+    </Style>
+    <Style Selector=":is(Window)[IsExtendedIntoWindowDecorations=True]:not(Window[WindowState=FullScreen]) Border.studioTitleBar">
+      <Setter Property="Padding" Value="{OnPlatform Default='12,0,198,0', macOS='82,0,12,0', x:TypeArguments=Thickness}" />
     </Style>
     
     <Style Selector="Button.hyperlink">
@@ -112,20 +128,6 @@
     <Style Selector="Button.ghost:pointerover">
       <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource StudioControlHoverBrush}" />
-    </Style>
-
-    <Style Selector="Button.recentFile">
-      <Setter Property="MinHeight" Value="50" />
-      <Setter Property="Padding" Value="9,7" />
-      <Setter Property="HorizontalAlignment" Value="Stretch" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderBrush" Value="Transparent" />
-    </Style>
-
-    <Style Selector="Button.recentFile:pointerover">
-      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
     </Style>
 
     <Style Selector="TextBox">

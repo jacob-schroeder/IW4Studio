@@ -10,6 +10,7 @@
         d:DesignWidth="1440"
         d:DesignHeight="900"
         Title="IW4 Studio"
+        WindowDecorationsTheme="{StaticResource StudioWindowDecorations}"
         Width="1440"
         Height="900"
         MinWidth="1180"
@@ -18,26 +19,52 @@
         ExtendClientAreaTitleBarHeightHint="44"
         Background="{DynamicResource StudioWindowGradientBrush}"
         WindowStartupLocation="CenterScreen">
-  <Window.WindowDecorationsTheme>
-    <ControlTheme TargetType="WindowDrawnDecorations" BasedOn="{StaticResource {x:Type WindowDrawnDecorations}}">
-      <!-- Fluent overlays its own copy of Window.Title beside the caption buttons. -->
-      <Style Selector="^ /template/ Panel#PART_TitleTextPanel">
-        <Setter Property="Opacity" Value="0" />
-      </Style>
-    </ControlTheme>
-  </Window.WindowDecorationsTheme>
   <Window.Styles>
-    <Style Selector="Border.editorTitleBar">
-      <Setter Property="Padding" Value="12,0" />
-    </Style>
-    <Style Selector=":is(Window)[IsExtendedIntoWindowDecorations=True]:not(Window[WindowState=FullScreen]) Border.editorTitleBar">
-      <!-- AppKit traffic lights occupy the left edge. Fluent's four 45-DIP buttons occupy the right. -->
-      <Setter Property="Padding" Value="{OnPlatform Default='12,0,198,0', macOS='82,0,12,0', x:TypeArguments=Thickness}" />
+    <Style Selector=":is(Window)[IsActive=True] Border#GlassShine">
+      <Style.Animations>
+        <Animation Duration="0:0:16" IterationCount="Infinite">
+          <KeyFrame KeyTime="0:0:0">
+            <Setter Property="TranslateTransform.Y" Value="-600" />
+          </KeyFrame>
+          <KeyFrame KeyTime="0:0:4" KeySpline="0.42,0,0.58,1">
+            <Setter Property="TranslateTransform.Y" Value="600" />
+          </KeyFrame>
+          <KeyFrame KeyTime="0:0:6">
+            <Setter Property="TranslateTransform.Y" Value="600" />
+          </KeyFrame>
+          <KeyFrame KeyTime="0:0:10" KeySpline="0.42,0,0.58,1">
+            <Setter Property="TranslateTransform.Y" Value="-600" />
+          </KeyFrame>
+          <KeyFrame KeyTime="0:0:16">
+            <Setter Property="TranslateTransform.Y" Value="-600" />
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
     </Style>
   </Window.Styles>
 
   <Grid RowDefinitions="44,*,25" Margin="{Binding $parent[Window].OffScreenMargin}">
-    <Border Classes="editorTitleBar" Background="Transparent"
+    <!-- Scale the shine and its travel together so it clears both edges at any window size. -->
+    <Viewbox Grid.RowSpan="3" ZIndex="-1" Stretch="Fill" ClipToBounds="True" IsHitTestVisible="False">
+      <Canvas Width="1000" Height="600">
+        <Border x:Name="GlassShine" Width="1000" Height="600" Opacity="0.12">
+          <Border.RenderTransform>
+            <TranslateTransform Y="-600" />
+          </Border.RenderTransform>
+          <Border.Background>
+            <!-- In canvas coordinates the band slopes down 1 unit for every 2 across. -->
+            <LinearGradientBrush StartPoint="500,250" EndPoint="460,330">
+              <GradientStop Offset="0" Color="Transparent" />
+              <GradientStop Offset="0.42" Color="{DynamicResource StudioWindowGlowColor}" />
+              <GradientStop Offset="0.52" Color="#FFFFFBEF" />
+              <GradientStop Offset="0.60" Color="#4DFFFBEF" />
+              <GradientStop Offset="1" Color="#00FFFBEF" />
+            </LinearGradientBrush>
+          </Border.Background>
+        </Border>
+      </Canvas>
+    </Viewbox>
+    <Border Classes="studioTitleBar" Background="Transparent"
             WindowDecorationProperties.ElementRole="TitleBar">
       <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="8">
         <Border Width="26" Height="26" VerticalAlignment="Center" CornerRadius="5" ClipToBounds="True">

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 304 100" width="608" height="200">
+  <title>M4-style carbine · exterior profile</title>
+  <defs>
+    <linearGradient id="olive" x2=".12" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#35452b"/><stop offset=".4" stop-color="#1c291d"/><stop offset="1" stop-color="#131e16"/>
+    </linearGradient>
+    <pattern id="ribs" width="6" height="14" patternUnits="userSpaceOnUse" patternTransform="skewX(7)">
+      <path d="M1 0V14" stroke="#8ca853" stroke-width="1.2" opacity=".76"/>
+      <path d="M2.6 0V14" stroke="#4e6139" stroke-width=".65"/>
+    </pattern>
+  </defs>
+  <g fill="url(#olive)" stroke="#a8c96a" stroke-width="1.15" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M51 26h57v9H51z"/>
+    <path d="M5 23l3-1 1 2h57v13l-9 1-5 7h-7l-3-3-7 1-1 5-9-4L8 58H4z"/>
+    <path d="M8 35l26 2 7 4-16-1L9 52z" fill="#101a12" stroke="#657c44" stroke-width=".8"/>
+    <path d="M6.5 24.5v30.7M11 27h50m-50 4h42" fill="none" stroke="#809c50" stroke-width=".75"/>
+    <path d="M107 44l11-2 7 8-6 7-9 18-16-5 12-19z"/>
+    <path d="M98 69l10 3 8-17m-10 8 5 2m-3-7 5 2" fill="none" stroke="#71894c" stroke-width=".8"/>
+    <path d="M148 48l20 1 1 14 4 11 7 12-18 5-6-9-5-13z"/>
+    <path d="M153 54l2 13q2 10 10 20m-6-33 2 13q2 9 9 18m-6-31 2 12q2 9 8 17" fill="none" stroke="#81984e" stroke-width=".9"/>
+    <path d="M160 87l18-5" stroke="#bbd77b" stroke-width=".8"/>
+    <path d="M117 46q2 11 9 12h17l4-10" fill="none" stroke="#91a95e" stroke-width="1.7"/>
+    <path d="M132 47q-1 6-5 7" fill="none" stroke="#839b53" stroke-width="1"/>
+    <path d="M104 24h6l1-5h42l7 5h9l3 5-1 10-4 4 1 9-21-1-2-4-22-1-4 5-7-2-1-7-9-3z"/>
+    <path d="M111 21l2-12 7-4 40 4 6 3 3 9-8 1-6-6-34-3-2 9z" fill-rule="evenodd"/>
+    <path d="M119 11l2-2 32 3 2 2-35-2z" fill="#101710" stroke="#6f874c" stroke-width=".6"/>
+    <path d="M106 30h54l6-3m-62 8 6 2h40l6-3h13m-20 9h16m-18 6 18 1" fill="none" stroke="#758e4f" stroke-width=".8"/>
+    <path d="M117 26h26l2 2-1 2h-26z" fill="#142018" stroke="#90a765" stroke-width=".65"/>
+    <path d="M171 23l4-2 3 1v16l-4 1-3-2z"/>
+    <path d="M178 23l43 2 6 2v8l-7 3-42 1-2-3V26z"/>
+    <path d="M179 24l42 2 3 2v6l-5 2-41 1z" fill="url(#ribs)" stroke="none"/>
+    <path d="M179 23.5l41 2m-40 11.7 38-1.1" fill="none" stroke="#d2df94" stroke-width=".8"/>
+    <path d="M226 28h56v4h-56z"/>
+    <path d="M281 26.5h13l3 1v5l-3 1h-13z"/>
+    <path d="M286 28h8m-8 3.3h8" stroke="#617847" stroke-width=".7"/>
+    <path d="M225 26l7-13 4-4 1 1 2 13 2 4v5l-5 1-2-5h-9zm5-2h5l-1-8z" fill-rule="evenodd"/>
+    <path d="M226 34l6-1 1 4-3 2-3-1z"/>
+  </g>
+</svg>

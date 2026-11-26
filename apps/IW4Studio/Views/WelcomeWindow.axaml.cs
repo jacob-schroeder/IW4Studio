@@ -38,8 +38,7 @@ public sealed partial class WelcomeWindow : Window
         Icon = AppIcon.Create();
         DataContext = _viewModel;
         _viewModel.SetRecentFiles(_settingsStore.LoadRecentFastFiles());
-        Height = (_viewModel.HasRecentFiles ? 510 : 354) +
-                 (OperatingSystem.IsMacOS() ? 0 : 30);
+        Height = Math.Clamp(198 + 60 * _viewModel.RecentFiles.Count, MinHeight, 510);
         _progressTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(80)
@@ -56,6 +55,16 @@ public sealed partial class WelcomeWindow : Window
 
     internal void SetThemeMode(ThemeMode mode)
         => ThemeMenuSelection.Set(this, WindowMenu, mode);
+
+    private void WelcomeBody_SizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        if (sender is Grid body)
+        {
+            bool compact = e.NewSize.Width <= WelcomeBackdrop.CompactWidth;
+            body.RowDefinitions[0].MinHeight = compact ? 78 : 0;
+            Grid.SetColumnSpan(RecentFilesScroll, compact ? 2 : 1);
+        }
+    }
 
     private async void OpenFastFileButton_Click(object? sender, RoutedEventArgs e)
     {

@@ -63,6 +63,7 @@ internal sealed class ThemeService
         _application.RequestedThemeVariant = theme.BaseVariant;
         _application.Resources["StudioFontFamily"] = theme.FontFamily;
         _application.Resources["StudioWindowGradientBrush"] = CreateWindowGradient(theme.Mode);
+        _application.Resources["StudioWindowGlowColor"] = palette.Accent.Hovered;
 
         SetBrush("StudioBackgroundBrush", palette.Surfaces.Canvas);
         SetBrush("StudioSurfaceBrush", palette.Surfaces.Default);

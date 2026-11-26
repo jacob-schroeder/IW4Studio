@@ -1,0 +1,88 @@
+<Panel xmlns="https://github.com/avaloniaui"
+       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+       xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Svg.Controls.Skia.Avalonia"
+       x:Class="IW4.Studio.Desktop.Views.WelcomeBackdrop"
+       ClipToBounds="True" IsHitTestVisible="False">
+  <Panel.Background>
+    <RadialGradientBrush Center="78%,45%" GradientOrigin="78%,45%" RadiusX="80%" RadiusY="115%">
+      <GradientStop Offset="0" Color="#202B1D" />
+      <GradientStop Offset="0.47" Color="#111911" />
+      <GradientStop Offset="1" Color="#0C110E" />
+    </RadialGradientBrush>
+  </Panel.Background>
+  <Panel.Styles>
+    <Style Selector=":is(Window)[IsActive=True] Border#DraftingGrid">
+      <Style.Animations>
+        <Animation Duration="0:0:22" PlaybackDirection="Alternate" IterationCount="Infinite" Easing="SineEaseInOut">
+          <KeyFrame Cue="0%">
+            <Setter Property="TranslateTransform.X" Value="-5" />
+            <Setter Property="TranslateTransform.Y" Value="1" />
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="TranslateTransform.X" Value="5" />
+            <Setter Property="TranslateTransform.Y" Value="-3" />
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector=":is(Window)[IsActive=True] svg|Svg#Profile">
+      <Style.Animations>
+        <Animation Duration="0:0:5" PlaybackDirection="Alternate" IterationCount="Infinite" Easing="SineEaseInOut">
+          <KeyFrame Cue="0%">
+            <Setter Property="Rotate3DTransform.AngleY" Value="-12" />
+            <Setter Property="Rotate3DTransform.AngleZ" Value="-16" />
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="Rotate3DTransform.AngleY" Value="12" />
+            <Setter Property="Rotate3DTransform.AngleZ" Value="-8" />
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector=":is(Window)[IsActive=True] Border#Scanline">
+      <Style.Animations>
+        <Animation Duration="0:0:6" IterationCount="Infinite">
+          <KeyFrame KeyTime="0:0:0"><Setter Property="TranslateTransform.X" Value="-100" /></KeyFrame>
+          <KeyFrame KeyTime="0:0:5"><Setter Property="TranslateTransform.X" Value="1000" /></KeyFrame>
+          <KeyFrame KeyTime="0:0:6"><Setter Property="TranslateTransform.X" Value="1000" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+  </Panel.Styles>
+
+  <Border x:Name="DraftingGrid">
+    <Border.RenderTransform><TranslateTransform X="-5" Y="1" /></Border.RenderTransform>
+    <Border.Background>
+      <DrawingBrush DestinationRect="0,0,80,80" TileMode="Tile">
+        <DrawingBrush.Drawing>
+          <DrawingGroup>
+            <DrawingGroup.Children>
+              <GeometryDrawing Brush="#10ADCC92" Geometry="M0,0 H80 V1 H0 Z M0,1 H1 V80 H0 Z" />
+              <GeometryDrawing Brush="#09ADCC92"
+                               Geometry="F1 M20,0 h1 v80 h-1 Z M40,0 h1 v80 h-1 Z M60,0 h1 v80 h-1 Z M0,20 h80 v1 h-80 Z M0,40 h80 v1 h-80 Z M0,60 h80 v1 h-80 Z" />
+            </DrawingGroup.Children>
+          </DrawingGroup>
+        </DrawingBrush.Drawing>
+      </DrawingBrush>
+    </Border.Background>
+  </Border>
+  <svg:Svg x:Name="Profile" Path="/Resources/welcome_carbine.svg" Stretch="Uniform" RenderTransformOrigin="50%,50%">
+    <svg:Svg.RenderTransform><Rotate3DTransform AngleY="-12" AngleZ="-16" Depth="650" /></svg:Svg.RenderTransform>
+  </svg:Svg>
+  <Viewbox x:Name="ScanField" Stretch="Fill">
+    <Canvas Width="1000" Height="400">
+      <Border x:Name="Scanline" Width="100" Height="400">
+        <Border.RenderTransform><TranslateTransform X="-100" /></Border.RenderTransform>
+        <Border.Background>
+          <LinearGradientBrush StartPoint="0%,50%" EndPoint="100%,50%">
+            <GradientStop Offset="0" Color="#009FD66A" />
+            <GradientStop Offset="0.80" Color="#139FD66A" />
+            <GradientStop Offset="0.975" Color="#30B6ED7A" />
+            <GradientStop Offset="0.985" Color="#85C7F48F" />
+            <GradientStop Offset="1" Color="#00B6ED7A" />
+          </LinearGradientBrush>
+        </Border.Background>
+      </Border>
+    </Canvas>
+  </Viewbox>
+</Panel>

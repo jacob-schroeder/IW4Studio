@@ -10,12 +10,8 @@ namespace IW4.Studio.Desktop.Views;
 /// </summary>
 internal static class StudioMenu
 {
-    private static readonly MenuEntry ApplicationEntry = new(
-        "IW4 Studio",
-        Items:
-        [
-            new("About IW4 Studio", StudioMenuAction.ShowAbout)
-        ]);
+    private static readonly MenuEntry AboutEntry = new("About IW4 Studio", StudioMenuAction.ShowAbout);
+    private static readonly MenuEntry ApplicationEntry = new("IW4 Studio", Items: [AboutEntry]);
 
     private static readonly MenuEntry[] Entries =
     [
@@ -130,9 +126,8 @@ internal static class StudioMenu
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(execute);
 
-        menu.Items.Add(CreateWindowItem(ApplicationEntry, owner, execute));
-        foreach (MenuEntry entry in WelcomeEntries)
-            menu.Items.Add(CreateWindowItem(entry, owner, execute));
+        var welcomeMenu = ApplicationEntry with { Items = [AboutEntry, MenuEntry.Separator, .. WelcomeEntries] };
+        menu.Items.Add(CreateWindowItem(welcomeMenu, owner, execute));
     }
 
     private static NativeMenuItemBase CreateNativeItem(

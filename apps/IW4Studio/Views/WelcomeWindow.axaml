@@ -1,17 +1,42 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:IW4.Studio.Desktop.Views"
         xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
         xmlns:icons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="IW4.Studio.Desktop.Views.WelcomeWindow"
         x:DataType="viewModels:WelcomeViewModel"
-        Title="IW4 Studio" Width="760" MinWidth="500" MinHeight="324"
+        Title="IW4 Studio / Welcome" Width="760" MinWidth="500" MinHeight="324"
+        WindowDecorationsTheme="{StaticResource StudioWindowDecorations}"
+        ExtendClientAreaToDecorationsHint="True" ExtendClientAreaTitleBarHeightHint="44"
+        Background="{DynamicResource StudioWindowGradientBrush}"
         WindowStartupLocation="CenterScreen">
+  <Window.Resources>
+    <SolidColorBrush x:Key="WelcomeCharcoal">#151718</SolidColorBrush>
+    <SolidColorBrush x:Key="WelcomeText">#E2E4E4</SolidColorBrush>
+    <SolidColorBrush x:Key="WelcomeMuted">#A2A7A9</SolidColorBrush>
+    <SolidColorBrush x:Key="WelcomeBorder">#343934</SolidColorBrush>
+  </Window.Resources>
   <Window.Styles>
     <Style Selector="TextBlock.folder">
       <Setter Property="FontFamily" Value="Menlo, Consolas, monospace" />
       <Setter Property="FontSize" Value="12" />
       <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="Button.recentFile">
+      <Setter Property="MinHeight" Value="54" />
+      <Setter Property="Padding" Value="11,7" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="{StaticResource WelcomeCharcoal}" />
+      <Setter Property="BorderBrush" Value="{StaticResource WelcomeBorder}" />
+    </Style>
+    <Style Selector="Button.recentFile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#242925" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentStrongBrush}" />
+    </Style>
+    <Style Selector="Button.recentFile:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#20251F" />
     </Style>
     <Style Selector="Border.sheet">
       <Setter Property="MaxWidth" Value="470" />
@@ -51,35 +76,44 @@
     </Style>
   </Window.Styles>
 
-  <Grid>
-    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" IsEnabled="{Binding CanInteract}">
-      <Menu x:Name="WindowMenu" Height="30" />
-
-      <Grid Grid.Row="1" Height="170" Background="Black" ClipToBounds="True">
-        <Image Source="/Resources/welcome_ridge.png" Stretch="Fill" />
-        <Image Source="/Resources/logo_simple.png" Width="160" Height="160"
-               Margin="24,0" HorizontalAlignment="Left" VerticalAlignment="Center"
-               AutomationProperties.Name="IW4 Studio" />
+  <Grid RowDefinitions="44,*,Auto" Margin="{Binding $parent[Window].OffScreenMargin}">
+    <Border Classes="studioTitleBar" Background="Transparent" WindowDecorationProperties.ElementRole="TitleBar">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8">
+        <Border Width="26" Height="26" CornerRadius="5" ClipToBounds="True" VerticalAlignment="Center">
+          <Image Source="/Resources/logo_simple.png" Stretch="UniformToFill" />
+        </Border>
+        <TextBlock Grid.Column="1" Text="IW4 Studio" FontSize="13" FontWeight="SemiBold"
+                   IsVisible="{Binding !#WindowMenu.IsVisible}" VerticalAlignment="Center" />
+        <Menu x:Name="WindowMenu" Grid.Column="1" Background="Transparent" FontSize="13"
+              IsEnabled="{Binding CanInteract}" VerticalAlignment="Center" WindowDecorationProperties.ElementRole="User" />
+        <TextBlock Grid.Column="2" Text="/" Opacity="0.6" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="3" Text="Welcome" FontSize="13" VerticalAlignment="Center" />
       </Grid>
+    </Border>
 
-      <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="24,18,24,16" Spacing="12">
+    <Grid Grid.Row="1" RowDefinitions="Auto,*" ColumnDefinitions="3*,2*"
+          ClipToBounds="True" SizeChanged="WelcomeBody_SizeChanged">
+      <views:WelcomeBackdrop Grid.RowSpan="2" Grid.ColumnSpan="2" />
+      <StackPanel Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top"
+                  IsEnabled="{Binding CanInteract}" Margin="18,14,18,14" Spacing="9">
         <Button x:Name="OpenFastFileButton" Classes="primary" Click="OpenFastFileButton_Click"
                 AutomationProperties.Name="Open Fastfile">
           <StackPanel Orientation="Horizontal" Spacing="9">
-            <icons:MaterialIcon Kind="FolderOpen" Width="19" Height="19" />
-            <TextBlock Text="Open Fastfile…" VerticalAlignment="Center" FontSize="15" />
+            <icons:MaterialIcon Kind="FolderOpen" Width="16" Height="16" />
+            <TextBlock Text="Open Fastfile…" VerticalAlignment="Center" FontSize="13" />
           </StackPanel>
         </Button>
         <Button Click="CreateNewButton_Click" AutomationProperties.Name="New Fastfile">
           <StackPanel Orientation="Horizontal" Spacing="9">
-            <icons:MaterialIcon Kind="Plus" Width="19" Height="19" />
-            <TextBlock Text="New Fastfile…" VerticalAlignment="Center" FontSize="15" />
+            <icons:MaterialIcon Kind="Plus" Width="16" Height="16" />
+            <TextBlock Text="New Fastfile…" VerticalAlignment="Center" FontSize="13" />
           </StackPanel>
         </Button>
       </StackPanel>
 
-      <ScrollViewer Grid.Row="3" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Margin="24,0,24,12" Spacing="12">
+      <ScrollViewer x:Name="RecentFilesScroll" Grid.Row="1" IsEnabled="{Binding CanInteract}"
+                    HorizontalScrollBarVisibility="Disabled" Margin="18,0,12,16">
+        <StackPanel Spacing="12">
           <Border IsVisible="{Binding HasError}" Padding="12,8" CornerRadius="6"
                   Background="{DynamicResource StudioErrorSurfaceBrush}"
                   BorderBrush="{DynamicResource StudioErrorBorderBrush}" BorderThickness="1">
@@ -89,50 +123,53 @@
                          FontSize="12" TextWrapping="Wrap" />
             </StackPanel>
           </Border>
-          <StackPanel Spacing="6">
-            <TextBlock Text="Recent fastfiles" FontSize="18" FontWeight="SemiBold" />
+          <StackPanel Spacing="8">
+            <TextBlock Text="Recent fastfiles" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource WelcomeText}" />
             <TextBlock IsVisible="{Binding !HasRecentFiles}"
                        Text="Fastfiles you open or create will appear here."
-                       Foreground="{DynamicResource StudioTextMutedBrush}" TextWrapping="Wrap" />
+                       Foreground="{StaticResource WelcomeMuted}" TextWrapping="Wrap" />
             <ItemsControl IsVisible="{Binding HasRecentFiles}" ItemsSource="{Binding RecentFiles}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="viewModels:RecentFastFileItem">
-                  <Border BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="0,0,0,1">
-                    <Button Classes="recentFile" Tag="{Binding Path}" Click="RecentFileButton_Click"
-                            ToolTip.Tip="{Binding Path}" AutomationProperties.Name="{Binding FileName}"
-                            AutomationProperties.HelpText="{Binding Directory}">
-                      <Grid ColumnDefinitions="22,*,16" ColumnSpacing="12">
-                        <icons:MaterialIcon Kind="FileOutline" Width="21" Height="21"
-                                            Foreground="{DynamicResource StudioTextMutedBrush}" />
-                        <StackPanel Grid.Column="1" Spacing="1">
-                          <TextBlock Text="{Binding FileName}" FontSize="14" FontWeight="SemiBold"
-                                     TextTrimming="CharacterEllipsis" />
-                          <TextBlock Classes="folder" Text="{Binding Directory}" />
-                        </StackPanel>
-                        <icons:MaterialIcon Grid.Column="2" Kind="ChevronRight" Width="16" Height="16"
-                                            Foreground="{DynamicResource StudioTextMutedBrush}" />
-                      </Grid>
-                    </Button>
-                  </Border>
+                  <Button Classes="recentFile" Tag="{Binding Path}" Click="RecentFileButton_Click"
+                          ToolTip.Tip="{Binding Path}" AutomationProperties.Name="{Binding FileName}"
+                          AutomationProperties.HelpText="{Binding Directory}">
+                    <Grid ColumnDefinitions="32,*,16" ColumnSpacing="11">
+                      <Border Height="34" CornerRadius="5" Background="#1D2020" VerticalAlignment="Center"
+                              BorderThickness="1" BorderBrush="{StaticResource WelcomeBorder}">
+                        <icons:MaterialIcon Kind="FileOutline" Width="18" Height="18" Foreground="{StaticResource WelcomeMuted}" />
+                      </Border>
+                      <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding FileName}" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource WelcomeText}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Classes="folder" Text="{Binding Directory}" Foreground="{StaticResource WelcomeMuted}" />
+                      </StackPanel>
+                      <icons:MaterialIcon Grid.Column="2" Kind="ChevronRight" Width="16" Height="16"
+                                          Foreground="{StaticResource WelcomeMuted}" />
+                    </Grid>
+                  </Button>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
           </StackPanel>
         </StackPanel>
       </ScrollViewer>
-
-      <Border Grid.Row="4" Padding="24,10" BorderThickness="0,1,0,0"
-              BorderBrush="{DynamicResource StudioBorderBrush}">
-        <Grid ColumnDefinitions="*,Auto">
-          <TextBlock Text="{Binding PlatformLabel}" FontSize="12"
-                     Foreground="{DynamicResource StudioAccentBrush}" />
-          <TextBlock Grid.Column="1" Text="{Binding DesktopVersionLabel, StringFormat='IW4 Studio {0}'}"
-                     FontSize="12" Foreground="{DynamicResource StudioTextMutedBrush}" />
-        </Grid>
-      </Border>
     </Grid>
 
-    <Grid IsVisible="{Binding IsChoosingMode}" Background="#72000000">
+    <Border Grid.Row="2" Padding="18,8" Background="{StaticResource WelcomeCharcoal}"
+            BorderThickness="0,1,0,0" BorderBrush="{StaticResource WelcomeBorder}">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7">
+        <Ellipse Width="5" Height="5" Fill="{DynamicResource StudioAccentStrongBrush}" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Text="{Binding PlatformLabel}" FontSize="12" Foreground="{DynamicResource StudioAccentStrongBrush}" />
+        <TextBlock Grid.Column="2" Text="{Binding DesktopVersionLabel, StringFormat='IW4 Studio {0}'}"
+                   FontSize="12" Foreground="{StaticResource WelcomeMuted}" />
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1" Grid.RowSpan="2" IsVisible="{Binding IsChoosingMode}" Background="#72000000">
       <Border x:Name="ModeSheet" Classes="sheet" KeyboardNavigation.TabNavigation="Cycle">
         <StackPanel Spacing="10">
           <StackPanel Spacing="3">
@@ -183,7 +220,7 @@
       </Border>
     </Grid>
 
-    <Border IsVisible="{Binding IsBusy}" Background="{DynamicResource StudioScrimBrush}">
+    <Border Grid.Row="1" Grid.RowSpan="2" IsVisible="{Binding IsBusy}" Background="{DynamicResource StudioScrimBrush}">
       <Border Classes="sheet">
         <StackPanel Spacing="12">
           <TextBlock Text="Loading workspace" FontSize="18" FontWeight="SemiBold" />
