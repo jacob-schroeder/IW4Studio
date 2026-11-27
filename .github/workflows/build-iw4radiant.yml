@@ -3,14 +3,7 @@ name: Build IW4.Radiant.Desktop
 on:
   push:
     branches:
-      - main
-    paths:
-      - apps/IW4.Radiant.Desktop/**
-      - Resources/iw4radiant_logo.*
-      - Resources/Bootstrap/ps3/**
-      - src/**
-      - global.json
-      - .github/workflows/build-iw4radiant.yml
+      - release
   workflow_dispatch:
 
 permissions:
@@ -169,6 +162,7 @@ jobs:
       - name: Create or update GitHub release
         shell: bash
         env:
+          PRERELEASE: ${{ github.ref != 'refs/heads/release' }}
           GH_TOKEN: ${{ github.token }}
           PUBLIC_VERSION: ${{ needs.version.outputs.public_version }}
         run: |
@@ -183,16 +177,14 @@ jobs:
               --target "$GITHUB_SHA" \
               --title "Iw4Radiant ${PUBLIC_VERSION}" \
               --notes "Automated Iw4Radiant build from commit ${GITHUB_SHA}." \
-              --prerelease \
-              --latest=false \
+              --prerelease="$PRERELEASE" \
               --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$release_tag" "${assets[@]}" \
               --target "$GITHUB_SHA" \
               --title "Iw4Radiant ${PUBLIC_VERSION}" \
               --notes "Automated Iw4Radiant build from commit ${GITHUB_SHA}." \
-              --prerelease \
-              --latest=false \
+              --prerelease="$PRERELEASE" \
               --repo "$GITHUB_REPOSITORY"
           fi
 
