@@ -4,4 +4,4 @@ using IW4.Game.Pointers;
 
 namespace IW4.Game.Assets.Fx;
 
-public sealed record FxElemVisualState(FxElemColor Color, float RotationDelta, float RotationTotal, float Size0, float Size1, float Scale);
+public sealed record FxElemVisualState(IW4.Game.Assets.GfxMap.GfxColor Color, float RotationDelta, float RotationTotal, float Size0, float Size1, float Scale);

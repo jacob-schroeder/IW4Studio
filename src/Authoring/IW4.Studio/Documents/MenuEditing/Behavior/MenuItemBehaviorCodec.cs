@@ -208,7 +208,7 @@ public sealed class MenuItemBehaviorCodec
             return null;
 
         MenuBehaviorRawEventHandlerShape raw = new(
-            ReadEventDataPointer(source.EventData.Value),
+            ReadEventDataPointer(source.EventData),
             source.Pad05,
             source.Pad06,
             source.Pad07);
@@ -341,15 +341,12 @@ public sealed class MenuItemBehaviorCodec
         null => null,
         MenuBehaviorScriptEventHandler script => new MenuEventHandler
         {
-            EventData = new EventData
-            {
-                Value = new UnconditionalScriptEventData
+            EventData = new UnconditionalScriptEventData
                 {
                     Script = PointerFor(
                         script.Raw.EventDataPointer.AsPointer<string>(),
                         script.Script is not null)
-                }
-            },
+                },
             UnconditionalScript = script.Script,
             EventType = MenuEventHandlerType.UnconditionalScript,
             Pad05 = script.Raw.Pad05,
@@ -361,10 +358,7 @@ public sealed class MenuItemBehaviorCodec
         MenuBehaviorSetLocalVariableEventHandler local => WriteSetLocal(local),
         MenuBehaviorOpaqueEventHandler opaque => new MenuEventHandler
         {
-            EventData = new EventData
-            {
-                Value = new IgnoredEventData { Reserved = opaque.Raw.EventDataPointer.Raw }
-            },
+            EventData = new IgnoredEventData { Reserved = opaque.Raw.EventDataPointer.Raw },
             EventType = (MenuEventHandlerType)opaque.EventType,
             Pad05 = opaque.Raw.Pad05,
             Pad06 = opaque.Raw.Pad06,
@@ -386,13 +380,10 @@ public sealed class MenuItemBehaviorCodec
 
         return new MenuEventHandler
         {
-            EventData = new EventData
-            {
-                Value = new ConditionalScriptEventData
+            EventData = new ConditionalScriptEventData
                 {
                     ConditionalScriptPointer = payloadPointer
-                }
-            },
+                },
             ConditionalScript = new ConditionalScript
             {
                 EventHandlerSet = PointerFor(source.ThenPointer, then is not null),
@@ -415,10 +406,7 @@ public sealed class MenuItemBehaviorCodec
             handlers is not null);
         return new MenuEventHandler
         {
-            EventData = new EventData
-            {
-                Value = new ElseScriptEventData { EventHandlerSetPointer = pointer }
-            },
+            EventData = new ElseScriptEventData { EventHandlerSetPointer = pointer },
             ElseScriptSet = handlers,
             EventType = MenuEventHandlerType.ElseScript,
             Pad05 = source.Raw.Pad05,
@@ -437,10 +425,7 @@ public sealed class MenuItemBehaviorCodec
 
         return new MenuEventHandler
         {
-            EventData = new EventData
-            {
-                Value = new SetLocalVarEventData { SetLocalVarDataPointer = payloadPointer }
-            },
+            EventData = new SetLocalVarEventData { SetLocalVarDataPointer = payloadPointer },
             SetLocalVarData = new SetLocalVarData
             {
                 LocalVarName = PointerFor(source.NamePointer, source.Name is not null),
@@ -494,7 +479,7 @@ public sealed class MenuItemBehaviorCodec
             PointerFor(source.SourcePointer, statement is not null));
     }
 
-    private static XPointerReference ReadEventDataPointer(EventDataValue value) => value switch
+    private static XPointerReference ReadEventDataPointer(EventData value) => value switch
     {
         UnconditionalScriptEventData script => script.Script.Untyped,
         ConditionalScriptEventData conditional => conditional.ConditionalScriptPointer.Untyped,

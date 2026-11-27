@@ -1,3 +1,4 @@
+using IW4.Game.Math;
 using IW4.Game.Pointers;
 
 namespace IW4.Game.Assets.FxMap;
@@ -35,8 +36,8 @@ public sealed class FxGlassSystem
     public IReadOnlyList<uint> CellBits { get; init; } = [];
     public XPointer<byte[]> VisDataPointer { get; init; }
     public IReadOnlyList<byte> VisData { get; init; } = [];
-    public XPointer<FxVec3[]> LinkOrgPointer { get; init; }
-    public IReadOnlyList<FxVec3> LinkOrg { get; init; } = [];
+    public XPointer<Vec3[]> LinkOrgPointer { get; init; }
+    public IReadOnlyList<Vec3> LinkOrg { get; init; } = [];
     public XPointer<float[]> HalfThicknessPointer { get; init; }
     public IReadOnlyList<float> HalfThickness { get; init; } = [];
     public XPointer<ushort[]> LightingHandlesPointer { get; init; }

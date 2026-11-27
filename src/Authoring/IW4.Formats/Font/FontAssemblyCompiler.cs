@@ -442,8 +442,7 @@ public static class FontAssemblyCompiler
             NameEnd = row.NameEnd,
             SamplerState = row.SamplerState,
             Semantic = row.Semantic,
-            Image = ReferenceEquals(row, atlasRow) ? atlasImage : row.Image,
-            Water = row.Water
+            Data = ReferenceEquals(row, atlasRow) ? atlasImage : row.Data
         }).ToArray(),
         Constants = template.Constants.Select(row => new MaterialConstantDef
         {

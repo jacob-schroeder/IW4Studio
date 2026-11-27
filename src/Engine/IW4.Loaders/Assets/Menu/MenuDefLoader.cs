@@ -691,7 +691,7 @@ public sealed class MenuDefLoader : XAssetLoader<MenuDefAsset>
         XPointerReference pointer,
         MenuEventHandlerType eventType)
     {
-        EventDataValue value = eventType switch
+        return eventType switch
         {
             MenuEventHandlerType.UnconditionalScript => new UnconditionalScriptEventData
             {
@@ -712,10 +712,8 @@ public sealed class MenuDefLoader : XAssetLoader<MenuDefAsset>
                 {
                     SetLocalVarDataPointer = pointer.AsPointer<SetLocalVarData>()
                 },
-            _ => new IgnoredEventData { Reserved = pointer.Raw }
+            _ => pointer.Raw == 0 ? EventData.Ignored : new IgnoredEventData { Reserved = pointer.Raw }
         };
-
-        return new EventData { Value = value };
     }
 
     private static ConditionalScript? ReadConditionalScriptPointer(
@@ -1033,7 +1031,7 @@ public sealed class MenuDefLoader : XAssetLoader<MenuDefAsset>
         XPointerReference pointer = hasPointerPayload
             ? context.PointerReader.ReadCell(cursor, XPointerResolutionMode.Direct)
             : ReadRawCell(cursor, XPointerResolutionMode.Direct);
-        ItemDefDataValue value = itemType switch
+        return itemType switch
         {
             ItemDefType.Text
                 or ItemDefType.EditField
@@ -1069,15 +1067,13 @@ public sealed class MenuDefLoader : XAssetLoader<MenuDefAsset>
             {
                 TextScrollPointer = pointer.AsPointer<TextScrollDef>()
             },
-            _ => new NoItemDefData { Reserved = pointer.Raw }
+            _ => pointer.Raw == 0 ? ItemDefData.None : new NoItemDefData { Reserved = pointer.Raw }
         };
-
-        return new ItemDefData { Value = value };
     }
 
     private static int GetItemTypeDataRaw(ItemDefData typeData)
     {
-        return typeData.Value switch
+        return typeData switch
         {
             EditFieldItemDefData editField => editField.EditFieldPointer.Raw,
             ListBoxItemDefData listBox => listBox.ListBoxPointer.Raw,
@@ -1728,10 +1724,10 @@ public sealed class MenuDefLoader : XAssetLoader<MenuDefAsset>
     {
         return new Vec4
         {
-            A = cursor.ReadSingle(),
             R = cursor.ReadSingle(),
             G = cursor.ReadSingle(),
-            B = cursor.ReadSingle()
+            B = cursor.ReadSingle(),
+            A = cursor.ReadSingle()
         };
     }
 

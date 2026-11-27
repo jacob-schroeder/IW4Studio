@@ -194,7 +194,7 @@ internal static class MenuSnapshotFactory
             value.LoadedFloatExpressions.Count));
 
     private static MenuItemPayloadValue Payload(ItemDefAsset value) =>
-        value.TypeData.Value switch
+        value.TypeData switch
         {
             EditFieldItemDefData => value.EditField is { } edit
                 ? new MenuEditFieldPayloadValue(
@@ -251,8 +251,7 @@ internal static class MenuSnapshotFactory
                 ? MenuTextScrollPayloadValue.Instance
                 : MenuNoItemPayloadValue.Instance,
             NoItemDefData => MenuNoItemPayloadValue.Instance,
-            _ => throw new InvalidDataException(
-                $"Unsupported Menu item-data union arm '{value.TypeData.Value.GetType().Name}'.")
+            null => throw new InvalidDataException("Menu item data has no union arm.")
         };
 
     private static MenuItemValue CreateMissingItem(int imageTrack) =>
@@ -270,9 +269,7 @@ internal static class MenuSnapshotFactory
         value.VertAlign);
 
     private static MenuColorValue Color(IW4.Game.Math.Vec4 value) =>
-        // The generic asset Vec4 names its four serialized slots A/R/G/B,
-        // while Window colors use the engine's R/G/B/A slot semantics.
-        new(value.B, value.A, value.R, value.G);
+        new(value.A, value.R, value.G, value.B);
 
     private static MenuTransitionValue Transition(MenuTransition value) => new(
         value.TransitionType,

@@ -26,7 +26,7 @@ internal sealed partial class MenuSourceReader
                 Add(new MenuEventHandler
                 {
                     EventType = MenuEventHandlerType.ConditionalScript,
-                    EventData = new EventData { Value = new ConditionalScriptEventData { ConditionalScriptPointer = new(-1) } },
+                    EventData = new ConditionalScriptEventData { ConditionalScriptPointer = new(-1) },
                     ConditionalScript = new ConditionalScript
                     {
                         EventHandlers = body, EventHandlerSet = Inline(body),
@@ -38,7 +38,7 @@ internal sealed partial class MenuSourceReader
                     Add(new MenuEventHandler
                     {
                         EventType = MenuEventHandlerType.ElseScript,
-                        EventData = new EventData { Value = new ElseScriptEventData { EventHandlerSetPointer = new(-1) } },
+                        EventData = new ElseScriptEventData { EventHandlerSetPointer = new(-1) },
                         ElseScriptSet = ReadHandlers(depth + 1)
                     });
                 }
@@ -63,7 +63,7 @@ internal sealed partial class MenuSourceReader
                 Add(new MenuEventHandler
                 {
                     EventType = localType,
-                    EventData = new EventData { Value = new UnconditionalScriptEventData { Script = new(-1) } },
+                    EventData = new UnconditionalScriptEventData { Script = new(-1) },
                     UnconditionalScript = ReadScriptCommand()
                 });
             }
@@ -75,7 +75,7 @@ internal sealed partial class MenuSourceReader
                 Add(new MenuEventHandler
                 {
                     EventType = localType,
-                    EventData = new EventData { Value = new SetLocalVarEventData { SetLocalVarDataPointer = new(-1) } },
+                    EventData = new SetLocalVarEventData { SetLocalVarDataPointer = new(-1) },
                     SetLocalVarData = new SetLocalVarData
                     {
                         LocalVarNameString = name, LocalVarName = Inline(name),

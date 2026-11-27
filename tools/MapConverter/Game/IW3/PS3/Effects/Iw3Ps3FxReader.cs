@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
 using IW4.Game.Assets.Fx;
+using IW4.Game.Assets.GfxMap;
+using Vec3 = IW4.Game.Math.Vec3;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.XModel;
 using IW4.Game.Pointers;
@@ -335,7 +337,7 @@ internal static partial class Iw3Ps3FastFileCatalog
             new FxElemVec3Range(FxVector(data, row + 24), FxVector(data, row + 36)));
 
         private static FxElemVisualState FxVisualState(byte[] data, int row) => new(
-            new FxElemColor(data[row], data[row + 1], data[row + 2], data[row + 3]),
+            GfxColor.FromRgba(data[row], data[row + 1], data[row + 2], data[row + 3]),
             FxFloat(data, row + 4), FxFloat(data, row + 8), FxFloat(data, row + 12),
             FxFloat(data, row + 16), FxFloat(data, row + 20));
 

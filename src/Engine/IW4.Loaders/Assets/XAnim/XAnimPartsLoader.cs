@@ -1,3 +1,4 @@
+using IW4.Game.Math;
 using IW4.Loaders.Database;
 using IW4.Game.Assets.XAnim;
 using IW4.Game.Pointers;
@@ -257,8 +258,8 @@ public sealed class XAnimPartsLoader : XAssetLoader<XAnimPartsAsset>
     {
         byte[] bytes = context.Blocks.Load(cursor, XAnimPartTransFrames.SerializedSize, out XBlockAddress framesAddress);
         var c = new FastFileCursor(bytes, framesAddress);
-        XAnimVec3 mins = ReadVec3(c);
-        XAnimVec3 frameSize = ReadVec3(c);
+        Vec3 mins = ReadVec3(c);
+        Vec3 frameSize = ReadVec3(c);
         XPointer<byte[]> framesPointer = ReadPointer<byte[]>(c, context, XPointerResolutionMode.Direct);
         int frameCount = checked(size + 1);
         int dynamicByteCount = GetDynamicIndexByteCount(numFrames, frameCount);
@@ -646,9 +647,9 @@ public sealed class XAnimPartsLoader : XAssetLoader<XAnimPartsAsset>
     private static XString ReadXStringPointer(FastFileCursor cursor, DbLoadExecutionContext context) =>
         ReadPointer<string>(cursor, context, XPointerResolutionMode.Direct);
 
-    private static XAnimVec3 ReadVec3(FastFileCursor cursor)
+    private static Vec3 ReadVec3(FastFileCursor cursor)
     {
-        return new XAnimVec3(cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle());
+        return new Vec3(cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle());
     }
 
 

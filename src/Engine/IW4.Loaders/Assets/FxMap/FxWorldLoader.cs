@@ -4,6 +4,7 @@ using IW4.Loaders.Assets.Physics;
 using IW4.Game.Assets.FxMap;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.Physics;
+using IW4.Game.Math;
 using IW4.Game.Pointers;
 using IW4.Game.Zone;
 using IW4.Runtime.Database;
@@ -90,7 +91,7 @@ public sealed class FxWorldLoader : XAssetLoader<FxWorldAsset>
         XPointer<uint[]> isInUsePointer = context.PointerReader.ReadPointer<uint[]>(cursor, XPointerResolutionMode.Direct);
         XPointer<uint[]> cellBitsPointer = context.PointerReader.ReadPointer<uint[]>(cursor, XPointerResolutionMode.Direct);
         XPointer<byte[]> visDataPointer = context.PointerReader.ReadPointer<byte[]>(cursor, XPointerResolutionMode.Direct);
-        XPointer<FxVec3[]> linkOrgPointer = context.PointerReader.ReadPointer<FxVec3[]>(cursor, XPointerResolutionMode.Direct);
+        XPointer<Vec3[]> linkOrgPointer = context.PointerReader.ReadPointer<Vec3[]>(cursor, XPointerResolutionMode.Direct);
         XPointer<float[]> halfThicknessPointer = context.PointerReader.ReadPointer<float[]>(cursor, XPointerResolutionMode.Direct);
         XPointer<ushort[]> lightingHandlesPointer = context.PointerReader.ReadPointer<ushort[]>(cursor, XPointerResolutionMode.Direct);
         XPointer<FxGlassInitPieceState[]> initPieceStatesPointer = context.PointerReader.ReadPointer<FxGlassInitPieceState[]>(cursor, XPointerResolutionMode.Direct);
@@ -155,7 +156,7 @@ public sealed class FxWorldLoader : XAssetLoader<FxWorldAsset>
         IReadOnlyList<uint> isInUse;
         IReadOnlyList<uint> cellBits;
         IReadOnlyList<byte> visData;
-        IReadOnlyList<FxVec3> linkOrg;
+        IReadOnlyList<Vec3> linkOrg;
         IReadOnlyList<float> halfThickness;
 
         int pieceLimit = Count(header.PieceLimit, "pieceLimit");
@@ -285,8 +286,8 @@ public sealed class FxWorldLoader : XAssetLoader<FxWorldAsset>
         XBlockAddress rowAddress = rowCursor.AddressAt(start)
             ?? throw new InvalidDataException("FxGlassDef cursor has no destination block address.");
         float halfThickness = rowCursor.ReadSingle();
-        FxVec2 texVec0 = ReadVec2(rowCursor);
-        FxVec2 texVec1 = ReadVec2(rowCursor);
+        Vec2 texVec0 = ReadVec2(rowCursor);
+        Vec2 texVec1 = ReadVec2(rowCursor);
         uint color = rowCursor.ReadUInt32();
         XPointer<MaterialAsset> materialPointer = context.PointerReader.ReadPointer<MaterialAsset>(rowCursor, XPointerResolutionMode.AliasCell);
         XPointer<MaterialAsset> materialShatteredPointer = context.PointerReader.ReadPointer<MaterialAsset>(rowCursor, XPointerResolutionMode.AliasCell);
@@ -508,7 +509,7 @@ public sealed class FxWorldLoader : XAssetLoader<FxWorldAsset>
         return LoadInlineArray(cursor, pointer, count, 1, alignment, context, memberName);
     }
 
-    private static IReadOnlyList<FxVec3> ReadVec3Array(
+    private static IReadOnlyList<Vec3> ReadVec3Array(
         FastFileCursor cursor,
         XPointerReference pointer,
         int count,
@@ -516,7 +517,7 @@ public sealed class FxWorldLoader : XAssetLoader<FxWorldAsset>
     {
         byte[] bytes = LoadInlineArray(cursor, pointer, count, 0x0C, 4, context, "FxGlassSystem.linkOrg");
         var c = new FastFileCursor(bytes);
-        var values = new FxVec3[count];
+        var values = new Vec3[count];
         for (int i = 0; i < values.Length; i++)
             values[i] = ReadVec3(c);
 
@@ -583,14 +584,14 @@ public sealed class FxWorldLoader : XAssetLoader<FxWorldAsset>
             ReadVec3(cursor));
     }
 
-    private static FxVec3 ReadVec3(FastFileCursor cursor)
+    private static Vec3 ReadVec3(FastFileCursor cursor)
     {
-        return new FxVec3(cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle());
+        return new Vec3(cursor.ReadSingle(), cursor.ReadSingle(), cursor.ReadSingle());
     }
 
-    private static FxVec2 ReadVec2(FastFileCursor cursor)
+    private static Vec2 ReadVec2(FastFileCursor cursor)
     {
-        return new FxVec2(cursor.ReadSingle(), cursor.ReadSingle());
+        return new Vec2(cursor.ReadSingle(), cursor.ReadSingle());
     }
 
 

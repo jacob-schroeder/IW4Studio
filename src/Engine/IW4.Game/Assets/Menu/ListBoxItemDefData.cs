@@ -2,7 +2,7 @@ using IW4.Game.Pointers;
 
 namespace IW4.Game.Assets.Menu;
 
-public sealed class ListBoxItemDefData : ItemDefDataValue
+public sealed class ListBoxItemDefData
 {
     public XPointer<ListBoxDef> ListBoxPointer { get; init; }
 }

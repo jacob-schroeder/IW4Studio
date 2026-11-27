@@ -1,15 +1,20 @@
-using IW4.Game.Pointers;
-
 namespace IW4.Game.Assets.Menu;
 
-public sealed class ItemDefData
+public union ItemDefData(
+    EditFieldItemDefData,
+    ListBoxItemDefData,
+    MultiItemDefData,
+    DvarEnumItemDefData,
+    NewsTickerItemDefData,
+    TextScrollItemDefData,
+    NoItemDefData)
 {
-    public ItemDefDataValue Value { get; init; } = new NoItemDefData();
+    public static ItemDefData None { get; } = new NoItemDefData();
 
-    public EditFieldItemDefData? EditField => Value as EditFieldItemDefData;
-    public ListBoxItemDefData? ListBox => Value as ListBoxItemDefData;
-    public MultiItemDefData? Multi => Value as MultiItemDefData;
-    public DvarEnumItemDefData? DvarEnum => Value as DvarEnumItemDefData;
-    public NewsTickerItemDefData? NewsTicker => Value as NewsTickerItemDefData;
-    public TextScrollItemDefData? TextScroll => Value as TextScrollItemDefData;
+    public EditFieldItemDefData? EditField => this is EditFieldItemDefData value ? value : null;
+    public ListBoxItemDefData? ListBox => this is ListBoxItemDefData value ? value : null;
+    public MultiItemDefData? Multi => this is MultiItemDefData value ? value : null;
+    public DvarEnumItemDefData? DvarEnum => this is DvarEnumItemDefData value ? value : null;
+    public NewsTickerItemDefData? NewsTicker => this is NewsTickerItemDefData value ? value : null;
+    public TextScrollItemDefData? TextScroll => this is TextScrollItemDefData value ? value : null;
 }

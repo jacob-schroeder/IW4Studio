@@ -4,7 +4,7 @@ public sealed class MenuEventHandler
 {
     public const int SerializedSize = 0x08;
 
-    public EventData EventData { get; init; } = new();
+    public EventData EventData { get; init; } = EventData.Ignored;
     public string? UnconditionalScript { get; set; }
     public ConditionalScript? ConditionalScript { get; set; }
     public MenuEventHandlerSet? ElseScriptSet { get; set; }

@@ -1,5 +1,6 @@
 using IW4.Game.Assets;
 using IW4.Game.Assets.FxMap;
+using IW4.Game.Math;
 using IW4.Game.Pointers;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
@@ -364,13 +365,13 @@ internal sealed class FxWorldLinkPlan : AssetLinkPlan
         WriteVec3(writer, frame.Origin);
     }
 
-    private static void WriteVec2(LinkTemplateWriter writer, FxVec2 value)
+    private static void WriteVec2(LinkTemplateWriter writer, Vec2 value)
     {
         writer.WriteSingle(value.X);
         writer.WriteSingle(value.Y);
     }
 
-    private static void WriteVec3(LinkTemplateWriter writer, FxVec3 value)
+    private static void WriteVec3(LinkTemplateWriter writer, Vec3 value)
     {
         writer.WriteSingle(value.X);
         writer.WriteSingle(value.Y);
@@ -382,10 +383,10 @@ internal sealed class FxWorldLinkPlan : AssetLinkPlan
     private static bool IsZero(float value) =>
         BitConverter.SingleToInt32Bits(value) == 0;
 
-    private static bool IsZero(FxVec2 value) =>
+    private static bool IsZero(Vec2 value) =>
         IsZero(value.X) && IsZero(value.Y);
 
-    private static bool IsZero(FxVec3 value) =>
+    private static bool IsZero(Vec3 value) =>
         IsZero(value.X) && IsZero(value.Y) && IsZero(value.Z);
 
     private static bool IsZero(FxSpatialFrame value) =>
@@ -420,7 +421,7 @@ internal sealed class FxWorldLinkPlan : AssetLinkPlan
         public static FrozenDefinition Freeze(FxGlassDef definition, int index)
         {
             string path = $"FxMap.GlassSystem.Defs[{index}]";
-            IReadOnlyList<FxVec2> texVecs = definition.TexVecs ??
+            IReadOnlyList<Vec2> texVecs = definition.TexVecs ??
                 throw new InvalidDataException($"{path}.TexVecs cannot be null.");
             if (texVecs.Count != 2)
                 throw new InvalidDataException($"{path}.TexVecs requires exactly two rows.");
@@ -558,7 +559,7 @@ internal sealed class FxWorldLinkPlan : AssetLinkPlan
             IReadOnlyList<byte> visData = Require(
                 glass.VisData,
                 "FxMap.GlassSystem.VisData");
-            IReadOnlyList<FxVec3> linkOrg = Require(
+            IReadOnlyList<Vec3> linkOrg = Require(
                 glass.LinkOrg,
                 "FxMap.GlassSystem.LinkOrg");
             IReadOnlyList<float> halfThickness = Require(
@@ -706,7 +707,7 @@ internal sealed class FxWorldLinkPlan : AssetLinkPlan
             IReadOnlyList<uint> isInUse,
             IReadOnlyList<uint> cellBits,
             IReadOnlyList<byte> visData,
-            IReadOnlyList<FxVec3> linkOrg,
+            IReadOnlyList<Vec3> linkOrg,
             IReadOnlyList<float> halfThickness)
         {
             for (int index = 0; index < piecePlaces.Count; index++)

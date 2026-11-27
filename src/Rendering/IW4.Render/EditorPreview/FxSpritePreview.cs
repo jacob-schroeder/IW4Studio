@@ -695,10 +695,10 @@ public sealed class FxSpritePreview
         // The authored colors are endpoints of one range; preserve their hue relationship.
         float random = Random(seed, 14);
         return new Vector4(
-            SampleColorChannel(sample.Base.Color.R, sample.Amplitude.Color.R, random),
-            SampleColorChannel(sample.Base.Color.G, sample.Amplitude.Color.G, random),
-            SampleColorChannel(sample.Base.Color.B, sample.Amplitude.Color.B, random),
-            SampleColorChannel(sample.Base.Color.A, sample.Amplitude.Color.A, random));
+            SampleColorChannel(sample.Base.Color.Red, sample.Amplitude.Color.Red, random),
+            SampleColorChannel(sample.Base.Color.Green, sample.Amplitude.Color.Green, random),
+            SampleColorChannel(sample.Base.Color.Blue, sample.Amplitude.Color.Blue, random),
+            SampleColorChannel(sample.Base.Color.Alpha, sample.Amplitude.Color.Alpha, random));
     }
 
     private static float SampleColorChannel(byte first, byte last, float random) =>

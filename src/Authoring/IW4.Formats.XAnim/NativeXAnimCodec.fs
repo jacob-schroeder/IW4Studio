@@ -6,6 +6,7 @@ open System.IO
 open System.Text.Json
 open System.Text.Json.Serialization
 open IW4.Game.Assets.XAnim
+open IW4.Game.Math
 open IW4.Game.Pointers
 open IW4.Game.ScriptStrings
 
@@ -106,9 +107,9 @@ and [<AllowNullLiteral>] internal NativeTrans() =
 
 and [<AllowNullLiteral>] internal NativeTransFrames() =
     [<JsonInclude>]
-    member val Mins: XAnimVec3 = null with get, set
+    member val Mins: Nullable<Vec3> = Nullable() with get, set
     [<JsonInclude>]
-    member val Size: XAnimVec3 = null with get, set
+    member val Size: Nullable<Vec3> = Nullable() with get, set
     [<JsonInclude>]
     member val Indices: uint16[] = null with get, set
     [<JsonInclude>]
@@ -158,8 +159,8 @@ type private QuatBranch<'T> =
 
 type private TransBranch =
     | TransConstant of XAnimPartTransFrame0
-    | SmallAnimated of XAnimVec3 * XAnimVec3 * uint16[] * SmallXAnimTransFrame[]
-    | LargeAnimated of XAnimVec3 * XAnimVec3 * uint16[] * LargeXAnimTransFrame[]
+    | SmallAnimated of Vec3 * Vec3 * uint16[] * SmallXAnimTransFrame[]
+    | LargeAnimated of Vec3 * Vec3 * uint16[] * LargeXAnimTransFrame[]
 
 module internal NativeXAnimCodec =
     let private format = "iw4-ps3-xanim"
@@ -178,7 +179,7 @@ module internal NativeXAnimCodec =
     let private scriptString value =
         ScriptStringReference(0us, text value, ScriptStringHandle.Null, Unchecked.defaultof<_>)
 
-    let private finiteVec (value: XAnimVec3) =
+    let private finiteVec (value: Vec3) =
         Single.IsFinite(value.X) && Single.IsFinite(value.Y) && Single.IsFinite(value.Z)
 
     let private copy (values: IReadOnlyList<'T>) =
@@ -201,7 +202,7 @@ module internal NativeXAnimCodec =
                 fail name $"has incomplete {kind} frames."
             Animated(indices, values)
 
-    let private transBranch size smallTrans (frame0: XAnimPartTransFrame0) hasFrames mins extent
+    let private transBranch size smallTrans (frame0: XAnimPartTransFrame0) hasFrames (mins: Nullable<Vec3>) (extent: Nullable<Vec3>)
         (indices: uint16[]) (smallFrames: SmallXAnimTransFrame[]) (largeFrames: LargeXAnimTransFrame[]) numFrames name =
         if size = 0us then
             if isNull frame0 || hasFrames then fail name "has incomplete translation delta frames."
@@ -210,16 +211,16 @@ module internal NativeXAnimCodec =
             if not (isNull frame0) || not hasFrames || isNull indices || indices.Length <> int size + 1 then
                 fail name "has incomplete translation delta frames."
             checkIndices indices numFrames name "translation"
-            if isNull mins || isNull extent || not (finiteVec mins && finiteVec extent) then
+            if not mins.HasValue || not extent.HasValue || not (finiteVec mins.Value && finiteVec extent.Value) then
                 fail name "has incomplete translation frame payload."
             if smallTrans = 0uy then
                 if not (isNull smallFrames) || isNull largeFrames || largeFrames.Length <> int size + 1 || Array.exists isNull largeFrames then
                     fail name "has incomplete translation frame payload."
-                LargeAnimated(mins, extent, indices, largeFrames)
+                LargeAnimated(mins.Value, extent.Value, indices, largeFrames)
             else
                 if not (isNull largeFrames) || isNull smallFrames || smallFrames.Length <> int size + 1 || Array.exists isNull smallFrames then
                     fail name "has incomplete translation frame payload."
-                SmallAnimated(mins, extent, indices, smallFrames)
+                SmallAnimated(mins.Value, extent.Value, indices, smallFrames)
 
     let private fromNativeQuat2 (value: NativeQuat2) numFrames name =
         let frames = if isNull value.Frames then null else value.Frames.Values
@@ -234,8 +235,8 @@ module internal NativeXAnimCodec =
     let private fromNativeTrans (value: NativeTrans) numFrames name =
         let frames = value.Frames
         transBranch value.Size value.SmallTrans value.Frame0 (not (isNull frames))
-            (if isNull frames then null else frames.Mins)
-            (if isNull frames then null else frames.Size)
+            (if isNull frames then Nullable() else frames.Mins)
+            (if isNull frames then Nullable() else frames.Size)
             (if isNull frames then null else frames.Indices)
             (if isNull frames then null else frames.SmallFrames)
             (if isNull frames then null else frames.LargeFrames)
@@ -267,8 +268,8 @@ module internal NativeXAnimCodec =
                     null, copy payload.Frames
                 | _ -> null, null
         transBranch value.Size value.SmallTrans value.Frame0 (not (isNull frames))
-            (if isNull frames then null else frames.Mins)
-            (if isNull frames then null else frames.Size)
+            (if isNull frames then Nullable() else Nullable(frames.Mins))
+            (if isNull frames then Nullable() else Nullable(frames.Size))
             (if isNull frames || isNull frames.DynamicFrames then null else copy frames.DynamicFrames.FrameIndices)
             small large numFrames name
 
@@ -314,7 +315,7 @@ module internal NativeXAnimCodec =
 
     let private toNativeTrans (value: XAnimPartTrans) numFrames name =
         let makeFrames mins extent indices small large =
-            NativeTransFrames(Mins = mins, Size = extent, Indices = indices, SmallFrames = small, LargeFrames = large)
+            NativeTransFrames(Mins = Nullable(mins), Size = Nullable(extent), Indices = indices, SmallFrames = small, LargeFrames = large)
         match fromAssetTrans value numFrames name with
         | TransConstant frame -> NativeTrans(Size = value.Size, SmallTrans = value.SmallTrans, Pad3 = value.Pad3, Frame0 = frame)
         | SmallAnimated(mins, extent, indices, frames) ->

@@ -215,10 +215,9 @@ public sealed partial class MaterialExchange
             NameEnd = end,
             SamplerState = samplerState,
             Semantic = semantic,
-            Image = semantic == TextureSemantic.WaterMap ? null : image,
-            Water = semantic == TextureSemantic.WaterMap
+            Data = semantic == TextureSemantic.WaterMap
                 ? ReadWater(Object(Property(value, "water", path), $"{path}.water"), image, $"{path}.water")
-                : null
+                : image
         };
     }
 

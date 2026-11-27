@@ -1,3 +1,4 @@
+using IW4.Game.Math;
 using IW4.Game.Assets.XAnim;
 using IW4.Game.ScriptStrings;
 using IW4.Game.Zone;
@@ -696,7 +697,7 @@ internal sealed class XAnimLinkPlan : AssetLinkPlan
         return writer.Complete();
     }
 
-    private static void WriteVec3(LinkTemplateWriter writer, XAnimVec3 value)
+    private static void WriteVec3(LinkTemplateWriter writer, Vec3 value)
     {
         writer.WriteSingle(value.X);
         writer.WriteSingle(value.Y);

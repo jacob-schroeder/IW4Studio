@@ -2,6 +2,7 @@ using System.Numerics;
 using IW4.Game.Assets.FxMap;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.Physics;
+using IW4.Game.Math;
 using IW4.Radiant.Desktop.MapSource;
 using IW4.Radiant.Desktop.Materials;
 
@@ -33,7 +34,7 @@ internal static class BrushGlassCompiler
             throw new NotSupportedException("The map exceeds the native glass piece capacity.");
         var definitions = new List<FxGlassDef>();
         var definitionIndices = new Dictionary<(string Material, string Shattered, string Physics,
-            float HalfThickness, FxVec2 U, FxVec2 V), byte>();
+            float HalfThickness, Vec2 U, Vec2 V), byte>();
         var initial = new FxGlassInitPieceState[panes.Length];
         var geometry = new List<FxGlassGeometryData>(checked(panes.Length * 4));
         for (int index = 0; index < panes.Length; index++)
@@ -56,9 +57,9 @@ internal static class BrushGlassCompiler
                 0, 0, 0, 1)));
             var mapping = SurfaceProjection.Parse(face.Face.Projection).GetMapping(normal);
             // PS3 0x00143278 applies these rows directly to signed packed shorts.
-            FxVec2 u = new(Vector3.Dot(mapping.U, axisX) / 32, Vector3.Dot(mapping.U, axisY) / 32);
-            FxVec2 v = new(Vector3.Dot(mapping.V, axisX) / 32, Vector3.Dot(mapping.V, axisY) / 32);
-            FxVec2 texOrigin = new(
+            Vec2 u = new(Vector3.Dot(mapping.U, axisX) / 32, Vector3.Dot(mapping.U, axisY) / 32);
+            Vec2 v = new(Vector3.Dot(mapping.V, axisX) / 32, Vector3.Dot(mapping.V, axisY) / 32);
+            Vec2 texOrigin = new(
                 (float)(BrushGeometry.Dot(mapping.U, faceCenter) + mapping.Offset.X),
                 (float)(BrushGeometry.Dot(mapping.V, faceCenter) + mapping.Offset.Y));
             float determinant = u.X * v.Y - u.Y * v.X;
@@ -108,7 +109,7 @@ internal static class BrushGlassCompiler
             initial[index] = new FxGlassInitPieceState
             {
                 Frame = new FxSpatialFrame(new FxQuat(rotation.X, rotation.Y, rotation.Z, rotation.W),
-                    new FxVec3(center.X, center.Y, center.Z)),
+                    new Vec3(center.X, center.Y, center.Z)),
                 Radius = MathF.Sqrt(radiusSquared), TexCoordOrigin = texOrigin,
                 SupportMask = 0xf0000000, AreaX2 = -areaX2 / 1024f,
                 DefIndex = definitionIndex, VertCount = 4
@@ -130,7 +131,7 @@ internal static class BrushGlassCompiler
             PieceDynamics = Enumerable.Range(0, capacity).Select(_ => new FxGlassPieceDynamics(0, 0, 0, default, default)).ToArray(),
             GeoData = new FxGlassGeometryData[geometryCapacity], IsInUse = new uint[words],
             CellBits = new uint[checked(cellCount * words)], VisData = new byte[(capacity + 15) & ~15],
-            LinkOrg = new FxVec3[capacity], HalfThickness = new float[(capacity + 3) & ~3]
+            LinkOrg = new Vec3[capacity], HalfThickness = new float[(capacity + 3) & ~3]
         };
     }
 

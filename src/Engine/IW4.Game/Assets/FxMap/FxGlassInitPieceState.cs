@@ -1,3 +1,4 @@
+using IW4.Game.Math;
 namespace IW4.Game.Assets.FxMap;
 
 public sealed class FxGlassInitPieceState
@@ -6,7 +7,7 @@ public sealed class FxGlassInitPieceState
 
     public FxSpatialFrame Frame { get; init; }
     public float Radius { get; init; }
-    public FxVec2 TexCoordOrigin { get; init; }
+    public Vec2 TexCoordOrigin { get; init; }
     /// <summary>Bit 31 corresponds to the edge from vertex 0 to vertex 1.
     /// Successive edges use descending bits. Set means supported and clear means exposed.</summary>
     public uint SupportMask { get; init; }

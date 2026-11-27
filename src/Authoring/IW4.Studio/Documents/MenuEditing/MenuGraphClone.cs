@@ -177,15 +177,15 @@ internal sealed class MenuGraphClone
         return clone;
     }
 
-    private EventData CloneEventData(EventData value) => new() { Value = value.Value switch
+    private EventData CloneEventData(EventData value) => value switch
     {
         UnconditionalScriptEventData data => new UnconditionalScriptEventData { Script = Ptr(data.Script) },
         ConditionalScriptEventData data => new ConditionalScriptEventData { ConditionalScriptPointer = Ptr(data.ConditionalScriptPointer) },
         ElseScriptEventData data => new ElseScriptEventData { EventHandlerSetPointer = Ptr(data.EventHandlerSetPointer) },
         SetLocalVarEventData data => new SetLocalVarEventData { SetLocalVarDataPointer = Ptr(data.SetLocalVarDataPointer) },
-        IgnoredEventData data => new IgnoredEventData { Reserved = data.Reserved },
-        _ => throw new InvalidDataException($"Unsupported Menu event-data union arm '{value.Value.GetType().Name}'.")
-    }};
+        IgnoredEventData data => data,
+        null => throw new InvalidDataException("Menu event data has no union arm.")
+    };
 
     private ConditionalScript? CloneConditional(ConditionalScript? value)
     {
@@ -310,7 +310,7 @@ internal sealed class MenuGraphClone
         Background = Ptr(value.Background), BackgroundMaterialName = value.BackgroundMaterialName ?? value.BackgroundMaterial?.Info.Name
     };
 
-    private static ItemDefData CloneItemData(ItemDefData value) => new() { Value = value.Value switch
+    private static ItemDefData CloneItemData(ItemDefData value) => value switch
     {
         EditFieldItemDefData data => new EditFieldItemDefData { EditFieldPointer = Ptr(data.EditFieldPointer) },
         ListBoxItemDefData data => new ListBoxItemDefData { ListBoxPointer = Ptr(data.ListBoxPointer) },
@@ -318,9 +318,9 @@ internal sealed class MenuGraphClone
         DvarEnumItemDefData data => new DvarEnumItemDefData { DvarEnumNamePointer = Ptr(data.DvarEnumNamePointer) },
         NewsTickerItemDefData data => new NewsTickerItemDefData { NewsTickerPointer = Ptr(data.NewsTickerPointer) },
         TextScrollItemDefData data => new TextScrollItemDefData { TextScrollPointer = Ptr(data.TextScrollPointer) },
-        NoItemDefData data => new NoItemDefData { Reserved = data.Reserved },
-        _ => throw new InvalidDataException($"Unsupported Menu item-data union arm '{value.Value.GetType().Name}'.")
-    }};
+        NoItemDefData data => data,
+        null => throw new InvalidDataException("Menu item data has no union arm.")
+    };
 
     private EditFieldDef? CloneEditField(EditFieldDef? value)
     {
@@ -427,7 +427,7 @@ internal sealed class MenuGraphClone
     private ItemFloatExpression CloneFloatExpression(ItemFloatExpression value) => new() { Target = value.Target, Expression = Ptr(value.Expression), Statement = CloneStatement(value.Statement) };
 
     private static RectangleDef Rect(RectangleDef value) => new() { X = value.X, Y = value.Y, W = value.W, H = value.H, HorzAlign = value.HorzAlign, VertAlign = value.VertAlign, Pad12 = value.Pad12 };
-    private static Vec4 Vec(Vec4 value) => new() { A = value.A, R = value.R, G = value.G, B = value.B };
+    private static Vec4 Vec(Vec4 value) => value;
     private static IReadOnlyList<MenuTransition> Transitions(IReadOnlyList<MenuTransition> values) => values.Select(value => new MenuTransition { TransitionType = value.TransitionType, TargetField = value.TargetField, StartTime = value.StartTime, StartValue = value.StartValue, EndValue = value.EndValue, Time = value.Time, EndTriggerType = value.EndTriggerType }).ToArray();
     private static XPointer<T> Ptr<T>(XPointer<T> value) => new(value.Raw, value.ResolutionMode);
 }

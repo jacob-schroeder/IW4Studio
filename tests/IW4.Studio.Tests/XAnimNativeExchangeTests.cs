@@ -1,6 +1,7 @@
 using System.Text.Json;
 using IW4.Formats.SourceFormat.XAnim;
 using IW4.Game.Assets.XAnim;
+using IW4.Game.Math;
 using IW4.Game.Pointers;
 using Xunit;
 
@@ -140,8 +141,8 @@ public sealed class XAnimNativeExchangeTests
             else
             {
                 Assert.Equal(new ushort[] { 0, 255 }, asset.DeltaPart.Trans.Frames!.DynamicFrames.FrameIndices);
-                Assert.Equal(new XAnimVec3(1, 2, 3), asset.DeltaPart.Trans.Frames.Mins);
-                Assert.Equal(new XAnimVec3(4, 5, 6), asset.DeltaPart.Trans.Frames.Size);
+                Assert.Equal(new Vec3(1, 2, 3), asset.DeltaPart.Trans.Frames.Mins);
+                Assert.Equal(new Vec3(4, 5, 6), asset.DeltaPart.Trans.Frames.Size);
                 if (asset.DeltaPart.Trans.SmallTrans != 0)
                     Assert.Equal(new SmallXAnimTransFrame(254, 255, 0),
                         Assert.IsType<SmallXAnimTransFramePayload>(asset.DeltaPart.Trans.Frames.FramePayload).Frames[1]);
@@ -225,6 +226,21 @@ public sealed class XAnimNativeExchangeTests
     {
         using TempSource source = new();
         source.Write(WithDelta(branch, payload));
+        Assert.Throws<InvalidDataException>(() => Exchange.Link(source.Directory, "sample"));
+    }
+
+    [Theory]
+    [InlineData("\"mins\":null,\"size\":{\"x\":0,\"y\":0,\"z\":0}")]
+    [InlineData("\"mins\":{\"x\":0,\"y\":0,\"z\":0}")]
+    public void Link_rejects_null_or_missing_translation_vectors(string bounds)
+    {
+        using TempSource source = new();
+        source.Write(WithDelta("trans", $$"""
+            {"size":1,"smallTrans":1,"frames":{
+                {{bounds}},"indices":[0,1],"smallFrames":[{"x":0,"y":0,"z":0},{"x":1,"y":1,"z":1}]
+            }
+            }
+            """));
         Assert.Throws<InvalidDataException>(() => Exchange.Link(source.Directory, "sample"));
     }
 

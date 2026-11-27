@@ -1,5 +1,6 @@
 using System.Numerics;
 using IW4.Game.Assets.Fx;
+using IW4.Game.Assets.GfxMap;
 using IW4.Render.Transforms;
 
 namespace IW4.Render.EditorPreview;
@@ -725,13 +726,13 @@ public sealed class FxPreviewScene
     }
 
     private static Vector4 InterpolateColorEndpoints(
-        FxElemColor first,
-        FxElemColor alternate,
+        GfxColor first,
+        GfxColor alternate,
         float fraction) => new(
-        InterpolateByte(first.R, alternate.R, fraction),
-        InterpolateByte(first.G, alternate.G, fraction),
-        InterpolateByte(first.B, alternate.B, fraction),
-        InterpolateByte(first.A, alternate.A, fraction));
+        InterpolateByte(first.Red, alternate.Red, fraction),
+        InterpolateByte(first.Green, alternate.Green, fraction),
+        InterpolateByte(first.Blue, alternate.Blue, fraction),
+        InterpolateByte(first.Alpha, alternate.Alpha, fraction));
 
     private static float InterpolateByte(byte first, byte second, float fraction) =>
         (first + (second - first) * fraction) / 255f;

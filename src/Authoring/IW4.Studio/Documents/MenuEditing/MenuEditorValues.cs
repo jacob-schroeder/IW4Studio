@@ -32,8 +32,7 @@ public readonly record struct MenuRectangleValue(
 
 /// <summary>
 /// Menu color with explicit semantic alpha, red, green, and blue channels.
-/// The serialized Menu Vec4 stores these as R/G/B/A; conversion at the
-/// document boundary keeps that raw layout out of editor and renderer code.
+/// Menu Vec4 stores these in native R/G/B/A order.
 /// </summary>
 public readonly record struct MenuColorValue(float A, float R, float G, float B);
 

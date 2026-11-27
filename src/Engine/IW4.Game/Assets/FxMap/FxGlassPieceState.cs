@@ -1,10 +1,11 @@
+using IW4.Game.Math;
 namespace IW4.Game.Assets.FxMap;
 
 public sealed class FxGlassPieceState
 {
     public const int SerializedSize = 0x20;
 
-    public FxVec2 TexCoordOrigin { get; init; }
+    public Vec2 TexCoordOrigin { get; init; }
     /// <inheritdoc cref="FxGlassInitPieceState.SupportMask"/>
     public uint SupportMask { get; init; }
     public ushort InitIndex { get; init; }

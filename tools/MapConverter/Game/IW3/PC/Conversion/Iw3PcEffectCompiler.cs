@@ -1,5 +1,7 @@
 using System.Text.Json;
 using IW4.Game.Assets.Fx;
+using IW4.Game.Assets.GfxMap;
+using Vec3 = IW4.Game.Math.Vec3;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.XModel;
 using MapConverter.Game.IW3.PC.Extraction;
@@ -174,7 +176,7 @@ internal sealed class Iw3PcEffectCompiler
         var color = value.GetProperty("color");
         var size = value.GetProperty("size");
         // IW3 PC FX visual samples use D3DCOLOR byte order, including the amplitude sample.
-        return new FxElemVisualState(new FxElemColor(color[2].GetByte(), color[1].GetByte(), color[0].GetByte(),
+        return new FxElemVisualState(GfxColor.FromRgba(color[2].GetByte(), color[1].GetByte(), color[0].GetByte(),
             color[3].GetByte()), Float(value, "rotationDelta"), Float(value, "rotationTotal"), size[0].GetSingle(),
             size[1].GetSingle(), Float(value, "scale"));
     }

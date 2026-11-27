@@ -105,12 +105,7 @@ public sealed class MaterialDraft
 
     private static MaterialTextureDef Copy(
         MaterialTextureDef value,
-        GfxImageAsset? image) => Copy(value, image, Copy(value.Water));
-
-    internal static MaterialTextureDef Copy(
-        MaterialTextureDef value,
-        GfxImageAsset? image,
-        MaterialWater? water) => new()
+        GfxImageAsset? image) => new()
     {
         NameHash = value.NameHash,
         NameStart = value.NameStart,
@@ -118,8 +113,7 @@ public sealed class MaterialDraft
         SamplerState = value.SamplerState,
         Semantic = value.Semantic,
         DataPointer = value.DataPointer,
-        Image = image,
-        Water = water
+        Data = value.Water is { } water ? Copy(water) : image
     };
 
     internal static MaterialWater? Copy(MaterialWater? value, GfxImageAsset? image = null) => value is null

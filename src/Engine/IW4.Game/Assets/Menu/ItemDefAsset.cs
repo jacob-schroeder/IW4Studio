@@ -66,7 +66,7 @@ public sealed class ItemDefAsset
     public string? FocusSoundName { get; set; }
     public float Special { get; init; }
     public IReadOnlyList<int> CursorPos { get; init; } = [];
-    public ItemDefData TypeData { get; init; } = new();
+    public ItemDefData TypeData { get; init; } = ItemDefData.None;
     public EditFieldDef? EditField { get; set; }
     public ListBoxDef? ListBox { get; set; }
     public MultiDef? Multi { get; set; }

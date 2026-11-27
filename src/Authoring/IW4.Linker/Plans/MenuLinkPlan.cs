@@ -159,7 +159,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
         value.HorzAlign != 0 || value.VertAlign != 0 || value.Pad12 != 0;
 
     private static bool HasNonzeroVec4(Vec4 value) =>
-        value.A != 0 || value.R != 0 || value.G != 0 || value.B != 0;
+        value.R != 0 || value.G != 0 || value.B != 0 || value.A != 0;
 
     private static bool HasNonzeroFixedInts(
         IReadOnlyList<int> values,
@@ -346,7 +346,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             writer.Skip(sizeof(int));
             writer.WriteSingle(item.Special);
             WriteInts(writer, item.CursorPos, 4, $"{fieldPath}.CursorPos");
-            writer.WriteInt32(item.TypeData.Value is NoItemDefData noData
+            writer.WriteInt32(item.TypeData is NoItemDefData noData
                 ? noData.Reserved
                 : 0);
             writer.WriteInt32(item.ImageTrack);
@@ -1248,7 +1248,7 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             string fieldPath)
         {
             const int pointerOffset = 0x184;
-            switch (item.TypeData.Value)
+            switch (item.TypeData)
             {
                 case EditFieldItemDefData data:
                     RequireItemType(item.Type, IsEditFieldType(item.Type), fieldPath, "EditField");
@@ -1564,14 +1564,17 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             ItemDefAsset item,
             string fieldPath)
         {
-            ArgumentNullException.ThrowIfNull(item.TypeData);
-            ArgumentNullException.ThrowIfNull(item.TypeData.Value);
-            bool edit = item.TypeData.Value is EditFieldItemDefData;
-            bool listBox = item.TypeData.Value is ListBoxItemDefData;
-            bool multi = item.TypeData.Value is MultiItemDefData;
-            bool dvarEnum = item.TypeData.Value is DvarEnumItemDefData;
-            bool newsTicker = item.TypeData.Value is NewsTickerItemDefData;
-            bool textScroll = item.TypeData.Value is TextScrollItemDefData;
+            if (item.TypeData is null)
+            {
+                throw new InvalidDataException($"{fieldPath}.TypeData has no union arm.");
+            }
+
+            bool edit = item.TypeData is EditFieldItemDefData;
+            bool listBox = item.TypeData is ListBoxItemDefData;
+            bool multi = item.TypeData is MultiItemDefData;
+            bool dvarEnum = item.TypeData is DvarEnumItemDefData;
+            bool newsTicker = item.TypeData is NewsTickerItemDefData;
+            bool textScroll = item.TypeData is TextScrollItemDefData;
 
             if ((!edit && item.EditField is not null) ||
                 (!listBox && item.ListBox is not null) ||
@@ -1589,12 +1592,17 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
             MenuEventHandler value,
             string fieldPath)
         {
+            if (value.EventData is null)
+            {
+                throw new InvalidDataException($"{fieldPath}.EventData has no union arm.");
+            }
+
             bool unconditional =
-                value.EventData.Value is UnconditionalScriptEventData;
+                value.EventData is UnconditionalScriptEventData;
             bool conditional =
-                value.EventData.Value is ConditionalScriptEventData;
-            bool elseScript = value.EventData.Value is ElseScriptEventData;
-            bool local = value.EventData.Value is SetLocalVarEventData;
+                value.EventData is ConditionalScriptEventData;
+            bool elseScript = value.EventData is ElseScriptEventData;
+            bool local = value.EventData is SetLocalVarEventData;
             bool expected = value.EventType switch
             {
                 MenuEventHandlerType.UnconditionalScript => unconditional,
@@ -1701,11 +1709,10 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
 
         private static void ValidateVec4(Vec4 value, string fieldPath)
         {
-            ArgumentNullException.ThrowIfNull(value);
-            ValidateFinite(value.A, $"{fieldPath}.A");
             ValidateFinite(value.R, $"{fieldPath}.R");
             ValidateFinite(value.G, $"{fieldPath}.G");
             ValidateFinite(value.B, $"{fieldPath}.B");
+            ValidateFinite(value.A, $"{fieldPath}.A");
         }
 
         private static void ValidateFinite(float value, string fieldPath)
@@ -1809,10 +1816,10 @@ internal sealed class MenuLinkPlan : AssetLinkPlan
 
         private static void WriteVec4(LinkTemplateWriter writer, Vec4 value)
         {
-            writer.WriteSingle(value.A);
             writer.WriteSingle(value.R);
             writer.WriteSingle(value.G);
             writer.WriteSingle(value.B);
+            writer.WriteSingle(value.A);
         }
 
         private static void WriteInts(

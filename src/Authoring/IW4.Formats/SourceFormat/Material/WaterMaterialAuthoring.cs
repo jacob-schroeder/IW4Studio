@@ -256,10 +256,9 @@ public static class WaterMaterialAuthoring
             NameEnd = texture.NameEnd,
             SamplerState = texture.SamplerState,
             Semantic = texture.Semantic,
-            Image = texture.Image,
-            Water = texture.Semantic == TextureSemantic.WaterMap
+            Data = texture.Semantic == TextureSemantic.WaterMap
                 ? CreateWater(water, definition, createdWaterImage)
-                : null
+                : texture.Image
         }).ToArray();
         if (definition.Ocean is not null)
         {

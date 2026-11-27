@@ -1,5 +1,7 @@
 using IW4.Game.Assets;
 using IW4.Game.Assets.Fx;
+using IW4.Game.Assets.GfxMap;
+using Vec3 = IW4.Game.Math.Vec3;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.XModel;
 using IW4.Game.Pointers;
@@ -585,12 +587,11 @@ internal sealed class FxEffectDefLinkPlan : AssetLinkPlan
         LinkTemplateWriter writer,
         FxElemVisualState state)
     {
-        FxElemColor color = state.Color ??
-            throw new InvalidDataException("Fx visual-state color cannot be null.");
-        writer.WriteByte(color.R);
-        writer.WriteByte(color.G);
-        writer.WriteByte(color.B);
-        writer.WriteByte(color.A);
+        GfxColor color = state.Color;
+        writer.WriteByte(color.Red);
+        writer.WriteByte(color.Green);
+        writer.WriteByte(color.Blue);
+        writer.WriteByte(color.Alpha);
         writer.WriteSingle(state.RotationDelta);
         writer.WriteSingle(state.RotationTotal);
         writer.WriteSingle(state.Size0);

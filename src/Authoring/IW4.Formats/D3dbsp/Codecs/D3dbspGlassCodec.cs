@@ -3,6 +3,7 @@ using IW4.Game.Assets.FxMap;
 using IW4.Game.Assets.GameMap;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.Physics;
+using IW4.Game.Math;
 using IW4.Game.ScriptStrings;
 using IW4.Game.Zone;
 
@@ -148,8 +149,8 @@ public static class D3dbspGlassCodec
             for (int index = 0; index < defs.Length; index++)
             {
                 float thickness = reader.ReadSingle();
-                FxVec2 first = ReadVec2(reader);
-                FxVec2 second = ReadVec2(reader);
+                Vec2 first = ReadVec2(reader);
+                Vec2 second = ReadVec2(reader);
                 uint color = reader.ReadUInt32();
                 string? material = ReadName(reader);
                 string? shattered = ReadName(reader);
@@ -249,7 +250,7 @@ public static class D3dbspGlassCodec
                 IsInUse = new uint[CheckedCount(pieceWordCount)],
                 CellBits = new uint[checked(CheckedCount(cellCount) * CheckedCount(pieceWordCount))],
                 VisData = new byte[Align(CheckedCount(pieceLimit), 16)],
-                LinkOrg = new FxVec3[CheckedCount(pieceLimit)],
+                LinkOrg = new Vec3[CheckedCount(pieceLimit)],
                 HalfThickness = new float[Align(CheckedCount(pieceLimit), 4)]
             };
             var game = new GGlassData
@@ -370,9 +371,9 @@ public static class D3dbspGlassCodec
             throw new InvalidDataException($"A glass definition has an unresolved or invalid {description} reference.");
     }
 
-    private static bool IsZero(FxVec2 value) =>
+    private static bool IsZero(Vec2 value) =>
         BitConverter.SingleToInt32Bits(value.X) == 0 && BitConverter.SingleToInt32Bits(value.Y) == 0;
-    private static bool IsZero(FxVec3 value) =>
+    private static bool IsZero(Vec3 value) =>
         BitConverter.SingleToInt32Bits(value.X) == 0 && BitConverter.SingleToInt32Bits(value.Y) == 0 &&
         BitConverter.SingleToInt32Bits(value.Z) == 0;
     private static bool IsZero(FxSpatialFrame value) =>
@@ -427,8 +428,8 @@ public static class D3dbspGlassCodec
         return count;
     }
 
-    private static void WriteVec2(BinaryWriter writer, FxVec2 value) { writer.Write(value.X); writer.Write(value.Y); }
-    private static FxVec2 ReadVec2(BinaryReader reader) => new(reader.ReadSingle(), reader.ReadSingle());
+    private static void WriteVec2(BinaryWriter writer, Vec2 value) { writer.Write(value.X); writer.Write(value.Y); }
+    private static Vec2 ReadVec2(BinaryReader reader) => new(reader.ReadSingle(), reader.ReadSingle());
     private static void WriteFrame(BinaryWriter writer, FxSpatialFrame frame)
     {
         writer.Write(frame.Quat.X); writer.Write(frame.Quat.Y); writer.Write(frame.Quat.Z); writer.Write(frame.Quat.W);
@@ -436,5 +437,5 @@ public static class D3dbspGlassCodec
     }
     private static FxSpatialFrame ReadFrame(BinaryReader reader) => new(
         new FxQuat(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()),
-        new FxVec3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()));
+        new Vec3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()));
 }

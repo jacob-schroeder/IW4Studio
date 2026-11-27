@@ -2,6 +2,8 @@ using IW4.Loaders.Database;
 using IW4.Loaders.Assets.Material;
 using IW4.Loaders.Assets.XModel;
 using IW4.Game.Assets.Fx;
+using IW4.Game.Assets.GfxMap;
+using Vec3 = IW4.Game.Math.Vec3;
 using IW4.Game.Assets.Material;
 using XModelAssetModel = IW4.Game.Assets.XModel.XModelAsset;
 using IW4.Game.Pointers;
@@ -761,7 +763,7 @@ public sealed class FxEffectDefLoader : XAssetLoader<FxEffectDefAsset>
     private static FxElemVisualState ReadFxElemVisualState(FastFileCursor cursor)
     {
         return new FxElemVisualState(
-            new FxElemColor(cursor.ReadByte(), cursor.ReadByte(), cursor.ReadByte(), cursor.ReadByte()),
+            GfxColor.FromRgba(cursor.ReadByte(), cursor.ReadByte(), cursor.ReadByte(), cursor.ReadByte()),
             cursor.ReadSingle(),
             cursor.ReadSingle(),
             cursor.ReadSingle(),

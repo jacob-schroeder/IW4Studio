@@ -421,9 +421,7 @@ module internal ConsoleXAnimReader =
             if isNull dynamicFrames then fail assetName $"{field} has no materialized frame indices."
             validateDynamicIndices dynamicFrames dynamicFrames.EncodedByteCount frameCount useByteIndices numLoopFrames assetName field
             let sourceMins = frames.Mins
-            if isNull sourceMins then fail assetName $"{field} has no materialized minimum bounds."
             let sourceSize = frames.Size
-            if isNull sourceSize then fail assetName $"{field} has no materialized quantization size."
             let mins = XAnimSourceVec3(sourceMins.X, sourceMins.Y, sourceMins.Z)
             let size = XAnimSourceVec3(sourceSize.X, sourceSize.Y, sourceSize.Z)
             validateDynamicTransBounds mins size assetName field

@@ -5,6 +5,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using IW4.Game.Assets;
 using IW4.Game.Assets.Fx;
+using Vec3 = IW4.Game.Math.Vec3;
 using IW4.Game.Assets.Image;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.Sound;

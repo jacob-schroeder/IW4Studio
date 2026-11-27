@@ -555,10 +555,8 @@ internal static class MenuDebugProgramFactory
     private static DebugRectangleDefinition Rectangle(RectangleDef value) =>
         new(value.X, value.Y, value.W, value.H, value.HorzAlign, value.VertAlign);
 
-    // Vec4 properties retain serialized slot names rather than semantic RGBA
-    // order: A/R/G/B slots contain R/G/B/A respectively.
     private static DebugColorDefinition Color(IW4.Game.Math.Vec4 value) =>
-        new(value.B, value.A, value.R, value.G);
+        new(value.A, value.R, value.G, value.B);
 
     private static string? LogicalReferenceName(string? value) =>
         string.IsNullOrEmpty(value) ? value : value.TrimStart(',');

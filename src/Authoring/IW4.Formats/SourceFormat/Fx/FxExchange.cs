@@ -1,9 +1,12 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text;
 using IW4.Game.Assets.Fx;
+using IW4.Game.Assets.GfxMap;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.XModel;
 using IW4.Game.Pointers;
+using Vec3 = IW4.Game.Math.Vec3;
 
 namespace IW4.Formats.SourceFormat.Fx;
 
@@ -13,7 +16,8 @@ public sealed class FxExchange
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true
+        WriteIndented = true,
+        Converters = { new FxColorConverter() }
     };
 
     /// <summary>Imports a version-one native Fx graph from fx/&lt;assetName&gt;.json.</summary>
@@ -159,7 +163,7 @@ public sealed class FxExchange
         Vec(Property(value, "amplitude", path), $"{path}.Amplitude"));
 
     private static FxElemVisualState ReadVisualState(JsonElement value, string path) => new(
-        Record<FxElemColor>(Property(value, "color", path), $"{path}.Color", "r", "g", "b", "a"),
+        ReadColor(Property(value, "color", path), $"{path}.Color"),
         Float(value, "rotationDelta", path), Float(value, "rotationTotal", path),
         Float(value, "size0", path), Float(value, "size1", path), Float(value, "scale", path));
 
@@ -288,8 +292,34 @@ public sealed class FxExchange
     private static FxSpawnDef ReadSpawn(JsonElement value, string path) =>
         new(Int(value, "loopingIntervalMsec", path), Int(value, "count", path));
 
-    private static Vec3 Vec(JsonElement value, string path) =>
-        Record<Vec3>(value, path, "x", "y", "z");
+    private static Vec3 Vec(JsonElement value, string path) => new(
+        Float(value, "x", path), Float(value, "y", path), Float(value, "z", path));
+
+    private static GfxColor ReadColor(JsonElement value, string path) =>
+        GfxColor.FromRgba(
+            Byte(value, "r", path), Byte(value, "g", path),
+            Byte(value, "b", path), Byte(value, "a", path));
+
+    private sealed class FxColorConverter : JsonConverter<GfxColor>
+    {
+        public override GfxColor Read(ref Utf8JsonReader reader, Type typeToConvert,
+            JsonSerializerOptions options)
+        {
+            using JsonDocument document = JsonDocument.ParseValue(ref reader);
+            return ReadColor(document.RootElement, "Fx.Color");
+        }
+
+        public override void Write(Utf8JsonWriter writer, GfxColor color,
+            JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("r", color.Red);
+            writer.WriteNumber("g", color.Green);
+            writer.WriteNumber("b", color.Blue);
+            writer.WriteNumber("a", color.Alpha);
+            writer.WriteEndObject();
+        }
+    }
 
     private static T Record<T>(JsonElement value, string path, params string[] fields) where T : class
     {

@@ -91,21 +91,13 @@ internal static partial class MenuDocumentCompiler
 
     private static Vec4 Vec(MenuColorValue value) => new()
     {
-        // Window color Vec4 slots are serialized R/G/B/A despite the
-        // generic asset container's historical A/R/G/B property names.
-        A = value.R,
-        R = value.G,
-        G = value.B,
-        B = value.A
-    };
-
-    private static Vec4 Copy(Vec4 value) => new()
-    {
-        A = value.A,
         R = value.R,
         G = value.G,
-        B = value.B
+        B = value.B,
+        A = value.A
     };
+
+    private static Vec4 Copy(Vec4 value) => value;
 
     private static IReadOnlyList<MenuTransition> Clone(
         IReadOnlyList<MenuTransition> values) =>

@@ -663,23 +663,23 @@ internal sealed partial class MenuSourceWriter
         ColorDefault defaultValue)
     {
         float expected = defaultValue == ColorDefault.Zero ? 0.0f : 1.0f;
-        if (ApproximatelyEqual(value.A, expected) &&
-            ApproximatelyEqual(value.R, expected) &&
+        if (ApproximatelyEqual(value.R, expected) &&
             ApproximatelyEqual(value.G, expected) &&
-            ApproximatelyEqual(value.B, expected))
+            ApproximatelyEqual(value.B, expected) &&
+            ApproximatelyEqual(value.A, expected))
         {
             return;
         }
 
         Indent();
         WriteKey(key);
-        WriteFloat(value.A);
-        _writer.Write(' ');
         WriteFloat(value.R);
         _writer.Write(' ');
         WriteFloat(value.G);
         _writer.Write(' ');
         WriteFloat(value.B);
+        _writer.Write(' ');
+        WriteFloat(value.A);
         _writer.WriteLine();
     }
 

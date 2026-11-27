@@ -265,7 +265,7 @@ internal sealed partial class MenuSourceReader
         {
             Spacing = spacing, Speed = speed, FeedId = feed
         } : null;
-        ItemDefDataValue data = type switch
+        ItemDefData data = type switch
         {
             _ when editType => new EditFieldItemDefData { EditFieldPointer = new XPointer<EditFieldDef>(-1) },
             ItemDefType.ListBox => new ListBoxItemDefData { ListBoxPointer = new XPointer<ListBoxDef>(-1) },
@@ -273,7 +273,7 @@ internal sealed partial class MenuSourceReader
             ItemDefType.DvarEnum => new DvarEnumItemDefData { DvarEnumNamePointer = Inline(dvarEnumName) },
             ItemDefType.NewsTicker => new NewsTickerItemDefData { NewsTickerPointer = new XPointer<NewsTickerDef>(-1) },
             ItemDefType.TextScroll => new TextScrollItemDefData { TextScrollPointer = new XPointer<TextScrollDef>(-1) },
-            _ => new NoItemDefData()
+            _ => ItemDefData.None
         };
         ItemKeyHandler? keyHandlers = BuildKeys(keys);
         return new ItemDefAsset
@@ -296,7 +296,7 @@ internal sealed partial class MenuSourceReader
             LeaveFocus = Inline(leaveFocus), LeaveFocusSet = leaveFocus,
             OnKey = Inline(keyHandlers), OnKeyHandler = keyHandlers,
             Special = feeder, CursorPos = new int[4], ImageTrack = (int)ImageTrackType.UI,
-            TypeData = new ItemDefData { Value = data },
+            TypeData = data,
             EditField = edit, ListBox = list, Multi = multi, DvarEnumName = dvarEnumName,
             NewsTicker = ticker, TextScroll = type == ItemDefType.TextScroll ? new TextScrollDef() : null,
             FloatExpressionCount = floatExpressions.Count,
@@ -319,8 +319,8 @@ internal sealed partial class MenuSourceReader
         return result;
     }
 
-    private Vec4 ReadColor() => new() { A = Number(), R = Number(), G = Number(), B = Number() };
-    private static Vec4 OneColor() => new() { A = 1, R = 1, G = 1, B = 1 };
+    private Vec4 ReadColor() => new() { R = Number(), G = Number(), B = Number(), A = Number() };
+    private static Vec4 OneColor() => new() { R = 1, G = 1, B = 1, A = 1 };
 
     private string ReadDvarCondition()
     {

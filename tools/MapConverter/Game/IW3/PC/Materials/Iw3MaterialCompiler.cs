@@ -223,9 +223,8 @@ internal static class Iw3MaterialCompiler
                 NameEnd = texture.NameEnd,
                 SamplerState = texture.SamplerState,
                 Semantic = texture.Semantic,
-                Water = texture.Semantic == TextureSemantic.WaterMap ? sourceWater : null,
-                Image = texture.Semantic == TextureSemantic.WaterMap
-                    ? null
+                Data = texture.Semantic == TextureSemantic.WaterMap
+                    ? sourceWater
                     : replacementImages.TryGetValue(
                         texture.Semantic,
                         out GfxImageAsset? replacementImage)
@@ -1477,10 +1476,9 @@ internal static class Iw3MaterialCompiler
                 NameEnd = nameEnd,
                 SamplerState = samplerState,
                 Semantic = semantic,
-                Image = hasWater ? null : image,
-                Water = hasWater
+                Data = hasWater
                     ? ParseWater(waterElement, image, assetName, index)
-                    : null
+                    : image
             });
             index++;
         }

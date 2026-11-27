@@ -1,6 +1,7 @@
 namespace MapConverter.Game.IW3.Rules
 
 open System
+open IW4.Game.Math
 open IW4.Game.Assets.Fx
 
 module internal EffectRules =

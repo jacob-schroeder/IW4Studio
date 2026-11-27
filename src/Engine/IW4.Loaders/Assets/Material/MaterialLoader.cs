@@ -235,6 +235,10 @@ public sealed class MaterialLoader : XAssetLoader<MaterialAssetModel>
             context);
     }
 
+    private readonly record struct TextureDefRoot(
+        uint NameHash, byte NameStart, byte NameEnd, MaterialSamplerState SamplerState,
+        TextureSemantic Semantic, XPointerReference DataPointer);
+
     private static IReadOnlyList<MaterialTextureDef> ReadTextureDefArray(
         FastFileCursor cursor,
         XPointerReference pointer,
@@ -260,9 +264,9 @@ public sealed class MaterialLoader : XAssetLoader<MaterialAssetModel>
         context.PointerReader.PatchInlinePointerCell(pointer, alignment: 4);
         byte[] textureBytes = context.Blocks.Load(cursor, checked(count * TextureDefSize), out XBlockAddress textureAddress);
         var textureCursor = new FastFileCursor(textureBytes, textureAddress);
-        var textures = new MaterialTextureDef[count];
+        Span<TextureDefRoot> roots = count <= 16 ? stackalloc TextureDefRoot[count] : new TextureDefRoot[count];
 
-        for (int i = 0; i < textures.Length; i++)
+        for (int i = 0; i < roots.Length; i++)
         {
             uint nameHash = textureCursor.ReadUInt32();
             byte nameStart = textureCursor.ReadByte();
@@ -276,57 +280,32 @@ public sealed class MaterialLoader : XAssetLoader<MaterialAssetModel>
                 semantic == TextureSemantic.WaterMap
                     ? XPointerResolutionMode.Direct
                     : XPointerResolutionMode.AliasCell);
-            textures[i] = new MaterialTextureDef
-            {
-                NameHash = nameHash,
-                NameStart = nameStart,
-                NameEnd = nameEnd,
-                SamplerState = samplerState,
-                Semantic = semantic,
-                DataPointer = dataPointer
-            };
+            roots[i] = new TextureDefRoot(nameHash, nameStart, nameEnd, samplerState, semantic, dataPointer);
         }
 
+        var textures = new MaterialTextureDef[count];
         for (int i = 0; i < textures.Length; i++)
         {
-            MaterialTextureDef texture = textures[i];
-
-            if (texture.Semantic == TextureSemantic.WaterMap)
-                textures[i] = CopyTexture(texture, water: ReadWaterPointer(cursor, texture.DataPointer, context));
-            else
+            ref readonly TextureDefRoot root = ref roots[i];
+            MaterialTextureDefInfo data = root.Semantic == TextureSemantic.WaterMap
+                ? ReadWaterPointer(cursor, root.DataPointer, context)
+                : ImageLoader.LoadFromPointer(cursor, root.DataPointer, context);
+            textures[i] = new MaterialTextureDef
             {
-                GfxImageAsset? image = ImageLoader.LoadFromPointer(
-                    cursor,
-                    texture.DataPointer,
-                    context);
-                textures[i] = CopyTexture(
-                    texture,
-                    image: image);
-            }
+                NameHash = root.NameHash,
+                NameStart = root.NameStart,
+                NameEnd = root.NameEnd,
+                SamplerState = root.SamplerState,
+                Semantic = root.Semantic,
+                DataPointer = root.DataPointer,
+                Data = data
+            };
         }
 
         return context.RegisterMaterialized(
             textureAddress,
             textures,
             "MaterialTextureDef[]");
-    }
-
-    private static MaterialTextureDef CopyTexture(
-        MaterialTextureDef texture,
-        GfxImageAsset? image = null,
-        MaterialWater? water = null)
-    {
-        return new MaterialTextureDef
-        {
-            NameHash = texture.NameHash,
-            NameStart = texture.NameStart,
-            NameEnd = texture.NameEnd,
-            SamplerState = texture.SamplerState,
-            Semantic = texture.Semantic,
-            DataPointer = texture.DataPointer,
-            Image = image,
-            Water = water
-        };
     }
 
     private static MaterialWater? ReadWaterPointer(

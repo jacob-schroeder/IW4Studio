@@ -1,3 +1,4 @@
+using IW4.Game.Math;
 using System.Buffers.Binary;
 using IW4.Game.Assets.XAnim;
 using IW4.Game.ScriptStrings;
@@ -273,7 +274,7 @@ internal static class XboxXAnimWriter
     private static void U(byte[] bytes, int offset, uint value) => BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(offset, 4), value);
     private static void I(byte[] bytes, int offset, int value) => U(bytes, offset, unchecked((uint)value));
     private static void F(byte[] bytes, int offset, float value) => BinaryPrimitives.WriteSingleBigEndian(bytes.AsSpan(offset, 4), value);
-    private static void F3(byte[] bytes, int offset, XAnimVec3 value)
+    private static void F3(byte[] bytes, int offset, Vec3 value)
     {
         F(bytes, offset, value.X); F(bytes, offset + 4, value.Y); F(bytes, offset + 8, value.Z);
     }

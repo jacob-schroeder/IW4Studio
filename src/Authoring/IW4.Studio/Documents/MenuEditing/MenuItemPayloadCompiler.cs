@@ -34,14 +34,11 @@ internal static partial class MenuDocumentCompiler
         {
             MenuNoItemPayloadValue => BuildNullPayload(source, type),
             MenuEditFieldPayloadValue edit => new ItemPayloadBuildResult(
-                new ItemDefData
+                new EditFieldItemDefData
                 {
-                    Value = new EditFieldItemDefData
-                    {
-                        EditFieldPointer = source?.TypeData.Value is EditFieldItemDefData existing
-                            ? existing.EditFieldPointer
-                            : new XPointer<EditFieldDef>(-1)
-                    }
+                    EditFieldPointer = source is { TypeData: EditFieldItemDefData existing }
+                        ? existing.EditFieldPointer
+                        : new XPointer<EditFieldDef>(-1)
                 },
                 EditField: new EditFieldDef
                 {
@@ -57,27 +54,21 @@ internal static partial class MenuDocumentCompiler
             MenuListBoxPayloadValue list => BuildListBox(source, list),
             MenuMultiPayloadValue multi => BuildMulti(source, multi),
             MenuDvarEnumPayloadValue dvar => new ItemPayloadBuildResult(
-                new ItemDefData
+                new DvarEnumItemDefData
                 {
-                    Value = new DvarEnumItemDefData
-                    {
-                        DvarEnumNamePointer = StringPointer(
-                            source?.TypeData.Value is DvarEnumItemDefData existing
-                                ? existing.DvarEnumNamePointer
-                                : default,
-                            dvar.DvarName)
-                    }
+                    DvarEnumNamePointer = StringPointer(
+                        source is { TypeData: DvarEnumItemDefData existing }
+                            ? existing.DvarEnumNamePointer
+                            : default,
+                        dvar.DvarName)
                 },
                 DvarEnumName: dvar.DvarName),
             MenuNewsTickerPayloadValue ticker => new ItemPayloadBuildResult(
-                new ItemDefData
+                new NewsTickerItemDefData
                 {
-                    Value = new NewsTickerItemDefData
-                    {
-                        NewsTickerPointer = source?.TypeData.Value is NewsTickerItemDefData existing
-                            ? existing.NewsTickerPointer
-                            : new XPointer<NewsTickerDef>(-1)
-                    }
+                    NewsTickerPointer = source is { TypeData: NewsTickerItemDefData existing }
+                        ? existing.NewsTickerPointer
+                        : new XPointer<NewsTickerDef>(-1)
                 },
                 NewsTicker: new NewsTickerDef
                 {
@@ -90,14 +81,11 @@ internal static partial class MenuDocumentCompiler
                     X = ticker.X
                 }),
             MenuTextScrollPayloadValue => new ItemPayloadBuildResult(
-                new ItemDefData
+                new TextScrollItemDefData
                 {
-                    Value = new TextScrollItemDefData
-                    {
-                        TextScrollPointer = source?.TypeData.Value is TextScrollItemDefData existing
-                            ? existing.TextScrollPointer
-                            : new XPointer<TextScrollDef>(-1)
-                    }
+                    TextScrollPointer = source is { TypeData: TextScrollItemDefData existing }
+                        ? existing.TextScrollPointer
+                        : new XPointer<TextScrollDef>(-1)
                 },
                 TextScroll: new TextScrollDef { StartTime = 0 }),
             _ => throw new InvalidDataException(
@@ -108,7 +96,7 @@ internal static partial class MenuDocumentCompiler
         ItemDefAsset? source,
         ItemDefType type)
     {
-        ItemDefDataValue value = type switch
+        ItemDefData value = type switch
         {
             ItemDefType.Text
                 or ItemDefType.EditField
@@ -128,7 +116,7 @@ internal static partial class MenuDocumentCompiler
             ItemDefType.TextScroll => new TextScrollItemDefData(),
             _ when Enum.IsDefined(type) => new NoItemDefData
             {
-                Reserved = source?.TypeData.Value is NoItemDefData existing
+                Reserved = source is { TypeData: NoItemDefData existing }
                     ? existing.Reserved
                     : 0
             },
@@ -136,7 +124,7 @@ internal static partial class MenuDocumentCompiler
                 $"Unsupported Menu item type '{type}'.")
         };
 
-        return new ItemPayloadBuildResult(new ItemDefData { Value = value });
+        return new ItemPayloadBuildResult(value);
     }
 
     private static ItemPayloadBuildResult BuildListBox(
@@ -145,14 +133,11 @@ internal static partial class MenuDocumentCompiler
     {
         ListBoxDef? existing = source?.ListBox;
         return new ItemPayloadBuildResult(
-            new ItemDefData
+            new ListBoxItemDefData
             {
-                Value = new ListBoxItemDefData
-                {
-                    ListBoxPointer = source?.TypeData.Value is ListBoxItemDefData data
-                        ? data.ListBoxPointer
-                        : new XPointer<ListBoxDef>(-1)
-                }
+                ListBoxPointer = source is { TypeData: ListBoxItemDefData data }
+                    ? data.ListBoxPointer
+                    : new XPointer<ListBoxDef>(-1)
             },
             ListBox: new ListBoxDef
             {
@@ -189,14 +174,11 @@ internal static partial class MenuDocumentCompiler
     {
         MultiDef? existing = source?.Multi;
         return new ItemPayloadBuildResult(
-            new ItemDefData
+            new MultiItemDefData
             {
-                Value = new MultiItemDefData
-                {
-                    MultiPointer = source?.TypeData.Value is MultiItemDefData data
-                        ? data.MultiPointer
-                        : new XPointer<MultiDef>(-1)
-                }
+                MultiPointer = source is { TypeData: MultiItemDefData data }
+                    ? data.MultiPointer
+                    : new XPointer<MultiDef>(-1)
             },
             Multi: new MultiDef
             {

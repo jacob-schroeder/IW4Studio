@@ -296,12 +296,11 @@ public static class XModelImportedMaterialCompiler
                 NameEnd = row.NameEnd,
                 SamplerState = row.SamplerState,
                 Semantic = row.Semantic,
-                Image = ReferenceEquals(row, colorRow)
+                Data = ReferenceEquals(row, colorRow)
                     ? colorImage
                     : ReferenceEquals(row, normalRow)
                         ? normalImage
-                        : row.Image,
-                Water = row.Water
+                        : row.Data
             }).ToArray(),
             Constants = copiedConstants,
             StateBits = template.StateBits.Select(row =>
