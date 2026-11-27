@@ -3,7 +3,7 @@ using System.Text;
 using IW4.Game.Assets.Image;
 using MapConverter.Game.IW3.PS3.Extraction;
 using MapConverter.Game.IW3.PS3.Images;
-using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 
 namespace MapConverter.Game.IW3.PS3.Conversion;
 

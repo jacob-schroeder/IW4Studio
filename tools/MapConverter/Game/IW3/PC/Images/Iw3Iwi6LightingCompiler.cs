@@ -1,4 +1,4 @@
-using MapConverter.IW3.PC.Assets;
+using MapConverter.Game.IW3.PC.Assets;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Assets.Image;
 

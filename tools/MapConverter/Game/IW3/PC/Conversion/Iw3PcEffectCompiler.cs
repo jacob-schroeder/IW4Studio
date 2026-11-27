@@ -3,9 +3,9 @@ using IW4.Game.Assets.Fx;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.XModel;
 using MapConverter.Game.IW3.PC.Extraction;
-using MapConverter.Game.IW3.PS3.Rules;
-using MapConverter.IW3.PC.Assets;
-using MapConverter.IW3.PC.Readers;
+using MapConverter.Game.IW3.Rules;
+using MapConverter.Game.IW3.PC.Assets;
+using MapConverter.Game.IW3.PC.Readers;
 
 namespace MapConverter.Game.IW3.PC.Conversion;
 

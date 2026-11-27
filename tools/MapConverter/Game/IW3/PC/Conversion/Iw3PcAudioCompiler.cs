@@ -6,8 +6,8 @@ using IW4.Game.Assets.Sound;
 using MapConverter.Game.IW3.PC.Extraction;
 using MapConverter.Game.IW3.PS3.Conversion;
 using MapConverter.Game.IW3.PS3.Extraction;
-using MapConverter.IW3.PC.Assets;
-using MapConverter.IW3.PC.Readers;
+using MapConverter.Game.IW3.PC.Assets;
+using MapConverter.Game.IW3.PC.Readers;
 
 namespace MapConverter.Game.IW3.PC.Conversion;
 
@@ -111,7 +111,9 @@ internal static class Iw3PcAudioCompiler
             foreach (JsonElement source in captures[name].Sound.GetProperty("Rows").EnumerateArray())
             {
                 token.ThrowIfCancellationRequested();
-                byte[] wav;
+                byte[] payload;
+                string payloadName;
+                JsonElement? loadedFormat = null;
                 if (source.TryGetProperty("StreamedPath", out JsonElement streamed))
                 {
                     string path = streamed.GetString() ?? throw new InvalidDataException("Empty sound path.");
@@ -121,11 +123,16 @@ internal static class Iw3PcAudioCompiler
                         skipped.Add(name);
                         break;
                     }
-                    wav = resolved.Bytes;
+                    payload = resolved.Bytes;
+                    payloadName = path;
                     sourceLibrary?.RecordSoundPayloadSource(path, resolved.Archive);
                 }
                 else if (source.TryGetProperty("Loaded", out JsonElement loaded))
-                    wav = WrapLoadedPcm(captures[name].Directory, loaded);
+                {
+                    payloadName = loaded.GetProperty("File").GetString() ?? throw new InvalidDataException("Loaded sound has no file.");
+                    payload = File.ReadAllBytes(Path.Combine(captures[name].Directory, payloadName));
+                    loadedFormat = loaded;
+                }
                 else
                 {
                     string missingPayload = source.GetProperty("MissingPayload").GetString() ?? name;
@@ -133,7 +140,7 @@ internal static class Iw3PcAudioCompiler
                     skipped.Add(name);
                     break;
                 }
-                byte[] mp3 = await EncodeMp3Async(wav, name, scratch, sequence++, token).ConfigureAwait(false);
+                byte[] mp3 = EncodeMp3(payload, loadedFormat, name, payloadName, token);
                 rows.Add(new Iw3Ps3SourceSoundRow(
                     source.GetProperty("SecondaryAlias").GetString(), source.GetProperty("ChainAlias").GetString(),
                     source.GetProperty("Sequence").GetInt32(), Single(source, "VolumeMin"), Single(source, "VolumeMax"),
@@ -291,52 +298,34 @@ internal static class Iw3PcAudioCompiler
         return null;
     }
 
-    private static byte[] WrapLoadedPcm(string directory, JsonElement source)
+    private static byte[] EncodeMp3(byte[] source, JsonElement? loadedFormat, string aliasName,
+        string payloadName, CancellationToken token)
     {
-        if (source.GetProperty("Format").GetInt32() != 1)
-            throw new NotSupportedException("COD4 PC loaded sound is not PCM.");
-        string filename = source.GetProperty("File").GetString() ?? throw new InvalidDataException("Loaded sound has no file.");
-        byte[] pcm = File.ReadAllBytes(Path.Combine(directory, filename));
-        int channels = source.GetProperty("Channels").GetInt32();
-        int rate = source.GetProperty("Rate").GetInt32();
-        int bits = source.GetProperty("Bits").GetInt32();
-        if (channels is < 1 or > 2 || rate <= 0 || bits is not (8 or 16))
-            throw new NotSupportedException("Unsupported COD4 PC loaded PCM format.");
-        using var memory = new MemoryStream();
-        using var writer = new BinaryWriter(memory);
-        writer.Write("RIFF"u8); writer.Write(checked(pcm.Length + 36)); writer.Write("WAVEfmt "u8);
-        writer.Write(16); writer.Write((short)1); writer.Write((short)channels);
-        writer.Write(rate); writer.Write(checked(rate * channels * bits / 8));
-        writer.Write((short)(channels * bits / 8)); writer.Write((short)bits);
-        writer.Write("data"u8); writer.Write(pcm.Length); writer.Write(pcm);
-        return memory.ToArray();
-    }
-
-    private static async Task<byte[]> EncodeMp3Async(byte[] source, string aliasName, string scratch, int index, CancellationToken token)
-    {
-        token.ThrowIfCancellationRequested();
-        if (source.AsSpan().StartsWith("ID3"u8)) return source;
-        if (source.Length > 4 && source[0] == 0xff && (source[1] & 0xe6) == 0xe2 &&
-            (source[2] & 0xf0) is not (0x00 or 0xf0) && (source[2] & 0x0c) != 0x0c)
+        try
         {
-            byte[] tagged = new byte[source.Length + 10];
-            "ID3"u8.CopyTo(tagged);
-            tagged[3] = 3;
-            source.CopyTo(tagged, 10);
-            return tagged;
+            (short[] Samples, int Channels, int SampleRate) pcm;
+            if (loadedFormat is { } loaded)
+            {
+                int format = loaded.GetProperty("Format").GetInt32();
+                if (format != 1) throw new NotSupportedException($"Unsupported loaded sound format {format}.");
+                pcm = Iw3PcWaveDecoder.DecodeRawPcm(source, loaded.GetProperty("Channels").GetInt32(),
+                    loaded.GetProperty("Rate").GetInt32(), loaded.GetProperty("Bits").GetInt32());
+            }
+            else
+            {
+                if (LameMp3Encoder.ReadExistingMp3(source) is { } mp3) return mp3;
+                pcm = Iw3PcWaveDecoder.Decode(source);
+            }
+            return LameMp3Encoder.Encode(pcm.Samples, pcm.Channels, pcm.SampleRate, token);
         }
-        string input = Path.Combine(scratch, $"pc-sound-{index:D5}.wav");
-        string output = Path.Combine(scratch, $"pc-sound-{index:D5}.mp3");
-        string bundled = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg");
-        await File.WriteAllBytesAsync(input, source, token).ConfigureAwait(false);
-        await Iw3PcExtractionBackend.RunToolAsync(
-            $"FFmpeg MP3 encoding for sound alias '{aliasName}'",
-            File.Exists(bundled) ? bundled : "ffmpeg", scratch,
-            ["-v", "error", "-y", "-i", input, "-codec:a", "libmp3lame", "-id3v2_version", "3", output],
-            token).ConfigureAwait(false);
-        byte[] encoded = await File.ReadAllBytesAsync(output, token).ConfigureAwait(false);
-        if (!encoded.AsSpan().StartsWith("ID3"u8))
-            throw new InvalidDataException("FFmpeg did not produce an ID3 MP3 sound.");
-        return encoded;
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        {
+            throw new InvalidOperationException($"Could not load the packaged LAME encoder for " +
+                $"{System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier} while encoding sound alias '{aliasName}' ({payloadName}).", ex);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or InvalidOperationException)
+        {
+            throw new InvalidDataException($"Cannot convert sound alias '{aliasName}' ({payloadName}): {ex.Message}", ex);
+        }
     }
 }

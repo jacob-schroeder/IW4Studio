@@ -1,7 +1,9 @@
+using ShaderConvert;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.TechniqueSet;
 using MapConverter.Game.IW3.PC.Materials;
-using MapConverter.Game.IW3.PC.Shaders;
+using ShaderConvert.Game.IW3.PC.Shaders;
+using ShaderConvert.Game.IW3.PC.Techniques;
 
 namespace MapConverter.Game.IW3.PC.Techniques;
 
@@ -199,9 +201,9 @@ internal sealed class Iw3TechniqueCompiler
             if (route.Source == MaterialStreamSource.TexCoord0)
                 decodedTexCoordInputMask |= checked((ushort)(1 << (int)route.Dest));
         }
-        Iw3ShaderCompilation vertex = CompileShader(source.VertexShader, passPath,
+        ShaderCompilation vertex = CompileShader(source.VertexShader, passPath,
             signedNormalInputMask, decodedTexCoordInputMask, isWorld);
-        Iw3ShaderCompilation pixel = CompileShader(source.PixelShader, passPath, 0, 0, isWorld);
+        ShaderCompilation pixel = CompileShader(source.PixelShader, passPath, 0, 0, isWorld);
         CompiledArguments arguments = CompileArguments(
             source.VertexShader,
             vertex,
@@ -257,7 +259,7 @@ internal sealed class Iw3TechniqueCompiler
                 : MaterialPrecompiledVertexShader.None;
     }
 
-    private Iw3ShaderCompilation CompileShader(
+    private ShaderCompilation CompileShader(
         Iw3ShaderSource source,
         string passPath,
         ushort signedNormalInputMask,
@@ -316,7 +318,7 @@ internal sealed class Iw3TechniqueCompiler
                 $"{passPath} shader name '{source.ProgramName}' resolves outside the extracted shader directory.");
         }
 
-        Iw3ShaderCompilation compilation;
+        ShaderCompilation compilation;
         try
         {
             compilation = _shaderCompiler.Compile(source, programPath,
@@ -354,7 +356,7 @@ internal sealed class Iw3TechniqueCompiler
         return compilation;
 
         void RequireWorldPosition(
-            Iw3ShaderCompilation compiled, (int World, int ViewProjection) matrices)
+            ShaderCompilation compiled, (int World, int ViewProjection) matrices)
         {
             if (isWorld && matrices.World >= 0 && matrices.ViewProjection >= 0 && !compiled.WorldPositionLowered)
             {
@@ -366,14 +368,14 @@ internal sealed class Iw3TechniqueCompiler
     }
 
     private static void EnsureUniqueParameters(
-        IReadOnlyList<Iw3ShaderParameter> parameters,
+        IReadOnlyList<ShaderParameter> parameters,
         string shaderName)
     {
         ArgumentNullException.ThrowIfNull(parameters);
         var names = new HashSet<string>(StringComparer.Ordinal);
         for (int index = 0; index < parameters.Count; index++)
         {
-            Iw3ShaderParameter parameter = parameters[index] ??
+            ShaderParameter parameter = parameters[index] ??
                 throw new InvalidDataException(
                     $"Shader '{shaderName}' parameter {index} is null.");
             if (string.IsNullOrWhiteSpace(parameter.Name) || !names.Add(parameter.Name))
@@ -468,9 +470,9 @@ internal sealed class Iw3TechniqueCompiler
 
     private static CompiledArguments CompileArguments(
         Iw3ShaderSource vertexSource,
-        Iw3ShaderCompilation vertex,
+        ShaderCompilation vertex,
         Iw3ShaderSource pixelSource,
-        Iw3ShaderCompilation pixel,
+        ShaderCompilation pixel,
         string passPath)
     {
         var arguments = new List<PendingArgument>();
@@ -534,7 +536,7 @@ internal sealed class Iw3TechniqueCompiler
 
     private static void CompileStageArguments(
         Iw3ShaderSource source,
-        Iw3ShaderCompilation compilation,
+        ShaderCompilation compilation,
         string passPath,
         ICollection<PendingArgument> arguments,
         ref MaterialTechniqueFlags flags,
@@ -546,11 +548,11 @@ internal sealed class Iw3TechniqueCompiler
         if (compilation.Asset.Kind != expectedKind)
             throw new InvalidDataException($"{passPath} has a mismatched compiled {source.Stage} shader.");
 
-        var parameters = new Dictionary<string, (Iw3ShaderParameter Parameter, int Index)>(
+        var parameters = new Dictionary<string, (ShaderParameter Parameter, int Index)>(
             StringComparer.Ordinal);
         for (int index = 0; index < compilation.Parameters.Count; index++)
         {
-            Iw3ShaderParameter parameter = compilation.Parameters[index];
+            ShaderParameter parameter = compilation.Parameters[index];
             parameters.Add(parameter.Name, (parameter, index));
         }
 
@@ -566,7 +568,7 @@ internal sealed class Iw3TechniqueCompiler
             }
             if (!parameters.TryGetValue(
                     argument.Destination.Name,
-                    out (Iw3ShaderParameter Parameter, int Index) target))
+                    out (ShaderParameter Parameter, int Index) target))
             {
                 throw new InvalidDataException(
                     $"{passPath} shader '{source.ProgramName}' has no reflected destination " +
@@ -598,11 +600,11 @@ internal sealed class Iw3TechniqueCompiler
 
         for (int index = 0; index < compilation.Parameters.Count; index++)
         {
-            Iw3ShaderParameter parameter = compilation.Parameters[index];
+            ShaderParameter parameter = compilation.Parameters[index];
             if (!parameter.IsReferenced || assigned.Contains(index))
                 continue;
 
-            if (parameter.Kind == Iw3ShaderParameterKind.Constant)
+            if (parameter.Kind == ShaderParameterKind.Constant)
             {
                 if (!Iw3TechniqueBindingFacts.TryGetConstant(
                         parameter.Name,
@@ -620,7 +622,7 @@ internal sealed class Iw3TechniqueCompiler
                     arguments,
                     ref flags);
             }
-            else if (parameter.Kind == Iw3ShaderParameterKind.Sampler)
+            else if (parameter.Kind == ShaderParameterKind.Sampler)
             {
                 if (!Iw3TechniqueBindingFacts.TryGetSampler(
                         parameter.Name,
@@ -648,7 +650,7 @@ internal sealed class Iw3TechniqueCompiler
 
     private static void CompileExplicitArgument(
         Iw3ShaderSource shader,
-        Iw3ShaderParameter parameter,
+        ShaderParameter parameter,
         int parameterIndex,
         Iw3ShaderArgumentSource source,
         string passPath,
@@ -740,7 +742,7 @@ internal sealed class Iw3TechniqueCompiler
 
     private static void AddMaterialArgument(
         Iw3ShaderStage stage,
-        Iw3ShaderParameter parameter,
+        ShaderParameter parameter,
         int parameterIndex,
         Iw3MaterialShaderValueSource source,
         string passPath,
@@ -758,14 +760,14 @@ internal sealed class Iw3TechniqueCompiler
 
         MaterialShaderArgumentType type;
         ushort destination;
-        if (parameter.Kind == Iw3ShaderParameterKind.Constant)
+        if (parameter.Kind == ShaderParameterKind.Constant)
         {
             type = stage == Iw3ShaderStage.Vertex
                 ? MaterialShaderArgumentType.MaterialVertexConst
                 : MaterialShaderArgumentType.MaterialPixelConst;
             destination = GetConstantDestination(stage, parameter, parameterIndex, passPath);
         }
-        else if (parameter.Kind == Iw3ShaderParameterKind.Sampler &&
+        else if (parameter.Kind == ShaderParameterKind.Sampler &&
                  stage == Iw3ShaderStage.Pixel)
         {
             type = MaterialShaderArgumentType.MaterialPixelSampler;
@@ -790,7 +792,7 @@ internal sealed class Iw3TechniqueCompiler
 
     private static void AddCodeConstant(
         Iw3ShaderStage stage,
-        Iw3ShaderParameter parameter,
+        ShaderParameter parameter,
         int parameterIndex,
         Iw3CodeConstantBinding binding,
         int? elementIndex,
@@ -798,7 +800,7 @@ internal sealed class Iw3TechniqueCompiler
         ICollection<PendingArgument> arguments,
         ref MaterialTechniqueFlags flags)
     {
-        if (parameter.Kind != Iw3ShaderParameterKind.Constant)
+        if (parameter.Kind != ShaderParameterKind.Constant)
         {
             throw new InvalidDataException(
                 $"{passPath} cannot bind a code constant to sampler parameter '{parameter.Name}'.");
@@ -888,7 +890,7 @@ internal sealed class Iw3TechniqueCompiler
 
     private static void AddCodeSampler(
         Iw3ShaderStage stage,
-        Iw3ShaderParameter parameter,
+        ShaderParameter parameter,
         Iw3CodeSamplerBinding binding,
         string passPath,
         ICollection<PendingArgument> arguments,
@@ -896,7 +898,7 @@ internal sealed class Iw3TechniqueCompiler
         ref MaterialCustomSamplerFlags customSamplerFlags)
     {
         if (stage != Iw3ShaderStage.Pixel ||
-            parameter.Kind != Iw3ShaderParameterKind.Sampler ||
+            parameter.Kind != ShaderParameterKind.Sampler ||
             parameter.RegisterCount != 1)
         {
             throw new InvalidDataException(
@@ -920,11 +922,11 @@ internal sealed class Iw3TechniqueCompiler
 
     private static ushort GetConstantDestination(
         Iw3ShaderStage stage,
-        Iw3ShaderParameter parameter,
+        ShaderParameter parameter,
         int parameterIndex,
         string passPath)
     {
-        if (parameter.Kind != Iw3ShaderParameterKind.Constant)
+        if (parameter.Kind != ShaderParameterKind.Constant)
             throw new InvalidDataException($"{passPath} parameter '{parameter.Name}' is not a constant.");
 
         if (stage == Iw3ShaderStage.Pixel)
@@ -939,10 +941,10 @@ internal sealed class Iw3TechniqueCompiler
     }
 
     private static ushort GetSamplerDestination(
-        Iw3ShaderParameter parameter,
+        ShaderParameter parameter,
         string passPath)
     {
-        if (parameter.Kind != Iw3ShaderParameterKind.Sampler ||
+        if (parameter.Kind != ShaderParameterKind.Sampler ||
             parameter.Resource < CgTextureUnitResourceBase)
         {
             throw new InvalidDataException(
@@ -954,10 +956,10 @@ internal sealed class Iw3TechniqueCompiler
 
     private static void RequireSingleConstant(
         Iw3ShaderSource shader,
-        Iw3ShaderParameter parameter,
+        ShaderParameter parameter,
         string passPath)
     {
-        if (parameter.Kind != Iw3ShaderParameterKind.Constant ||
+        if (parameter.Kind != ShaderParameterKind.Constant ||
             parameter.RegisterCount != 1)
         {
             throw new InvalidDataException(
@@ -1111,7 +1113,7 @@ internal sealed class Iw3TechniqueCompiler
         string ProgramName);
 
     private sealed record CachedShader(
-        Iw3ShaderCompilation Compilation,
+        ShaderCompilation Compilation,
         ushort SignedNormalInputMask,
         ushort DecodedTexCoordInputMask,
         (ushort Comparison, ushort ReflectionProbe) CodeSamplerMasks,

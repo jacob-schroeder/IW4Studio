@@ -1,5 +1,5 @@
 using IW4.Game.Assets.Image;
-using MapConverter.IW3.PC.Readers;
+using MapConverter.Game.IW3.PC.Readers;
 
 namespace MapConverter.Game.IW3.PC.Images;
 

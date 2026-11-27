@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Text;
 using IW4.Game.Assets.TechniqueSet;
 
 namespace IW4.Formats.SourceFormat.Material;
@@ -9,6 +11,8 @@ internal static class OceanMaterialShaders
     private static readonly MaterialShaderAsset SunPixel = Load("ocean-sun.frag.cg", MaterialShaderKind.Pixel);
     private static readonly MaterialShaderAsset FlatPixel = Load("water.frag.cg", MaterialShaderKind.Pixel);
     private static readonly MaterialShaderAsset FlatSunPixel = Load("water-sun.frag.cg", MaterialShaderKind.Pixel);
+    private static readonly IReadOnlyDictionary<string, ushort> PixelConstants = ReadPixelConstants(Pixel);
+    private static readonly IReadOnlyDictionary<string, ushort> SunPixelConstants = ReadPixelConstants(SunPixel);
 
     internal static MaterialTechniqueSetAsset Create(MaterialTechniqueSetAsset source, WaterMaterialDefinition definition)
     {
@@ -56,21 +60,25 @@ internal static class OceanMaterialShaders
             bool ocean = definition.Ocean is not null;
             if (ocean)
             {
-                // Cg parameter ordinals from the two ocean.frag.hlsl entry points.
-                stable.Add(new(0, MaterialShaderArgumentType.MaterialPixelConst, 0,
+                // Pixel numeric destinations are ordinals in the selected Cg parameter table.
+                IReadOnlyDictionary<string, ushort> pixelConstants = sunlight ? SunPixelConstants : PixelConstants;
+                ushort Ordinal(string name) => pixelConstants.TryGetValue(name, out ushort ordinal) ? ordinal
+                    : throw new InvalidDataException($"Ocean pixel shader '{(sunlight ? SunPixel : Pixel).Name}' has no patchable uniform '{name}'.");
+
+                stable.Add(new(0, MaterialShaderArgumentType.MaterialPixelConst, Ordinal("envMapParms"),
                     unchecked((int)MaterialExchange.HashSourcePropertyName("envMapParms")), null));
                 stable.Add(new(0, MaterialShaderArgumentType.MaterialPixelSampler, 6,
                     unchecked((int)MaterialExchange.HashSourcePropertyName("foamMap")), null));
-                stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, 2, MaterialConstantSource.GameTime));
-                stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, 4, MaterialConstantSource.FogColorLinear));
-                stable.Add(new(0, MaterialShaderArgumentType.MaterialPixelConst, 6,
+                stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, Ordinal("gameTime"), MaterialConstantSource.GameTime));
+                stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, Ordinal("oceanFogColor"), MaterialConstantSource.FogColorLinear));
+                stable.Add(new(0, MaterialShaderArgumentType.MaterialPixelConst, Ordinal("oceanShape"),
                     unchecked((int)MaterialExchange.HashSourcePropertyName("oceanShape")), null));
-                stable.Add(new(0, MaterialShaderArgumentType.MaterialPixelConst, (ushort)(sunlight ? 9 : 7),
+                stable.Add(new(0, MaterialShaderArgumentType.MaterialPixelConst, Ordinal("waterColor"),
                     unchecked((int)MaterialExchange.HashSourcePropertyName("waterColor")), null));
                 if (sunlight)
                 {
-                    stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, 7, MaterialConstantSource.LightSpecular));
-                    stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, 8, MaterialConstantSource.LightPosition));
+                    stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, Ordinal("oceanSunColor"), MaterialConstantSource.LightSpecular));
+                    stable.Add(Code(MaterialShaderArgumentType.CodePixelConst, Ordinal("oceanSunDirection"), MaterialConstantSource.LightPosition));
                 }
             }
             else
@@ -101,8 +109,7 @@ internal static class OceanMaterialShaders
                     StableArgCount = checked((byte)stable.Count),
                     CustomSamplerFlags = MaterialCustomSamplerFlags.ReflectionProbe,
                     PrecompiledVertexShader = MaterialPrecompiledVertexShader.None,
-                    // ShaderConvert lowers worldMatrix to native stored rows. HLSL's
-                    // column-major viewProjectionMatrix still consumes transposed rows.
+                    // Native stored world rows and transposed view-projection rows.
                     Args = [Code(MaterialShaderArgumentType.CodeVertexConst, 4, MaterialConstantSource.WorldMatrix0, 4),
                         Code(MaterialShaderArgumentType.CodeVertexConst, 0, MaterialConstantSource.TransposeViewProjectionMatrix, 4),
                         .. stable.OrderBy(argument => argument.Type).ThenBy(argument => argument.Dest)]
@@ -113,6 +120,45 @@ internal static class OceanMaterialShaders
 
     private static MaterialShaderArgumentAsset Code(MaterialShaderArgumentType type, ushort destination,
         MaterialConstantSource source, byte rows = 1) => new(0, type, destination, new MaterialCodeConstantArgument(source, 0, rows).Raw, null);
+
+    private static IReadOnlyDictionary<string, ushort> ReadPixelConstants(MaterialShaderAsset shader)
+    {
+        ReadOnlySpan<byte> program = shader.Data ?? throw new InvalidDataException($"Missing packaged ocean shader '{shader.Name}'.");
+        if (program.Length < 0x20 || Word(program, 0) != 7004 || Word(program, 4) != 6 || Word(program, 8) != program.Length)
+            throw new InvalidDataException($"Packaged ocean shader '{shader.Name}' has an invalid pixel Cg header.");
+
+        uint count = Word(program, 12);
+        uint table = Word(program, 16);
+        if (table < 0x20 || table > program.Length || count > ushort.MaxValue || count > (program.Length - table) / 0x30)
+            throw new InvalidDataException($"Packaged ocean shader '{shader.Name}' has an invalid Cg parameter table.");
+
+        var ordinals = new Dictionary<string, ushort>(StringComparer.Ordinal);
+        for (uint ordinal = 0; ordinal < count; ordinal++)
+        {
+            int entry = checked((int)(table + ordinal * 0x30));
+            // Match referenced half/float input uniforms that the RSX constant patcher can update.
+            uint type = Word(program, entry);
+            if (type is not (>= 0x401 and <= 0x404 or >= 0x415 and <= 0x418) ||
+                Word(program, entry + 4) != 0x882 || Word(program, entry + 8) != 0x1006 ||
+                Word(program, entry + 24) == 0 || Word(program, entry + 32) != 0x1001 || Word(program, entry + 40) == 0)
+                continue;
+
+            uint nameOffset = Word(program, entry + 16);
+            if (nameOffset == 0 || nameOffset >= program.Length)
+                throw new InvalidDataException($"Packaged ocean shader '{shader.Name}' has an invalid Cg parameter name.");
+            ReadOnlySpan<byte> nameBytes = program[(int)nameOffset..];
+            int terminator = nameBytes.IndexOf((byte)0);
+            if (terminator < 0)
+                throw new InvalidDataException($"Packaged ocean shader '{shader.Name}' has an unterminated Cg parameter name.");
+            string name = Encoding.Latin1.GetString(nameBytes[..terminator]);
+            if (!ordinals.TryAdd(name, (ushort)ordinal))
+                throw new InvalidDataException($"Packaged ocean shader '{shader.Name}' has duplicate Cg parameter '{name}'.");
+        }
+        return ordinals;
+    }
+
+    private static uint Word(ReadOnlySpan<byte> program, int offset) =>
+        BinaryPrimitives.ReadUInt32BigEndian(program.Slice(offset, 4));
 
     private static MaterialShaderAsset Load(string resource, MaterialShaderKind kind)
     {

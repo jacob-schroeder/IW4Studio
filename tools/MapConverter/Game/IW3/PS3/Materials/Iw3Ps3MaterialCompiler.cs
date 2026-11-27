@@ -3,7 +3,7 @@ using IW4.Game.Assets.Image;
 using IW4.Game.Assets.Material;
 using IW4.Game.Assets.TechniqueSet;
 using MapConverter.Game.IW3.PC.Materials;
-using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 using MapConverter.Game.IW3.PS3.Techniques;
 
 namespace MapConverter.Game.IW3.PS3.Materials;

@@ -3,7 +3,7 @@ using System.Numerics;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Assets.XModel;
 using IW4.Formats.XModel;
-using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 
 namespace MapConverter.Game.IW3.PC.Models;
 

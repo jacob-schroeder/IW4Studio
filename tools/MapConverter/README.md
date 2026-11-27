@@ -12,28 +12,22 @@ Use `--help` for IW3 conversion options. Quote paths that contain spaces.
 
 ## IW3 conversion dependencies
 
-MapConverter reads IW3 PC and PS3 fastfiles in process. The IW3 PC C# readers
-and asset exporters live under `tools/MapConverter.IW3.PC` in the `Readers`
-and `Assets` namespaces. The F# project owns IWD handling, the IWI6 header,
-and PC conversion rules. MapConverter builds the version 22 D3DBSP and passes
-it to the IW4 linker. OpenAssetTools is the reference for the IW3 PC formats.
-Both MapConverter and ShaderConvert use the bundled shader library for compiled
-D3D9 shaders.
+MapConverter reads IW3 PC and PS3 fastfiles in process. Its PC zone readers and
+asset exporters live in `Game/IW3/PC/Readers` and `Game/IW3/PC/Assets`.
+The F# project `tools/MapConverter.IW3` owns the shared conversion rules,
+platform-specific rules, PC IWD archive handling, and the IWI6 header.
+`ShaderConvert` owns D3D9 shader conversion and IW3 technique metadata.
+MapConverter builds the version 22 D3DBSP and passes it to the IW4 linker.
+OpenAssetTools is the reference for the IW3 PC formats.
 
-Windows x64 and Apple Silicon builds of Studio and MapConverter automatically download
-and verify FFmpeg on the first build and bundle it beside the executable. PC audio
-conversion uses this copy for MP3 encoding. For other targets, development builds
-can use `ffmpeg` on `PATH`. To publish on those targets, supply a standalone FFmpeg
-with `libmp3lame` and its license. This example targets Linux x64.
+Studio and MapConverter bundle the native LAME MP3 library on Windows x64, macOS
+(Apple Silicon and Intel), and Linux (glibc, x64 and arm64). The build downloads
+and verifies the target library. Users install only Studio or MapConverter.
 
-```sh
-dotnet publish tools/MapConverter/MapConverter.csproj -c Release -r linux-x64 --self-contained \
-  -p:MapConverterFfmpegPath=/path/to/distribution/ffmpeg \
-  -p:MapConverterFfmpegLicensePath=/path/to/distribution/LICENSE
-```
-
-`MapConverterFfmpegNoticePath` can include an additional distribution notice.
-The publish directory contains the executable and license alongside MapConverter.
+IW3 PC conversion preserves existing MP3 frames. For loaded sounds it accepts
+8- or 16-bit PCM. For streamed RIFF/WAVE files it accepts mono or stereo integer
+PCM (8, 16, 24 or 32 bits) and IEEE float (32 or 64 bits). It encodes these
+samples in memory and writes an ID3-tagged MP3 to the PS3 sound package.
 
 ## Xbox 360 multiplayer map
 

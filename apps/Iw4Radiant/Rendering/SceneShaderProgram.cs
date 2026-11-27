@@ -42,7 +42,7 @@ internal static class SceneShaderProgram
         uint Compile(ShaderType type, string filename)
         {
             string source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders", filename));
-            foreach (string include in new[] { "material-alpha.glsl", "ocean-waves.hlsl", "ocean-surface.hlsl" })
+            foreach (string include in new[] { "material-alpha.glsl", "ocean-waves.cginc", "ocean-surface.cginc" })
             {
                 string directive = "#include \"" + include + "\"";
                 if (source.Contains(directive, StringComparison.Ordinal))

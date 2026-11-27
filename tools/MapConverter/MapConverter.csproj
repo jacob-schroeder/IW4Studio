@@ -9,11 +9,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="ShaderConvert" />
+    <ProjectReference Include="..\ShaderConvert\ShaderConvert.csproj" />
     <ProjectReference Include="..\D3dbspLinker\D3dbspLinker.csproj" />
-    <ProjectReference Include="..\MapConverter.IW3.PC\MapConverter.IW3.PC.fsproj" />
-    <ProjectReference Include="..\MapConverter.IW3.PC\Readers\MapConverter.IW3.PC.Readers.csproj" />
-    <ProjectReference Include="..\MapConverter.IW3.PS3\MapConverter.IW3.PS3.fsproj" />
+    <ProjectReference Include="..\MapConverter.IW3\MapConverter.IW3.fsproj" />
     <ProjectReference Include="..\..\src\Authoring\IW4.Formats\IW4.Formats.csproj" />
     <ProjectReference Include="..\..\src\Engine\IW4.Game\IW4.Game.csproj" />
     <ProjectReference Include="..\..\src\Authoring\IW4.Linker\IW4.Linker.csproj" />
@@ -29,7 +27,6 @@
     <Content Include="../../Resources/Bootstrap/ps3/**/*" Link="bootstrap/ps3/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <Import Project="Native/MapShaders.targets" />
-  <Import Project="Native/Ffmpeg.targets" />
+  <Import Project="Native/Lame.targets" />
 
 </Project>

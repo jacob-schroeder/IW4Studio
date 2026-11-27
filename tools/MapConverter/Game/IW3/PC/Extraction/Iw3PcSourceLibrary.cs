@@ -1,13 +1,13 @@
 using MapConverter.Game.IW3.PC.World;
-using MapConverter.IW3.PC.Readers.World;
+using MapConverter.Game.IW3.PC.Readers.World;
 using IW4.Linker.Packaging;
 using System.Security.Cryptography;
 using System.Text.Json;
-using MapConverter.IW3.PC.Assets;
-using MapConverter.IW3.PC.Readers;
+using MapConverter.Game.IW3.PC.Assets;
+using MapConverter.Game.IW3.PC.Readers;
 using MapConverter.Game.IW3.PC.Conversion;
 using MapConverter.Game.IW3.PS3.Extraction;
-using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 
 namespace MapConverter.Game.IW3.PC.Extraction;
 

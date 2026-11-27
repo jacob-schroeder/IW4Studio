@@ -1,8 +1,8 @@
-using MapConverter.IW3.PC.Assets.XModel;
+using MapConverter.Game.IW3.PC.Assets.XModel;
 using IW4.Game.Codecs.XModel;
 using System.Globalization;
 using System.Numerics;
-using MapConverter.IW3.PC.Rules;
+using MapConverter.Game.IW3.PC.Rules;
 using System.Text.Json;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Assets.ColMap;
@@ -11,7 +11,7 @@ using IW4.Game.Assets.XModel;
 using IW4.Game.Math;
 using IW4.Formats.XModel;
 using IW4.Game.ScriptStrings;
-using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 
 namespace MapConverter.Game.IW3.PC.Models;
 

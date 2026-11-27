@@ -2,6 +2,7 @@ using System.Text;
 using IW4.Game.Assets.RawFile;
 using MapConverter.Game.IW3.PC.Conversion;
 using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 
 namespace MapConverter.Game.IW3.PS3.Conversion;
 

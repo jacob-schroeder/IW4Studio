@@ -1,0 +1,77 @@
+<Project>
+  <PropertyGroup>
+    <_LameRid>$(RuntimeIdentifier)</_LameRid>
+    <_LameRid Condition="'$(_LameRid)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</_LameRid>
+    <_LameName Condition="$(_LameRid.StartsWith('win-'))">libmp3lame.dll</_LameName>
+    <_LameName Condition="$(_LameRid.StartsWith('osx-'))">libmp3lame.dylib</_LameName>
+    <_LameName Condition="$(_LameRid.StartsWith('linux-'))">libmp3lame.so</_LameName>
+  </PropertyGroup>
+  <!-- Conda-forge LAME 3.100 build 1003: pinned archives contain the native shared library and LGPL license. -->
+  <PropertyGroup Condition="'$(_LameRid)' == 'win-x64'">
+    <_LameArchive>win-64/lame-3.100-hcfcfb64_1003.tar.bz2</_LameArchive>
+    <_LameHash>824988a396b97bb9138823a1b3aabd8326e06da5834b3011253d72bb45fd3a88</_LameHash>
+    <_LameBinary>Library/bin/libmp3lame.dll</_LameBinary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(_LameRid)' == 'osx-arm64'">
+    <_LameArchive>osx-arm64/lame-3.100-h1a8c8d9_1003.tar.bz2</_LameArchive>
+    <_LameHash>f40ce7324b2cf5338b766d4cdb8e0453e4156a4f83c2f31bbfff750785de304c</_LameHash>
+    <_LameBinary>lib/libmp3lame.0.dylib</_LameBinary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(_LameRid)' == 'osx-x64'">
+    <_LameArchive>osx-64/lame-3.100-hb7f2c08_1003.tar.bz2</_LameArchive>
+    <_LameHash>0f943b08abb4c748d73207594321b53bad47eea3e7d06b6078e0f6c59ce6771e</_LameHash>
+    <_LameBinary>lib/libmp3lame.0.dylib</_LameBinary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(_LameRid)' == 'linux-x64'">
+    <_LameArchive>linux-64/lame-3.100-h166bdaf_1003.tar.bz2</_LameArchive>
+    <_LameHash>aad2a703b9d7b038c0f745b853c6bb5f122988fe1a7a096e0e606d9cbec4eaab</_LameHash>
+    <_LameBinary>lib/libmp3lame.so.0.0.0</_LameBinary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(_LameRid)' == 'linux-arm64'">
+    <_LameArchive>linux-aarch64/lame-3.100-h4e544f5_1003.tar.bz2</_LameArchive>
+    <_LameHash>2502904a42df6d94bd743f7b73915415391dd6d31d5f50cb57c0a54a108e7b0a</_LameHash>
+    <_LameBinary>lib/libmp3lame.so.0.0.0</_LameBinary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(_LameArchive)' != ''">
+    <_LameDir>$(BaseIntermediateOutputPath)$(Configuration)/$(TargetFramework)/$(_LameRid)/lame/$(_LameHash)</_LameDir>
+    <_LamePath>$(_LameDir)/$(_LameName)</_LamePath>
+    <_LameLicensePath>$(_LameDir)/info/licenses/COPYING</_LameLicensePath>
+    <_LameSourcePath>$(_LameDir)/lame-3.100.tar.gz</_LameSourcePath>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(_LameArchive)' != ''">
+    <Content Include="$(_LamePath)" Link="$(_LameName)" ExcludeFromSingleFile="true"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(_LameLicensePath)" Link="third-party/lame/COPYING" ExcludeFromSingleFile="true"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(_LameSourcePath)" Link="third-party/lame/lame-3.100.tar.gz" ExcludeFromSingleFile="true"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(_LameDir)/info/recipe/meta.yaml" Link="third-party/lame/conda-recipe.yaml" ExcludeFromSingleFile="true"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(_LameDir)/info/recipe/libmp3lame.patch" Link="third-party/lame/libmp3lame.patch" ExcludeFromSingleFile="true"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(_LameDir)/info/recipe/fixup_windows_build.patch" Link="third-party/lame/fixup_windows_build.patch" ExcludeFromSingleFile="true"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(MSBuildThisFileDirectory)LAME-NOTICE.txt" Link="third-party/lame/NOTICE.txt" ExcludeFromSingleFile="true"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="PrepareMapConverterLame" BeforeTargets="PrepareForBuild;GetCopyToOutputDirectoryItems;ComputeFilesToPublish"
+          Condition="'$(_LameArchive)' != '' and (!Exists('$(_LameDir)/ready') or !Exists('$(_LamePath)') or !Exists('$(_LameLicensePath)') or !Exists('$(_LameSourcePath)') or !Exists('$(_LameDir)/info/recipe/meta.yaml') or !Exists('$(_LameDir)/info/recipe/libmp3lame.patch') or !Exists('$(_LameDir)/info/recipe/fixup_windows_build.patch'))">
+    <MakeDir Directories="$(_LameDir)" />
+    <Delete Files="$(_LameDir)/ready;$(_LameDir)/lame.tar.bz2;$(_LameSourcePath)" />
+    <DownloadFile SourceUrl="https://conda.anaconda.org/conda-forge/$(_LameArchive)"
+                  DestinationFolder="$(_LameDir)" DestinationFileName="lame.tar.bz2" />
+    <VerifyFileHash File="$(_LameDir)/lame.tar.bz2" Hash="$(_LameHash)" Algorithm="SHA256" />
+    <Exec Command="tar -xjf &quot;$(_LameDir)/lame.tar.bz2&quot; -C &quot;$(_LameDir)&quot; &quot;$(_LameBinary)&quot; info/licenses/COPYING info/recipe/meta.yaml info/recipe/libmp3lame.patch info/recipe/fixup_windows_build.patch" />
+    <Copy SourceFiles="$(_LameDir)/$(_LameBinary)" DestinationFiles="$(_LamePath)" />
+    <DownloadFile SourceUrl="https://deb.debian.org/debian/pool/main/l/lame/lame_3.100.orig.tar.gz"
+                  DestinationFolder="$(_LameDir)" DestinationFileName="lame-3.100.tar.gz" />
+    <VerifyFileHash File="$(_LameSourcePath)" Hash="ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e" Algorithm="SHA256" />
+    <Touch Files="$(_LameDir)/ready" AlwaysCreate="true" />
+  </Target>
+  <Target Name="RequireMapConverterLameForPublish" BeforeTargets="ComputeFilesToPublish" Condition="'$(SelfContained)' == 'true'">
+    <Error Condition="'$(_LameArchive)' == ''"
+           Text="No app-local libmp3lame distribution is pinned for $(_LameRid). Supported RIDs: win-x64, osx-x64, osx-arm64, linux-x64, linux-arm64." />
+    <Error Condition="!Exists('$(_LamePath)') or !Exists('$(_LameLicensePath)') or !Exists('$(_LameSourcePath)')"
+           Text="The pinned libmp3lame library, LGPL license, or corresponding source is missing for $(_LameRid)." />
+  </Target>
+</Project>

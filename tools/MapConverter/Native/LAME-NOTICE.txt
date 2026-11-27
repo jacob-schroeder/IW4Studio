@@ -1,0 +1,21 @@
+LAME MP3 encoder, version 3.100
+
+This distribution includes the libmp3lame shared library from the conda-forge
+LAME 3.100 build 1003 packages for its target platform. The library is loaded
+in process and can be replaced with a compatible libmp3lame shared library.
+No LAME command-line program is included.
+
+LAME is licensed under the GNU Library General Public License, version 2.
+The license text is distributed beside this notice as COPYING.
+
+The original LAME source archive and the conda-forge build recipe and patches
+used for these binaries are distributed in this directory.
+
+LAME source: https://downloads.sourceforge.net/sourceforge/lame/lame-3.100.tar.gz
+Identical source mirror used for this distribution:
+https://deb.debian.org/debian/pool/main/l/lame/lame_3.100.orig.tar.gz
+Conda-forge build recipe: https://github.com/conda-forge/lame-feedstock
+Conda-forge packages: https://anaconda.org/conda-forge/lame/files
+
+The exact target-platform package, binary path, and SHA-256 archive hash are
+recorded in the MapConverter Native/Lame.targets file in the IW4Studio source.

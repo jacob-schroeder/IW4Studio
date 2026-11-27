@@ -2,7 +2,7 @@ namespace IW4.Render.Shaders;
 
 public static partial class RsxCgSourceDecompiler
 {
-    public const string ReciprocalWCompilerError = "#error This shader reads WPOS.w for RSX perspective correction.";
+    public const string ReciprocalWNote = "This shader reads WPOS.w for RSX perspective correction.";
 
     private static void WriteFragment(
         byte[] program, int offset, RuntimeInfo layout, CgParameter[] parameters, SourceWriter source)
@@ -489,10 +489,7 @@ public static partial class RsxCgSourceDecompiler
             source.Body.AppendLine($"    {source.Output(4, "DEPTH", "float")} = {depth};");
         }
         if (readsReciprocalW)
-        {
-            source.Body.Insert(0,
-                $"#ifdef IW4_SHADERCONVERT_SM3\n{ReciprocalWCompilerError} Use rsx-cg-compiler or sce-cgc.\n#endif\n");
-        }
+            source.Body.Insert(0, $"    // {ReciprocalWNote}\n");
 
         static bool MatchesWeight(float value, float weight) => value == weight || value == (float)(Half)weight;
 

@@ -2,8 +2,8 @@ using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
 using IW4.Game.Assets.TechniqueSet;
-using MapConverter.Game.IW3.PC.Techniques;
-using MapConverter.Game.IW3.PS3.Rules;
+using ShaderConvert.Game.IW3.PC.Techniques;
+using MapConverter.Game.IW3.Rules;
 
 namespace MapConverter.Game.IW3.PS3.Techniques;
 

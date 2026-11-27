@@ -80,7 +80,7 @@ internal sealed class Iw3Ps3ImageLibrary(string ownedNamePrefix)
     {
         if (!_sourcesByLocation.TryGetValue((Path.GetFullPath(path), rootOffset), out var source))
             throw new InvalidDataException($"Missing COD4 preview image at 0x{rootOffset:X} in '{path}'.");
-        return MapUiRules.PreviewImage(mapName, source.Root, source.Payload);
+        return ImageRules.PreviewImage(mapName, source.Root, source.Payload);
     }
 
     internal GfxImageAsset Resolve(string name)

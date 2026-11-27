@@ -3,10 +3,10 @@ using System.Text;
 using IW4.Formats.D3dbsp;
 using IW4.Game.Math;
 using IW4.Linker.D3dbsp;
-using MapConverter.IW3.PC.Assets.XModel;
-using MapConverter.IW3.PC.Assets.World;
-using MapConverter.IW3.PC.Readers;
-using MapConverter.IW3.PC.Readers.World;
+using MapConverter.Game.IW3.PC.Assets.XModel;
+using MapConverter.Game.IW3.PC.Assets.World;
+using MapConverter.Game.IW3.PC.Readers;
+using MapConverter.Game.IW3.PC.Readers.World;
 
 namespace MapConverter.Game.IW3.PC.World;
 

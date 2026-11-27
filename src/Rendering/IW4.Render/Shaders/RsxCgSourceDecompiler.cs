@@ -418,7 +418,7 @@ public static partial class RsxCgSourceDecompiler
             "pass" or "precise" or "private" or "protected" or "public" or "register" or "row_major" or
             "samplerCUBE" or "samplerRECT" or "shared" or "short" or "signed" or "sizeof" or "technique" or
             "template" or "texture" or "this" or "throw" or "try" or "union" or "unsigned" or "using" or
-            "varying" or "virtual" or "volatile" or "IW4_SHADERCONVERT_SM3" or
+            "varying" or "virtual" or "volatile" or
             "abs" or "cos" or "ddx" or "ddy" or "dot" or "exp2" or "floor" or "frac" or "length" or "log2" or
             "max" or "min" or "normalize" or "rsqrt" or "saturate" or "sign" or "sin" or "sqrt" or
             "tex1D" or "tex1Dbias" or "tex1Dlod" or "tex1Dproj" or

@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
-using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 using System.Text.Json;
 using IW4.Game.Assets;
 using IW4.Game.Assets.ColMap;

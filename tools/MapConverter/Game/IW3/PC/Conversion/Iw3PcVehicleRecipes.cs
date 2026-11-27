@@ -2,7 +2,7 @@ using System.Text;
 using IW4.Formats.D3dbsp;
 using IW4.Linker.D3dbsp;
 using MapConverter.Game.IW3.PC.Extraction;
-using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 
 namespace MapConverter.Game.IW3.PC.Conversion;
 

@@ -9,10 +9,9 @@ on:
       - src/**
       - Resources/**
       - tools/D3dbspLinker/**
-      - tools/D3dbspLinker/**
       - tools/MapConverter/**
-      - tools/MapConverter.IW3.PC/**
-      - tools/MapConverter.IW3.PS3/**
+      - tools/MapConverter.IW3/**
+      - tools/ShaderConvert/**
       - global.json
       - .github/workflows/build-iw4studio.yml
   workflow_dispatch:
@@ -69,6 +68,10 @@ jobs:
             runner: macos-15
             runtime: osx-arm64
             asset: iw4studio-macos_arm64.tar.gz
+          - platform: linux_x64
+            runner: ubuntu-22.04
+            runtime: linux-x64
+            asset: iw4studio-linux_x64.tar.gz
 
     steps:
       - name: Check out repository
@@ -109,8 +112,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path (Split-Path $destination) | Out-Null
           Compress-Archive -Path "publish/*" -DestinationPath $destination -CompressionLevel Optimal
 
-      - name: Package macOS build
-        if: runner.os == 'macOS'
+      - name: Package Unix build
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           mkdir -p "artifact/release/iw4studio/${{ matrix.platform }}"
@@ -150,6 +153,7 @@ jobs:
           assets=(
             "release-assets/release/iw4studio/win_x64/iw4studio-win_x64.zip"
             "release-assets/release/iw4studio/macos_arm64/iw4studio-macos_arm64.tar.gz"
+            "release-assets/release/iw4studio/linux_x64/iw4studio-linux_x64.tar.gz"
           )
           if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$release_tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"

@@ -4,7 +4,7 @@ using IW4.Game.Assets.Material;
 using IW4.Game.Assets.XModel;
 using IW4.Game.Pointers;
 using MapConverter.Game.IW3.PS3.Materials;
-using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 
 namespace MapConverter.Game.IW3.PS3.Extraction;
 

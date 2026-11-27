@@ -1,4 +1,4 @@
-using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 
 namespace MapConverter.CommandLine;
 

@@ -29,7 +29,7 @@ using MapConverter.Game.IW3.PC.Conversion;
 using MapConverter.Game.IW3;
 using MapConverter.Game.IW3.PS3.Extraction;
 using MapConverter.Game.IW3.PS3.Images;
-using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 using MapConverter.Game.IW3.PS3.Techniques;
 
 namespace MapConverter.Game.IW3.PS3.Conversion;

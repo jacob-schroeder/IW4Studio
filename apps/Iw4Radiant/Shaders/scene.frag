@@ -8,7 +8,7 @@ in vec4 vOceanSurface;
 
 #include "material-alpha.glsl"
 #define IW4_OPENGL
-#include "ocean-surface.hlsl"
+#include "ocean-surface.cginc"
 
 uniform sampler2D uTexture;
 uniform vec3 uColorTint;

@@ -9,8 +9,7 @@ internal enum CgSourceCompilerKind
 {
     Managed,
     Ps3Dk,
-    Sdk,
-    ShaderConvert
+    Sdk
 }
 
 public sealed class ShaderCompilerChoice
@@ -35,7 +34,6 @@ internal static class CgSourceCompiler
         var choices = new List<ShaderCompilerChoice> { new(CgSourceCompilerKind.Managed, "Built-in Cg") };
         if (FindPs3DkCompiler() is { } ps3dk) choices.Add(new(CgSourceCompilerKind.Ps3Dk, "PS3DK", ps3dk));
         if (FindSdkCompiler() is { } sdk) choices.Add(new(CgSourceCompilerKind.Sdk, "sce-cgc", sdk));
-        if (FindShaderConvert() is { } bridge) choices.Add(new(CgSourceCompilerKind.ShaderConvert, "ShaderConvert", bridge));
         return choices;
     }
 
@@ -69,7 +67,6 @@ internal static class CgSourceCompiler
             {
                 CgSourceCompilerKind.Ps3Dk => ["-p", profile, "-e", "main", "--emit-container", output, input],
                 CgSourceCompilerKind.Sdk => ["-profile", profile, "-entry", "main", "-o", output, input],
-                CgSourceCompilerKind.ShaderConvert => ["--format", "cg", "--stage", vertex ? "vertex" : "pixel", "--input", input, "--output", output],
                 _ => throw new InvalidOperationException("No shader compiler was selected.")
             };
             foreach (string argument in arguments) start.ArgumentList.Add(argument);
@@ -127,27 +124,6 @@ internal static class CgSourceCompiler
             }
         }
         return OnPath("sce-cgc") ?? OnPath("sce-cgc.exe");
-    }
-
-    private static string? FindShaderConvert()
-    {
-        string tool = OperatingSystem.IsWindows() ? "ShaderConvert.exe" : "ShaderConvert";
-        string adjacent = Path.Combine(AppContext.BaseDirectory, tool);
-        if (File.Exists(adjacent)) return adjacent;
-        if (OnPath(tool) is { } installed) return installed;
-        // A development build can use its sibling tool without installing it on PATH.
-        for (var parent = new DirectoryInfo(AppContext.BaseDirectory); parent is not null; parent = parent.Parent)
-        {
-            string project = Path.Combine(parent.FullName, "tools", "ShaderConvert");
-            if (!File.Exists(Path.Combine(project, "ShaderConvert.csproj"))) continue;
-            foreach (string configuration in new[] { "Release", "Debug" })
-            {
-                string path = Path.Combine(project, "bin", configuration, "net10.0", tool);
-                if (File.Exists(path)) return path;
-            }
-            break;
-        }
-        return null;
     }
 
     private static string? OnPath(string name) =>

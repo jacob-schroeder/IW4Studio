@@ -1,0 +1,69 @@
+// PS3 ocean vertex program, profile sce_vp_rsx.
+#include "../ocean-waves.cginc"
+
+// The pass supplies transposed view-projection rows and native stored world rows.
+uniform float4 viewProjection0 : C0;
+uniform float4 viewProjection1 : C1;
+uniform float4 viewProjection2 : C2;
+uniform float4 viewProjection3 : C3;
+uniform float4 world0 : C4;
+uniform float4 world1 : C5;
+uniform float4 world2 : C6;
+uniform float4 world3 : C7;
+uniform float4 gameTime : C8;
+// XY wind direction, Z reference coordinate scale, W displacement scale.
+uniform float4 oceanShape : C9;
+// X phase speed, Y envelope gradient scale, ZW signed-depth decoding / 12.
+uniform float4 oceanMotion : C10;
+uniform float4 nativeFog : C21;
+
+struct VertexInput
+{
+    float4 position : ATTR0;
+    float4 color : ATTR3;
+    float2 uv : ATTR8;
+};
+
+struct PixelInput
+{
+    float4 position : POSITION;
+    float4 color : COLOR0;
+    float4 backColor : BCOL0;
+    float4 uvSlope : TEXCOORD0;
+    float4 surface : TEXCOORD1;
+    float4 relativePositionFog : TEXCOORD2;
+};
+
+PixelInput main(VertexInput vertex)
+{
+    PixelInput pixel;
+    float3 position = vertex.position.xyz;
+    float4 relative;
+    float2 slope = float2(0.0, 0.0);
+    pixel.color = vertex.color;
+    // The retained descriptor advertises back-face color (output-mask bit 2).
+    pixel.backColor = vertex.color;
+    float rise = 0.0;
+    if (oceanShape.w > 0.0)
+    {
+        float2 waveSlope;
+        float height = OceanHeight(position.xy * oceanShape.z, gameTime.w * oceanMotion.x,
+            oceanShape.xy, waveSlope) * oceanShape.w;
+        float2 gradient = (vertex.color.gb * 255.0 - 128.0) / 127.0 * oceanMotion.y;
+        slope = vertex.color.r * waveSlope * (oceanShape.z * oceanShape.w) + gradient * height;
+        rise = vertex.color.r * height;
+        position.z += rise;
+    }
+    // A texture-coordinate varying retains signed depth until pixel evaluation.
+    // COLOR alpha would clamp before interpolation and produce polygon-shaped edges.
+    pixel.surface = float4(position.xy / 128.0,
+        vertex.color.a * oceanMotion.z + oceanMotion.w + rise / 12.0,
+        rise / max(oceanShape.w * 2.4, 0.0001));
+    pixel.uvSlope = float4(vertex.uv, slope);
+    relative = position.x * world0 + position.y * world1 + position.z * world2 + world3;
+    pixel.position = float4(dot(relative, viewProjection0), dot(relative, viewProjection1),
+        dot(relative, viewProjection2), dot(relative, viewProjection3));
+    pixel.relativePositionFog = float4(relative.xyz,
+        clamp(exp2((length(relative.xyz) * nativeFog.z + nativeFog.w) * 1.44269504089), nativeFog.y, 1.0));
+    return pixel;
+}

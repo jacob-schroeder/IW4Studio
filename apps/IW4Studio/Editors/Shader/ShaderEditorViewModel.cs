@@ -94,8 +94,8 @@ public sealed class ShaderEditorViewModel : ObservableObject, IAssetEditorStagin
         IsRetentionRetry ? (_compiling ? "Saving Cg source locally…" : "Retry saving the applied Cg source to your local user data.") :
         _compiling ? "Compiling the edited Cg program…" :
         HasRecoveryGaps ? "Partial reconstruction. Each marked operation needs an implementation before this source can compile." :
-        (_compiler.Kind is CgSourceCompilerKind.Managed or CgSourceCompilerKind.ShaderConvert) &&
-            Source.Contains(RsxCgSourceDecompiler.ReciprocalWCompilerError, StringComparison.Ordinal)
+        _compiler.Kind == CgSourceCompilerKind.Managed &&
+            Source.Contains(RsxCgSourceDecompiler.ReciprocalWNote, StringComparison.Ordinal)
             ? "This shader reads WPOS.w. Select PS3DK or sce-cgc to compile it." :
         _draft.Bytecode.IsEmpty ? "Compile and apply builds this new shader. Save As writes it to the fastfile." :
         HasUnappliedChanges ? "Source edited. Compile and apply updates this shader in the workspace." :

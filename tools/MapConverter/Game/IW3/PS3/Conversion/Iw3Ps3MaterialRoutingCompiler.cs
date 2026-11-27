@@ -5,7 +5,7 @@ using IW4.Game.Assets.Material;
 using IW4.Game.Assets.TechniqueSet;
 using IW4.Formats.SourceFormat.Material;
 using IW4.Linker.Contracts;
-using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 
 namespace MapConverter.Game.IW3.PS3.Conversion;
 

@@ -5,7 +5,7 @@ using IW4.Game.Assets.Sound;
 using IW4.Linker.Contracts;
 using IW4.Linker.Packaging;
 using MapConverter.Game.IW3.PS3.Extraction;
-using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 
 namespace MapConverter.Game.IW3.PS3.Conversion;
 

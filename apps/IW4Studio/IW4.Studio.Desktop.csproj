@@ -66,10 +66,10 @@
     <Folder Include="Persistence\" />
   </ItemGroup>
 
-  <Target Name="RequireDesktopMapConverterFfmpeg" AfterTargets="ComputeFilesToPublish"
+  <Target Name="RequireDesktopMapConverterLame" AfterTargets="ComputeFilesToPublish"
           Condition="'$(SelfContained)' == 'true'">
-    <Error Condition="!@(ResolvedFileToPublish->AnyHaveMetadataValue('RelativePath', 'ffmpeg')) and !@(ResolvedFileToPublish->AnyHaveMetadataValue('RelativePath', 'ffmpeg.exe'))"
-           Text="A self-contained IW4 Studio distribution needs a target-platform FFmpeg executable with libmp3lame. Set MapConverterFfmpegPath and MapConverterFfmpegLicensePath." />
+    <Error Condition="!@(ResolvedFileToPublish->AnyHaveMetadataValue('RelativePath', 'libmp3lame.dll')) and !@(ResolvedFileToPublish->AnyHaveMetadataValue('RelativePath', 'libmp3lame.dylib')) and !@(ResolvedFileToPublish->AnyHaveMetadataValue('RelativePath', 'libmp3lame.so'))"
+           Text="A self-contained IW4 Studio distribution needs an app-local libmp3lame library." />
   </Target>
 
 </Project>

@@ -1,5 +1,5 @@
 #define IW4_OPENGL
-#include "ocean-waves.hlsl"
+#include "ocean-waves.cginc"
 
 in vec3 aPosition;
 in vec3 aNormal;

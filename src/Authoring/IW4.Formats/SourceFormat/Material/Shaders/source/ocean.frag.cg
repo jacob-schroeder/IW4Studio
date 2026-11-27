@@ -1,0 +1,7 @@
+// PS3 ambient ocean fragment program, profile sce_fp_rsx.
+#include "ocean-pixel.cginc"
+
+float4 main(PixelInput pixel, float face : FACE) : COLOR0
+{
+    return OceanPixel(pixel, face, false);
+}

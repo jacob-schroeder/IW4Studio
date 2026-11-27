@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using MapConverter.Game.IW3.PS3.Rules;
+using MapConverter.Game.IW3.Rules;
 using IW4.Game.Assets.ColMap;
 using FxEffectDefAsset = IW4.Game.Assets.Fx.FxEffectDefAsset;
 using IW4.Game.Assets.GfxMap;

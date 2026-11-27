@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using IW4.Formats.D3dbsp;
-using MapConverter.IW3.PC.Readers;
+using MapConverter.Game.IW3.PC.Readers;
 
 namespace MapConverter.Game.IW3.PC.World;
 

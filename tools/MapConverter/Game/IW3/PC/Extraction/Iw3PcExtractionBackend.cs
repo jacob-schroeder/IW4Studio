@@ -1,10 +1,7 @@
 using MapConverter.Game.IW3.PC.World;
-using MapConverter.IW3.PC.Assets;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Text;
+using MapConverter.Game.IW3.PC.Assets;
 using MapConverter.Game.IW3.PC.Conversion;
-using MapConverter.IW3.PC.Readers;
+using MapConverter.Game.IW3.PC.Readers;
 
 namespace MapConverter.Game.IW3.PC.Extraction;
 
@@ -176,81 +173,6 @@ internal static class Iw3PcExtractionBackend
             .ConfigureAwait(false);
     }
 
-    internal static async Task<string> RunToolAsync(
-        string operationName,
-        string executablePath,
-        string workingDirectory,
-        IReadOnlyList<string> arguments,
-        CancellationToken cancellationToken)
-    {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = executablePath,
-            WorkingDirectory = workingDirectory,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        using var process = new Process { StartInfo = startInfo };
-
-        try
-        {
-            if (!process.Start())
-            {
-                throw new Iw3PcExtractionException(
-                    $"{operationName} could not start '{executablePath}'.");
-            }
-        }
-        catch (Iw3PcExtractionException)
-        {
-            throw;
-        }
-        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
-        {
-            throw new Iw3PcExtractionException(
-                $"{operationName} could not start '{executablePath}': {exception.Message}",
-                exception);
-        }
-
-        var standardOutputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var standardErrorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-
-        try
-        {
-            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            TryKillProcessTree(process);
-            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-            await DrainOutputAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
-            throw;
-        }
-
-        var standardOutput = await standardOutputTask.ConfigureAwait(false);
-        var standardError = await standardErrorTask.ConfigureAwait(false);
-
-        if (process.ExitCode != 0)
-        {
-            throw new Iw3PcExtractionException(
-                BuildFailureMessage(
-                    operationName,
-                    executablePath,
-                    process.ExitCode,
-                    standardOutput,
-                    standardError));
-        }
-
-        return standardOutput;
-    }
-
     private static string ValidateExistingFile(string path, string parameterName, string description)
     {
         var fullPath = NormalizePath(path, parameterName);
@@ -333,75 +255,6 @@ internal static class Iw3PcExtractionBackend
         {
             throw new IOException(
                 $"Extraction output already exists: '{path}'. Use a new or empty scratch directory to avoid stale data.");
-        }
-    }
-
-    private static string BuildFailureMessage(
-        string operationName,
-        string executablePath,
-        int exitCode,
-        string standardOutput,
-        string standardError)
-    {
-        var message = new StringBuilder()
-            .Append(operationName)
-            .Append(" failed with exit code ")
-            .Append(exitCode)
-            .Append(" while running '")
-            .Append(executablePath)
-            .Append("'.");
-
-        AppendCapturedOutput(message, "stderr", standardError);
-        AppendCapturedOutput(message, "stdout", standardOutput);
-
-        return message.ToString();
-    }
-
-    private static void AppendCapturedOutput(StringBuilder message, string label, string output)
-    {
-        var trimmedOutput = output.Trim();
-        if (trimmedOutput.Length == 0)
-        {
-            return;
-        }
-
-        const int maximumLength = 8 * 1024;
-        if (trimmedOutput.Length > maximumLength)
-        {
-            trimmedOutput = $"...{trimmedOutput[^maximumLength..]}";
-        }
-
-        message.AppendLine()
-            .Append(label)
-            .AppendLine(":")
-            .Append(trimmedOutput);
-    }
-
-    private static async Task DrainOutputAsync(Task<string> standardOutputTask, Task<string> standardErrorTask)
-    {
-        try
-        {
-            await Task.WhenAll(standardOutputTask, standardErrorTask).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-        }
-    }
-
-    private static void TryKillProcessTree(Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch (InvalidOperationException)
-        {
-        }
-        catch (Win32Exception)
-        {
         }
     }
 

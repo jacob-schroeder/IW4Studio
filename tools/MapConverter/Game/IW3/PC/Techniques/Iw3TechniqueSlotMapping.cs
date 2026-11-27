@@ -1,4 +1,4 @@
-using MapConverter.IW3.PC.Assets.TechniqueSet;
+using ShaderConvert.Game.IW3.PC.Techniques;
 using IW4.Game.Assets.Material;
 
 namespace MapConverter.Game.IW3.PC.Techniques;
