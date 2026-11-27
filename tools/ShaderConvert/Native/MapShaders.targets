@@ -13,8 +13,8 @@
     <ShaderCC Condition="'$(ShaderCC)' == ''">cc</ShaderCC>
     <ShaderCXX Condition="'$(ShaderCXX)' == ''">c++</ShaderCXX>
     <ShaderFlags Condition="!$([MSBuild]::IsOSPlatform('Windows'))">-fPIC -fvisibility=hidden</ShaderFlags>
-    <!-- Match the deployment floor of the .NET 10 runtime on macOS. -->
-    <ShaderFlags Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(ShaderFlags) -mmacosx-version-min=12.0</ShaderFlags>
+    <!-- Match the deployment floor of the .NET 11 runtime on macOS. -->
+    <ShaderFlags Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(ShaderFlags) -mmacosx-version-min=14.0</ShaderFlags>
     <ShaderFlags Condition="'$(ShaderRid)' == 'win-x64'">--target=x86_64-pc-windows-msvc -fms-runtime-lib=static</ShaderFlags>
     <ShaderFlags Condition="'$(ShaderRid)' == 'win-arm64'">--target=aarch64-pc-windows-msvc -fms-runtime-lib=static</ShaderFlags>
     <ShaderFlags Condition="'$(ShaderRid)' == 'win-x86'">--target=i686-pc-windows-msvc -fms-runtime-lib=static</ShaderFlags>

@@ -1,6 +1,6 @@
 # ShaderConvert
 
-ShaderConvert is a .NET 10 class library that converts compiled Direct3D 9 vertex and pixel shaders (SM1–SM3) into native PS3 RSX Cg program blobs. MapConverter uses it for extracted IW3 PC shaders.
+ShaderConvert is a .NET 11 class library that converts compiled Direct3D 9 vertex and pixel shaders (SM1–SM3) into native PS3 RSX Cg program blobs. MapConverter uses it for extracted IW3 PC shaders.
 
 ## Convert a compiled shader
 
