@@ -17,7 +17,7 @@
                 Content="Clear A"
                 Command="{Binding PreviewDebug.Comparison.ClearBaselineCommand}" />
       </WrapPanel>
-      <TextBlock Text="Pin a state, then change simulation values, time, or focus to compare with the live canvas."
+      <TextBlock Text="Pin A, then change values, time, or focus to compare."
                  IsVisible="{Binding !PreviewDebug.Comparison.HasBaseline}"
                  FontSize="11"
                  TextWrapping="Wrap"

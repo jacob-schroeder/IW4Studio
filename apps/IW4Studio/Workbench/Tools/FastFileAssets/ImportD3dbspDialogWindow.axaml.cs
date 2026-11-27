@@ -37,7 +37,7 @@ public sealed partial class ImportD3dbspDialogWindow : Window
 
         InitializeComponent();
         Icon = AppIcon.Create();
-        SourceTextBlock.Text = $"Source: {Path.GetFileName(inputPath)}";
+        SourceTextBlock.Text = Path.GetFileName(inputPath);
         NameTextBox.Text = suggestedAssetName;
         CapacityTextBox.Text = suggestedCapacity is { } capacity
             ? $"0x{capacity:X8}"

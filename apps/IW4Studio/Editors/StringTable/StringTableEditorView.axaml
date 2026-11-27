@@ -31,7 +31,14 @@
                      TextTrimming="CharacterEllipsis"
                      FontSize="10"
                      Foreground="{DynamicResource StudioTextSubtleBrush}"
-                     ToolTip.Tip="{Binding StatusMessage}" />
+                     ToolTip.Tip="{Binding StatusMessage}">
+            <TextBlock.IsVisible>
+              <MultiBinding Converter="{x:Static BoolConverters.And}">
+                <Binding Path="HasTable" />
+                <Binding Path="StatusMessage" Converter="{x:Static StringConverters.IsNotNullOrEmpty}" />
+              </MultiBinding>
+            </TextBlock.IsVisible>
+          </TextBlock>
         </StackPanel>
 
         <StackPanel Grid.Column="1"
@@ -44,10 +51,7 @@
                   Background="{DynamicResource StudioSurfaceSunkenBrush}"
                   BorderBrush="{DynamicResource StudioBorderBrush}"
                   BorderThickness="1">
-            <TextBlock Text="{Binding ModeText}"
-                       FontSize="9"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Classes="editorAccessBadge" Text="{Binding ModeText}" />
           </Border>
           <Button Classes="ghost"
                   MinHeight="31"

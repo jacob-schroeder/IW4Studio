@@ -1,4 +1,6 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using IW4.Studio.Desktop.Editors.Gsc;
@@ -28,6 +30,8 @@ public sealed partial class EditorWindow : Window
     private bool _approvedCloseRetry;
     private bool _disposed;
 
+    internal EditorClipboardCommands ClipboardCommands { get; }
+
     public EditorWindow()
         : this(new DestructiveNavigationCoordinator())
     {
@@ -37,6 +41,7 @@ public sealed partial class EditorWindow : Window
     {
         _navigationCoordinator = navigationCoordinator ?? throw new ArgumentNullException(nameof(navigationCoordinator));
         InitializeComponent();
+        ClipboardCommands = new EditorClipboardCommands(this);
         NativeMenu.SetMenu(this, StudioMenu.CreateNativeMenu(this, ExecuteMenuAction));
         StudioMenu.PopulateWindowMenu(WindowMenu, this, ExecuteMenuAction);
         WindowMenu.IsVisible = !OperatingSystem.IsMacOS();
@@ -675,20 +680,39 @@ public sealed partial class EditorWindow : Window
         {
             Title = cancelled ? "Save As cancelled" : "Save As blocked",
             Width = 620,
-            Height = 340,
-            MinWidth = 480,
-            MinHeight = 240,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new TextBox
+            MinWidth = 400,
+            SizeToContent = SizeToContent.Height,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        var close = new Button
+        {
+            Content = "Close",
+            MinWidth = 80,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            IsDefault = true,
+            IsCancel = true
+        };
+        close.Click += (_, _) => window.Close();
+        Grid.SetRow(close, 1);
+        window.Content = new Grid
+        {
+            Margin = new Thickness(24),
+            RowDefinitions = new RowDefinitions("*,Auto"),
+            RowSpacing = 16,
+            Children =
             {
-                IsReadOnly = true,
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                AcceptsReturn = true,
-                Text = string.Join(
-                    Environment.NewLine,
-                    diagnostics.DefaultIfEmpty(
-                        "No diagnostic was supplied.")),
-                Margin = new Avalonia.Thickness(18)
+                new ScrollViewer
+                {
+                    MaxHeight = 320,
+                    HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                    Content = new SelectableTextBlock
+                    {
+                        TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                        Text = string.Join(Environment.NewLine, diagnostics.DefaultIfEmpty("No further details are available."))
+                    }
+                },
+                close
             }
         };
         await window.ShowDialog(this);

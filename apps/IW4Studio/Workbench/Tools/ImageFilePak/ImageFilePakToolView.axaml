@@ -14,19 +14,16 @@
             Padding="10,9"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="*,Auto"
-            ColumnSpacing="8">
+      <StackPanel Spacing="5">
         <TextBox Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                  MinHeight="32"
                  Padding="10,6"
                  PlaceholderText="Search streamed images"
-                 FontSize="10" />
-        <TextBlock Grid.Column="1"
-                   Text="{Binding ResultText}"
-                   VerticalAlignment="Center"
-                   FontSize="9"
+                 FontSize="12" />
+        <TextBlock Text="{Binding ResultText}"
+                   FontSize="11"
                    Foreground="{DynamicResource StudioTextSubtleBrush}" />
-      </Grid>
+      </StackPanel>
     </Border>
 
     <Grid Grid.Row="1">
@@ -54,22 +51,23 @@
               <StackPanel Grid.Column="1"
                           Spacing="2">
                 <TextBlock Text="{Binding Name}"
-                           FontSize="10"
+                           ToolTip.Tip="{Binding Name}"
+                           FontSize="12"
                            TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource StudioTextBrush}" />
                 <TextBlock Text="{Binding OwningFastFileName}"
-                           FontSize="8"
+                           FontSize="10"
                            TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource StudioTextSubtleBrush}" />
                 <TextBlock Text="{Binding PackageText}"
-                           FontSize="8"
+                           FontSize="10"
                            TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource StudioInfoBrush}" />
               </StackPanel>
               <TextBlock Grid.Column="2"
                          Text="{Binding DimensionsText}"
                          VerticalAlignment="Center"
-                         FontSize="8"
+                         FontSize="10"
                          Foreground="{DynamicResource StudioTextSubtleBrush}" />
             </Grid>
           </DataTemplate>
@@ -88,7 +86,7 @@
                                     Foreground="{DynamicResource StudioTextSubtleBrush}" />
         <TextBlock Text="No streamed images found"
                    HorizontalAlignment="Center"
-                   FontSize="10"
+                   FontSize="12"
                    Foreground="{DynamicResource StudioTextMutedBrush}" />
       </StackPanel>
     </Grid>

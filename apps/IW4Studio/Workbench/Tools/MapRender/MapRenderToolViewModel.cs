@@ -62,11 +62,6 @@ public sealed class MapRenderToolViewModel : ObservableObject, IDisposable
 
     public bool HasNoLevelBriefingPreview => !HasLevelBriefingPreview;
 
-    public string StatusHeading => "Live Preview";
-
-    public string StatusMessage =>
-        "Open the native preview to prepare this map's render scene.";
-
     public bool CanLaunch { get; }
 
     public void RequestLaunch()

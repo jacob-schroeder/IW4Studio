@@ -10,32 +10,28 @@
              d:DesignHeight="260">
   <Grid>
     <Grid IsVisible="{Binding HasEntries}" RowDefinitions="32,*">
-      <Border Padding="10,0"
+      <Border Classes="outputColumnHeader"
               Background="{DynamicResource StudioSurfaceSunkenBrush}"
               BorderBrush="{DynamicResource StudioBorderBrush}"
               BorderThickness="0,0,0,1">
         <Grid ColumnDefinitions="110,120,170,*" ColumnSpacing="10">
           <TextBlock Text="Severity"
                      VerticalAlignment="Center"
-                     FontSize="9"
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
           <TextBlock Grid.Column="1"
                      Text="Location"
                      VerticalAlignment="Center"
-                     FontSize="9"
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
           <TextBlock Grid.Column="2"
                      Text="Source"
                      VerticalAlignment="Center"
-                     FontSize="9"
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
           <TextBlock Grid.Column="3"
                      Text="Message"
                      VerticalAlignment="Center"
-                     FontSize="9"
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
         </Grid>
@@ -43,7 +39,7 @@
 
       <ListBox x:Name="DiagnosticsList"
                Grid.Row="1"
-               Classes="studioOutputList"
+               Classes="studioOutputList outputTable"
                Margin="6"
                ItemsSource="{Binding Entries}"
                SelectionMode="Single"
@@ -53,21 +49,16 @@
             <Grid ColumnDefinitions="110,120,170,*"
                   ColumnSpacing="10"
                   Margin="4,3">
-              <TextBlock Text="{Binding Severity}"
-                         FontSize="10"
-                         Foreground="{DynamicResource StudioWarningBrush}" />
+              <TextBlock Classes="outputSeverity" Text="{Binding Severity}" />
               <TextBlock Grid.Column="1"
                          Text="{Binding LocationText}"
-                         FontSize="10"
                          Foreground="{DynamicResource StudioTextMutedBrush}" />
               <TextBlock Grid.Column="2"
                          Text="{Binding Source}"
-                         FontSize="10"
                          TextTrimming="CharacterEllipsis"
                          Foreground="{DynamicResource StudioTextMutedBrush}" />
               <TextBlock Grid.Column="3"
-                         Text="{Binding Message}"
-                         FontSize="10"
+                         Text="{Binding Message}" ToolTip.Tip="{Binding Message}"
                          TextTrimming="CharacterEllipsis"
                          Foreground="{DynamicResource StudioTextBrush}" />
             </Grid>
@@ -86,7 +77,7 @@
                  Foreground="{DynamicResource StudioSuccessBrush}" />
       <TextBlock Text="No diagnostics"
                  HorizontalAlignment="Center"
-                 FontSize="10"
+                 FontSize="12"
                  Foreground="{DynamicResource StudioTextMutedBrush}" />
     </StackPanel>
   </Grid>

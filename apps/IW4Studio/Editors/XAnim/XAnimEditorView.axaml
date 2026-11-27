@@ -53,7 +53,6 @@
     </Border>
 
     <Border Grid.Row="2"
-            MinHeight="430"
             CornerRadius="8"
             ClipToBounds="True"
             Background="{DynamicResource StudioSurfaceSunkenBrush}"
@@ -140,8 +139,8 @@
                   VerticalAlignment="Center"
                   IsHitTestVisible="False"
                   CornerRadius="7"
-                  Background="#E6262A31"
-                  BorderBrush="#506D7683"
+                  Background="{DynamicResource StudioSurfaceOverlayBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}"
                   BorderThickness="1">
             <StackPanel Spacing="7">
               <materialIcons:MaterialIcon Kind="AnimationPlayOutline"

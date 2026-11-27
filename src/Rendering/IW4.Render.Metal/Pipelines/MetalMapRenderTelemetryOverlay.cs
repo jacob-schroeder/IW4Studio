@@ -62,16 +62,24 @@ internal sealed unsafe class MetalMapRenderTelemetryOverlay : IDisposable
     /// Each command slot uploads this revision only after its preceding
     /// command buffer has retired.
     /// </summary>
-    internal void UpdateCpuGeometry(string text, float renderScaling)
+    internal void UpdateCpuGeometry(
+        string text,
+        float renderScaling,
+        int framebufferWidth)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentException.ThrowIfNullOrEmpty(text);
 
         int glyphPixelSize =
-            MapRenderTelemetryOverlayGeometry.GetGlyphPixelSize(renderScaling);
+            MapRenderTelemetryOverlayGeometry.GetGlyphPixelSize(
+                renderScaling,
+                framebufferWidth);
         (_backgroundVertexCount, _textVertexCount) =
             MapRenderTelemetryOverlayGeometry.Write(
-                text,
+                MapRenderTelemetryOverlayGeometry.WrapText(
+                    text,
+                    framebufferWidth,
+                    glyphPixelSize),
                 glyphPixelSize,
                 _geometryVertices);
         if (_textVertexCount == 0)

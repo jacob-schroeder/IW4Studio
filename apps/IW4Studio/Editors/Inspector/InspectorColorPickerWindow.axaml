@@ -3,17 +3,47 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:colorPicker="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.ColorPicker"
+        xmlns:primitives="clr-namespace:Avalonia.Controls.Primitives;assembly=Avalonia.Controls.ColorPicker"
         x:Class="IW4.Studio.Desktop.Editors.Inspector.InspectorColorPickerWindow"
         Title="Select color"
-        Width="640"
-        Height="700"
-        MinWidth="560"
-        MinHeight="600"
+        Width="464"
+        Height="552"
+        MinWidth="420"
+        MinHeight="536"
         ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner"
         mc:Ignorable="d"
-        d:DesignWidth="640"
-        d:DesignHeight="700">
+        d:DesignWidth="464"
+        d:DesignHeight="552">
+  <Window.Styles>
+    <Style Selector="colorPicker|ColorView /template/ TabItem">
+      <Setter Property="MinHeight" Value="48" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="colorPicker|ColorView /template/ TabItem:nth-child(1)">
+      <Setter Property="HeaderTemplate">
+        <DataTemplate><TextBlock Text="Spectrum" /></DataTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="colorPicker|ColorView /template/ TabItem:nth-child(2)">
+      <Setter Property="HeaderTemplate">
+        <DataTemplate><TextBlock Text="Palette" /></DataTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="colorPicker|ColorView /template/ TabItem:nth-child(3)">
+      <Setter Property="HeaderTemplate">
+        <DataTemplate><TextBlock Text="Values" /></DataTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="colorPicker|ColorView /template/ RadioButton:checked /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource StudioOnAccentBrush}" />
+    </Style>
+    <Style Selector="primitives|ColorPreviewer /template/ Panel > Grid > Border[(Grid.Column)=1]">
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BoxShadow" Value="0 1 3 0 #40000000" />
+    </Style>
+  </Window.Styles>
   <Border Padding="22,18"
           Background="{DynamicResource StudioBackgroundBrush}">
     <Grid RowDefinitions="Auto,14,*,14,Auto">
@@ -23,13 +53,13 @@
                    FontSize="19"
                    FontWeight="SemiBold"
                    Foreground="{DynamicResource StudioTextBrush}" />
-        <TextBlock Text="Choose a color, enter RGBA values or a hex code, and adjust alpha from 0 to 100%."
-                   FontSize="10"
+        <TextBlock Text="Choose a color or enter its RGBA or hex value."
+                   FontSize="12" TextWrapping="Wrap"
                    Foreground="{DynamicResource StudioTextMutedBrush}" />
       </StackPanel>
 
-      <colorPicker:ColorView x:Name="ColorView"
-                             Grid.Row="2"
+      <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <colorPicker:ColorView x:Name="ColorView"
                              IsAlphaEnabled="True"
                              IsAlphaVisible="True"
                              IsColorComponentsVisible="True"
@@ -40,6 +70,7 @@
                              IsComponentSliderVisible="True"
                              IsComponentTextInputVisible="True"
                              IsHexInputVisible="True" />
+      </ScrollViewer>
 
       <StackPanel Grid.Row="4"
                   Orientation="Horizontal"

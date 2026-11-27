@@ -6,6 +6,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using Avalonia.Styling;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
 using AvaloniaEdit.CodeCompletion;
@@ -35,6 +36,7 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
         _contentEditor = this.FindControl<TextEditor>("ContentEditor");
         if (_contentEditor is not null)
             _contentEditor.TextArea.TextEntered += ContentEditor_TextEntered;
+        ActualThemeVariantChanged += (_, _) => ConfigureSyntaxHighlighting();
         DataContextChanged += RawFileEditorView_DataContextChanged;
     }
 
@@ -50,8 +52,6 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
                 body.CornerRadius = value ? new CornerRadius(0) : new CornerRadius(8);
                 body.BorderThickness = value ? new Thickness(0) : new Thickness(1);
             }
-            if (_contentEditor is not null)
-                _contentEditor.MinHeight = value ? 0 : 360;
         }
     }
 
@@ -527,7 +527,7 @@ public sealed partial class RawFileEditorView : UserControl, IEditorTextNavigato
         if (_contentEditor is not null)
         {
             _contentEditor.SyntaxHighlighting = _viewModel?.IsGscSource == true
-                ? GscSyntaxHighlighting.Definition
+                ? GscSyntaxHighlighting.ForTheme(ActualThemeVariant == ThemeVariant.Dark)
                 : null;
         }
     }

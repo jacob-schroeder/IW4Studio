@@ -37,6 +37,7 @@
           </StackPanel>
           <TextBlock Text="{Binding StatusMessage}"
                      IsVisible="{Binding HasStatusMessage}"
+                     HorizontalAlignment="Left"
                      MaxWidth="660"
                      FontSize="9"
                      TextWrapping="Wrap"
@@ -51,11 +52,8 @@
                   Background="{DynamicResource StudioSurfaceSunkenBrush}"
                   BorderBrush="{DynamicResource StudioBorderBrush}"
                   BorderThickness="1">
-            <TextBlock Text="READ ONLY"
-                       FontSize="9"
-                       FontWeight="SemiBold"
-                       LetterSpacing="0.5"
-                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Classes="editorAccessBadge" Text="READ ONLY"
+                       LetterSpacing="0.5" />
           </Border>
 
           <StackPanel IsVisible="{Binding IsEditable}"

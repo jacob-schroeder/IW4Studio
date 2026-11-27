@@ -411,6 +411,55 @@ internal static class MapRenderTelemetryOverlayGeometry
             (int)MathF.Round(
                 BaseGlyphPixelSize * Math.Max(1f, renderScaling)));
 
+    internal static int GetGlyphPixelSize(
+        float renderScaling,
+        int framebufferWidth) =>
+        framebufferWidth < 1600
+            ? Math.Min(3, GetGlyphPixelSize(renderScaling))
+            : GetGlyphPixelSize(renderScaling);
+
+    internal static string WrapText(
+        string label,
+        int framebufferWidth,
+        int glyphPixelSize)
+    {
+        ArgumentNullException.ThrowIfNull(label);
+        if (framebufferWidth <= 0)
+            throw new ArgumentOutOfRangeException(nameof(framebufferWidth));
+        if (glyphPixelSize <= 0)
+            throw new ArgumentOutOfRangeException(nameof(glyphPixelSize));
+
+        int margin = MarginPixels * glyphPixelSize / BaseGlyphPixelSize;
+        int padding = PaddingPixels * glyphPixelSize / BaseGlyphPixelSize;
+        int availableWidth = Math.Max(1, framebufferWidth - 2 * (margin + padding));
+        int maxColumns = Math.Max(
+            1,
+            (availableWidth + glyphPixelSize) /
+            ((GlyphColumns + 1) * glyphPixelSize));
+        var wrapped = new StringBuilder(label.Length + 32);
+        string[] lines = label.Split('\n');
+        for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+        {
+            ReadOnlySpan<char> remaining = lines[lineIndex].AsSpan().TrimEnd('\r');
+            while (remaining.Length > maxColumns)
+            {
+                ReadOnlySpan<char> candidate = remaining[..(maxColumns + 1)];
+                int split = candidate.LastIndexOf("  ");
+                if (split <= 0)
+                    split = candidate.LastIndexOf(' ');
+                if (split <= 0)
+                    split = maxColumns;
+                wrapped.Append(remaining[..split].TrimEnd());
+                wrapped.Append('\n');
+                remaining = remaining[split..].TrimStart();
+            }
+            wrapped.Append(remaining);
+            if (lineIndex + 1 < lines.Length)
+                wrapped.Append('\n');
+        }
+        return wrapped.ToString();
+    }
+
     internal static (int BackgroundVertexCount, int TextVertexCount) Write(
         string label,
         int glyphPixelSize,

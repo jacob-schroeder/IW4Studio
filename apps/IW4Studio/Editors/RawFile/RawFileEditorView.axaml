@@ -94,7 +94,6 @@
       <Grid>
         <!-- AvaloniaEdit virtualizes visual lines and owns its native line-number margin. -->
         <edit:TextEditor x:Name="ContentEditor"
-                         MinHeight="360"
                          Padding="14,12"
                          ShowLineNumbers="True"
                          LineNumbersMargin="8,0,20,0"

@@ -58,6 +58,7 @@ public sealed partial class MetalMapRenderer : IMapRenderer
     private long _displayedTelemetrySnapshotRevision = -1;
     private long _displayedTelemetryGeometryRevision = -1;
     private int _displayedTelemetryGlyphPixelSize = -1;
+    private int _displayedTelemetryFramebufferWidth = -1;
     private long _nextDisplayedTelemetryTimestamp;
     private bool _loaded;
     private bool _disposed;
@@ -637,6 +638,7 @@ public sealed partial class MetalMapRenderer : IMapRenderer
         _displayedTelemetrySnapshotRevision = -1;
         _displayedTelemetryGeometryRevision = -1;
         _displayedTelemetryGlyphPixelSize = -1;
+        _displayedTelemetryFramebufferWidth = -1;
         _nextDisplayedTelemetryTimestamp = 0;
         _loaded = true;
     }
@@ -661,20 +663,27 @@ public sealed partial class MetalMapRenderer : IMapRenderer
             _surfaceExtents.HostFramebuffer.Height /
             (float)_surfaceExtents.SceneTarget.Height);
         int glyphPixelSize =
-            MapRenderTelemetryOverlayGeometry.GetGlyphPixelSize(renderScaling);
+            MapRenderTelemetryOverlayGeometry.GetGlyphPixelSize(
+                renderScaling,
+                _surfaceExtents.HostFramebuffer.Width);
         if (_displayedTelemetryGeometryRevision ==
                 _displayedTelemetrySnapshotRevision &&
-            _displayedTelemetryGlyphPixelSize == glyphPixelSize)
+            _displayedTelemetryGlyphPixelSize == glyphPixelSize &&
+            _displayedTelemetryFramebufferWidth ==
+                _surfaceExtents.HostFramebuffer.Width)
         {
             return;
         }
 
         _telemetryOverlay.UpdateCpuGeometry(
             BuildTelemetryOverlayText(_displayedTelemetry),
-            renderScaling);
+            renderScaling,
+            _surfaceExtents.HostFramebuffer.Width);
         _displayedTelemetryGeometryRevision =
             _displayedTelemetrySnapshotRevision;
         _displayedTelemetryGlyphPixelSize = glyphPixelSize;
+        _displayedTelemetryFramebufferWidth =
+            _surfaceExtents.HostFramebuffer.Width;
     }
 
     private static string BuildTelemetryOverlayText(

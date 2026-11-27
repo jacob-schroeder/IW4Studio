@@ -281,7 +281,7 @@ public sealed class SoundPreviewViewModel
             if (SelectedVariant is null)
                 return "This Sound contains no alias variants.";
             if (_isLoadingPreview)
-                return "Preparing the selected sound preview…";
+                return "Loading preview…";
             if (_selectedPreview is null)
                 return "The selected sound preview is unavailable.";
             if (!_selectedPreview.HasMpegPayload)
@@ -290,12 +290,12 @@ public sealed class SoundPreviewViewModel
                 return SoundPreviewPlayer.UnavailableReason ??
                     "Native sound preview is not available on this platform.";
             if (IsPlaying)
-                return "Playing the MPEG audio payload.";
+                return "Playing";
             if (_position > TimeSpan.Zero && Progress < 1)
-                return "Playback paused.";
+                return "Paused";
             if (Progress >= 1)
-                return "Playback complete. Press play to preview it again.";
-            return "Ready to preview the MPEG audio payload.";
+                return "Playback complete";
+            return "Ready to play";
         }
     }
 

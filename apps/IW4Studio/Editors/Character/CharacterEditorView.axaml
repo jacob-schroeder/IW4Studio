@@ -44,19 +44,13 @@
       <Setter Property="Padding" Value="9,4" />
       <Setter Property="FontSize" Value="11" />
     </Style>
-    <Style Selector="TabStrip.characterTabs > TabStripItem">
-      <Setter Property="Padding" Value="12,5" />
-      <Setter Property="MinHeight" Value="31" />
-      <Setter Property="Margin" Value="0,0,3,0" />
-      <Setter Property="CornerRadius" Value="5" />
-    </Style>
     <Style Selector="Button.characterNode">
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="Background" Value="{DynamicResource StudioSurfaceRaisedBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
       <Setter Property="Padding" Value="14,10" />
     </Style>
-    <Style Selector="TabStrip.characterTabs > TabStripItem:selected, Button.characterMode.current, Button.characterNode.current">
+    <Style Selector="Button.characterMode.current, Button.characterNode.current">
       <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
       <Setter Property="Foreground" Value="{DynamicResource StudioAccentBrush}" />
@@ -143,7 +137,7 @@
             </Button>
           </StackPanel>
         </Grid>
-        <TabStrip Grid.Row="1" x:Name="CharacterTabs" Classes="characterTabs" SelectionChanged="Tabs_SelectionChanged"
+        <TabStrip Grid.Row="1" x:Name="CharacterTabs" SelectionChanged="Tabs_SelectionChanged"
                   Margin="9,0,9,6" SelectedIndex="0" AutomationProperties.Name="Character editor tabs">
           <TabStripItem>
             <StackPanel Orientation="Horizontal" Spacing="6">

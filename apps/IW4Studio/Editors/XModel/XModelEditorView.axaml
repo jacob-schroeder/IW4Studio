@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:documents="clr-namespace:IW4.Studio.Documents;assembly=IW4.Studio"
              xmlns:xmodel="using:IW4.Studio.Desktop.Editors.XModel"
              xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
@@ -63,6 +64,35 @@
       <Setter Property="FontSize" Value="10" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
+    <Style Selector="WrapPanel#PreviewOptionsPanel">
+      <Setter Property="Grid.Column" Value="4" />
+      <Setter Property="Grid.ColumnSpan" Value="1" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+    </Style>
+    <Style Selector="WrapPanel#LodHeaderActions">
+      <Setter Property="Grid.Column" Value="1" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+    </Style>
+    <ContainerQuery Name="preview-toolbar" Query="max-width:880">
+      <Style Selector="WrapPanel#PreviewOptionsPanel">
+        <Setter Property="Grid.Row" Value="1" />
+        <Setter Property="Grid.Column" Value="0" />
+        <Setter Property="Grid.ColumnSpan" Value="5" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <Setter Property="Margin" Value="0,8,0,0" />
+      </Style>
+    </ContainerQuery>
+    <ContainerQuery Name="lod-card" Query="max-width:630">
+      <Style Selector="WrapPanel#LodHeaderActions">
+        <Setter Property="Grid.Row" Value="1" />
+        <Setter Property="Grid.Column" Value="0" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <Setter Property="Margin" Value="0,6,0,0" />
+      </Style>
+      <Style Selector="Border#LodActionDivider">
+        <Setter Property="IsVisible" Value="False" />
+      </Style>
+    </ContainerQuery>
   </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,8,Auto,10,*,10,Auto">
@@ -115,11 +145,16 @@
     <Border Grid.Row="2"
             Padding="12,8"
             CornerRadius="7"
+            Container.Name="preview-toolbar"
+            Container.Sizing="Width"
             Background="{DynamicResource StudioSurfaceBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="1">
-        <Grid ColumnDefinitions="Auto,164,Auto,*,Auto,Auto,Auto,Auto"
-            ColumnSpacing="9">
+      <Grid x:Name="PreviewToolbarGrid"
+            ColumnDefinitions="Auto,330,Auto,*,Auto"
+            RowDefinitions="Auto,Auto"
+            ColumnSpacing="9"
+            RowSpacing="0">
         <TextBlock Text="LOD"
                    VerticalAlignment="Center"
                    FontSize="9"
@@ -127,7 +162,10 @@
                    Foreground="{DynamicResource StudioTextSubtleBrush}" />
         <ComboBox Grid.Column="1"
                   MinHeight="30"
+                  MinWidth="0"
+                  MaxWidth="330"
                   Padding="8,3"
+                  ToolTip.Tip="{Binding SelectedAssemblyLod}"
                   ItemsSource="{Binding ActiveAssemblyLods}"
                   SelectedItem="{Binding SelectedAssemblyLod, Mode=TwoWay}" />
         <Button Grid.Column="2"
@@ -141,24 +179,22 @@
             <TextBlock Text="Fit" />
           </StackPanel>
         </Button>
-        <CheckBox Grid.Column="4"
-                  Content="Studio light"
-                  VerticalAlignment="Center"
-                  ToolTip.Tip="Toggle the preview-only studio reflection environment; authored material passes remain unchanged"
-                  IsChecked="{Binding IsStudioEnvironmentEnabled, Mode=TwoWay}" />
-        <CheckBox Grid.Column="5"
-                  Content="Wireframe"
-                  VerticalAlignment="Center"
-                  IsChecked="{Binding IsWireframeEnabled, Mode=TwoWay}" />
-        <CheckBox Grid.Column="6"
-                  Content="Collision"
-                  VerticalAlignment="Center"
-                  IsEnabled="{Binding CanShowCollision}"
-                  IsChecked="{Binding IsCollisionEnabled, Mode=TwoWay}" />
-        <CheckBox Grid.Column="7"
-                  Content="Bone tags"
-                  VerticalAlignment="Center"
-                  IsChecked="{Binding ShowBoneTags, Mode=TwoWay}" />
+        <WrapPanel x:Name="PreviewOptionsPanel"
+                   VerticalAlignment="Center">
+          <CheckBox Content="Studio light"
+                    Margin="0,0,10,0"
+                    ToolTip.Tip="Use studio lighting in the preview"
+                    IsChecked="{Binding IsStudioEnvironmentEnabled, Mode=TwoWay}" />
+          <CheckBox Content="Wireframe"
+                    Margin="0,0,10,0"
+                    IsChecked="{Binding IsWireframeEnabled, Mode=TwoWay}" />
+          <CheckBox Content="Collision"
+                    Margin="0,0,10,0"
+                    IsEnabled="{Binding CanShowCollision}"
+                    IsChecked="{Binding IsCollisionEnabled, Mode=TwoWay}" />
+          <CheckBox Content="Bone tags"
+                    IsChecked="{Binding ShowBoneTags, Mode=TwoWay}" />
+        </WrapPanel>
       </Grid>
     </Border>
 
@@ -180,27 +216,11 @@
 
         <Border x:Name="PreviewInputSurface"
                 Background="Transparent"
-                ToolTip.Tip="Left-drag to orbit; right- or middle-drag to pan; scroll to zoom" />
+                ToolTip.Tip="Drag to orbit. Right- or middle-drag to pan. Scroll to zoom." />
 
         <xmodel:XModelBoneTagOverlay x:Name="BoneTagOverlay"
                                     IsHitTestVisible="False"
                                     ClipToBounds="True" />
-
-        <Border HorizontalAlignment="Left"
-                VerticalAlignment="Bottom"
-                Margin="12"
-                Padding="8,4"
-                CornerRadius="4"
-                IsHitTestVisible="False"
-                Background="#C816191F"
-                BorderBrush="#506D7683"
-                BorderThickness="1">
-          <TextBlock Text="{Binding MaterialExecutionBadge}"
-                     FontSize="8"
-                     FontWeight="Bold"
-                     LetterSpacing="0.7"
-                     Foreground="#CDD5DF" />
-        </Border>
 
         <Border Background="Transparent"
                 IsHitTestVisible="False"
@@ -208,20 +228,11 @@
                 BorderBrush="#80FF8B8B"
                 BorderThickness="1" />
 
-        <Border HorizontalAlignment="Right"
-                VerticalAlignment="Bottom"
-                Margin="12"
-                Padding="8,4"
-                CornerRadius="4"
-                IsHitTestVisible="False"
-                Background="#C816191F"
-                BorderBrush="#506D7683"
-                BorderThickness="1">
-          <TextBlock Text="LEFT DRAG · ORBIT   RIGHT/MIDDLE DRAG · PAN   SCROLL · ZOOM"
-                     FontSize="8"
-                     FontWeight="SemiBold"
-                     LetterSpacing="0.4"
-                     Foreground="#CDD5DF" />
+        <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12"
+                Padding="8,4" CornerRadius="4" IsHitTestVisible="False"
+                Background="#C816191F" BorderBrush="#506D7683" BorderThickness="1">
+          <TextBlock Text="{Binding MaterialExecutionBadge}" FontSize="8" FontWeight="Bold"
+                     LetterSpacing="0.7" Foreground="#CDD5DF" />
         </Border>
       </Grid>
     </Border>
@@ -230,6 +241,8 @@
             MinHeight="82"
             Padding="12,9"
             CornerRadius="7"
+            Container.Name="lod-card"
+            Container.Sizing="Width"
             Background="{DynamicResource StudioSurfaceBrush}"
             BorderBrush="{DynamicResource StudioBorderBrush}"
             BorderThickness="1">
@@ -273,25 +286,29 @@
                 HorizontalAlignment="Center"
                 Background="{DynamicResource StudioBorderBrush}" />
 
-        <Grid Grid.Column="2"
-              RowDefinitions="Auto,12,Auto,10,Auto">
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Spacing="2">
+        <Grid x:Name="LodDetailsGrid"
+              Grid.Column="2"
+              RowDefinitions="Auto,12,Auto,Auto,Auto">
+          <Grid x:Name="LodHeaderGrid"
+                ColumnDefinitions="*,Auto"
+                RowDefinitions="Auto,Auto">
+            <StackPanel MinWidth="0" Spacing="2">
               <TextBlock Text="{Binding SelectedAssemblyLod.Title}"
                          FontSize="14"
                          FontWeight="SemiBold"
                          Foreground="{DynamicResource StudioTextBrush}" />
               <TextBlock Text="{Binding SelectedLodExportSummary}"
                          FontSize="10"
+                         TextWrapping="Wrap"
                          Foreground="{DynamicResource StudioTextSubtleBrush}" />
             </StackPanel>
-            <StackPanel Grid.Column="1"
-                        Orientation="Horizontal"
-                        VerticalAlignment="Center"
-                        Spacing="8">
+            <WrapPanel x:Name="LodHeaderActions"
+                       Orientation="Horizontal"
+                       VerticalAlignment="Center">
               <Button Classes="ghost"
                       MinHeight="32"
                       Padding="10,5"
+                      Margin="0,0,8,0"
                       VerticalContentAlignment="Center"
                       IsEnabled="{Binding CanReplaceAssemblyLod}"
                       ToolTip.Tip="Replace every LOD in the XModel"
@@ -339,7 +356,7 @@
                                               VerticalAlignment="Center" />
                 </StackPanel>
               </Button>
-            </StackPanel>
+            </WrapPanel>
           </Grid>
 
           <Border Grid.Row="2"
@@ -348,7 +365,7 @@
                   Background="{DynamicResource StudioSurfaceSunkenBrush}"
                   BorderBrush="{DynamicResource StudioBorderBrush}"
                   BorderThickness="1">
-            <StackPanel Orientation="Horizontal">
+            <WrapPanel Orientation="Horizontal">
               <Button Classes="ghost lodAction"
                       IsEnabled="{Binding CanAddAssemblyLod}"
                       Click="AddLodButton_Click">
@@ -377,7 +394,8 @@
                              VerticalAlignment="Center" />
                 </StackPanel>
               </Button>
-              <Border Width="1"
+              <Border x:Name="LodActionDivider"
+                      Width="1"
                       Height="20"
                       Margin="3,6,9,6"
                       Background="{DynamicResource StudioBorderBrush}" />
@@ -397,16 +415,28 @@
                              VerticalAlignment="Center" />
                 </StackPanel>
               </Button>
-            </StackPanel>
+            </WrapPanel>
           </Border>
 
+          <ItemsControl Grid.Row="3" ItemsSource="{Binding GeometryActionIssues}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="documents:AssetValidationIssue">
+                <ScrollViewer Margin="0,8,0,0" MaxHeight="110" HorizontalScrollBarVisibility="Disabled">
+                  <SelectableTextBlock Text="{Binding Message}" TextWrapping="Wrap" FontSize="12"
+                                       Foreground="{DynamicResource StudioErrorBrush}" />
+                </ScrollViewer>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
           <StackPanel Grid.Row="4"
+                      Margin="0,10,0,0"
                       IsVisible="{Binding IsImportedLodSelected}"
                       Spacing="4">
             <TextBlock Text="{Binding ImportedLodNotice}"
                        FontSize="10"
                        FontWeight="Bold"
-                       Foreground="#FFE1A4A4" />
+                       Foreground="{DynamicResource StudioWarningBrush}" />
             <TextBlock Text="Import GLB materials"
                        FontSize="10"
                        FontWeight="SemiBold"
@@ -448,7 +478,7 @@
                                IsVisible="{Binding HasWarnings}"
                                TextWrapping="Wrap"
                                FontSize="9"
-                               Foreground="#FFE1A4A4" />
+                               Foreground="{DynamicResource StudioWarningBrush}" />
                   </Grid>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>

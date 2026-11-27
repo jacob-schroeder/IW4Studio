@@ -5,7 +5,7 @@ public static class AssemblyConst
 {
     public const string RepositoryUrl = "https://github.com/jacob-schroeder/IW4Studio";
     public const string Author = "Jacob Schroeder";
-    public const string Platform = "Playstation 3";
+    public const string Platform = "PlayStation 3";
     public const string PlatformAbbr = "PS3";
     
     public static string AssemblyVersion

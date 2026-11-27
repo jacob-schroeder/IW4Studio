@@ -118,6 +118,10 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
             // compatible worker result. Re-enter the synchronous bootstrap
             // path for one frame rather than presenting an old-extent packet
             // or switching to the conservative no-packet topology.
+            // The worker can still be building the newly requested extent.
+            // It shares the caster provider with the synchronous path, so
+            // finish that work before bootstrapping on the render thread.
+            worker.DrainForSynchronousBootstrap();
             _sunShadowSynchronousBootstrapCompleted = false;
             return requestedCamera;
         }
@@ -763,6 +767,17 @@ public sealed unsafe partial class SilkOpenGlMapRenderer
                         completion.VisibleScheduledObjectCount)
                     .CopyTo(visibleScheduledStaticObjectIndices);
                 return true;
+            }
+        }
+
+        public void DrainForSynchronousBootstrap()
+        {
+            lock (_gate)
+            {
+                ThrowIfDisposed();
+                _hasPending = false;
+                while (_hasRunning)
+                    Monitor.Wait(_gate);
             }
         }
 

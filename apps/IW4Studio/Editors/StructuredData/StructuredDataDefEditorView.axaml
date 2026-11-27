@@ -39,8 +39,7 @@
     </Style>
   </UserControl.Styles>
 
-  <Border MinHeight="440"
-          CornerRadius="8"
+  <Border CornerRadius="8"
           ClipToBounds="True"
           Background="{DynamicResource StudioSurfaceBrush}"
           BorderBrush="{DynamicResource StudioBorderBrush}"

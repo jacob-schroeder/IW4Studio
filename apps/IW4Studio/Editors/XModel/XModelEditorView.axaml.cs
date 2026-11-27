@@ -123,7 +123,8 @@ public sealed partial class XModelEditorView : UserControl
                 [
                     new FilePickerFileType("XModel geometry") { Patterns = ["*.glb", "*.GLB", "*.XMODEL_EXPORT", "*.xmodel_export"] },
                     new FilePickerFileType("Binary glTF 2.0") { Patterns = ["*.glb", "*.GLB"] },
-                    new FilePickerFileType("XMODEL_EXPORT files") { Patterns = ["*.XMODEL_EXPORT", "*.xmodel_export"] }
+                    new FilePickerFileType("XMODEL_EXPORT files") { Patterns = ["*.XMODEL_EXPORT", "*.xmodel_export"] },
+                    FilePickerFileTypes.All
                 ]
             });
             using IStorageFile? file = files.FirstOrDefault();

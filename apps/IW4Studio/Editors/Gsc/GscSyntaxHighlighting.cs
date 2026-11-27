@@ -5,34 +5,31 @@ using AvaloniaEdit.Highlighting.Xshd;
 namespace IW4.Studio.Desktop.Editors.Gsc;
 
 /// <summary>
-/// Rider Darcula-inspired presentation of the token set recovered in
+/// Theme-aware presentation of the token set recovered in
 /// <c>IW4.Gsc.Syntax.GscTokenKind</c>. The definition deliberately keeps the
 /// scanner's lowercase-only reserved words case-sensitive.
 /// </summary>
 internal static class GscSyntaxHighlighting
 {
-    private static readonly Lazy<IHighlightingDefinition> LazyDefinition = new(
-        LoadDefinition);
+    private static readonly Lazy<IHighlightingDefinition> LightDefinition = new(() => LoadDefinition(dark: false));
+    private static readonly Lazy<IHighlightingDefinition> DarkDefinition = new(() => LoadDefinition(dark: true));
 
-    public static IHighlightingDefinition Definition => LazyDefinition.Value;
+    public static IHighlightingDefinition ForTheme(bool dark) =>
+        dark ? DarkDefinition.Value : LightDefinition.Value;
 
-    private static IHighlightingDefinition LoadDefinition()
+    private static IHighlightingDefinition LoadDefinition(bool dark)
     {
-        using XmlReader reader = XmlReader.Create(new StringReader(DefinitionXml));
-        return HighlightingLoader.Load(reader, HighlightingManager.Instance);
-    }
-
-    private const string DefinitionXml = """
+        string definition = $$"""
         <SyntaxDefinition name="IW4 GSC" extensions=".gsc;.csc" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
-          <Color name="Comment" foreground="#808080" fontStyle="italic" />
-          <Color name="String" foreground="#6A8759" />
-          <Color name="Number" foreground="#6897BB" />
-          <Color name="Keyword" foreground="#CC7832" fontWeight="bold" />
-          <Color name="Predefined" foreground="#9876AA" />
-          <Color name="Directive" foreground="#CC7832" fontWeight="bold" />
-          <Color name="Path" foreground="#FFC66D" />
-          <Color name="Animation" foreground="#6A9FB5" />
-          <Color name="Special" foreground="#C0A9D9" />
+          <Color name="Comment" foreground="{{(dark ? "#A4A9B2" : "#626972")}}" fontStyle="italic" />
+          <Color name="String" foreground="{{(dark ? "#A9CB85" : "#3F6D26")}}" />
+          <Color name="Number" foreground="{{(dark ? "#9ACCFD" : "#245C96")}}" />
+          <Color name="Keyword" foreground="{{(dark ? "#F3AE76" : "#984713")}}" fontWeight="bold" />
+          <Color name="Predefined" foreground="{{(dark ? "#C8B2F2" : "#69419A")}}" />
+          <Color name="Directive" foreground="{{(dark ? "#F3AE76" : "#984713")}}" fontWeight="bold" />
+          <Color name="Path" foreground="{{(dark ? "#F1D28A" : "#795A13")}}" />
+          <Color name="Animation" foreground="{{(dark ? "#84D8CC" : "#166B62")}}" />
+          <Color name="Special" foreground="{{(dark ? "#E8B0D1" : "#8E356E")}}" />
           <RuleSet ignoreCase="false">
             <!-- IW4 comments: non-nesting block comments and line comments. -->
             <Span color="Comment" begin="//" end="$" />
@@ -96,4 +93,7 @@ internal static class GscSyntaxHighlighting
           </RuleSet>
         </SyntaxDefinition>
         """;
+        using XmlReader reader = XmlReader.Create(new StringReader(definition));
+        return HighlightingLoader.Load(reader, HighlightingManager.Instance);
+    }
 }

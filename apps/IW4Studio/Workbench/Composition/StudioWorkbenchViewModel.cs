@@ -422,8 +422,15 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
         }
     }
 
-    public GridLength BottomPaneHeight =>
-        new GridLength(IsBottomOpen ? BottomSize : 36);
+    public GridLength BottomPaneHeight
+    {
+        get => new(IsBottomOpen ? BottomSize : 0);
+        set
+        {
+            if (IsBottomOpen && value.IsAbsolute)
+                DockLayout.ResizeRegion(DockRegion.Bottom, value.Value);
+        }
+    }
 
     public GridLength RightPaneWidth
     {
@@ -580,9 +587,6 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
 
     public bool CollapseRegion(DockRegion region) =>
         DockLayout.CollapseRegion(region);
-
-    public double ResizeRegion(DockRegion region, double size) =>
-        DockLayout.ResizeRegion(region, size);
 
     public DockMoveResult MoveTool(
         string toolId,

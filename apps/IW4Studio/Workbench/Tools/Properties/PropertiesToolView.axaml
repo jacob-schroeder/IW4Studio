@@ -418,16 +418,11 @@
                  HorizontalAlignment="Center"
                  FontSize="26"
                  Foreground="{DynamicResource StudioTextSubtleBrush}" />
-      <TextBlock Text="No item selected"
-                 HorizontalAlignment="Center"
-                 FontSize="13"
-                 FontWeight="SemiBold"
-                 Foreground="{DynamicResource StudioTextBrush}" />
-      <TextBlock Text="Choose an item from a workbench navigator."
+      <TextBlock Text="Select an item to see its properties."
                  MaxWidth="240"
                  TextAlignment="Center"
                  TextWrapping="Wrap"
-                 FontSize="10"
+                 FontSize="13"
                  Foreground="{DynamicResource StudioTextMutedBrush}" />
     </StackPanel>
 

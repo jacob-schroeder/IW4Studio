@@ -78,7 +78,6 @@
     </Border>
 
     <Border Grid.Row="2"
-            MinHeight="360"
             CornerRadius="8"
             ClipToBounds="True"
             Background="{DynamicResource StudioSurfaceSunkenBrush}"
@@ -179,8 +178,8 @@
                         VerticalAlignment="Center"
                         IsVisible="{Binding !HasPreview}"
                         CornerRadius="7"
-                        Background="#E6262A31"
-                        BorderBrush="#506D7683"
+                        Background="{DynamicResource StudioSurfaceOverlayBrush}"
+                        BorderBrush="{DynamicResource StudioBorderBrush}"
                         BorderThickness="1">
                   <StackPanel Spacing="7">
                     <materialIcons:MaterialIcon Kind="CreationOutline"
@@ -273,6 +272,7 @@
                           ToolTip.Tip="Scrub the deterministic preview timeline" />
                   <TextBlock Grid.Row="2"
                              Text="{Binding PreviewStatus}"
+                             IsVisible="{Binding HasPreview}"
                              FontSize="8"
                              TextTrimming="CharacterEllipsis"
                              Foreground="{DynamicResource StudioTextSubtleBrush}" />

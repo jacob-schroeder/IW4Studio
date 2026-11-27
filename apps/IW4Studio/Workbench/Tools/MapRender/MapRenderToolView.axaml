@@ -29,33 +29,8 @@
                                       VerticalAlignment="Center"
                                       IsVisible="{Binding HasNoLevelBriefingPreview}"
                                       Foreground="{DynamicResource StudioTextSubtleBrush}" />
-          <Border Margin="10"
-                  Padding="8,4"
-                  HorizontalAlignment="Left"
-                  VerticalAlignment="Bottom"
-                  CornerRadius="4"
-                  Background="{DynamicResource StudioSurfaceOverlayBrush}"
-                  BorderBrush="{DynamicResource StudioBorderBrush}"
-                  BorderThickness="1">
-            <TextBlock Text="LIVE PREVIEW"
-                       FontSize="8"
-                       FontWeight="Bold"
-                       LetterSpacing="0.7"
-                       Foreground="{DynamicResource StudioTextMutedBrush}" />
-          </Border>
         </Grid>
       </Border>
-
-      <StackPanel Spacing="5">
-        <TextBlock Text="{Binding StatusHeading}"
-                   FontSize="15"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource StudioTextBrush}" />
-        <TextBlock Text="{Binding StatusMessage}"
-                   TextWrapping="Wrap"
-                   FontSize="10"
-                   Foreground="{DynamicResource StudioTextMutedBrush}" />
-      </StackPanel>
 
       <Border Padding="12"
               CornerRadius="7"
@@ -82,11 +57,6 @@
               Content="Open Live Preview"
               IsEnabled="{Binding CanLaunch}"
               Click="OpenRendererButton_Click" />
-
-      <TextBlock Text="Live Preview approximates the in-game rendering of the loaded compiled map in a native OpenGL window."
-                 TextWrapping="Wrap"
-                 FontSize="9"
-                 Foreground="{DynamicResource StudioTextSubtleBrush}" />
     </StackPanel>
   </ScrollViewer>
 </UserControl>

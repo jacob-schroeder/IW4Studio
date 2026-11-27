@@ -77,7 +77,7 @@
                     VerticalAlignment="Center" AutomationProperties.Name="Edit fastfile languages">
               <Button.Flyout>
                 <Flyout>
-                  <ScrollViewer MaxHeight="320" VerticalScrollBarVisibility="Auto">
+                  <ScrollViewer MinWidth="180" MaxHeight="320" VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding Languages}">
                       <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="fastFileDetails:FastFileLanguageOptionViewModel">
@@ -134,7 +134,7 @@
                 HorizontalAlignment="Stretch" />
       </Grid>
 
-      <TextBlock Text="Applied values become part of the pending document revision and are written by Save As."
+      <TextBlock Text="Use Save As to write applied changes to disk."
                  FontSize="11"
                  TextWrapping="Wrap"
                  Foreground="{DynamicResource StudioTextSubtleBrush}" />

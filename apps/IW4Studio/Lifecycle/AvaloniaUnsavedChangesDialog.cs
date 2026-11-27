@@ -41,7 +41,7 @@ internal sealed class AvaloniaUnsavedChangesDialog(Window owner) : IUnsavedChang
                 isDefault: false));
             Title = concernsEditorInput ? "Unapplied changes" : "Unsaved changes";
             Width = 480;
-            MinWidth = 480;
+            SizeToContent = SizeToContent.Height;
             CanResize = false;
             ShowInTaskbar = false;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -56,17 +56,13 @@ internal sealed class AvaloniaUnsavedChangesDialog(Window owner) : IUnsavedChang
                         new TextBlock
                         {
                             Text = CreateHeading(prompt),
+                            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
                             FontSize = 20,
                             FontWeight = Avalonia.Media.FontWeight.SemiBold
                         },
                         new TextBlock
                         {
                             Text = CreateDetail(prompt),
-                            TextWrapping = Avalonia.Media.TextWrapping.Wrap
-                        },
-                        new TextBlock
-                        {
-                            Text = CreateExplanation(prompt),
                             TextWrapping = Avalonia.Media.TextWrapping.Wrap
                         },
                         actions
@@ -101,38 +97,19 @@ internal sealed class AvaloniaUnsavedChangesDialog(Window owner) : IUnsavedChang
             prompt.Action switch
             {
                 DestructiveNavigationAction.CloseEditorTab =>
-                    "This tab has unapplied editor input.",
+                    "Closing this tab discards its unapplied edits. Changes already applied to the workspace can still be saved.",
                 DestructiveNavigationAction.CloseEditorTabs =>
-                    $"{prompt.ChangedItemCount:N0} tabs have unapplied editor input.",
+                    $"Closing these tabs discards unapplied edits in {prompt.ChangedItemCount:N0} " +
+                    (prompt.ChangedItemCount == 1 ? "tab. " : "tabs. ") +
+                    "Changes already applied to the workspace can still be saved.",
                 _ when prompt.Scope == UnsavedChangesScope.EditorInput =>
-                    prompt.ChangedItemCount == 1
-                        ? "1 open editor tab has unapplied input."
-                        : $"{prompt.ChangedItemCount:N0} open editor tabs have unapplied input.",
-                _ =>
-                    $"{prompt.FastFileName} has " +
-                    $"{FormatChangedItemCount(prompt.ChangedItemCount)}."
-            };
-
-        private static string CreateExplanation(UnsavedChangesPrompt prompt) =>
-            prompt.Action switch
-            {
-                DestructiveNavigationAction.CloseEditorTab =>
-                    "Discarding closes the tab and drops only its unapplied " +
-                    "input. Applied asset changes remain pending in the " +
-                    "workspace until Save As.",
-                DestructiveNavigationAction.CloseEditorTabs =>
-                    "Discarding closes the tabs and drops only their unapplied " +
-                    "input. Applied asset changes remain pending in the " +
-                    "workspace until Save As.",
-                _ when prompt.Scope == UnsavedChangesScope.EditorInput =>
-                    "Continuing drops the unapplied editor input. Applied " +
-                    "workspace changes are handled separately.",
+                    $"Continuing discards unapplied edits in {prompt.ChangedItemCount:N0} " +
+                    (prompt.ChangedItemCount == 1 ? "tab." : "tabs."),
                 _ when prompt.CanSave =>
-                    "Save writes a validated Save As candidate. Discarding " +
-                    "allows this action to continue without saving.",
-                _ =>
-                    "This zone cannot be saved yet. Discarding allows this " +
-                    "action to continue without saving."
+                    $"{prompt.FastFileName} has {FormatChangedItemCount(prompt.ChangedItemCount)}. " +
+                    "Choose Save As to keep your changes.",
+                _ => $"{prompt.FastFileName} has {FormatChangedItemCount(prompt.ChangedItemCount)}. " +
+                     "Saving is unavailable for this zone."
             };
 
         private static string FormatChangedItemCount(int count) =>

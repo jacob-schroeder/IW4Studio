@@ -518,6 +518,7 @@ public sealed partial class FxLayerEditorWindow : Window
             Title = "Unapplied FX edits";
             Width = 480;
             MinWidth = 480;
+            SizeToContent = SizeToContent.Height;
             CanResize = false;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             var actions = new StackPanel { Orientation = Orientation.Horizontal,
@@ -535,7 +536,7 @@ public sealed partial class FxLayerEditorWindow : Window
                 Children =
                 {
                     new TextBlock { Text = $"Apply layer changes to {name}?", FontSize = 19,
-                        FontWeight = FontWeight.SemiBold },
+                        FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
                     new TextBlock { Text = "The changes are still local to this dialog.",
                         TextWrapping = TextWrapping.Wrap },
                     actions

@@ -150,4 +150,26 @@
       </DataTemplate>
     </Setter>
   </Style>
+  <Style Selector="completion|OverloadViewer">
+    <Setter Property="MaxWidth" Value="430" />
+    <Setter Property="Padding" Value="12,10" />
+    <Setter Property="Background" Value="{DynamicResource StudioSurfaceOverlayBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderStrongBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+  <Style Selector="completion|OverloadViewer /template/ Border">
+    <Setter Property="CornerRadius" Value="7" />
+  </Style>
+  <Style Selector="completion|OverloadViewer /template/ ContentPresenter">
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="completion|OverloadViewer /template/ ContentPresenter[(Grid.Row)=0]">
+    <Setter Property="FontFamily" Value="JetBrains Mono, Menlo, Consolas" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="completion|OverloadViewer /template/ ContentPresenter[(Grid.Row)=1]">
+    <Setter Property="Margin" Value="0,5,0,0" />
+    <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+  </Style>
 </Styles>

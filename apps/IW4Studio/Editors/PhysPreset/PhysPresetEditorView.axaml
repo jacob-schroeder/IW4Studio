@@ -74,7 +74,7 @@
               </Expander>
               <Expander Header="Used by" IsExpanded="{Binding IsUsedByExpanded, Mode=TwoWay}">
                 <StackPanel Spacing="6">
-                  <TextBlock Text="Direct XModel, ClipMap, Fx glass and Vehicle references in the workspace catalog, including applied edits."
+                  <TextBlock Text="Direct XModel, ClipMap, Fx glass, and Vehicle references in the catalog, including applied edits."
                              TextWrapping="Wrap" Foreground="{DynamicResource StudioTextMutedBrush}" />
                   <TextBlock Text="No direct references found." IsVisible="{Binding HasNoUsages}" />
                   <ItemsControl ItemsSource="{Binding Usages}">

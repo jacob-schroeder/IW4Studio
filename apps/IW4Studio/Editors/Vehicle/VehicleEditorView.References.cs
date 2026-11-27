@@ -190,15 +190,33 @@ public sealed partial class VehicleEditorView
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
         AutomationProperties.SetName(input, title);
-        var accept = new Button { Content = "Select", HorizontalAlignment = HorizontalAlignment.Right, IsDefault = true };
+        var cancel = new Button { Content = "Cancel", IsCancel = true };
+        var accept = new Button { Content = "Select", IsDefault = true, IsEnabled = !string.IsNullOrWhiteSpace(value) };
+        accept.Classes.Add("primary");
+        input.TextChanged += (_, _) => accept.IsEnabled = !string.IsNullOrWhiteSpace(input.Text);
         var dialog = new Window
         {
             Title = title,
             Width = 380,
+            MinWidth = 280,
             SizeToContent = SizeToContent.Height,
+            ShowInTaskbar = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new StackPanel { Margin = new Thickness(14), Spacing = 10, Children = { input, accept } }
+            Content = new StackPanel
+            {
+                Margin = new Thickness(20), Spacing = 16,
+                Children =
+                {
+                    input,
+                    new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
+                        Spacing = 8, Children = { cancel, accept }
+                    }
+                }
+            }
         };
+        cancel.Click += (_, _) => dialog.Close(null);
         accept.Click += (_, _) =>
         {
             if (!string.IsNullOrWhiteSpace(input.Text))

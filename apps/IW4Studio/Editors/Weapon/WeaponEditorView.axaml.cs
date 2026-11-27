@@ -2,7 +2,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -18,7 +17,7 @@ namespace IW4.Studio.Desktop.Editors.Weapon;
 
 public sealed partial class WeaponEditorView : UserControl
 {
-    private const double CompactPropertyWorkspaceWidth = 1040;
+    private const double CompactPropertyWorkspaceWidth = 880;
     private const long MaximumCamoImageFileBytes = 128L * 1024 * 1024;
     private readonly XModelPreviewControl? _preview;
     private readonly XModelBoneTagOverlay? _boneTagOverlay;
@@ -29,9 +28,7 @@ public sealed partial class WeaponEditorView : UserControl
 
     public WeaponEditorView()
     {
-        AvaloniaXamlLoader.Load(this);
-        UpdatePropertyWorkspaceLayout(
-            Bounds.Width < CompactPropertyWorkspaceWidth);
+        InitializeComponent();
         _preview = this.FindControl<XModelPreviewControl>("Preview");
         _boneTagOverlay = this.FindControl<XModelBoneTagOverlay>("BoneTagOverlay");
         if (_preview is not null && this.FindControl<Border>("PreviewInputSurface") is { } input)
@@ -241,7 +238,7 @@ public sealed partial class WeaponEditorView : UserControl
             viewModel.CommitCamoLoopSeconds();
     }
 
-    private void Editor_SizeChanged(object? sender, SizeChangedEventArgs e)
+    private void PropertyWorkspaceGrid_SizeChanged(object? sender, SizeChangedEventArgs e)
         => UpdatePropertyWorkspaceLayout(
             e.NewSize.Width < CompactPropertyWorkspaceWidth);
 

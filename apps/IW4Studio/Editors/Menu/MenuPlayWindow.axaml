@@ -48,11 +48,16 @@
                                  KeyDown="Stage_KeyDown"
                                  PointerMoved="Stage_PointerMoved"
                                  PointerExited="Stage_PointerExited" />
-          <StackPanel IsVisible="{Binding IsMenuClosed}" Spacing="12"
-                      VerticalAlignment="Center" HorizontalAlignment="Center">
-            <TextBlock Text="This menu has closed." HorizontalAlignment="Center" />
-            <Button Content="Restart menu" HorizontalAlignment="Center" Click="Restart_Click" />
-          </StackPanel>
+          <Border IsVisible="{Binding IsMenuClosed}"
+                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                  Padding="18,14" CornerRadius="7"
+                  Background="{DynamicResource StudioSurfaceOverlayBrush}"
+                  BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
+            <StackPanel Spacing="12">
+              <TextBlock Text="This menu has closed." HorizontalAlignment="Center" />
+              <Button Content="Restart menu" HorizontalAlignment="Center" Click="Restart_Click" />
+            </StackPanel>
+          </Border>
         </Grid>
       </Border>
 

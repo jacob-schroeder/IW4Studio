@@ -10,7 +10,7 @@
              d:DesignHeight="260">
   <Grid>
     <Grid IsVisible="{Binding HasEntries}" RowDefinitions="32,*">
-      <Border Padding="10,0"
+      <Border Classes="outputColumnHeader"
               Background="{DynamicResource StudioSurfaceSunkenBrush}"
               BorderBrush="{DynamicResource StudioBorderBrush}"
               BorderThickness="0,0,0,1">
@@ -18,32 +18,28 @@
               ColumnSpacing="10">
           <TextBlock Text="Date"
                      VerticalAlignment="Center"
-                     FontSize="9"
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
           <TextBlock Grid.Column="1"
                      Text="Type"
                      VerticalAlignment="Center"
-                     FontSize="9"
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
           <TextBlock Grid.Column="2"
                      Text="Category"
                      VerticalAlignment="Center"
-                     FontSize="9"
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
           <TextBlock Grid.Column="3"
                      Text="Detail"
                      VerticalAlignment="Center"
-                     FontSize="9"
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource StudioTextSubtleBrush}" />
         </Grid>
       </Border>
 
       <ListBox Grid.Row="1"
-               Classes="studioOutputList"
+               Classes="studioOutputList outputTable"
                Margin="6"
                ItemsSource="{Binding Entries}"
                SelectionMode="Single">
@@ -53,24 +49,19 @@
                 ColumnSpacing="10"
                 Margin="4,3">
             <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:HH:mm:ss.fff}'}"
-                       FontFamily="Consolas"
-                       FontSize="10"
+                       FontFamily="JetBrains Mono, Menlo, Consolas"
                        Foreground="{DynamicResource StudioTextSubtleBrush}" />
-            <TextBlock Grid.Column="1"
+            <TextBlock Classes="outputSeverity" Grid.Column="1"
                        Text="{Binding Level}"
-                       FontFamily="Consolas"
-                       FontSize="10"
-                       Foreground="{DynamicResource StudioInfoBrush}" />
+                       FontFamily="JetBrains Mono, Menlo, Consolas" />
             <TextBlock Grid.Column="2"
                        Text="{Binding Source}"
-                       FontFamily="Consolas"
-                       FontSize="10"
+                       FontFamily="JetBrains Mono, Menlo, Consolas"
                        TextTrimming="CharacterEllipsis"
                        Foreground="{DynamicResource StudioTextMutedBrush}" />
             <TextBlock Grid.Column="3"
-                       Text="{Binding Message}"
-                       FontFamily="Consolas"
-                       FontSize="10"
+                       Text="{Binding Message}" ToolTip.Tip="{Binding Message}"
+                       FontFamily="JetBrains Mono, Menlo, Consolas"
                        TextTrimming="CharacterEllipsis"
                        Foreground="{DynamicResource StudioTextBrush}">
               <TextBlock.ContextFlyout>
@@ -91,7 +82,7 @@
                Text="No console output yet"
                HorizontalAlignment="Center"
                VerticalAlignment="Center"
-               FontSize="10"
+               FontSize="12"
                Foreground="{DynamicResource StudioTextSubtleBrush}" />
   </Grid>
 </UserControl>

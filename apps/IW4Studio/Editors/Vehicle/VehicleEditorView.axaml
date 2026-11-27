@@ -33,16 +33,6 @@
       <Setter Property="Foreground" Value="{DynamicResource StudioErrorBrush}" />
       <Setter Property="FontSize" Value="10" />
     </Style>
-    <Style Selector="TabStrip.vehicleTabs > TabStripItem">
-      <Setter Property="Padding" Value="13,7" />
-      <Setter Property="BorderThickness" Value="0,0,0,2" />
-      <Setter Property="BorderBrush" Value="Transparent" />
-    </Style>
-    <Style Selector="TabStrip.vehicleTabs > TabStripItem:selected">
-      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentBrush}" />
-      <Setter Property="Foreground" Value="{DynamicResource StudioAccentBrush}" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
     <Style Selector="ListBox.vehicleRail, ListBox.vehicleSlots">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="Padding" Value="0" />
@@ -85,7 +75,7 @@
           </StackPanel>
         </Grid>
         <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="7,0,11,0">
-          <TabStrip x:Name="Pages" Classes="vehicleTabs" SelectedIndex="0" SelectionChanged="Pages_Changed">
+          <TabStrip x:Name="Pages" SelectedIndex="0" SelectionChanged="Pages_Changed">
             <TabStripItem Content="Overview" />
             <TabStripItem Content="Handling" />
             <TabStripItem Content="References" />
@@ -112,7 +102,7 @@
                          HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="270"
                          TextAlignment="Center" TextWrapping="Wrap" IsHitTestVisible="False" />
               <StackPanel Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Left" Spacing="6" Margin="10">
-                <Button Classes="ghost" Content="Fit" Click="Fit_Click" />
+                <Button Classes="ghost" Content="Fit" Foreground="#F2F4F7" Click="Fit_Click" />
                 <ComboBox SelectedIndex="0" SelectionChanged="PreviewMode_Changed"
                           AutomationProperties.Name="Preview shading">
                   <ComboBoxItem Content="Lit" />

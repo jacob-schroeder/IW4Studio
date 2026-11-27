@@ -98,6 +98,12 @@ public sealed class XModelEditorViewModel
         private set => SetProperty(ref _statusMessage, value);
     }
 
+    public IReadOnlyList<AssetValidationIssue> GeometryActionIssues
+    {
+        get => _exportDiagnostics;
+        private set => SetProperty(ref _exportDiagnostics, value);
+    }
+
     public XModelRenderScene? Scene => _scene;
 
     public IReadOnlyList<XModelLodItemViewModel> Lods => _lods;
@@ -159,7 +165,7 @@ public sealed class XModelEditorViewModel
             if (!SetProperty(ref _selectedLod, value))
                 return;
 
-            _exportDiagnostics = [];
+            GeometryActionIssues = [];
             ResetRendererStatus();
             OnPropertyChanged(nameof(SelectedLodIndex));
             OnPropertyChanged(nameof(CanExportXModel));
@@ -593,7 +599,7 @@ public sealed class XModelEditorViewModel
         AssetValidationSeverity severity)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
-        _exportDiagnostics =
+        GeometryActionIssues =
         [
             new AssetValidationIssue("xmodel.export", message, severity)
         ];
@@ -605,7 +611,7 @@ public sealed class XModelEditorViewModel
     public void ReportXModelExportSuccess(string message)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
-        _exportDiagnostics = [];
+        GeometryActionIssues = [];
         RebuildDiagnostics();
         OnPropertyChanged(nameof(Diagnostics));
         StatusMessage = message;
@@ -626,7 +632,7 @@ public sealed class XModelEditorViewModel
         XModelDraft draft = _session.OpenDraft<XModelDraft>();
         _workingDraft = draft;
         _model = draft.Model;
-        _exportDiagnostics = [];
+        GeometryActionIssues = [];
         ResetRendererStatus();
         RefreshCompilation(draft);
         if (_compiledCandidate?.IsSuccess == true)

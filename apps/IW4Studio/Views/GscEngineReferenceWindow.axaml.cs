@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Styling;
 using AvaloniaEdit;
 using IW4.Gsc.BuiltIns;
 using IW4.Studio.Desktop.Editors.Gsc;
@@ -24,10 +25,14 @@ internal sealed partial class GscEngineReferenceWindow : Window
         _editor = this.FindControl<TextEditor>("ReferenceEditor")
             ?? throw new InvalidOperationException(
                 "The engine reference editor control was not created.");
-        _editor.SyntaxHighlighting = GscSyntaxHighlighting.Definition;
+        ActualThemeVariantChanged += (_, _) => UpdateSyntaxHighlighting();
+        UpdateSyntaxHighlighting();
         _editor.Text = _document.Text;
         Opened += (_, _) => NavigateTo(builtIn);
     }
+
+    private void UpdateSyntaxHighlighting() =>
+        _editor.SyntaxHighlighting = GscSyntaxHighlighting.ForTheme(ActualThemeVariant == ThemeVariant.Dark);
 
     internal void NavigateTo(Iw4GscBuiltInDefinition builtIn)
     {

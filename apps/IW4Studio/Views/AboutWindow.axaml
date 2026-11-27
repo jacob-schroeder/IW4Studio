@@ -1,59 +1,29 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Svg.Controls.Skia.Avalonia"
         xmlns:viewModels="using:IW4.Studio.Desktop.ViewModels"
         x:Class="IW4.Studio.Desktop.Views.AboutWindow"
         x:DataType="viewModels:AboutViewModel"
         Title="About IW4 Studio"
-        Width="520"
-        Height="590"
-        MinWidth="520"
-        MinHeight="590"
+        Width="400" SizeToContent="Height"
         CanResize="False"
         ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner">
-  <Border Background="{DynamicResource StudioBackgroundBrush}"
-          Padding="42,30,42,28">
-    <Grid RowDefinitions="Auto,22,Auto,8,Auto,*,Auto,24,Auto,20"
-          HorizontalAlignment="Stretch">
-          
-        <Image 
-            Width="190"
-            Height="190"
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center"
-            Source="/Resources/logo.png"
-            Stretch="Uniform" />
-
-      <StackPanel Grid.Row="4" Spacing="14">
-        <StackPanel Orientation="Horizontal" Spacing="8">
-            <TextBlock Text="Repository:" />
-            
-            <Button Content="{Binding RepositoryUrl}"
-                    Classes="hyperlink"
-                    Click="OnRepoUrlClick" />
-        </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="8">
-              <TextBlock Text="Author:" />
-              <TextBlock Text="{Binding Author}" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="8">
-              <TextBlock Text="Version:" />
-              <TextBlock Text="{Binding Version}" />
-          </StackPanel>
-        <TextBlock Text="IW4 Studio is a multi-platform workspace editor to modify, load and save all fastfiles for Call of Duty: Modern Warfare 2 (2009) on the Playstation 3 platform."
-                   TextWrapping="Wrap"
-                   FontWeight="Light"
-                   FontSize="15"
-                   Foreground="{DynamicResource StudioTextBrush}" />
-      </StackPanel>
-
-      <Button Grid.Row="8"
-              Classes="primary"
-              Width="210"
-              HorizontalAlignment="Center"
-              Content="Close"
-              Click="CloseButton_Click" />
+  <StackPanel Margin="28,20" Spacing="16">
+    <Image Width="88" Height="88" Source="/Resources/logo.png" Stretch="Uniform" />
+    <StackPanel Spacing="3">
+      <TextBlock Text="IW4 Studio" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center" />
+      <TextBlock Text="{Binding Version, StringFormat='Version {0}'}" HorizontalAlignment="Center"
+                 Foreground="{DynamicResource StudioTextMutedBrush}" />
+    </StackPanel>
+    <TextBlock Text="A fastfile editor for the PlayStation 3 version of Call of Duty: Modern Warfare 2 (2009)."
+               TextWrapping="Wrap" TextAlignment="Center" />
+    <TextBlock Text="{Binding Author}" HorizontalAlignment="Center"
+               Foreground="{DynamicResource StudioTextMutedBrush}" />
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+      <Button Content="View repository" ToolTip.Tip="{Binding RepositoryUrl}"
+              HorizontalAlignment="Left" Click="OnRepoUrlClick" />
+      <Button Grid.Column="1" Classes="primary" MinWidth="80" Content="Close"
+              IsDefault="True" IsCancel="True" Click="CloseButton_Click" />
     </Grid>
-  </Border>
+  </StackPanel>
 </Window>

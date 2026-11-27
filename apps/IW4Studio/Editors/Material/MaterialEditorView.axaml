@@ -47,6 +47,7 @@
           </StackPanel>
           <TextBlock Text="{Binding StatusMessage}"
                      IsVisible="{Binding HasStatusMessage}"
+                     HorizontalAlignment="Left"
                      MaxWidth="620"
                      FontSize="9"
                      TextWrapping="Wrap"
@@ -64,11 +65,8 @@
                   Background="{DynamicResource StudioSurfaceSunkenBrush}"
                   BorderBrush="{DynamicResource StudioBorderBrush}"
                   BorderThickness="1">
-            <TextBlock Text="READ ONLY"
-                       FontSize="9"
-                       FontWeight="SemiBold"
-                       LetterSpacing="0.5"
-                       Foreground="{DynamicResource StudioTextMutedBrush}" />
+            <TextBlock Classes="editorAccessBadge" Text="READ ONLY"
+                       LetterSpacing="0.5" />
           </Border>
 
           <Button Classes="ghost"
@@ -247,7 +245,7 @@
                   VerticalAlignment="Center"
                   IsHitTestVisible="False"
                   CornerRadius="6"
-                  Background="#E016191F"
+                  Background="{DynamicResource StudioSurfaceOverlayBrush}"
                   BorderBrush="{DynamicResource StudioBorderBrush}"
                   BorderThickness="1">
             <TextBlock Text="{Binding RendererPreviewMessage}"

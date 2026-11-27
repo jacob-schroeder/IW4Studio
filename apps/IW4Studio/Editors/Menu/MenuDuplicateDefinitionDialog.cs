@@ -28,6 +28,7 @@ internal sealed class MenuDuplicateDefinitionDialog : Window
         Icon = AppIcon.Create();
         Width = 500;
         MinWidth = 500;
+        SizeToContent = SizeToContent.Height;
         CanResize = false;
         ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;

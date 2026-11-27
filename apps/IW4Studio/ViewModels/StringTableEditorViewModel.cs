@@ -351,7 +351,7 @@ public sealed class StringTableEditorViewModel
                 _diagnostics = editorSession.Validation.Issues;
                 _statusMessage = IsGeneratedConfigStringBaseline
                     ? "Generated PS3 configstring transport baseline. Edit the owning map, scripts, or assets; ordinary saves preserve this table."
-                    : "Import a CSV or add rows and columns, then Apply your changes.";
+                    : string.Empty;
                 break;
 
             case WorkspaceAssetAccess.ReadOnly:

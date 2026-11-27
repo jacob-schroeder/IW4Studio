@@ -87,10 +87,10 @@
               <TextBox Name="Ps3StockPath" PlaceholderText="Defaults to the map fastfile’s folder" AutomationProperties.Name="PS3 stock files" />
             </DockPanel>
             <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource StudioTextMutedBrush}"
-                       Text="Use the folder containing code_post_gfx_mp.ff, common_mp.ff, ui_mp.ff, and packfile*.pak." />
+                       Text="Required files: code_post_gfx_mp.ff, common_mp.ff, ui_mp.ff, and packfile*.pak." />
           </StackPanel>
           <StackPanel Spacing="5">
-            <TextBlock Classes="fieldLabel" Text="PS3 localization folder (if stored separately)" />
+            <TextBlock Classes="fieldLabel" Text="Separate PS3 localization folder (optional)" />
             <DockPanel>
               <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #Ps3StringsPath}" />
               <TextBox Name="Ps3StringsPath" PlaceholderText="Folder containing english/localizedstrings" AutomationProperties.Name="PS3 localization folder" />
@@ -101,7 +101,7 @@
           <TextBlock Classes="fieldLabel" Text="Destination folder" />
           <DockPanel>
             <Button Classes="browse" DockPanel.Dock="Right" Content="Browse…" Click="Browse_Click" Tag="{Binding #OutputPath}" />
-            <TextBox Name="OutputPath" PlaceholderText="Where to save the converted map" AutomationProperties.Name="Destination folder" />
+            <TextBox Name="OutputPath" AutomationProperties.Name="Destination folder" />
           </DockPanel>
         </StackPanel>
       </StackPanel>

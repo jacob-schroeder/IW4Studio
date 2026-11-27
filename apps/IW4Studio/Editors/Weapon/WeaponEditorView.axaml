@@ -9,7 +9,6 @@
              xmlns:xmodel="using:IW4.Studio.Desktop.Editors.XModel"
              x:Class="IW4.Studio.Desktop.Editors.Weapon.WeaponEditorView"
              x:DataType="vm:WeaponEditorViewModel"
-             SizeChanged="Editor_SizeChanged"
              mc:Ignorable="d"
              d:DesignWidth="1280"
              d:DesignHeight="780">
@@ -283,12 +282,19 @@
       </Grid>
     </Border>
 
-    <Grid Grid.Column="2" RowDefinitions="390,10,Auto,10,*">
-      <Border Grid.Row="0" CornerRadius="8" ClipToBounds="True"
+    <Grid Grid.Column="2">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="2*" MaxHeight="390" />
+        <RowDefinition Height="10" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="10" />
+        <RowDefinition Height="3*" />
+      </Grid.RowDefinitions>
+      <Border Grid.Row="0" CornerRadius="8" ZIndex="10"
               Background="{DynamicResource StudioSurfaceSunkenBrush}"
               BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1">
         <Grid RowDefinitions="Auto,*">
-          <Border Padding="11,8" Background="#BF1C2026"
+          <Border Padding="11,8" Background="{DynamicResource StudioSurfaceBrush}"
                   BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="0,0,0,1">
             <WrapPanel Orientation="Horizontal">
               <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,10,5">
@@ -366,7 +372,7 @@
                     ToolTip.Tip="Left-drag to orbit; right- or middle-drag to pan; scroll to zoom" />
             <xmodel:XModelBoneTagOverlay x:Name="BoneTagOverlay" IsHitTestVisible="False" ClipToBounds="True" />
             <Border HorizontalAlignment="Center" VerticalAlignment="Center" Padding="18,12" CornerRadius="6"
-                    Background="#D816191F" BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1"
+                    Background="{DynamicResource StudioSurfaceOverlayBrush}" BorderBrush="{DynamicResource StudioBorderBrush}" BorderThickness="1"
                     IsVisible="{Binding HasPreviewMessage}" IsHitTestVisible="False">
               <StackPanel Spacing="4">
                 <TextBlock Text="MODEL PREVIEW" HorizontalAlignment="Center" FontWeight="SemiBold" />
@@ -381,8 +387,8 @@
                          TextTrimming="CharacterEllipsis" Foreground="#CDD5DF" />
             </Border>
 
-            <Border Width="350" Margin="10" Padding="13" HorizontalAlignment="Right"
-                    VerticalAlignment="Stretch" CornerRadius="7" Background="#F21C2026"
+            <Border Width="350" Height="300" Margin="10" Padding="13" HorizontalAlignment="Right"
+                    VerticalAlignment="Top" CornerRadius="7" Background="{DynamicResource StudioSurfaceOverlayBrush}"
                     BorderBrush="{DynamicResource StudioBorderStrongBrush}" BorderThickness="1"
                     IsVisible="{Binding IsCamoEditorOpen}">
               <Grid RowDefinitions="Auto,9,*">
@@ -391,7 +397,7 @@
                                               Foreground="{DynamicResource StudioAccentBrush}" />
                   <StackPanel Grid.Column="2" Spacing="1">
                     <TextBlock Text="CUSTOM CAMO" FontSize="9" FontWeight="Bold" LetterSpacing="0.6" />
-                    <TextBlock Text="{Binding CamoTargetText}" FontSize="8" MaxWidth="260"
+                    <TextBlock Text="{Binding CamoTargetText}" FontSize="8" MaxWidth="260" HorizontalAlignment="Left"
                                TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource StudioTextMutedBrush}" />
                   </StackPanel>
@@ -517,7 +523,8 @@
       </Grid>
 
       <ScrollViewer Grid.Row="4" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-        <Grid x:Name="PropertyWorkspaceGrid" ColumnDefinitions="2*,12,*" RowDefinitions="Auto">
+        <Grid x:Name="PropertyWorkspaceGrid" ColumnDefinitions="2*,12,*" RowDefinitions="Auto"
+              SizeChanged="PropertyWorkspaceGrid_SizeChanged">
           <StackPanel x:Name="PropertyPrimaryPane" Grid.Column="0" MinWidth="0" Spacing="12">
             <Border Classes="propertyCard" IsVisible="{Binding IsAccuracyCategory}">
               <Grid RowDefinitions="Auto,10,210">

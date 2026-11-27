@@ -66,11 +66,8 @@
                 Background="{DynamicResource StudioSurfaceSunkenBrush}"
                 BorderBrush="{DynamicResource StudioBorderBrush}"
                 BorderThickness="1">
-          <TextBlock Text="READ ONLY"
-                     FontSize="9"
-                     FontWeight="SemiBold"
-                     LetterSpacing="0.5"
-                     Foreground="{DynamicResource StudioTextMutedBrush}" />
+          <TextBlock Classes="editorAccessBadge" Text="READ ONLY"
+                     LetterSpacing="0.5" />
         </Border>
       </Grid>
     </Border>
@@ -119,7 +116,6 @@
     </Border>
 
     <Border Grid.Row="4"
-            MinHeight="430"
             CornerRadius="8"
             ClipToBounds="True"
             Background="{DynamicResource StudioSurfaceSunkenBrush}"

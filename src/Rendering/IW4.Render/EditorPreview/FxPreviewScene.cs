@@ -103,8 +103,7 @@ public sealed class FxPreviewScene
             declaredCount != effect.ElemDefs.Count)
         {
             reason =
-                $"The FX declares {declaredCount} elements but retains " +
-                $"{effect.ElemDefs.Count}.";
+                $"Element count mismatch ({declaredCount} declared, {effect.ElemDefs.Count} available).";
             return false;
         }
 

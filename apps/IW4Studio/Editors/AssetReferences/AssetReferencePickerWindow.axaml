@@ -16,6 +16,12 @@
         mc:Ignorable="d"
         d:DesignWidth="700"
         d:DesignHeight="560">
+  <Window.Styles>
+    <Style Selector="ListBox.referenceCandidates > ListBoxItem">
+      <Setter Property="Padding" Value="6,2" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+  </Window.Styles>
   <Border Padding="22,18"
           Background="{DynamicResource StudioBackgroundBrush}">
     <Grid RowDefinitions="Auto,14,Auto,10,*,14,Auto">
@@ -26,8 +32,8 @@
                      FontSize="19"
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource StudioTextBrush}" />
-          <TextBlock Text="Choose an existing workspace asset. Only its logical name is stored."
-                     FontSize="10"
+          <TextBlock Text="Choose a workspace asset to use as the reference." TextWrapping="Wrap"
+                     FontSize="12"
                      Foreground="{DynamicResource StudioTextMutedBrush}" />
         </StackPanel>
         <Border Grid.Column="1"
@@ -38,7 +44,7 @@
                 BorderBrush="{DynamicResource StudioAccentBrush}"
                 BorderThickness="1">
           <TextBlock Text="{Binding AssetTypeText}"
-                     FontSize="8"
+                     FontSize="11"
                      FontWeight="Bold"
                      LetterSpacing="0.6"
                      Foreground="{DynamicResource StudioAccentBrush}" />
@@ -66,19 +72,19 @@
               BorderBrush="{DynamicResource StudioBorderBrush}"
               BorderThickness="1">
         <Grid>
-          <ListBox ItemsSource="{Binding Candidates}"
+          <ListBox Classes="referenceCandidates" ItemsSource="{Binding Candidates}"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                    SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}"
                    Background="Transparent"
                    BorderThickness="0"
                    DoubleTapped="CandidateList_DoubleTapped">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="picker:AssetReferenceCandidateViewModel">
-                <Grid Margin="5,4"
-                      MinHeight="50"
+                <Grid Margin="4,1"
+                      MinHeight="36"
                       ColumnDefinitions="Auto,*,Auto"
-                      ColumnSpacing="10"
                       AttachedToVisualTree="CandidateRow_AttachedToVisualTree">
-                  <Border Width="64"
+                  <Border Margin="0,0,10,0" Width="64"
                           Height="42"
                           CornerRadius="4"
                           ClipToBounds="True"
@@ -105,28 +111,28 @@
                   <StackPanel Grid.Column="1"
                               VerticalAlignment="Center"
                               Spacing="2">
-                    <TextBlock Text="{Binding Name}"
-                               FontSize="11"
+                    <TextBlock Text="{Binding Name}" ToolTip.Tip="{Binding Name}"
+                               FontSize="13"
                                FontWeight="SemiBold"
                                TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource StudioTextBrush}" />
-                    <StackPanel Orientation="Horizontal"
-                                Spacing="5">
+                    <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="5">
                       <TextBlock Text="{Binding Origin}"
-                                 FontSize="8"
+                                 FontSize="11"
                                  Foreground="{DynamicResource StudioTextMutedBrush}" />
-                      <TextBlock Text="·"
+                      <TextBlock Grid.Column="1" Text="·"
                                  IsVisible="{Binding HasProviderZone}"
-                                 FontSize="8"
+                                 FontSize="11"
                                  Foreground="{DynamicResource StudioTextSubtleBrush}" />
-                      <TextBlock Text="{Binding ProviderZone}"
+                      <TextBlock Grid.Column="2" Text="{Binding ProviderZone}"
+                                 TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ProviderZone}"
                                  IsVisible="{Binding HasProviderZone}"
-                                 FontSize="8"
+                                 FontSize="11"
                                  Foreground="{DynamicResource StudioTextMutedBrush}" />
-                    </StackPanel>
+                    </Grid>
                   </StackPanel>
 
-                  <StackPanel Grid.Column="2"
+                  <StackPanel Grid.Column="2" Margin="10,0,0,0"
                               Orientation="Horizontal"
                               VerticalAlignment="Center"
                               Spacing="5">
@@ -137,7 +143,7 @@
                             BorderBrush="{DynamicResource StudioInfoBorderBrush}"
                             BorderThickness="1">
                       <TextBlock Text="{Binding CurrentText}"
-                                 FontSize="7"
+                                 FontSize="10"
                                  FontWeight="Bold"
                                  Foreground="{DynamicResource StudioInfoBrush}" />
                     </Border>
@@ -147,7 +153,7 @@
                             BorderBrush="{DynamicResource StudioBorderBrush}"
                             BorderThickness="1">
                       <TextBlock Text="{Binding AccessText}"
-                                 FontSize="7"
+                                 FontSize="10"
                                  FontWeight="Bold"
                                  Foreground="{DynamicResource StudioTextSubtleBrush}" />
                     </Border>
@@ -170,7 +176,7 @@
             <TextBlock Text="{Binding EmptyMessage}"
                        TextAlignment="Center"
                        TextWrapping="Wrap"
-                       FontSize="10"
+                       FontSize="12"
                        Foreground="{DynamicResource StudioTextMutedBrush}" />
           </StackPanel>
         </Grid>
@@ -181,7 +187,7 @@
             ColumnSpacing="12">
         <TextBlock Text="Unresolved entries remain selectable so an existing authored name can be preserved."
                    VerticalAlignment="Center"
-                   FontSize="8"
+                   FontSize="11"
                    TextWrapping="Wrap"
                    Foreground="{DynamicResource StudioTextMutedBrush}" />
         <StackPanel Grid.Column="1"

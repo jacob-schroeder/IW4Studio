@@ -23,20 +23,16 @@ public sealed class MenuItemBehaviorBuilderNavigationItemViewModel
     internal MenuItemBehaviorBuilderNavigationItemViewModel(
         MenuItemBehaviorBuilderSection section,
         string title,
-        string description,
         string summary)
     {
         Section = section;
         Title = title;
-        Description = description;
         _summary = summary;
     }
 
     public MenuItemBehaviorBuilderSection Section { get; }
 
     public string Title { get; }
-
-    public string Description { get; }
 
     public string Summary
     {

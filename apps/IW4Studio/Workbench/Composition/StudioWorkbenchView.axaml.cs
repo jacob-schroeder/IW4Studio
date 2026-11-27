@@ -324,19 +324,13 @@ public sealed partial class StudioWorkbenchView : UserControl
         }
     }
 
-    private void BottomSplitter_PointerReleased(object? sender, PointerReleasedEventArgs e)
-    {
-        if (DataContext is StudioWorkbenchViewModel viewModel)
-            viewModel.ResizeRegion(DockRegion.Bottom, BottomPane.Bounds.Height);
-    }
-
     private void ShowDropCue(DockRegion allowedRegion, bool isPointerInside)
     {
         HideDropCues();
         Border cue = allowedRegion switch
         {
             DockRegion.Left => LeftDropCue,
-            DockRegion.Bottom => BottomDropCue,
+            DockRegion.Bottom => BottomPane.IsVisible ? BottomDropCue : BottomRailDropCue,
             DockRegion.Right => RightDropCue,
             _ => throw new ArgumentOutOfRangeException(nameof(allowedRegion))
         };
@@ -347,6 +341,7 @@ public sealed partial class StudioWorkbenchView : UserControl
     {
         LeftDropCue.Opacity = 0;
         BottomDropCue.Opacity = 0;
+        BottomRailDropCue.Opacity = 0;
         RightDropCue.Opacity = 0;
     }
 

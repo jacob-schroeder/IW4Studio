@@ -31,10 +31,6 @@
                      ToolTip.Tip="{Binding ScopeText}"
                      FontSize="10"
                      Foreground="{DynamicResource StudioTextMutedBrush}" />
-          <TextBlock Text="{Binding Description}"
-                     FontSize="10"
-                     TextWrapping="Wrap"
-                     Foreground="{DynamicResource StudioTextMutedBrush}" />
         </StackPanel>
         <Border Grid.Column="1"
                 Padding="8,3"
@@ -82,10 +78,6 @@
                                FontSize="10"
                                TextWrapping="Wrap"
                                Foreground="{DynamicResource StudioTextBrush}" />
-                    <TextBlock Text="{Binding Description}"
-                               FontSize="9"
-                               TextWrapping="Wrap"
-                               Foreground="{DynamicResource StudioTextMutedBrush}" />
                   </StackPanel>
                 </DataTemplate>
               </ListBox.ItemTemplate>

@@ -126,7 +126,7 @@
           <StackPanel Spacing="8">
             <TextBlock Text="Recent fastfiles" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource WelcomeText}" />
             <TextBlock IsVisible="{Binding !HasRecentFiles}"
-                       Text="Fastfiles you open or create will appear here."
+                       Text="No recent fastfiles."
                        Foreground="{StaticResource WelcomeMuted}" TextWrapping="Wrap" />
             <ItemsControl IsVisible="{Binding HasRecentFiles}" ItemsSource="{Binding RecentFiles}">
               <ItemsControl.ItemsPanel>
@@ -190,22 +190,18 @@
                 <Border Classes="selectedMode" IsVisible="{Binding #DependencyModeRadio.IsChecked}" />
                 <RadioButton x:Name="DependencyModeRadio" Classes="mode" GroupName="OpenMode"
                              AutomationProperties.Name="With dependencies"
-                             AutomationProperties.HelpText="Include available dependency zones and streamed images.">
+                             AutomationProperties.HelpText="Loads linked zones and streamed images.">
                   <StackPanel Spacing="2">
                     <TextBlock Classes="modeTitle" Text="With dependencies" />
-                    <TextBlock Classes="modeDescription" Text="Include available dependency zones and streamed images." />
+                    <TextBlock Classes="modeDescription" Text="Loads linked zones and streamed images." />
                   </StackPanel>
                 </RadioButton>
               </Grid>
               <Grid>
                 <Border Classes="selectedMode" IsVisible="{Binding #SingleModeRadio.IsChecked}" />
                 <RadioButton x:Name="SingleModeRadio" Classes="mode" GroupName="OpenMode"
-                             AutomationProperties.Name="This fastfile only"
-                             AutomationProperties.HelpText="Inspect the assets stored in this fastfile.">
-                  <StackPanel Spacing="2">
-                    <TextBlock Classes="modeTitle" Text="This fastfile only" />
-                    <TextBlock Classes="modeDescription" Text="Inspect the assets stored in this fastfile." />
-                  </StackPanel>
+                             AutomationProperties.Name="This fastfile only">
+                  <TextBlock Classes="modeTitle" Text="This fastfile only" />
                 </RadioButton>
               </Grid>
             </StackPanel>

@@ -103,8 +103,8 @@
                 VerticalAlignment="Center"
                 CornerRadius="7"
                 IsHitTestVisible="False"
-                Background="#E6262A31"
-                BorderBrush="#506D7683"
+                Background="{DynamicResource StudioSurfaceOverlayBrush}"
+                BorderBrush="{DynamicResource StudioBorderBrush}"
                 BorderThickness="1">
           <StackPanel Spacing="7">
             <materialIcons:MaterialIcon Kind="AnimationPlayOutline"

@@ -17,22 +17,32 @@ internal sealed class XModelImportWarningDialog : Window
         ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
-        var cancel = new Button { Content = "Cancel import", IsCancel = true };
+        var cancel = new Button { Content = "Cancel", IsCancel = true };
         cancel.Click += (_, _) => Close(false);
         var import = new Button { Content = "Import anyway" };
         import.Classes.Add("primary");
         import.Click += (_, _) => Close(true);
 
+        var source = new TextBlock { Text = fileName, TextTrimming = TextTrimming.CharacterEllipsis };
+        ToolTip.SetTip(source, fileName);
         Content = new StackPanel
         {
             Margin = new Thickness(24, 20),
             Spacing = 16,
             Children =
             {
-                new TextBlock
+                new StackPanel
                 {
-                    Text = $"{fileName} may run poorly on PS3 hardware.",
-                    FontSize = 18, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap
+                    Spacing = 4,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = "This model may run slowly on PS3.",
+                            FontSize = 18, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap
+                        },
+                        source
+                    }
                 },
                 new ScrollViewer
                 {

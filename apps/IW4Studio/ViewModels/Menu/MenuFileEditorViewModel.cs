@@ -376,7 +376,7 @@ public sealed class MenuFileEditorViewModel
                 _coordinator.CanRevertMenuFile(rowIdentity);
             RefreshValidation();
             StatusMessage =
-                "Choose a menu in Registrations or select an item in the outline to edit it.";
+                "Select a menu or item to edit.";
             return;
         }
 

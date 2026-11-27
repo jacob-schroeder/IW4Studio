@@ -59,11 +59,11 @@
                    FontWeight="Bold"
                    LetterSpacing="0.8"
                    Foreground="{DynamicResource StudioTextSubtleBrush}" />
-        <TextBlock Text="An IW4 version 22 .d3dbsp is a compiled multiplayer map container, not one independently editable asset. Studio converts it to or from six synchronized assets that share one wire name. Import atomically creates or replaces that group; export writes a reconstructed, editable BSP containing the recoverable geometry, collision, static models, entities, stages, baked lighting, and reflection probes."
+        <TextBlock Text="An IW4 v22 .d3dbsp converts to six synchronized assets under one name. Import atomically creates or replaces the group; export reconstructs an editable BSP with recoverable geometry, collision, static models, entities, stages, baked lighting, and reflection probes."
                    TextWrapping="Wrap"
                    LineHeight="21"
                    Foreground="{DynamicResource StudioTextBrush}" />
-        <TextBlock Text="The original compiler-only portal, cull, and PVS layout is no longer present in a fastfile, so export regenerates one all-visible render cell. Original lightmap packing metadata, discarded source entities, node tails, and reflection-probe color-correction source names cannot be recovered."
+        <TextBlock Text="Export rebuilds one all-visible render cell because the original portal, cull, and PVS layout is absent. Lightmap packing metadata, discarded source entities, node tails, and reflection-probe color-correction source names cannot be recovered."
                    TextWrapping="Wrap"
                    Foreground="{DynamicResource StudioTextSubtleBrush}" />
       </StackPanel>

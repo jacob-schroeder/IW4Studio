@@ -4,26 +4,15 @@
         x:Class="IW4.Studio.Desktop.Workbench.Tools.FastFileAssets.AddAssetDialogWindow"
         Title="Add Asset"
         Width="430"
-        Height="300"
+        SizeToContent="Height"
         MinWidth="430"
-        MinHeight="300"
         CanResize="False"
         ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner">
   <Border Padding="28,24"
           Background="{DynamicResource StudioBackgroundBrush}">
-    <Grid RowDefinitions="Auto,20,Auto,14,Auto,*,Auto">
-      <StackPanel Grid.Row="0" Spacing="5">
-        <TextBlock Text="Add Asset"
-                   FontSize="20"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource StudioTextBrush}" />
-        <TextBlock Text="Create a new asset in this fastfile."
-                   FontSize="11"
-                   Foreground="{DynamicResource StudioTextMutedBrush}" />
-      </StackPanel>
-
-      <StackPanel Grid.Row="2" Spacing="6">
+    <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="16">
+      <StackPanel Grid.Row="0" Spacing="6">
         <TextBlock Text="Asset type"
                    FontSize="10"
                    FontWeight="SemiBold"
@@ -32,7 +21,7 @@
                          MinHeight="34"
                          HorizontalAlignment="Stretch"
                          MinimumPrefixLength="0"
-                         PlaceholderText="Type to filter asset types"
+                         PlaceholderText="Search asset types"
                          TextChanged="AssetTypeAutoCompleteBox_TextChanged"
                          DropDownClosed="AssetTypeAutoCompleteBox_DropDownClosed"
                          SelectionChanged="AssetTypeAutoCompleteBox_SelectionChanged">
@@ -54,7 +43,7 @@
         </AutoCompleteBox>
       </StackPanel>
 
-      <StackPanel Grid.Row="4" Spacing="6">
+      <StackPanel Grid.Row="1" Spacing="6">
         <TextBlock Text="Name"
                    FontSize="10"
                    FontWeight="SemiBold"
@@ -62,7 +51,7 @@
         <TextBox x:Name="NameTextBox"
                  MinHeight="34"
                  HorizontalAlignment="Stretch"
-                 PlaceholderText="Enter a unique asset name"
+                 PlaceholderText="Unique asset name"
                  TextChanged="NameTextBox_TextChanged" />
         <TextBlock x:Name="ValidationTextBlock"
                    MinHeight="16"
@@ -71,7 +60,7 @@
                    TextWrapping="Wrap" />
       </StackPanel>
 
-      <StackPanel Grid.Row="6"
+      <StackPanel Grid.Row="2"
                   Orientation="Horizontal"
                   HorizontalAlignment="Right"
                   Spacing="10">

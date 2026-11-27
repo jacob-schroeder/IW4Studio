@@ -21,6 +21,7 @@ internal sealed unsafe class SilkMapRenderFpsOverlay : IDisposable
     private readonly int _colorLocation;
     private readonly List<float> _geometryVertices = [];
     private int _glyphPixelSize;
+    private int _framebufferWidth;
     private MapRenderFrameTelemetrySnapshot? _displayedTelemetry;
     private string? _displayedText;
     private int _backgroundVertexCount;
@@ -79,8 +80,11 @@ internal sealed unsafe class SilkMapRenderFpsOverlay : IDisposable
             return;
 
         int glyphPixelSize =
-            MapRenderTelemetryOverlayGeometry.GetGlyphPixelSize(renderScaling);
+            MapRenderTelemetryOverlayGeometry.GetGlyphPixelSize(
+                renderScaling,
+                framebufferWidth);
         bool scaleChanged = glyphPixelSize != _glyphPixelSize;
+        bool widthChanged = framebufferWidth != _framebufferWidth;
         if (!ReferenceEquals(telemetry, _displayedTelemetry))
         {
             string text = BuildText(
@@ -89,17 +93,18 @@ internal sealed unsafe class SilkMapRenderFpsOverlay : IDisposable
                 hostRenderAverageMilliseconds,
                 swapMilliseconds,
                 swapAverageMilliseconds);
-            if (scaleChanged ||
+            if (scaleChanged || widthChanged ||
                 !string.Equals(text, _displayedText, StringComparison.Ordinal))
             {
-                UploadGeometry(text, glyphPixelSize);
+                UploadGeometry(text, glyphPixelSize, framebufferWidth);
             }
 
             _displayedTelemetry = telemetry;
             _displayedText = text;
         }
-        else if (scaleChanged && _displayedText is { } displayedText)
-            UploadGeometry(displayedText, glyphPixelSize);
+        else if ((scaleChanged || widthChanged) &&
+                 _displayedText is { } displayedText)
+            UploadGeometry(displayedText, glyphPixelSize, framebufferWidth);
 
         if (_textVertexCount == 0)
             return;
@@ -250,12 +255,18 @@ internal sealed unsafe class SilkMapRenderFpsOverlay : IDisposable
         return text.ToString();
     }
 
-    private void UploadGeometry(string label, int glyphPixelSize)
+    private void UploadGeometry(
+        string label,
+        int glyphPixelSize,
+        int framebufferWidth)
     {
         List<float> vertices = _geometryVertices;
         (_backgroundVertexCount, _textVertexCount) =
             MapRenderTelemetryOverlayGeometry.Write(
-                label,
+                MapRenderTelemetryOverlayGeometry.WrapText(
+                    label,
+                    framebufferWidth,
+                    glyphPixelSize),
                 glyphPixelSize,
                 vertices);
         Span<float> values = CollectionsMarshal.AsSpan(vertices);
@@ -270,6 +281,7 @@ internal sealed unsafe class SilkMapRenderFpsOverlay : IDisposable
         }
 
         _glyphPixelSize = glyphPixelSize;
+        _framebufferWidth = framebufferWidth;
     }
 
     private uint CreateProgram()

@@ -77,11 +77,6 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
             : scopeText;
         WindowTitle = IsMenuDefinition ? "Menu Behavior" : "Item Behavior";
         Heading = IsMenuDefinition ? "Menu behavior" : "Item behavior";
-        Description = IsMenuDefinition
-            ? "Build MenuDef event hooks and key handlers before applying " +
-              "one menu-level change."
-            : "Build event hooks, key handlers, and dynamic bindings before " +
-              "applying one item-level change.";
         BehaviorExpressionSupport support = expressionSupport ??
             BehaviorExpressionSupport.Empty;
         ExpressionSupport = new BehaviorExpressionSupportDraftViewModel(
@@ -116,12 +111,10 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
             new MenuItemBehaviorBuilderNavigationItemViewModel(
                 MenuItemBehaviorBuilderSection.Events,
                 "Events",
-                "Event hooks and nested action sets.",
                 Events.Summary),
             new MenuItemBehaviorBuilderNavigationItemViewModel(
                 MenuItemBehaviorBuilderSection.Keys,
                 "Keys",
-                "Ordered key handlers and their action sets.",
                 Keys.Summary)
         };
         if (!IsMenuDefinition)
@@ -129,7 +122,6 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
             navigationItems.Add(new MenuItemBehaviorBuilderNavigationItemViewModel(
                 MenuItemBehaviorBuilderSection.Bindings,
                 "Bindings",
-                "Fixed statements and float-expression bindings.",
                 Bindings.Summary));
         }
         NavigationItems = navigationItems.AsReadOnly();
@@ -143,8 +135,6 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
     public string WindowTitle { get; }
 
     public string Heading { get; }
-
-    public string Description { get; }
 
     public IReadOnlyList<string> MenuNames { get; }
 

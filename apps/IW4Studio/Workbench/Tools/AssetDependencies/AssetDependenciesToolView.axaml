@@ -38,16 +38,11 @@
                 VerticalAlignment="Center"
                 Margin="24"
                 Spacing="8">
-      <TextBlock Text="No asset selected"
-                 HorizontalAlignment="Center"
-                 FontSize="13"
-                 FontWeight="SemiBold"
-                 Foreground="{DynamicResource StudioTextBrush}" />
-      <TextBlock Text="Choose an asset to see its direct relationships."
+      <TextBlock Text="Select an asset to see its dependencies."
                  MaxWidth="240"
                  TextAlignment="Center"
                  TextWrapping="Wrap"
-                 FontSize="10"
+                 FontSize="13"
                  Foreground="{DynamicResource StudioTextMutedBrush}" />
     </StackPanel>
 
@@ -136,9 +131,7 @@
             <DataTemplate x:DataType="dependencies:AssetDependencyListItemViewModel">
               <Grid>
                 <Border IsVisible="{Binding IsHeading}"
-                        Padding="14,12,14,5"
-                        BorderBrush="{DynamicResource StudioBorderBrush}"
-                        BorderThickness="0,1,0,0">
+                        Padding="14,12,14,5">
                   <TextBlock Text="{Binding Heading}"
                              FontSize="10"
                              FontWeight="Bold"

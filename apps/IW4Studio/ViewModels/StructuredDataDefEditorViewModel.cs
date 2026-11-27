@@ -224,9 +224,8 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
             StructuredDataSelectionKind.Struct => "CARDINALITY",
             _ => "CONTENTS"
         };
-    public string SchemaHelpText => IsEditable
-        ? "Fields point to types; cardinality shows fixed counts or enum keys. Friendly names are inferred. Select a row to edit in Properties."
-        : "Fields point to types; cardinality shows fixed counts or enum keys. Friendly names are inferred. Select a row to inspect in Properties.";
+    public string SchemaHelpText =>
+        "Fields reference types; cardinality shows fixed counts or enum keys. Friendly names are inferred.";
     public bool HasVisibleRows => VisibleRows.Count != 0;
     public string EmptySelectionMessage => SelectedNavigationNode is null
         ? "This definition set contains no schema definitions."

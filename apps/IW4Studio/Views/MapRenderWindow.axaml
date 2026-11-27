@@ -12,7 +12,7 @@
             Padding="32"
             HorizontalAlignment="Stretch"
             VerticalAlignment="Stretch"
-            Background="#E0111722">
+            Background="{DynamicResource StudioSurfaceSunkenBrush}">
       <StackPanel HorizontalAlignment="Center"
                   VerticalAlignment="Center"
                   MaxWidth="560"
@@ -24,7 +24,7 @@
                    TextAlignment="Center" />
         <TextBlock x:Name="StatusMessage"
                    HorizontalAlignment="Center"
-                   Foreground="#D5DBE5"
+                   Foreground="{DynamicResource StudioTextMutedBrush}"
                    TextAlignment="Center"
                    TextWrapping="Wrap" />
       </StackPanel>

@@ -257,7 +257,7 @@
           </Border>
           <Border Name="EditorTabActiveIndicator"
                   Height="2"
-                  VerticalAlignment="Top"
+                  VerticalAlignment="Bottom"
                   Background="Transparent"
                   IsHitTestVisible="False" />
         </Grid>
@@ -417,6 +417,25 @@
   </Style>
 
   <!-- Dense rows shared by Console Output and Diagnostics. -->
+  <Style Selector="Border.outputColumnHeader">
+    <Setter Property="Padding" Value="17,0" />
+  </Style>
+  <Style Selector="Border.outputColumnHeader TextBlock">
+    <Setter Property="FontSize" Value="11" />
+  </Style>
+  <Style Selector="ListBox.outputTable TextBlock">
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+  <Style Selector="TextBlock.outputSeverity">
+    <Setter Property="Foreground" Value="{DynamicResource StudioInfoBrush}" />
+  </Style>
+  <Style Selector="TextBlock.outputSeverity[Text=Warning]">
+    <Setter Property="Foreground" Value="{DynamicResource StudioWarningBrush}" />
+  </Style>
+  <Style Selector="TextBlock.outputSeverity[Text=Error]">
+    <Setter Property="Foreground" Value="{DynamicResource StudioErrorBrush}" />
+  </Style>
+
   <Style Selector="ListBox.studioOutputList">
     <Setter Property="Padding" Value="0" />
     <Setter Property="Background" Value="Transparent" />

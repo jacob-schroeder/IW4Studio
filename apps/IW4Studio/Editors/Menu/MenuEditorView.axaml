@@ -46,7 +46,7 @@
                   MinHeight="30"
                   Padding="12,5"
                   IsEnabled="{Binding Designer.HasStagedInput}"
-                  ToolTip.Tip="Apply the staged Properties value to the Menu draft; use Save As to write the fastfile"
+                  ToolTip.Tip="Apply this property change. Save As writes the fastfile."
                   Click="ApplyChangesButton_Click">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <materialIcons:MaterialIcon Kind="Check" Width="15" Height="15" />
