@@ -24,6 +24,22 @@ public sealed class FastFileDocumentService
         _assetProgress = assetProgress;
     }
 
+    public FastFileWorkspace OpenWithDefaultProfile(string input)
+    {
+        string path = Path.GetFullPath(input);
+        FastFileOpenMode mode;
+        try
+        {
+            mode = new ZonePlan(FastFileOpenProfiles.ResolveForTarget(path));
+        }
+        catch (NotSupportedException)
+        {
+            mode = Isolated.Instance;
+        }
+        return Open(
+            new FastFileDocumentOpenRequest(path, mode));
+    }
+
     public FastFileWorkspace Open(FastFileDocumentOpenRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);

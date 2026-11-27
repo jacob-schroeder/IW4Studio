@@ -1,0 +1,125 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="IW4.Radiant.Desktop.Views.TerrainInspector">
+    <StackPanel Spacing="10">
+        <StackPanel x:Name="CreationFields" Spacing="8" IsVisible="False">
+            <TextBlock Text="Create terrain" Classes="panelTitle" />
+            <Grid ColumnDefinitions="*,100" ColumnSpacing="5">
+                <TextBlock Text="Vertices per side" Classes="fieldLabel" />
+                <NumericUpDown x:Name="TerrainCount" Grid.Column="1" Minimum="2" Maximum="16" FormatString="0"
+                               ToolTip.Tip="Number of vertices per side for new terrain patches. Draw in Top view." />
+            </Grid>
+        </StackPanel>
+        <StackPanel x:Name="CollisionFields" Spacing="8" IsVisible="False">
+            <TextBlock Text="Terrain collision" Classes="panelTitle" />
+            <CheckBox x:Name="SolidCollisionValue" IsThreeState="True"
+                      ToolTip.Tip="Keep solid collision on the base terrain. Turn it off for visual overlays and decals.">
+                <TextBlock Text="Solid collision (players and projectiles)" TextWrapping="Wrap" />
+            </CheckBox>
+            <TextBlock x:Name="CollisionSelectionText" Classes="caption" TextWrapping="Wrap" />
+            <TextBlock Text="Mesh collision acts from the front side. Use closed brushes for barriers that block from both sides." Classes="caption" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="5">
+                <Button x:Name="ApplyCollisionButton" Content="Apply" Classes="panelAction" HorizontalAlignment="Stretch" />
+                <Button x:Name="RevertCollisionButton" Grid.Column="1" Content="Revert" HorizontalAlignment="Stretch" />
+            </Grid>
+        </StackPanel>
+        <StackPanel x:Name="SculptFields" Spacing="8" IsVisible="False">
+            <TextBlock Text="Sculpt" Classes="panelTitle" />
+            <ComboBox x:Name="SculptModeBox" HorizontalAlignment="Stretch"
+                      ToolTip.Tip="Sculpt in Top view. Hold Shift to lower in Raise / lower mode.">
+                <ComboBoxItem Content="Raise / lower" />
+                <ComboBoxItem Content="Smooth" />
+                <ComboBoxItem Content="Flatten" />
+                <ComboBoxItem Content="Paint color" />
+                <ComboBoxItem Content="Paint alpha" />
+            </ComboBox>
+            <Grid x:Name="SculptParameters" ColumnDefinitions="*,100" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                <TextBlock Text="Radius" Classes="fieldLabel" />
+                <NumericUpDown x:Name="RadiusValue" Grid.Column="1" Minimum="1" Maximum="4096" Increment="16" FormatString="0" />
+                <TextBlock x:Name="StrengthCaption" Grid.Row="1" Classes="fieldLabel" />
+                <NumericUpDown x:Name="StrengthValue" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="256" FormatString="0" />
+            </Grid>
+        </StackPanel>
+        <Grid x:Name="HeightFields" ColumnDefinitions="*,100" ColumnSpacing="5" IsVisible="False">
+            <TextBlock Text="Flatten height (Z)" Classes="fieldLabel" />
+            <TextBox x:Name="FlattenHeightBox" Grid.Column="1" ToolTip.Tip="Height for Flatten sculpting or Flatten vertices." />
+        </Grid>
+        <StackPanel x:Name="VertexFields" Spacing="8" IsVisible="False">
+            <TextBlock x:Name="VertexSelectionText" Classes="caption" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="5">
+                <Button x:Name="SmoothVerticesButton" Content="Smooth" HorizontalAlignment="Stretch"
+                        ToolTip.Tip="Smooth the selected terrain vertices." />
+                <Button x:Name="FlattenVerticesButton" Grid.Column="1" Content="Flatten" HorizontalAlignment="Stretch"
+                        ToolTip.Tip="Flatten the selected terrain vertices to the specified height." />
+            </Grid>
+        </StackPanel>
+        <StackPanel x:Name="NoiseFields" Spacing="8" IsVisible="False">
+            <Separator />
+            <TextBlock Text="Vertex noise" Classes="panelTitle" />
+            <TextBlock x:Name="NoiseSelectionText" Classes="caption" TextWrapping="Wrap" />
+            <ComboBox x:Name="NoiseModeBox" SelectedIndex="0" HorizontalAlignment="Stretch"
+                      ToolTip.Tip="Apply noise to selected terrain vertices or curved-patch controls.">
+                <ComboBoxItem Content="Position" />
+                <ComboBoxItem Content="Alpha" />
+                <ComboBoxItem Content="Position + alpha" />
+            </ComboBox>
+            <Grid x:Name="PositionNoiseFields" ColumnDefinitions="*,*,*" ColumnSpacing="5">
+                <StackPanel Spacing="3">
+                    <TextBlock Text="X amount (±)" Classes="caption" />
+                    <NumericUpDown x:Name="NoiseX" Value="0" Minimum="0" Maximum="4096" Increment="1" FormatString="0.##" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="3">
+                    <TextBlock Text="Y amount (±)" Classes="caption" />
+                    <NumericUpDown x:Name="NoiseY" Value="0" Minimum="0" Maximum="4096" Increment="1" FormatString="0.##" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="3">
+                    <TextBlock Text="Z amount (±)" Classes="caption" />
+                    <NumericUpDown x:Name="NoiseZ" Value="10" Minimum="0" Maximum="4096" Increment="1" FormatString="0.##" />
+                </StackPanel>
+            </Grid>
+            <Grid x:Name="AlphaNoiseFields" ColumnDefinitions="*,100" ColumnSpacing="5" IsVisible="False">
+                <TextBlock Text="Alpha strength (%)" Classes="fieldLabel"
+                           ToolTip.Tip="100 replaces vertex alpha with a random value; lower strengths blend with the current alpha." />
+                <NumericUpDown x:Name="NoiseAlphaStrength" Grid.Column="1" Value="100" Minimum="0" Maximum="100"
+                               Increment="5" FormatString="0" />
+            </Grid>
+            <Button x:Name="ApplyNoiseButton" Content="Apply noise" Classes="panelAction" HorizontalAlignment="Stretch" />
+        </StackPanel>
+        <StackPanel x:Name="SplitFields" Spacing="8" IsVisible="False">
+            <Separator />
+            <TextBlock Text="Split terrain" Classes="panelTitle" />
+            <TextBlock Text="Choose an interior grid line. Both new patches share that line and keep their texture and color." Classes="caption" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                <TextBlock Text="Column" Classes="fieldLabel" />
+                <TextBlock Text="Row" Grid.Column="1" Classes="fieldLabel" />
+                <NumericUpDown x:Name="SplitColumn" Grid.Row="1" Minimum="2" Maximum="2" Value="2" FormatString="0" />
+                <NumericUpDown x:Name="SplitRow" Grid.Row="1" Grid.Column="1" Minimum="2" Maximum="2" Value="2" FormatString="0" />
+                <Button x:Name="SplitColumnButton" Grid.Row="2" Content="Split at column" HorizontalAlignment="Stretch" />
+                <Button x:Name="SplitRowButton" Grid.Row="2" Grid.Column="1" Content="Split at row" HorizontalAlignment="Stretch" />
+            </Grid>
+        </StackPanel>
+        <StackPanel x:Name="ThickenTerrainFields" Spacing="6" IsVisible="False">
+            <Separator />
+            <TextBlock Text="Thicken terrain" Classes="panelTitle" />
+            <TextBlock Text="Keep this surface as the top, then add an underside and four walls behind its front side. They use the same material and vertex color. Undo removes the shell."
+                       Classes="caption" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,100" ColumnSpacing="5">
+                <TextBlock Text="Thickness (units)" Classes="fieldLabel" />
+                <NumericUpDown x:Name="TerrainThickenValue" Grid.Column="1" Minimum="1" Maximum="4096" Value="16" Increment="8" FormatString="0" />
+            </Grid>
+            <Button x:Name="ThickenTerrainButton" Content="Thicken terrain" Classes="panelAction" HorizontalAlignment="Stretch" />
+        </StackPanel>
+        <StackPanel x:Name="StitchFields" Spacing="8" IsVisible="False">
+            <TextBlock Text="Stitch patches" Classes="panelTitle" />
+            <Grid ColumnDefinitions="*,100" ColumnSpacing="5">
+                <TextBlock Text="Tolerance" Classes="fieldLabel" />
+                <TextBox x:Name="StitchToleranceBox" Grid.Column="1" />
+            </Grid>
+            <Button x:Name="StitchButton" Content="Stitch two patches" Classes="panelAction" HorizontalAlignment="Stretch"
+                    ToolTip.Tip="Select two whole terrain patches with adjoining edges. Equal or nested edge subdivisions are supported." />
+            <TextBlock x:Name="StitchSelectionText" Classes="caption" TextWrapping="Wrap" />
+        </StackPanel>
+        <TextBlock x:Name="TerrainContextText" Classes="caption" TextWrapping="Wrap" IsVisible="False"
+                   Text="Choose Terrain or Sculpt, or select a terrain patch or vertex." />
+    </StackPanel>
+</UserControl>

@@ -7,7 +7,7 @@ using System.Globalization;
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.RegularExpressions;
-using D3dbspLinker.Conversion;
+using IW4.Studio.D3dbsp;
 using IW4.Formats.SourceFormat.Material;
 using IW4.Game.Assets;
 using IW4.Game.Assets.GfxMap;
@@ -306,7 +306,7 @@ internal static class Iw3PcMapConverter
             outdoorImage = null;
             Directory.CreateDirectory(outputDirectory);
             cancellationToken.ThrowIfCancellationRequested();
-            FastFileConverter.FromD3dbsp(
+            D3dbspFastFileBuilder.Build(
                 bspPath, templatePath, $"maps/mp/{mapName}.d3dbsp", stagedMapPath,
                 forceFullbright: false, useCompiledLighting: false,
                 worldOnly: true, useSourceMaterials: textured, stockBootstrap: false,
@@ -322,8 +322,7 @@ internal static class Iw3PcMapConverter
                 sourceSun: sourceSun,
                 staticScriptModelNames: textured ? WorldOnlyVehicleModels : new HashSet<string>(StringComparer.Ordinal),
                 staticModelVisibility: world.StaticModelVisibility,
-                cancellationToken: cancellationToken,
-                progress: new Progress<string>());
+                cancellationToken: cancellationToken);
             if (!File.Exists(stagedMapPath) || new FileInfo(stagedMapPath).Length == 0)
                 throw new InvalidDataException("World-first linking did not produce a fastfile.");
             PublishOutputs(inputs, (stagedMapPath, outputPath),

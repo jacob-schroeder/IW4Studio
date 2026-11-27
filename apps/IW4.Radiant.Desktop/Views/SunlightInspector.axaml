@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:IW4.Radiant.Desktop.Views"
+             x:Class="IW4.Radiant.Desktop.Views.SunlightInspector">
+    <StackPanel Spacing="8">
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBlock x:Name="SunTitle" Text="Sunlight" Classes="panelTitle" VerticalAlignment="Center" />
+            <CheckBox x:Name="SunEnabled" Grid.Column="1" Content="Enabled" ToolTip.Tip="Apply to author sunlight in worldspawn. Disabling removes only the three direct sunlight properties." />
+        </Grid>
+        <TextBlock x:Name="SourceError" Foreground="#E5B477" TextWrapping="Wrap" IsVisible="False" />
+        <Grid x:Name="StageOrder" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="5" IsVisible="False">
+            <TextBlock x:Name="StagePriority" Classes="caption" VerticalAlignment="Center" />
+            <Button x:Name="EarlierStage" Grid.Column="1" Content="↑" AutomationProperties.Name="Earlier stage" ToolTip.Tip="Give this Stage priority over the preceding Stage where they overlap." />
+            <Button x:Name="LaterStage" Grid.Column="2" Content="↓" AutomationProperties.Name="Later stage" ToolTip.Tip="Give the following Stage priority where it overlaps this Stage." />
+        </Grid>
+        <Button x:Name="EditSourceButton" Content="Edit world properties" IsVisible="False" />
+        <StackPanel x:Name="SunFields" Spacing="8">
+            <TextBlock Text="Color" Classes="fieldLabel" />
+            <views:LightColorPicker x:Name="ColorPicker" ToolTip.Tip="Adjust sunlight color channels or choose a swatch. RGB values control the exact brightness." />
+            <Expander Header="RGB values" IsExpanded="False">
+                <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4">
+                    <TextBlock Text="Red" Classes="caption" />
+                    <TextBlock Text="Green" Grid.Column="1" Classes="caption" />
+                    <TextBlock Text="Blue" Grid.Column="2" Classes="caption" />
+                    <TextBox x:Name="RedBox" Grid.Row="1" Text="1" ToolTip.Tip="Red component; values above 1 increase brightness." />
+                    <TextBox x:Name="GreenBox" Grid.Row="1" Grid.Column="1" Text="1" ToolTip.Tip="Green component; values above 1 increase brightness." />
+                    <TextBox x:Name="BlueBox" Grid.Row="1" Grid.Column="2" Text="1" ToolTip.Tip="Blue component; values above 1 increase brightness." />
+                </Grid>
+            </Expander>
+            <Grid ColumnDefinitions="65,*" ColumnSpacing="5">
+                <TextBlock Text="Intensity" Classes="fieldLabel" />
+                <TextBox x:Name="IntensityBox" Grid.Column="1" Text="1" ToolTip.Tip="Direct sunlight intensity. 1 lights a facing surface at full brightness." />
+            </Grid>
+            <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="4">
+                <TextBlock Text="Pitch (°)" Classes="caption" />
+                <TextBlock Text="Yaw (°)" Grid.Column="1" Classes="caption" />
+                <TextBlock Text="Roll (°)" Grid.Column="2" Classes="caption" />
+                <TextBox x:Name="PitchBox" Grid.Row="1" Text="-45" ToolTip.Tip="Direction toward the sun. -90 is directly overhead; 0 is on the horizon." />
+                <TextBox x:Name="YawBox" Grid.Row="1" Grid.Column="1" Text="0" ToolTip.Tip="0 points along +X; 90 points along +Y." />
+                <TextBox x:Name="RollBox" Grid.Row="1" Grid.Column="2" Text="0" ToolTip.Tip="Preserved source roll; it does not change the sun direction." />
+            </Grid>
+            <views:SunDirectionControl x:Name="DirectionPicker" Height="90"
+                                       ToolTip.Tip="Drag to aim the sun. Left/right changes yaw; up/down changes elevation. Arrow keys adjust by one degree; Shift uses 15 degrees. Apply commits the direction." />
+        </StackPanel>
+        <StackPanel x:Name="AmbientFields" Spacing="5" IsVisible="False">
+            <Grid ColumnDefinitions="*,100" ColumnSpacing="5">
+                <CheckBox x:Name="AmbientOverride" Content="Ambient" ToolTip.Tip="Override the inherited sky diffuse multiplier. This does not change direct light or the visible sky." />
+                <TextBox x:Name="AmbientBox" Grid.Column="1" Text="1" ToolTip.Tip="Nonnegative sky diffuse multiplier. World defaults to 1; stages inherit the world value." />
+            </Grid>
+        </StackPanel>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+            <Button x:Name="ApplySunButton" Content="Apply sunlight" Classes="panelAction" HorizontalAlignment="Stretch" />
+            <Button x:Name="RevertSunButton" Grid.Column="1" Content="Revert" ToolTip.Tip="Discard unapplied sunlight changes." />
+        </Grid>
+        <TextBlock x:Name="SunHint" Text="Direct light and shadows preview after Apply. Bounced light is not baked in the editor." Classes="caption" TextWrapping="Wrap" />
+    </StackPanel>
+</UserControl>

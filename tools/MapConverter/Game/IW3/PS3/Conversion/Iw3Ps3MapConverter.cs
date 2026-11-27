@@ -27,6 +27,7 @@ using IW4.Studio.Documents;
 using MapConverter.CommandLine;
 using MapConverter.Game.IW3.PC.Conversion;
 using MapConverter.Game.IW3;
+using MapConverter.Game.IW3.Audio;
 using MapConverter.Game.IW3.PS3.Extraction;
 using MapConverter.Game.IW3.PS3.Images;
 using MapConverter.Game.IW3.Rules;

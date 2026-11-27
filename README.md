@@ -1,6 +1,8 @@
 # IW4Studio
 All in one studio software for IW4 mod tools for PS3.
 
+Radiant can build, inspect, and convert maps from the command line. [Map command reference](apps/IW4.Radiant.Desktop/MapCommands/README.md)
+
 ## Other Repos
 - https://github.com/jacob-schroeder/IW4-Binaries (patched gsc default_mp.self)
 - https://github.com/jacob-schroeder/IW4-Custom-Maps (downloads)

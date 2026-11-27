@@ -1,0 +1,412 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:IW4.Radiant.Desktop.Views"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="IW4.Radiant.Desktop.Views.MainWindow"
+        Title="Iw4Radiant"
+        Width="1500" Height="980" MinWidth="640" MinHeight="720"
+        Background="#202226" FontSize="12">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <Menu x:Name="EditorMenu" Grid.Row="0" Background="#202225">
+            <MenuItem Header="_File">
+                <MenuItem Header="_New map" Click="New_Click" InputGesture="Ctrl+N" />
+                <MenuItem Header="_Open .map…" Click="Open_Click" InputGesture="Ctrl+O" />
+                <Separator />
+                <MenuItem Header="_Save" Click="Save_Click" InputGesture="Ctrl+S" />
+                <MenuItem Header="Save _As…" Click="SaveAs_Click" InputGesture="Ctrl+Shift+S" />
+                <Separator />
+                <MenuItem Header="_Exit" Click="Exit_Click" />
+            </MenuItem>
+            <MenuItem Header="_Edit">
+                <MenuItem x:Name="UndoMenu" Header="_Undo" Click="Undo_Click" InputGesture="Ctrl+Z" />
+                <MenuItem x:Name="RedoMenu" Header="_Redo" Click="Redo_Click" InputGesture="Ctrl+Y" />
+                <Separator />
+                <MenuItem Header="_Duplicate selection" Click="Duplicate_Click" InputGesture="Space" />
+                <MenuItem Header="_Delete selection" Click="Delete_Click" InputGesture="Delete" />
+            </MenuItem>
+            <MenuItem Header="_Modify">
+                <MenuItem Header="Flip selection">
+                    <MenuItem x:Name="FlipXMenu" Header="Flip _X" Tag="0" Click="FlipSelection_Click" />
+                    <MenuItem x:Name="FlipYMenu" Header="Flip _Y" Tag="1" Click="FlipSelection_Click" />
+                    <MenuItem x:Name="FlipZMenu" Header="Flip _Z" Tag="2" Click="FlipSelection_Click" />
+                </MenuItem>
+                <MenuItem Header="Rotate selection 90°">
+                    <MenuItem x:Name="RotateXMenu" Header="Around _X" Tag="0" Click="RotateSelection90_Click" />
+                    <MenuItem x:Name="RotateYMenu" Header="Around _Y" Tag="1" Click="RotateSelection90_Click" />
+                    <MenuItem x:Name="RotateZMenu" Header="Around _Z" Tag="2" Click="RotateSelection90_Click" />
+                </MenuItem>
+                <MenuItem Header="Texture projection">
+                    <MenuItem x:Name="TextureFlipUMenu" Header="Flip _horizontal" Tag="FlipU" Click="TextureTransform_Click" />
+                    <MenuItem x:Name="TextureFlipVMenu" Header="Flip _vertical" Tag="FlipV" Click="TextureTransform_Click" />
+                    <MenuItem x:Name="TextureRotateMenu" Header="Rotate _90°" Tag="Rotate90" Click="TextureTransform_Click" />
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="Select volume">
+                    <MenuItem x:Name="CompleteTallMenu" Header="_Complete tall" Tag="CompleteTall" ToggleType="CheckBox" Click="SelectionVolume_Click" />
+                    <MenuItem x:Name="PartialTallMenu" Header="_Partial tall" Tag="PartialTall" ToggleType="CheckBox" Click="SelectionVolume_Click" />
+                    <MenuItem x:Name="TouchingMenu" Header="_Touching" Tag="Touching" ToggleType="CheckBox" Click="SelectionVolume_Click" />
+                    <MenuItem x:Name="InsideMenu" Header="_Inside" Tag="Inside" ToggleType="CheckBox" Click="SelectionVolume_Click" />
+                </MenuItem>
+                <MenuItem Header="CSG">
+                    <MenuItem x:Name="CsgMergeMenu" Header="_Merge" Click="CsgMerge_Click" />
+                    <MenuItem x:Name="CsgHollowMenu" Header="_Hollow" Click="CsgHollow_Click" />
+                </MenuItem>
+                <MenuItem Header="Patch control points">
+                    <MenuItem x:Name="PatchWeldMenu" Header="_Weld" Click="PatchWeld_Click" />
+                    <MenuItem x:Name="PatchLockMenu" Header="_Lock" Click="PatchLock_Click" />
+                    <MenuItem x:Name="PatchUnlockMenu" Header="_Unlock" Click="PatchUnlock_Click" />
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="Movement axis locks">
+                    <MenuItem x:Name="AxisLockXMenu" Header="Lock _X" Tag="X" ToggleType="CheckBox" Click="AxisLock_Click" />
+                    <MenuItem x:Name="AxisLockYMenu" Header="Lock _Y" Tag="Y" ToggleType="CheckBox" Click="AxisLock_Click" />
+                    <MenuItem x:Name="AxisLockZMenu" Header="Lock _Z" Tag="Z" ToggleType="CheckBox" Click="AxisLock_Click" />
+                </MenuItem>
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="Two views" Click="TwoViews_Click" />
+                <MenuItem Header="Four views" Click="FourViewsMenu_Click" />
+                <MenuItem Header="Maximize / restore active view" Click="Maximize_Click" InputGesture="Ctrl+Space" />
+                <MenuItem Header="2D plane">
+                    <MenuItem Header="Top · XY" Tag="Top" Click="Plane_Click" />
+                    <MenuItem Header="Front · XZ" Tag="Front" Click="Plane_Click" />
+                    <MenuItem Header="Side · YZ" Tag="Side" Click="Plane_Click" />
+                </MenuItem>
+                <MenuItem Header="Show / hide asset browser" Click="Materials_Click" />
+                <MenuItem Header="Problems and output" Click="Console_Click" />
+                <MenuItem Header="Map _Scripts…" Click="MapScripts_Click" />
+                <MenuItem Header="Show / hide inspector" Click="Inspector_Click" />
+                <MenuItem Header="Environment · sunlight and skies" Click="Environment_Click" />
+                <MenuItem Header="Camera preview">
+                    <MenuItem x:Name="CubicClipMenu" Header="_Cubic clipping" ToggleType="CheckBox" Click="CubicClip_Click" />
+                    <MenuItem x:Name="CubicClipNearMenu" Header="Decrease clipping distance" Tag="-1" Click="CubicClipDistance_Click" />
+                    <MenuItem x:Name="CubicClipFarMenu" Header="Increase clipping distance" Tag="1" Click="CubicClipDistance_Click" />
+                    <MenuItem x:Name="AlphaPreviewMenu" Header="_Alpha blending" ToggleType="CheckBox" Click="AlphaPreview_Click" />
+                </MenuItem>
+                <MenuItem Header="Quick visibility">
+                    <MenuItem x:Name="BrushesVisibleMenu" Header="_Brushes" Tag="Brushes" ToggleType="CheckBox" Click="VisibilityCategory_Click" />
+                    <MenuItem x:Name="PatchesVisibleMenu" Header="_Patches" Tag="Patches" ToggleType="CheckBox" Click="VisibilityCategory_Click" />
+                    <MenuItem x:Name="ModelsVisibleMenu" Header="_Models and prefabs" Tag="Models" ToggleType="CheckBox" Click="VisibilityCategory_Click" />
+                    <MenuItem x:Name="EntitiesVisibleMenu" Header="_Entities" Tag="Entities" ToggleType="CheckBox" Click="VisibilityCategory_Click" />
+                </MenuItem>
+                <MenuItem Header="_Filters…" Click="Filters_Click" InputGesture="F" />
+                <MenuItem Header="Map _statistics…" Click="Statistics_Click" InputGesture="M" />
+                <Separator />
+                <MenuItem Header="Frame _all views" Click="FrameAll_Click" />
+                <MenuItem Header="Frame _selection in all views" Click="FrameSelection_Click" InputGesture="End" />
+                <Separator />
+                <MenuItem Header="Import leak path (.lin)…" Click="ImportLeakPath_Click" />
+            </MenuItem>
+            <MenuItem Header="_Create">
+                <MenuItem Header="Water volume…" Click="DrawWater_Click"
+                          ToolTip.Tip="Choose a water appearance, then draw the volume in a grid view." />
+                <MenuItem Header="_Factions…" Click="Factions_Click" />
+                <MenuItem Header="_Models…" Click="Models_Click" />
+                <MenuItem Header="_Weapons…" Click="Weapons_Click" />
+                <MenuItem Header="_Prefabs…" Click="Prefabs_Click" />
+                <MenuItem Header="_Curves, ropes, arches and stairs…" Click="Geometry_Click" />
+                <MenuItem Header="_Bridge between surfaces…" Click="Bridge_Click" />
+                <MenuItem Header="_Gameplay entities…" Click="Gameplay_Click" />
+                <MenuItem Header="Player clip">
+                    <MenuItem x:Name="CreateModelPlayerClipMenu" Header="Create player clip from models" Click="CreateModelPlayerClip_Click"
+                              ToolTip.Tip="Fit editable brushes to solid collision geometry, using smaller sections where the mesh supports them. Models without collision source use an outer visual hull. Review and adjust the result." />
+                    <MenuItem Header="Draw player-clip brush" Click="DrawPlayerClip_Click"
+                              ToolTip.Tip="Draw an invisible volume that blocks players. Shape it around a model in the grid views." />
+                    <MenuItem x:Name="ApplyPlayerClipMenu" Header="Make selected brushes player clip" Click="ApplyPlayerClip_Click"
+                              ToolTip.Tip="Make every face of the selected world brushes invisible player collision. The brushes remain editable." />
+                </MenuItem>
+            </MenuItem>
+            <MenuItem Header="_Organize">
+                <MenuItem Header="_Layers, groups and visibility…" Click="Organization_Click" />
+            </MenuItem>
+            <MenuItem Header="_Entity">
+                <MenuItem Header="_Worldspawn properties" Click="World_Click" />
+                <MenuItem x:Name="ShowScriptMenu" Header="Show _script" Click="ShowScript_Click" />
+                <Separator />
+                <MenuItem Header="Add _light" Click="Light_Click" />
+                <MenuItem Header="Add player _start" Click="Player_Click" />
+            </MenuItem>
+            <MenuItem Header="_Build">
+                <MenuItem Header="Compile BSP (.d3dbsp)…" Click="BuildD3dbsp_Click" />
+                <MenuItem Header="Build PS3 map (.ff)…" Click="Build_Click" />
+                <Separator />
+                <MenuItem Header="Preview last built .d3dbsp" Click="PreviewLastBsp_Click" />
+                <MenuItem Header="Open .d3dbsp preview" Click="OpenBspPreview_Click" />
+            </MenuItem>
+            <MenuItem Header="_Help">
+                <MenuItem Header="_User Guide" Click="UserGuide_Click" />
+                <MenuItem Header="_Controls" Click="Help_Click" />
+            </MenuItem>
+        </Menu>
+        <Border x:Name="EditorToolbar" Grid.Row="1" BorderBrush="#30343B" BorderThickness="0,0,0,1" Padding="6,4">
+            <StackPanel>
+              <WrapPanel Orientation="Horizontal">
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Map" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <Button Classes="toolbarButton" Click="New_Click" ToolTip.Tip="New map (Ctrl/Cmd+N)" AutomationProperties.Name="New map">
+                    <materialIcons:MaterialIcon Kind="FileDocumentOutline" Width="16" Height="16" />
+                </Button>
+                <Button Classes="toolbarButton" Click="Open_Click" ToolTip.Tip="Open map (Ctrl/Cmd+O)" AutomationProperties.Name="Open map">
+                    <materialIcons:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16" />
+                </Button>
+                <Button Classes="toolbarButton" Click="Save_Click" ToolTip.Tip="Save map (Ctrl/Cmd+S)" AutomationProperties.Name="Save map">
+                    <materialIcons:MaterialIcon Kind="ContentSave" Width="16" Height="16" />
+                </Button>
+               </StackPanel>
+               </StackPanel>
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Edit" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <Button x:Name="UndoToolbar" Classes="toolbarButton" Click="Undo_Click" ToolTip.Tip="Undo (Ctrl/Cmd+Z)" AutomationProperties.Name="Undo">
+                    <materialIcons:MaterialIcon Kind="Undo" Width="16" Height="16" />
+                </Button>
+                <Button x:Name="RedoToolbar" Classes="toolbarButton" Click="Redo_Click" ToolTip.Tip="Redo (Ctrl/Cmd+Y)" AutomationProperties.Name="Redo">
+                    <materialIcons:MaterialIcon Kind="Redo" Width="16" Height="16" />
+                </Button>
+                <Button Classes="toolbarButton" Click="Duplicate_Click" ToolTip.Tip="Duplicate selection (Space)" AutomationProperties.Name="Duplicate selection">
+                    <materialIcons:MaterialIcon Kind="ContentDuplicate" Width="16" Height="16" />
+                </Button>
+                <Button Classes="toolbarButton" Click="Delete_Click" ToolTip.Tip="Delete selection (Delete)" AutomationProperties.Name="Delete selection">
+                    <materialIcons:MaterialIcon Kind="DeleteOutline" Width="16" Height="16" />
+                </Button>
+               </StackPanel>
+               </StackPanel>
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Tools" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <ToggleButton x:Name="BrushTool" Classes="toolbarButton" Click="BrushTool_Click" ToolTip.Tip="Create brush (Q)" AutomationProperties.Name="Create brush">
+                    <materialIcons:MaterialIcon Kind="Brush" Width="16" Height="16" />
+                </ToggleButton>
+                <ToggleButton x:Name="FaceTool" Classes="toolbarButton" Click="FaceTool_Click" ToolTip.Tip="Select faces (S)" AutomationProperties.Name="Select faces">
+                    <materialIcons:MaterialIcon Kind="VectorPolygon" Width="16" Height="16" />
+                </ToggleButton>
+                <ToggleButton x:Name="VertexTool" Classes="toolbarButton" Click="VertexTool_Click" ToolTip.Tip="Edit vertices (E)" AutomationProperties.Name="Edit vertices">
+                    <materialIcons:MaterialIcon Kind="VectorPoint" Width="16" Height="16" />
+                </ToggleButton>
+                <ToggleButton x:Name="ClipTool" Classes="toolbarButton" Click="ClipTool_Click" ToolTip.Tip="Clip brushes (X)" AutomationProperties.Name="Clip brushes">
+                    <materialIcons:MaterialIcon Kind="ContentCut" Width="16" Height="16" />
+                </ToggleButton>
+                <ToggleButton x:Name="TerrainTool" Classes="toolbarButton" Click="TerrainTool_Click" ToolTip.Tip="Create terrain (T)" AutomationProperties.Name="Create terrain">
+                    <materialIcons:MaterialIcon Kind="Terrain" Width="16" Height="16" />
+                </ToggleButton>
+                <ToggleButton x:Name="SculptTool" Classes="toolbarButton" Click="SculptTool_Click" ToolTip.Tip="Sculpt terrain (V)" AutomationProperties.Name="Sculpt terrain">
+                    <materialIcons:MaterialIcon Kind="Shovel" Width="16" Height="16" />
+                </ToggleButton>
+                <StackPanel Orientation="Horizontal">
+                    <ToggleButton x:Name="PainterButton" Classes="toolbarButton" Click="Painter_Click"
+                                  ToolTip.Tip="Paint models and prefabs · hold for painter tools" AutomationProperties.Name="Paint models and prefabs">
+                        <materialIcons:MaterialIcon x:Name="PainterIcon" Kind="Spray" Width="16" Height="16" />
+                        <FlyoutBase.AttachedFlyout>
+                            <Flyout Placement="Bottom">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Button Classes="toolbarButton" Click="ModelPainter_Click" ToolTip.Tip="Paint models and prefabs"
+                                            AutomationProperties.Name="Paint models and prefabs">
+                                        <materialIcons:MaterialIcon Kind="Spray" Width="16" Height="16" />
+                                    </Button>
+                                    <Button Classes="toolbarButton" Click="MistPainter_Click" ToolTip.Tip="Paint local mist"
+                                            AutomationProperties.Name="Paint local mist">
+                                        <materialIcons:MaterialIcon Kind="Cloud" Width="16" Height="16" />
+                                    </Button>
+                                </StackPanel>
+                            </Flyout>
+                        </FlyoutBase.AttachedFlyout>
+                    </ToggleButton>
+                    <Button Classes="toolbarButton" Click="PainterTools_Click" ToolTip.Tip="Painter tools"
+                            AutomationProperties.Name="Painter tools">
+                        <materialIcons:MaterialIcon Kind="ChevronDown" Width="12" Height="16" />
+                    </Button>
+                </StackPanel>
+               </StackPanel>
+               </StackPanel>
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Transform / grid" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <TextBlock Text="Transform" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <ComboBox x:Name="TransformCombo" Classes="toolbarCombo" Width="98" SelectionChanged="TransformMode_Changed" />
+                <TextBlock Text="Grid" VerticalAlignment="Center" Margin="10,0,0,0" />
+                <ComboBox x:Name="GridCombo" Classes="toolbarCombo" Width="64" Margin="6,0,0,0" SelectionChanged="Grid_Changed" />
+               </StackPanel>
+               </StackPanel>
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Frame" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <Button Classes="toolbarButton" Click="FrameAll_Click" ToolTip.Tip="Frame all views" AutomationProperties.Name="Frame all views">
+                    <materialIcons:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16" />
+                </Button>
+                <Button Classes="toolbarButton" Click="FrameSelection_Click" ToolTip.Tip="Frame selection in all views (End)" AutomationProperties.Name="Frame selection in all views">
+                    <materialIcons:MaterialIcon Kind="FocusField" Width="16" Height="16" />
+                </Button>
+               </StackPanel>
+               </StackPanel>
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Panels" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <ToggleButton x:Name="MaterialsButton" Classes="toolbarButton" Click="Materials_Click" ToolTip.Tip="Show / hide asset browser" AutomationProperties.Name="Show asset browser">
+                    <materialIcons:MaterialIcon Kind="TextureBox" Width="16" Height="16" />
+                </ToggleButton>
+                <Button Classes="toolbarButton" Click="Models_Click" ToolTip.Tip="Models" AutomationProperties.Name="Models">
+                    <materialIcons:MaterialIcon Kind="CubeOutline" Width="16" Height="16" />
+                </Button>
+                <Button Classes="toolbarButton" Click="Prefabs_Click" ToolTip.Tip="Prefabs" AutomationProperties.Name="Prefabs">
+                    <materialIcons:MaterialIcon Kind="CubeScan" Width="16" Height="16" />
+                </Button>
+                <Button Classes="toolbarButton" Click="Gameplay_Click" ToolTip.Tip="Gameplay entities" AutomationProperties.Name="Gameplay entities">
+                    <materialIcons:MaterialIcon Kind="AccountMultipleOutline" Width="16" Height="16" />
+                </Button>
+                <ToggleButton x:Name="InspectorButton" Classes="toolbarButton" Click="Inspector_Click" ToolTip.Tip="Show / hide inspector" AutomationProperties.Name="Show inspector">
+                    <materialIcons:MaterialIcon Kind="TuneVariant" Width="16" Height="16" />
+                </ToggleButton>
+                <Button Classes="toolbarButton" Click="Environment_Click" ToolTip.Tip="Environment · sunlight and skies" AutomationProperties.Name="Environment">
+                    <materialIcons:MaterialIcon Kind="WeatherSunny" Width="16" Height="16" />
+                </Button>
+               </StackPanel>
+               </StackPanel>
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Build" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <Button Classes="toolbarButton" Click="Build_Click" ToolTip.Tip="Build PS3 map (.ff)" AutomationProperties.Name="Build PS3 map">
+                    <materialIcons:MaterialIcon Kind="Hammer" Width="16" Height="16" />
+                </Button>
+               </StackPanel>
+               </StackPanel>
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Views" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <ToggleButton x:Name="FourViewsButton" Classes="toolbarButton" Click="FourViews_Click" ToolTip.Tip="Toggle two / four views" AutomationProperties.Name="Four views">
+                    <materialIcons:MaterialIcon Kind="ViewGridOutline" Width="16" Height="16" />
+                </ToggleButton>
+                <ToggleButton x:Name="MaximizeButton" Classes="toolbarButton" Click="Maximize_Click" ToolTip.Tip="Maximize / restore active view (Ctrl/Cmd+Space)" AutomationProperties.Name="Maximize active view">
+                    <materialIcons:MaterialIcon Kind="Fullscreen" Width="16" Height="16" />
+                </ToggleButton>
+               </StackPanel>
+               </StackPanel>
+              </WrapPanel>
+              <WrapPanel Orientation="Horizontal">
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Flip / rotate" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <Button x:Name="FlipXToolbar" Classes="toolbarButton" Content="FX" FontSize="11" Tag="0" Click="FlipSelection_Click" ToolTip.Tip="Flip selection across X" AutomationProperties.Name="Flip selection across X" />
+                <Button x:Name="FlipYToolbar" Classes="toolbarButton" Content="FY" FontSize="11" Tag="1" Click="FlipSelection_Click" ToolTip.Tip="Flip selection across Y" AutomationProperties.Name="Flip selection across Y" />
+                <Button x:Name="FlipZToolbar" Classes="toolbarButton" Content="FZ" FontSize="11" Tag="2" Click="FlipSelection_Click" ToolTip.Tip="Flip selection across Z" AutomationProperties.Name="Flip selection across Z" />
+                <Button x:Name="RotateXToolbar" Classes="toolbarButton" Content="RX" FontSize="11" Tag="0" Click="RotateSelection90_Click" ToolTip.Tip="Rotate selection 90° around X" AutomationProperties.Name="Rotate selection 90 degrees around X" />
+                <Button x:Name="RotateYToolbar" Classes="toolbarButton" Content="RY" FontSize="11" Tag="1" Click="RotateSelection90_Click" ToolTip.Tip="Rotate selection 90° around Y" AutomationProperties.Name="Rotate selection 90 degrees around Y" />
+                <Button x:Name="RotateZToolbar" Classes="toolbarButton" Content="RZ" FontSize="11" Tag="2" Click="RotateSelection90_Click" ToolTip.Tip="Rotate selection 90° around Z" AutomationProperties.Name="Rotate selection 90 degrees around Z" />
+               </StackPanel>
+               </StackPanel>
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Texture" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <Button x:Name="TextureFlipUToolbar" Classes="toolbarButton" Content="TU" FontSize="11" Tag="FlipU" Click="TextureTransform_Click" ToolTip.Tip="Flip texture horizontally" AutomationProperties.Name="Flip texture horizontally" />
+                <Button x:Name="TextureFlipVToolbar" Classes="toolbarButton" Content="TV" FontSize="11" Tag="FlipV" Click="TextureTransform_Click" ToolTip.Tip="Flip texture vertically" AutomationProperties.Name="Flip texture vertically" />
+                <Button x:Name="TextureRotateToolbar" Classes="toolbarButton" Content="TR" FontSize="11" Tag="Rotate90" Click="TextureTransform_Click" ToolTip.Tip="Rotate texture 90°" AutomationProperties.Name="Rotate texture 90 degrees" />
+               </StackPanel>
+               </StackPanel>
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Selection volume" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <ToggleButton x:Name="CompleteTallToolbar" Classes="toolbarButton" Content="CT" FontSize="11" Tag="CompleteTall" Click="SelectionVolume_Click" ToolTip.Tip="Complete Tall: select objects fully inside the projected rectangle" AutomationProperties.Name="Complete Tall selection" />
+                <ToggleButton x:Name="PartialTallToolbar" Classes="toolbarButton" Content="PT" FontSize="11" Tag="PartialTall" Click="SelectionVolume_Click" ToolTip.Tip="Partial Tall: select objects intersecting the projected rectangle" AutomationProperties.Name="Partial Tall selection" />
+                <ToggleButton x:Name="TouchingToolbar" Classes="toolbarButton" Content="T" FontSize="11" Tag="Touching" Click="SelectionVolume_Click" ToolTip.Tip="Touching: select objects touching the finite selection volume" AutomationProperties.Name="Touching selection" />
+                <ToggleButton x:Name="InsideToolbar" Classes="toolbarButton" Content="I" FontSize="11" Tag="Inside" Click="SelectionVolume_Click" ToolTip.Tip="Inside: select objects contained by the finite selection volume" AutomationProperties.Name="Inside selection" />
+               </StackPanel>
+               </StackPanel>
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="CSG / patch" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <Button x:Name="CsgMergeToolbar" Classes="toolbarButton" Content="CM" FontSize="11" Click="CsgMerge_Click" ToolTip.Tip="CSG merge two adjacent convex brushes" AutomationProperties.Name="CSG merge" />
+                <Button x:Name="CsgHollowToolbar" Classes="toolbarButton" Content="CH" FontSize="11" Click="CsgHollow_Click" ToolTip.Tip="Hollow an axis-aligned box using the current grid size" AutomationProperties.Name="CSG hollow" />
+                <Button x:Name="PatchWeldToolbar" Classes="toolbarButton" Content="PW" FontSize="11" Click="PatchWeld_Click" ToolTip.Tip="Weld selected patch control points" AutomationProperties.Name="Weld patch control points" />
+                <Button x:Name="PatchLockToolbar" Classes="toolbarButton" Content="PL" FontSize="11" Click="PatchLock_Click" ToolTip.Tip="Lock selected patch control points" AutomationProperties.Name="Lock patch control points" />
+                <Button x:Name="PatchUnlockToolbar" Classes="toolbarButton" Content="PU" FontSize="11" Click="PatchUnlock_Click" ToolTip.Tip="Unlock selected patch control points" AutomationProperties.Name="Unlock patch control points" />
+               </StackPanel>
+               </StackPanel>
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Axis locks" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <ToggleButton x:Name="AxisLockXToolbar" Classes="toolbarButton" Content="LX" FontSize="11" Tag="X" Click="AxisLock_Click" ToolTip.Tip="Lock X movement" AutomationProperties.Name="Lock X movement" />
+                <ToggleButton x:Name="AxisLockYToolbar" Classes="toolbarButton" Content="LY" FontSize="11" Tag="Y" Click="AxisLock_Click" ToolTip.Tip="Lock Y movement" AutomationProperties.Name="Lock Y movement" />
+                <ToggleButton x:Name="AxisLockZToolbar" Classes="toolbarButton" Content="LZ" FontSize="11" Tag="Z" Click="AxisLock_Click" ToolTip.Tip="Lock Z movement" AutomationProperties.Name="Lock Z movement" />
+               </StackPanel>
+               </StackPanel>
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Camera clip" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <ToggleButton x:Name="CubicClipToolbar" Classes="toolbarButton" Content="CC" FontSize="11" Click="CubicClip_Click" ToolTip.Tip="Toggle camera cubic clipping" AutomationProperties.Name="Cubic clipping" />
+                <Button x:Name="CubicClipNearToolbar" Classes="toolbarButton" Content="−" Tag="-1" Click="CubicClipDistance_Click" ToolTip.Tip="Decrease cubic clipping distance" AutomationProperties.Name="Decrease cubic clipping distance" />
+                <TextBlock x:Name="CubicClipDistanceText" Width="42" TextAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="Cubic clipping distance" />
+                <Button x:Name="CubicClipFarToolbar" Classes="toolbarButton" Content="+" Tag="1" Click="CubicClipDistance_Click" ToolTip.Tip="Increase cubic clipping distance" AutomationProperties.Name="Increase cubic clipping distance" />
+                <ToggleButton x:Name="AlphaPreviewToolbar" Classes="toolbarButton" Content="α" Click="AlphaPreview_Click" ToolTip.Tip="Toggle alpha-blended material preview" AutomationProperties.Name="Alpha blending preview" />
+               </StackPanel>
+               </StackPanel>
+               <StackPanel Classes="toolbarSection">
+                <TextBlock Text="Visibility" Classes="toolbarCaption" />
+                <StackPanel Classes="toolbarGroup">
+                <ToggleButton x:Name="BrushesVisibleToolbar" Classes="toolbarButton" Content="B" FontSize="11" Tag="Brushes" Click="VisibilityCategory_Click" ToolTip.Tip="Show or hide brushes" AutomationProperties.Name="Brush visibility" />
+                <ToggleButton x:Name="PatchesVisibleToolbar" Classes="toolbarButton" Content="P" FontSize="11" Tag="Patches" Click="VisibilityCategory_Click" ToolTip.Tip="Show or hide terrain and patches" AutomationProperties.Name="Patch visibility" />
+                <ToggleButton x:Name="ModelsVisibleToolbar" Classes="toolbarButton" Content="M" FontSize="11" Tag="Models" Click="VisibilityCategory_Click" ToolTip.Tip="Show or hide models and prefabs" AutomationProperties.Name="Model visibility" />
+                <ToggleButton x:Name="EntitiesVisibleToolbar" Classes="toolbarButton" Content="E" FontSize="11" Tag="Entities" Click="VisibilityCategory_Click" ToolTip.Tip="Show or hide entities" AutomationProperties.Name="Entity visibility" />
+                <Button Classes="toolbarButton" Click="Filters_Click" ToolTip.Tip="All visibility filters (F)" AutomationProperties.Name="All visibility filters">
+                    <materialIcons:MaterialIcon Kind="FilterVariant" Width="16" Height="16" />
+                </Button>
+               </StackPanel>
+               </StackPanel>
+              </WrapPanel>
+              <Border x:Name="ToolOptions" Classes="toolOptionsBar" BorderThickness="0">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+               <TextBlock x:Name="PainterOptions" Text="Painter · Drag over camera surfaces to paint · Esc cancels a stroke"
+                          Classes="caption" VerticalAlignment="Center" Margin="14,0,0,0" IsVisible="False" />
+               <StackPanel x:Name="CreationOptions" Orientation="Horizontal">
+                <TextBlock Text="Base" VerticalAlignment="Center" Margin="8,0,4,0" />
+                <NumericUpDown x:Name="BaseValue" Width="90" Minimum="-65536" Maximum="65536" Value="0" Increment="16" FormatString="0.##" ValueChanged="ToolSettings_Changed" />
+                <TextBlock Text="Depth" VerticalAlignment="Center" Margin="8,0,4,0" />
+                <NumericUpDown x:Name="DepthValue" Width="90" Minimum="0.25" Maximum="65536" Value="64" Increment="16" FormatString="0.##" ValueChanged="ToolSettings_Changed" />
+                <TextBlock x:Name="CreationHint" Text="Drag to preview · release to create · Esc cancels" Classes="caption" VerticalAlignment="Center" Margin="12,0,0,0" />
+               </StackPanel>
+               <StackPanel x:Name="ClipOptions" Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="Clip" VerticalAlignment="Center" Margin="14,0,6,0" />
+                <ComboBox x:Name="ClipCombo" Width="125" MinHeight="30" SelectionChanged="ClipMode_Changed" />
+                <Button x:Name="ApplyClipButton" Content="Apply" Classes="panelAction" Click="ApplyClip_Click" />
+                <Button x:Name="CancelClipButton" Content="Cancel" Click="CancelClip_Click" />
+                <TextBlock x:Name="ClipHint" Classes="caption" VerticalAlignment="Center" Margin="8,0,0,0" />
+               </StackPanel>
+              </StackPanel>
+              </Border>
+            </StackPanel>
+        </Border>
+        <Grid Grid.Row="2" RowDefinitions="Auto,*">
+            <Border x:Name="CompiledPreviewBanner" Background="#283545" BorderBrush="#6588AB"
+                    BorderThickness="0,0,0,1" Padding="12,8" IsVisible="False">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <StackPanel Spacing="3">
+                        <TextBlock Text="COMPILED .d3dbsp PREVIEW · READ ONLY" FontWeight="Bold" Foreground="#DBECFF" />
+                        <TextBlock x:Name="CompiledPreviewState" TextWrapping="Wrap" Foreground="#FFDBA8" />
+                        <TextBlock x:Name="CompiledPreviewAssets" TextWrapping="Wrap" Foreground="#FFC2A5" />
+                        <TextBlock Text="BSP surfaces with Radiant-encoded baked lighting, placed local XModels, local sky cubemaps and baked reflections on supported wc_water surfaces, including animated Radiant-authored ocean. Compiled model lighting, other material reflections and PS3 runtime shaders are not shown."
+                                   TextWrapping="Wrap" Foreground="#BACBDC" FontSize="11" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Return to source map" Click="ReturnToSource_Click"
+                            VerticalAlignment="Center" AutomationProperties.Name="Return to editable source map" />
+                </Grid>
+            </Border>
+            <Grid x:Name="EditorArea" Grid.Row="1" ColumnDefinitions="*,5,300">
+                <views:ViewportWorkspace x:Name="Workspace" />
+                <GridSplitter x:Name="InspectorSplitter" Grid.Column="1" ResizeDirection="Columns" />
+                <views:SelectionInspector x:Name="Inspector" Grid.Column="2" />
+            </Grid>
+        </Grid>
+        <Border Grid.Row="3" BorderBrush="#30343B" BorderThickness="0,1,0,0" Padding="8,3">
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <TextBlock x:Name="StatusText" Text="Drag to draw · Shift-click/drag to select · Esc deselects · End frames" TextTrimming="CharacterEllipsis" />
+                <StackPanel x:Name="LeakPathControls" Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="12,0,0,0" IsVisible="False" VerticalAlignment="Center">
+                    <TextBlock x:Name="LeakPathLabel" VerticalAlignment="Center" Foreground="#FFB5B5" MaxWidth="180" TextTrimming="CharacterEllipsis" />
+                    <Button x:Name="LeakPreviousButton" Content="◀" Click="LeakPrevious_Click" Padding="6,1" ToolTip.Tip="Previous leak path point" AutomationProperties.Name="Previous leak path point" />
+                    <Button Content="Current" Click="LeakCurrent_Click" Padding="6,1" ToolTip.Tip="Frame current leak path point" AutomationProperties.Name="Frame current leak path point" />
+                    <Button x:Name="LeakNextButton" Content="▶" Click="LeakNext_Click" Padding="6,1" ToolTip.Tip="Next leak path point" AutomationProperties.Name="Next leak path point" />
+                    <Button Content="Clear" Click="LeakClear_Click" Padding="6,1" ToolTip.Tip="Clear imported leak path" AutomationProperties.Name="Clear imported leak path" />
+                </StackPanel>
+                <TextBlock x:Name="CountText" Grid.Column="2" Foreground="#A8ABB1" Margin="16,0,0,0" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

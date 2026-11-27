@@ -8,7 +8,6 @@ on:
       - apps/IW4Studio/**
       - src/**
       - Resources/**
-      - tools/D3dbspLinker/**
       - tools/MapConverter/**
       - tools/MapConverter.IW3/**
       - tools/ShaderConvert/**

@@ -1,0 +1,439 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform.Storage;
+using IW4.AI.XModel;
+using IW4.Formats.SourceFormat.Character;
+using IW4.Radiant.Desktop.Editing;
+using IW4.Radiant.Desktop.Materials;
+using IW4.Radiant.Desktop.Rendering;
+
+namespace IW4.Radiant.Desktop.Views;
+
+public partial class XModelBrowser : UserControl
+{
+    private XModelCatalog? _catalog;
+    private XModelCatalog? _bundledCatalog;
+    private readonly List<XModelThumbnail> _thumbnails = [];
+    private EditorDialogs? _dialogs;
+    private Action<string>? _setStatus;
+    private int _loadRevision;
+    private int _bundledLoadRevision;
+    private bool _manualLoadStarted;
+    private CancellationTokenSource? _filterCancellation;
+    private Window? _previewWindow;
+    private Bitmap? _previewBitmap;
+
+    public XModelBrowser() => InitializeComponent();
+
+    internal event Action? CatalogChanged;
+    internal event Action<string>? FolderLoaded;
+    internal event Action<XModelSource, bool>? PlacementRequested;
+    internal event Action? DropRequested;
+    internal event Action? CatalogReset;
+    internal event Action<XModelSource>? FoliageModelRequested;
+    internal XModelSource? SelectedModel => (ModelList.SelectedItem as XModelThumbnail)?.Model;
+    internal string? SourceDirectory => _catalog?.RootDirectory;
+    internal XModelSource? ResolveModel(string name) => ResolveModel(name, out _);
+
+    internal XModelSource? ResolveModel(string name, out string? error)
+    {
+        error = null;
+        var source = _catalog?.Resolve(name) ?? _bundledCatalog?.Resolve(name);
+        if (source is null)
+        {
+            error = _catalog is null
+                ? "Load an extracted XModel library in the Models tab."
+                : $"Model '{name}' is not in the loaded library. Load the library containing this preset in the Models tab.";
+            return null;
+        }
+        try { _ = source.Document; return source; }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+        {
+            error = exception.Message;
+            return null;
+        }
+    }
+    internal MaterialSource? ResolveMaterial(string name) =>
+        _catalog?.ResolveMaterial(name) ?? _bundledCatalog?.ResolveMaterial(name);
+
+    internal async Task LoadBundledAssetsAsync(string root)
+    {
+        int revision = ++_bundledLoadRevision;
+        try
+        {
+            var catalog = await Task.Run(() => XModelCatalog.ReadBundledRuntimeProps(root));
+            if (revision != _bundledLoadRevision) return;
+            _bundledCatalog = catalog;
+            await FilterModelsAsync();
+            if (revision == _bundledLoadRevision) CatalogChanged?.Invoke();
+        }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+        {
+            if (revision == _bundledLoadRevision) _setStatus?.Invoke($"Bundled physics prop unavailable: {exception.Message}");
+        }
+    }
+
+    internal void InitializeActions(Window owner, EditorSession session, EditorDialogs dialogs,
+        Action finishGestures, Action<string> setStatus)
+    {
+        _dialogs = dialogs;
+        _setStatus = setStatus;
+        BrowseButton.Click += async (_, _) =>
+        {
+            if (dialogs.BlocksInput) return;
+            finishGestures();
+            await BrowseFolderAsync(owner);
+        };
+        ModelFilter.TextChanged += async (_, _) => await FilterModelsAsync();
+        ModelList.SelectionChanged += (_, _) =>
+        {
+            var selected = ModelList.SelectedItem as XModelThumbnail;
+            PlaceButton.IsEnabled = selected is not null;
+            PreviewButton.IsEnabled = selected?.Preview is not null;
+            ImportAdviceButton.IsEnabled = selected is not null;
+            AddFoliageButton.IsEnabled = selected is not null;
+            FindButton.IsEnabled = ReplaceButton.IsEnabled = selected is not null;
+            if (selected is not null)
+            {
+                ModelInfo.Text = $"{selected.Description} · Drag into a viewport or use Place model.";
+                ToolTip.SetTip(ModelInfo, ModelInfo.Text);
+            }
+        };
+        ModelList.AddHandler(PointerPressedEvent, async (_, e) =>
+        {
+            if (dialogs.BlocksInput || !e.GetCurrentPoint(ModelList).Properties.IsLeftButtonPressed) return;
+            XModelThumbnail? selected = null;
+            for (Control? current = e.Source as Control; current is not null && !ReferenceEquals(current, ModelList);
+                 current = current.Parent as Control)
+                if (current.DataContext is XModelThumbnail thumbnail) { selected = thumbnail; break; }
+            if (selected is null) return;
+            ModelList.SelectedItem = selected;
+            try
+            {
+                _ = selected.Model.Document;
+                await DragDrop.DoDragDropAsync(e, XModelDrag.Create(selected.Model, AlignSurface.IsChecked == true), DragDropEffects.Copy);
+            }
+            catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+            { setStatus(exception.Message); }
+        }, handledEventsToo: true);
+        PlaceButton.Click += async (_, _) =>
+        {
+            if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected) return;
+            finishGestures();
+            try { _ = selected.Model.Document; PlacementRequested?.Invoke(selected.Model, AlignSurface.IsChecked == true); }
+            catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+                { await dialogs.MessageAsync("Cannot place model", exception.Message); }
+        };
+        DropButton.Click += (_, _) => { if (!dialogs.BlocksInput) { finishGestures(); DropRequested?.Invoke(); } };
+        FindButton.Click += (_, _) =>
+        {
+            if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected) return;
+            finishGestures();
+            int count = XModelEditing.FindInstances(session, selected.Name);
+            setStatus($"Selected {count} instances of {selected.Name}.");
+        };
+        ReplaceButton.Click += async (_, _) =>
+        {
+            if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected) return;
+            finishGestures();
+            await ReplaceAsync(owner, session, dialogs, selected.Model, setStatus);
+        };
+        PreviewButton.Click += (_, _) =>
+        {
+            if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected) return;
+            finishGestures();
+            ShowPreview(owner, selected.Model);
+        };
+        ImportAdviceButton.Click += async (_, _) =>
+        {
+            if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected) return;
+            await ShowImportAdviceAsync(owner, session, selected.Model);
+        };
+        AddFoliageButton.Click += (_, _) =>
+        {
+            if (dialogs.BlocksInput || ModelList.SelectedItem is not XModelThumbnail selected) return;
+            FoliageModelRequested?.Invoke(selected.Model);
+        };
+    }
+
+    internal async Task BrowseFolderAsync(Window owner)
+    {
+        if (_dialogs is not { } dialogs || dialogs.BlocksInput) return;
+        var folders = await dialogs.ShowModalAsync(() => owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            { Title = "Choose extracted raw assets containing xmodel and model_export", AllowMultiple = false }));
+        if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } root) await LoadFolderAsync(root);
+    }
+
+    internal async Task<bool> LoadFolderAsync(string root, bool nonBlocking = false)
+    {
+        if (_dialogs is not { } dialogs) return false;
+        if (nonBlocking && _manualLoadStarted) return false;
+        if (!nonBlocking) _manualLoadStarted = true;
+        int revision = ++_loadRevision;
+        try
+        {
+            if (nonBlocking) _setStatus?.Invoke("Loading saved XModels…");
+            else dialogs.SetBusy(true);
+            var catalog = await Task.Run(() => XModelCatalog.Read(root));
+            if (revision != _loadRevision) return false;
+            ReleaseImages(invalidateLoad: false);
+            _catalog = catalog;
+            ModelFilter.Text = "";
+            await FilterModelsAsync(revision);
+            if (revision != _loadRevision) return false;
+            CatalogChanged?.Invoke();
+            _setStatus?.Invoke($"Loaded {catalog.Models.Count} XModels from {root}. Search by name to browse matching thumbnails.");
+            FolderLoaded?.Invoke(root);
+            return true;
+        }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+        {
+            if (revision == _loadRevision)
+            {
+                if (nonBlocking) _setStatus?.Invoke($"Could not load saved XModels: {exception.Message}");
+                else
+                {
+                    dialogs.SetBusy(false);
+                    await dialogs.MessageAsync("Cannot load models", exception.Message);
+                }
+            }
+        }
+        finally { if (!nonBlocking) dialogs.SetBusy(false); }
+        return false;
+    }
+
+    internal void ReleaseImages(bool invalidateLoad = true)
+    {
+        if (invalidateLoad)
+        {
+            _loadRevision++;
+            _bundledLoadRevision++;
+            _bundledCatalog = null;
+        }
+        ClosePreview();
+        _filterCancellation?.Cancel();
+        CatalogReset?.Invoke();
+        ModelList.ItemsSource = null;
+        foreach (var thumbnail in _thumbnails) thumbnail.Preview?.Dispose();
+        _thumbnails.Clear();
+        _catalog = null;
+    }
+
+    private async Task FilterModelsAsync(int? loadRevision = null)
+    {
+        _filterCancellation?.Cancel();
+        XModelSource[] allModels = (_catalog?.Models ?? []).Concat(_bundledCatalog?.Models ?? [])
+            .DistinctBy(model => model.Name, StringComparer.Ordinal).ToArray();
+        if (allModels.Length == 0)
+        {
+            EmptyState.IsVisible = true;
+            EmptyState.Text = "Choose an asset library to browse models.";
+            return;
+        }
+        using var cancellation = new CancellationTokenSource();
+        _filterCancellation = cancellation;
+        string filter = ModelFilter.Text ?? "";
+        var models = allModels.Where(model => model.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(model => model.Name.Equals(filter, StringComparison.OrdinalIgnoreCase)).ThenBy(model => model.Name, StringComparer.Ordinal).ToArray();
+        var visible = models.Take(120).ToArray();
+        var cached = _thumbnails.ToDictionary(thumbnail => thumbnail.Name, StringComparer.Ordinal);
+        XModelSource[] missing = visible.Where(model => !cached.ContainsKey(model.Name)).ToArray();
+        var loaded = new List<XModelThumbnail>();
+        try
+        {
+            await Task.Delay(180, cancellation.Token);
+            if (loadRevision is not null && loadRevision != _loadRevision) return;
+            ModelInfo.Text = $"Loading {visible.Length} model previews…";
+            await Task.Run(() =>
+            {
+                var renderer = new XModelPreviewRenderer(ResolveMaterial);
+                foreach (var model in missing)
+                {
+                    cancellation.Token.ThrowIfCancellationRequested();
+                    try { loaded.Add(new XModelThumbnail(model, renderer.Render(model, 96), null)); }
+                    catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+                        { loaded.Add(new XModelThumbnail(model, null, exception.Message)); }
+                }
+            }, cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (loadRevision is not null && loadRevision != _loadRevision) return;
+            _thumbnails.AddRange(loaded);
+            foreach (var thumbnail in loaded) cached[thumbnail.Name] = thumbnail;
+            loaded.Clear();
+            var previews = visible.Select(model => cached[model.Name]).ToArray();
+            var unavailable = previews.Where(preview => preview.Preview is null).ToArray();
+            ModelList.ItemsSource = previews.Where(preview => preview.Preview is not null).ToArray();
+            EmptyState.IsVisible = previews.All(preview => preview.Preview is null);
+            EmptyState.Text = models.Length == 0 ? "No models match this search." :
+                "Matching models have no available previews.";
+            ModelInfo.Text = $"{models.Length} of {allModels.Length} models" +
+                (models.Length > visible.Length ? " · first 120 shown; narrow search" : "") +
+                (unavailable.Length > 0 ? $" · {unavailable.Length} unavailable" : "") +
+                " · Drag to place or use Place model.";
+            ToolTip.SetTip(ModelInfo, unavailable.Length > 0 ? string.Join('\n', unavailable.Select(preview => $"{preview.Name}: {preview.Error}")) : ModelInfo.Text);
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            foreach (var thumbnail in loaded) thumbnail.Preview?.Dispose();
+            if (ReferenceEquals(_filterCancellation, cancellation)) _filterCancellation = null;
+        }
+    }
+
+    private static async Task ReplaceAsync(Window owner, EditorSession session, EditorDialogs dialogs,
+        XModelSource replacement, Action<string> setStatus)
+    {
+        string[] names = session.Document.Entities.Where(XModelGeometry.IsModel).Select(entity => entity.Properties.GetValueOrDefault("model"))
+            .OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        if (names.Length == 0) { await dialogs.MessageAsync("Find / replace models", "This map has no model instances."); return; }
+        var from = new ComboBox { ItemsSource = names, SelectedItem = names.Contains(replacement.Name) ? replacement.Name : names[0], HorizontalAlignment = HorizontalAlignment.Stretch };
+        var selectedOnly = new CheckBox { Content = "Selected instances only" };
+        var replace = new Button { Content = "Replace", HorizontalAlignment = HorizontalAlignment.Right };
+        var cancel = new Button { Content = "Cancel" };
+        var dialog = new Window { Title = "Find / replace models", Width = 480, SizeToContent = SizeToContent.Height, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        dialog.Content = new StackPanel { Margin = new Thickness(20), Spacing = 12, Children =
+        {
+            new TextBlock { Text = "Find model" }, from,
+            new TextBlock { Text = $"Replace with: {replacement.Name}", TextWrapping = TextWrapping.Wrap }, selectedOnly,
+            new TextBlock { Text = "Positions, rotations, scales and other entity properties are preserved.", TextWrapping = TextWrapping.Wrap },
+            new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8, Children = { cancel, replace } }
+        } };
+        cancel.Click += (_, _) => dialog.Close(false);
+        replace.Click += (_, _) => dialog.Close(true);
+        if (!await dialogs.ShowModalAsync(() => dialog.ShowDialog<bool>(owner)) || from.SelectedItem is not string name) return;
+        try { setStatus($"Replaced {XModelEditing.ReplaceInstances(session, name, replacement, selectedOnly.IsChecked == true)} instances of {name} with {replacement.Name}."); }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { await dialogs.MessageAsync("Cannot replace models", exception.Message); }
+    }
+
+    private void ShowPreview(Window owner, XModelSource model)
+    {
+        ClosePreview();
+        var renderer = new XModelPreviewRenderer(ResolveMaterial);
+        var image = new Image { Stretch = Stretch.Uniform, MinHeight = 320 };
+        var yaw = new Slider { Minimum = -180, Maximum = 180, Value = -45 };
+        var pitch = new Slider { Minimum = -85, Maximum = 85, Value = 25 };
+        var zoom = new Slider { Minimum = 0.5, Maximum = 3, Value = 1 };
+        var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var dialog = new Window { Title = model.Name, Width = 640, Height = 690, MinWidth = 400, MinHeight = 480, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var grid = new Grid { RowDefinitions = RowDefinitions.Parse("*,Auto,Auto,Auto,Auto"), Margin = new Thickness(12), RowSpacing = 8 };
+        grid.Children.Add(new Border { Background = new SolidColorBrush(Color.Parse("#303237")), Child = image });
+        AddSlider("Orbit", yaw, 1); AddSlider("Elevation", pitch, 2); AddSlider("Zoom", zoom, 3);
+        Grid.SetRow(status, 4); grid.Children.Add(status);
+        dialog.Content = grid;
+        yaw.ValueChanged += (_, _) => Render(); pitch.ValueChanged += (_, _) => Render(); zoom.ValueChanged += (_, _) => Render();
+        image.PointerPressed += async (_, e) =>
+        {
+            if (_dialogs?.BlocksInput == true || !e.GetCurrentPoint(image).Properties.IsLeftButtonPressed) return;
+            await DragDrop.DoDragDropAsync(e, XModelDrag.Create(model, AlignSurface.IsChecked == true), DragDropEffects.Copy);
+        };
+        dialog.Closed += (_, _) =>
+        {
+            image.Source = null;
+            _previewBitmap?.Dispose();
+            _previewBitmap = null;
+            if (ReferenceEquals(_previewWindow, dialog)) _previewWindow = null;
+        };
+        Render();
+        _previewWindow = dialog;
+        dialog.Show(owner);
+
+        void Render()
+        {
+            try
+            {
+                var next = renderer.Render(model, 512, (float)yaw.Value, (float)pitch.Value, (float)zoom.Value);
+                image.Source = next;
+                _previewBitmap?.Dispose(); _previewBitmap = next;
+                var bounds = model.Bounds;
+                var size = bounds.Max - bounds.Min;
+                status.Text = FormattableString.Invariant($"{model.Document.Triangles.Count:N0} triangles · {model.Document.Materials.Count} materials · {size.X:0.#} × {size.Y:0.#} × {size.Z:0.#} units · Drag the image into a viewport");
+            }
+            catch (Exception exception) when (FileOperationErrors.IsExpected(exception)) { status.Text = exception.Message; }
+        }
+
+        void AddSlider(string label, Slider slider, int row)
+        {
+            var line = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("70,*"), ColumnSpacing = 8 };
+            line.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
+            Grid.SetColumn(slider, 1); line.Children.Add(slider); Grid.SetRow(line, row); grid.Children.Add(line);
+        }
+    }
+
+    private async Task ShowImportAdviceAsync(Window owner, EditorSession session, XModelSource model)
+    {
+        string? root = ReferenceEquals(_catalog?.Resolve(model.Name), model) ? _catalog.RootDirectory :
+            ReferenceEquals(_bundledCatalog?.Resolve(model.Name), model) ? _bundledCatalog.RootDirectory : null;
+        string nativePath = root is null ? "" : Path.Combine(root, "xmodel_native", model.Name + ".json");
+        bool MatchesModel(IW4.Radiant.Desktop.MapSource.MapEntity entity) => XModelGeometry.IsModel(entity) &&
+            entity.Properties["model"].Equals(model.Name, StringComparison.Ordinal);
+        int? placements = session.Document.Entities.Count(MatchesModel);
+        foreach (var instance in session.Document.Entities.Where(PrefabLibrary.IsPrefab))
+        {
+            if (session.Prefabs.GetPreview(instance, session.FilePath) is not { } preview)
+            {
+                placements = null;
+                break;
+            }
+            placements += preview.Entities.Count(MatchesModel);
+        }
+        bool playerBody = false, viewHands = false;
+        try
+        {
+            MapFactionSettings factions = MapFactionAuthoring.Read(session.Document.World.Properties);
+            foreach (FactionAppearance? appearance in new[]
+            {
+                factions.Allies == MapFactionAuthoring.UsArmy ? factions.AlliesAssaultA ?? RangersAssaultAppearance.StockA : null,
+                factions.Axis == MapFactionAuthoring.UsArmy ? factions.AxisAssaultA ?? RangersAssaultAppearance.StockA : null
+            })
+            {
+                if (appearance is null) continue;
+                playerBody |= appearance.Body.Equals(model.Name, StringComparison.Ordinal);
+                viewHands |= appearance.ViewHands.Equals(model.Name, StringComparison.Ordinal);
+            }
+        }
+        catch (InvalidDataException) { /* Malformed map metadata cannot establish a player role. */ }
+        var usage = new XModelUsage(placements, playerBody, viewHands);
+        string context = usage.Description ?? "Usage in this map is unknown.";
+
+        var message = new TextBlock { Text = "Reading native model…", TextWrapping = TextWrapping.Wrap };
+        var window = new Window
+        {
+            Title = $"Import advice · {model.Name}", Width = 600, Height = 430, MinWidth = 420,
+            MinHeight = 280, WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new ScrollViewer { Margin = new Thickness(20), Content = message }
+        };
+        window.Show(owner);
+        if (root is null || !File.Exists(nativePath))
+        {
+            message.Text = context + "\n\n" +
+                $"{model.Name} has authored preview geometry but no native XModel in this library. " +
+                "Vertex stream routing, compiled LOD comparisons, and stock peer comparisons need the native model. " +
+                "Export or import it, then reopen this advice.";
+            return;
+        }
+        try
+        {
+            XModelImportReport report = await Task.Run(() =>
+                ImportAdvisor.AssessModel(new NativeModelPreviewAssets(root).LoadModel(model.Name).Model, usage));
+            if (!window.IsVisible) return;
+            message.Text = XModelAdviceText.Format(report);
+        }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception) || exception is System.Text.Json.JsonException)
+        {
+            if (window.IsVisible) message.Text = context + "\n\nThe native model could not be assessed. " + exception.Message;
+        }
+    }
+
+    private void ClosePreview()
+    {
+        Window? window = _previewWindow;
+        _previewWindow = null;
+        window?.Close();
+        _previewBitmap?.Dispose();
+        _previewBitmap = null;
+    }
+}

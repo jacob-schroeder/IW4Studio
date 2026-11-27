@@ -3,9 +3,9 @@ using System.Text.Json;
 using IW4.Game.Assets;
 using IW4.Game.Assets.RawFile;
 using IW4.Game.Assets.Sound;
+using MapConverter.Game.IW3.Audio;
 using MapConverter.Game.IW3.PC.Extraction;
 using MapConverter.Game.IW3.PS3.Conversion;
-using MapConverter.Game.IW3.PS3.Extraction;
 using MapConverter.Game.IW3.PC.Assets;
 using MapConverter.Game.IW3.PC.Readers;
 
@@ -104,10 +104,10 @@ internal static class Iw3PcAudioCompiler
         }
 
         string[] iwds = sourceLibrary?.IwdPaths.ToArray() ?? LegacyIwds(mapFF, customIwd);
-        var sourceSounds = new Dictionary<string, Iw3Ps3SourceSound>(StringComparer.OrdinalIgnoreCase);
+        var sourceSounds = new Dictionary<string, Iw3SourceSound>(StringComparer.OrdinalIgnoreCase);
         foreach (string name in captures.Keys.Order(StringComparer.Ordinal))
         {
-            var rows = new List<Iw3Ps3SourceSoundRow>();
+            var rows = new List<Iw3SourceSoundRow>();
             foreach (JsonElement source in captures[name].Sound.GetProperty("Rows").EnumerateArray())
             {
                 token.ThrowIfCancellationRequested();
@@ -141,7 +141,8 @@ internal static class Iw3PcAudioCompiler
                     break;
                 }
                 byte[] mp3 = EncodeMp3(payload, loadedFormat, name, payloadName, token);
-                rows.Add(new Iw3Ps3SourceSoundRow(
+                string? speakerMapName = source.GetProperty("SpeakerMapName").GetString();
+                rows.Add(new Iw3SourceSoundRow(
                     source.GetProperty("SecondaryAlias").GetString(), source.GetProperty("ChainAlias").GetString(),
                     source.GetProperty("Sequence").GetInt32(), Single(source, "VolumeMin"), Single(source, "VolumeMax"),
                     Single(source, "PitchMin"), Single(source, "PitchMax"), Single(source, "DistanceMin"),
@@ -150,11 +151,12 @@ internal static class Iw3PcAudioCompiler
                     Single(source, "LfePercentage"), Single(source, "CenterPercentage"),
                     source.GetProperty("StartDelay").GetInt32(), Single(source, "EnvelopMin"),
                     Single(source, "EnvelopMax"), Single(source, "EnvelopPercentage"),
-                    source.TryGetProperty("SpeakerMap", out JsonElement speaker) ? ReadSpeakerMapBytes(speaker) : null,
-                    source.GetProperty("SpeakerMapName").GetString(), null, mp3, 0, 0, 0));
+                    source.TryGetProperty("SpeakerMap", out JsonElement speaker)
+                        ? ReadSpeakerMap(speaker, speakerMapName ?? name) : null,
+                    null, mp3, 0, 0, 0));
             }
             if (skipped.Contains(name)) continue;
-            sourceSounds.Add(name, new Iw3Ps3SourceSound(name, rows));
+            sourceSounds.Add(name, new Iw3SourceSound(name, rows));
         }
         bool removed;
         do
@@ -173,7 +175,7 @@ internal static class Iw3PcAudioCompiler
             }
         }
         while (removed);
-        var audio = Iw3Ps3AudioCompiler.Emit(bootstrapDirectory, ownedPrefix, ambientAliases,
+        var audio = Iw3AudioEmitter.Emit(bootstrapDirectory, ownedPrefix, ambientAliases,
             mapOwned, sharedAliases, sourceSounds, row => row.LoadedPayload ??
                 throw new InvalidDataException("PC sound row has no encoded payload."), token);
         missingSounds.UnionWith(skipped);
@@ -242,42 +244,51 @@ internal static class Iw3PcAudioCompiler
 
     private static float Single(JsonElement row, string field) => row.GetProperty(field).GetSingle();
 
-    private static byte[] ReadSpeakerMapBytes(JsonElement source)
+    private static SpeakerMap ReadSpeakerMap(JsonElement source, string name)
     {
-        var bytes = new byte[SpeakerMap.SerializedSize];
-        bytes[0] = (byte)source.GetProperty("IsDefault").GetInt32();
-        int channelIndex = 0;
-        foreach (JsonElement channel in source.GetProperty("Channels").EnumerateArray())
+        byte isDefault = (byte)source.GetProperty("IsDefault").GetInt32();
+        var channels = new SpeakerMapChannel[2];
+        JsonElement channelRows = source.GetProperty("Channels");
+        if (channelRows.GetArrayLength() != channels.Length)
+            throw new InvalidDataException("PC speaker map has an invalid channel count.");
+        for (int channelIndex = 0; channelIndex < channels.Length; channelIndex++)
         {
-            int outputIndex = 0;
-            foreach (JsonElement output in channel.EnumerateArray())
+            JsonElement channel = channelRows[channelIndex];
+            var outputs = new XAudioChannelMap[2];
+            if (channel.GetArrayLength() != outputs.Length)
+                throw new InvalidDataException("PC speaker map has an invalid output count.");
+            for (int outputIndex = 0; outputIndex < outputs.Length; outputIndex++)
             {
-                int offset = 8 + channelIndex * SpeakerMapChannel.SerializedSize +
-                    outputIndex * XAudioChannelMap.SerializedSize;
-                System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(offset),
-                    output.GetProperty("EntryCount").GetInt32());
-                int speakerIndex = 0;
-                foreach (JsonElement speaker in output.GetProperty("Speakers").EnumerateArray())
+                JsonElement output = channel[outputIndex];
+                int entryCount = output.GetProperty("EntryCount").GetInt32();
+                var speakers = new SpeakerLevels[6];
+                JsonElement speakerRows = output.GetProperty("Speakers");
+                if (speakerRows.GetArrayLength() != speakers.Length)
+                    throw new InvalidDataException("PC speaker map has an invalid speaker count.");
+                for (int speakerIndex = 0; speakerIndex < speakers.Length; speakerIndex++)
                 {
-                    int cell = offset + 4 + speakerIndex * SpeakerLevels.SerializedSize;
-                    System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(cell),
-                        speaker.GetProperty("Speaker").GetInt32());
-                    System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(cell + 4),
-                        speaker.GetProperty("NumLevels").GetInt32());
-                    System.Buffers.Binary.BinaryPrimitives.WriteSingleBigEndian(bytes.AsSpan(cell + 8),
-                        Single(speaker, "Level0"));
-                    System.Buffers.Binary.BinaryPrimitives.WriteSingleBigEndian(bytes.AsSpan(cell + 12),
-                        Single(speaker, "Level1"));
-                    speakerIndex++;
+                    JsonElement speaker = speakerRows[speakerIndex];
+                    speakers[speakerIndex] = new SpeakerLevels
+                    {
+                        Speaker = speaker.GetProperty("Speaker").GetInt32(),
+                        NumLevels = speaker.GetProperty("NumLevels").GetInt32(),
+                        Level0 = Single(speaker, "Level0"),
+                        Level1 = Single(speaker, "Level1")
+                    };
                 }
-                if (speakerIndex != 6) throw new InvalidDataException("PC speaker map has an invalid speaker count.");
-                outputIndex++;
+                outputs[outputIndex] = new XAudioChannelMap
+                {
+                    EntryCount = entryCount,
+                    Speakers = speakers
+                };
             }
-            if (outputIndex != 2) throw new InvalidDataException("PC speaker map has an invalid output count.");
-            channelIndex++;
+            channels[channelIndex] = new SpeakerMapChannel { Outputs = outputs };
         }
-        if (channelIndex != 2) throw new InvalidDataException("PC speaker map has an invalid channel count.");
-        return bytes;
+        return new SpeakerMap
+        {
+            IsDefault = isDefault,
+            Padding = new byte[3], Name = name, Channels = channels
+        };
     }
 
     private static (byte[] Bytes, string Archive)? ReadIwdSound(IReadOnlyList<string> paths, string entryPath)

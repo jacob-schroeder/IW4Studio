@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="IW4.Radiant.Desktop.Views.DestructiblePreviewPanel">
+    <StackPanel Spacing="8">
+        <StackPanel Spacing="2">
+            <TextBlock x:Name="PresetTitle" FontWeight="SemiBold" />
+            <TextBlock Text="Map unchanged · Stock animation and physics are not simulated" Classes="caption"
+                       TextWrapping="Wrap" />
+            <TextBlock x:Name="PreviewAvailabilityHint" Text="Only the intact model can be previewed for this preset."
+                       Classes="caption" TextWrapping="Wrap" IsVisible="False" />
+        </StackPanel>
+        <Grid ColumnDefinitions="90,*" ColumnSpacing="6">
+            <TextBlock Text="Appearance" Classes="fieldLabel" VerticalAlignment="Center" />
+            <ComboBox x:Name="AppearanceBox" Grid.Column="1" HorizontalAlignment="Stretch" />
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+            <Button x:Name="PlayButton" Content="Play destruction" Classes="panelAction" HorizontalAlignment="Stretch" />
+            <Button x:Name="ResetButton" Grid.Column="1" Content="Reset" />
+        </Grid>
+        <Expander x:Name="PartsExpander" Header="Parts" IsExpanded="False">
+            <StackPanel Spacing="7" Margin="0,8,0,0">
+                <Grid x:Name="PartSelectionRow" ColumnDefinitions="90,*" ColumnSpacing="6">
+                    <TextBlock Text="Part" Classes="fieldLabel" VerticalAlignment="Center" />
+                    <ComboBox x:Name="PartBox" Grid.Column="1" HorizontalAlignment="Stretch" />
+                </Grid>
+                <Grid x:Name="PartConditionRow" ColumnDefinitions="90,*" ColumnSpacing="6">
+                    <TextBlock Text="Condition" Classes="fieldLabel" VerticalAlignment="Center" />
+                    <ComboBox x:Name="PartStateBox" Grid.Column="1" HorizontalAlignment="Stretch" />
+                </Grid>
+                <TextBlock x:Name="PartsAvailabilityHint" Classes="caption" TextWrapping="Wrap"
+                           Text="Parts do not affect this appearance." IsVisible="False" />
+                <TextBlock x:Name="TireAvailabilityHint" Classes="caption" TextWrapping="Wrap"
+                           Text="Tire deformation requires stock animations and is unavailable in the map model preview." IsVisible="False" />
+            </StackPanel>
+        </Expander>
+        <TextBlock x:Name="PreviewStatus" Classes="caption" TextWrapping="Wrap" IsVisible="False" />
+    </StackPanel>
+</UserControl>

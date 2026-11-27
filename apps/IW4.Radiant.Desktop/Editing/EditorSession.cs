@@ -1,0 +1,320 @@
+using System.Numerics;
+using System.Diagnostics;
+using IW4.Radiant.Desktop.MapSource;
+using IW4.Radiant.Desktop.Rendering;
+
+namespace IW4.Radiant.Desktop.Editing;
+
+internal sealed class EditorSession
+{
+    internal EditorSession() => Scene = new EditorScene(this);
+    internal EditorVisibility Visibility { get; } = new();
+    internal PrefabLibrary Prefabs { get; } = new();
+    internal EditorScene Scene { get; }
+    private readonly List<(MapDocument Document, long Revision, SelectionPath[] Selection)> _undo = [];
+    private readonly List<(MapDocument Document, long Revision, SelectionPath[] Selection)> _redo = [];
+    private readonly Dictionary<MapTerrain, HashSet<int>> _lockedPatchVertices = new(ReferenceEqualityComparer.Instance);
+    private MapDocument? _beforeEdit;
+    private int _transformPreviewDepth;
+    private readonly Stopwatch _lightSweepClock = new();
+    private MapEntity? _lightSweepEntity;
+    private MapDocument? _lightSweepDocument;
+    private bool _lightSweepPreviewAvailable = true;
+    private SelectionPath[] _beforeSelection = [];
+    private long _revision, _savedRevision, _nextRevision = 1;
+    private Action<Vector3, Vector3?>? _place;
+    internal string? PlacementLabel { get; private set; }
+    internal bool HasPlacement => _place is not null;
+
+    public MapDocument Document { get; private set; } = MapDocument.Create();
+    public EditorSelection Selection { get; } = new();
+    public string? FilePath { get; private set; }
+    public string Material { get; set; } = "";
+    public EditorTool Tool { get; set; }
+    public TransformMode TransformMode { get; set; }
+    public TerrainSculptMode SculptMode { get; set; }
+    public ClipMode ClipMode { get; set; }
+    public AxisLock AxisLock { get; set; }
+    public SelectionVolumeMode SelectionVolumeMode { get; set; }
+    public bool TextureLock { get; set; } = true;
+    public bool CubicClipEnabled { get; set; }
+    public float CubicClipDistance { get; set; } = 4096;
+    public bool AlphaPreviewEnabled { get; set; } = true;
+    public float GridSize { get; set; } = 16;
+    public float AngleSnap { get; set; } = 15;
+    public float ScaleSnap { get; set; } = 0.1f;
+    public float BrushBottom { get; set; }
+    public float BrushHeight { get; set; } = 64;
+    public int TerrainVertices { get; set; } = 5;
+    public float SculptRadius { get; set; } = 128;
+    public float SculptStrength { get; set; } = 8;
+    public float FlattenHeight { get; set; }
+    internal Vector4 PaintColor { get; set; } = Vector4.One;
+    internal float PaintOpacity { get; set; } = 0.25f;
+    internal float PaintAlpha { get; set; } = 1;
+    public bool IsDirty => _revision != _savedRevision || _beforeEdit is not null;
+    internal bool DeferPreviewLighting => _transformPreviewDepth > 0;
+    internal MapEntity? LightSweepPreviewEntity => _lightSweepClock.IsRunning ? _lightSweepEntity : null;
+    internal double LightSweepPreviewSeconds => _lightSweepClock.Elapsed.TotalSeconds;
+    internal bool LightSweepPreviewAvailable
+    {
+        get => _lightSweepPreviewAvailable;
+        set
+        {
+            if (_lightSweepPreviewAvailable == value) return;
+            _lightSweepPreviewAvailable = value;
+            if (!value && _lightSweepClock.IsRunning) StopLightSweepPreview();
+            else LightSweepPlaybackChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+    internal void StartLightSweepPreview(MapEntity entity)
+    {
+        if (!LightSweepPreviewAvailable) return;
+        _lightSweepEntity = entity;
+        _lightSweepDocument = Document;
+        _lightSweepClock.Restart();
+        LightSweepPlaybackChanged?.Invoke(this, EventArgs.Empty);
+    }
+    internal void StopLightSweepPreview()
+    {
+        if (!_lightSweepClock.IsRunning) return;
+        _lightSweepClock.Reset();
+        _lightSweepEntity = null;
+        _lightSweepDocument = null;
+        LightSweepPlaybackChanged?.Invoke(this, EventArgs.Empty);
+    }
+    internal long ContentRevision => _revision;
+    public bool CanTransformSelection => Selection.Count > 0 && Selection.Items.All(item =>
+        Visibility.CanSelect(Document, item) && SelectionGeometry.CanTransform(item)) &&
+        Selection.Items.Any(item => item is not TerrainVertexSelection vertex || !IsPatchVertexLocked(vertex));
+    public (Vector3 Min, Vector3 Max)? SelectionBounds => Scene.Bounds(Selection.Items);
+    public bool CanUndo => _undo.Count > 0;
+    public bool CanRedo => _redo.Count > 0;
+    public event EventHandler? Changed;
+    internal event Action<Matrix4x4>? PointEntityPreviewChanged;
+    internal event Action<MapEntity>? LightInfluencePreviewChanged;
+    internal event EventHandler? LightSweepPlaybackChanged;
+
+    internal void BeginTransformPreview() => _transformPreviewDepth++;
+    internal void EndTransformPreview() => _transformPreviewDepth = Math.Max(0, _transformPreviewDepth - 1);
+
+    internal bool IsPatchVertexLocked(TerrainVertexSelection vertex) =>
+        _lockedPatchVertices.TryGetValue(vertex.Terrain, out var indices) && indices.Contains(vertex.Index);
+
+    internal void SetPatchVertexLock(IEnumerable<TerrainVertexSelection> vertices, bool locked)
+    {
+        foreach (var group in vertices.GroupBy(vertex => vertex.Terrain))
+        {
+            if (!_lockedPatchVertices.TryGetValue(group.Key, out var indices))
+            {
+                if (!locked) continue;
+                _lockedPatchVertices.Add(group.Key, indices = []);
+            }
+            foreach (TerrainVertexSelection vertex in group)
+                if (locked) indices.Add(vertex.Index); else indices.Remove(vertex.Index);
+            if (indices.Count == 0) _lockedPatchVertices.Remove(group.Key);
+        }
+        Refresh();
+    }
+
+    internal void ClearPatchVertexLocks(IEnumerable<MapTerrain>? patches = null)
+    {
+        if (patches is null) _lockedPatchVertices.Clear();
+        else foreach (MapTerrain patch in patches) _lockedPatchVertices.Remove(patch);
+    }
+
+    public void Refresh()
+    {
+        if (_lightSweepClock.IsRunning && (!ReferenceEquals(_lightSweepDocument, Document) ||
+            !ReferenceEquals(Selection.Active, _lightSweepEntity))) StopLightSweepPreview();
+        Visibility.Invalidate();
+        Selection.SetRange(Selection.Items.Where(item => ReferenceEquals(item, Document.World) ||
+            Visibility.CanSelect(Document, item)).ToArray());
+        Scene.Invalidate();
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    internal bool RefreshPointEntityPreview(TransformMode mode, Matrix4x4 delta)
+    {
+        if (!Scene.CanPreviewPointEntityTransform(mode) ||
+            !Scene.UpdatePointEntities(Selection.Items.OfType<MapEntity>())) return false;
+        PointEntityPreviewChanged?.Invoke(delta);
+        return true;
+    }
+    internal void RefreshLightInfluencePreview(MapEntity entity)
+    {
+        if (!Scene.UpdatePointEntities([entity]))
+        {
+            Refresh();
+            return;
+        }
+        LightInfluencePreviewChanged?.Invoke(entity);
+    }
+    public float Snap(float value) => MathF.Round(value / GridSize, MidpointRounding.AwayFromZero) * GridSize;
+
+    public void Select(object? value, bool additive = false, bool toggle = false)
+    {
+        if (value is not null && !ReferenceEquals(value, Document.World) && !Visibility.CanSelect(Document, value)) return;
+        Selection.Set(value, additive, toggle);
+        Refresh();
+    }
+
+    public void SelectRange(IEnumerable<object> values)
+    {
+        Selection.SetRange(values.Where(item => ReferenceEquals(item, Document.World) || Visibility.CanSelect(Document, item)));
+        Refresh();
+    }
+
+    internal void BeginPlacement(string label, Action<Vector3, Vector3?> place)
+    {
+        _place = place;
+        PlacementLabel = label;
+        Refresh();
+    }
+
+    internal void CancelPlacement()
+    {
+        _place = null;
+        PlacementLabel = null;
+        Refresh();
+    }
+
+    internal void Place(Vector3 position, Vector3? normal, bool repeat)
+    {
+        if (_place is not { } place) return;
+        place(position, normal);
+        if (!repeat) CancelPlacement();
+    }
+
+    public void Replace(MapDocument document, string? path)
+    {
+        StopLightSweepPreview();
+        Document = document;
+        _place = null;
+        PlacementLabel = null;
+        FilePath = path;
+        Visibility.Clear();
+        ClearPatchVertexLocks();
+        Prefabs.Reload(document, path);
+        Selection.Clear();
+        _undo.Clear();
+        _redo.Clear();
+        _beforeEdit = null;
+        _transformPreviewDepth = 0;
+        _beforeSelection = [];
+        _revision = _savedRevision = 0;
+        Refresh();
+    }
+
+    public void MarkSaved(string path)
+    {
+        FilePath = path;
+        _savedRevision = _revision;
+        Refresh();
+    }
+
+    public void BeginEdit()
+    {
+        if (_beforeEdit is not null) return;
+        StopLightSweepPreview();
+        _beforeSelection = Selection.Capture(Document);
+        _beforeEdit = Document.Clone();
+    }
+
+    public void CompleteEdit(bool changed)
+    {
+        if (_beforeEdit is { } before && changed)
+        {
+            _undo.Add((before, _revision, _beforeSelection));
+            if (_undo.Count > 32) _undo.RemoveAt(0);
+            _redo.Clear();
+            _revision = _nextRevision++;
+        }
+        else if (_beforeEdit is { } unchanged)
+        {
+            Document = unchanged;
+            Visibility.Clear();
+            ClearPatchVertexLocks();
+            Selection.Restore(Document, _beforeSelection);
+        }
+        _beforeEdit = null;
+        _beforeSelection = [];
+        Refresh();
+    }
+
+    public void CancelEdit()
+    {
+        if (_beforeEdit is { } before)
+        {
+            Document = before;
+            Visibility.Clear();
+            ClearPatchVertexLocks();
+            Selection.Restore(Document, _beforeSelection);
+        }
+        _beforeEdit = null;
+        _beforeSelection = [];
+        Refresh();
+    }
+
+    public void Edit(Action action)
+    {
+        BeginEdit();
+        try
+        {
+            action();
+            CompleteEdit(true);
+        }
+        catch
+        {
+            CancelEdit();
+            throw;
+        }
+    }
+
+    public void Undo()
+    {
+        StopLightSweepPreview();
+        if (_beforeEdit is not null) CancelEdit();
+        if (_undo.Count == 0) return;
+        _redo.Add((Document, _revision, Selection.Capture(Document)));
+        var previous = _undo[^1];
+        _undo.RemoveAt(_undo.Count - 1);
+        Document = previous.Document;
+        Visibility.Clear();
+        ClearPatchVertexLocks();
+        _revision = previous.Revision;
+        Selection.Restore(Document, previous.Selection);
+        Refresh();
+    }
+
+    public void Redo()
+    {
+        StopLightSweepPreview();
+        if (_beforeEdit is not null) CancelEdit();
+        if (_redo.Count == 0) return;
+        _undo.Add((Document, _revision, Selection.Capture(Document)));
+        var next = _redo[^1];
+        _redo.RemoveAt(_redo.Count - 1);
+        Document = next.Document;
+        Visibility.Clear();
+        ClearPatchVertexLocks();
+        _revision = next.Revision;
+        Selection.Restore(Document, next.Selection);
+        Refresh();
+    }
+
+    public static (Vector3 Min, Vector3 Max) EntityBounds(MapEntity entity)
+    {
+        if (PointEntityGeometry.IsPointEntity(entity) && PointEntityGeometry.TryRadiusBounds(entity, out var radiusBounds))
+            return radiusBounds;
+        var bounds = entity.Brushes.Select(brush => brush.GetBounds())
+            .Concat(entity.Terrains.Select(terrain => terrain.GetBounds())).ToArray();
+        if (bounds.Length == 0)
+            return (EntityOrigin(entity) - new Vector3(8), EntityOrigin(entity) + new Vector3(8));
+        return (bounds.Select(value => value.Min).Aggregate(Vector3.Min),
+            bounds.Select(value => value.Max).Aggregate(Vector3.Max));
+    }
+
+    public static Vector3 EntityOrigin(MapEntity entity) =>
+        entity.TryGetOrigin(out Vector3 origin) ? origin : Vector3.Zero;
+}

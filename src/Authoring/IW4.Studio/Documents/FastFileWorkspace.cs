@@ -63,6 +63,12 @@ public sealed class FastFileWorkspace : IDisposable
     public string? ZonePlanProfileName { get; }
     public FastFileDependencyGraph? DependencyGraph { get; }
 
+    public TAsset? GetSingleTargetAsset<TAsset>() where TAsset : class =>
+        LoadedZone.LoadedAssets
+            .Select(result => result.Asset)
+            .OfType<TAsset>()
+            .SingleOrDefault();
+
     public IGfxImagePayloadResolver? FindPackageImageResolver(GfxImageAsset image) =>
         _editingSessionOwner?.FindPackageStreamOwner(image)?.ImagePayloadResolver;
 

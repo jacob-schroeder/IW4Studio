@@ -10,7 +10,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ShaderConvert\ShaderConvert.csproj" />
-    <ProjectReference Include="..\D3dbspLinker\D3dbspLinker.csproj" />
     <ProjectReference Include="..\MapConverter.IW3\MapConverter.IW3.fsproj" />
     <ProjectReference Include="..\..\src\Authoring\IW4.Formats\IW4.Formats.csproj" />
     <ProjectReference Include="..\..\src\Engine\IW4.Game\IW4.Game.csproj" />

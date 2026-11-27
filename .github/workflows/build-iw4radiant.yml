@@ -1,13 +1,13 @@
-name: Build Iw4Radiant
+name: Build IW4.Radiant.Desktop
 
 on:
   push:
     branches:
       - main
     paths:
-      - apps/Iw4Radiant/**
+      - apps/IW4.Radiant.Desktop/**
       - Resources/iw4radiant_logo.*
-      - tools/D3dbspLinker/**
+      - Resources/Bootstrap/ps3/**
       - src/**
       - global.json
       - .github/workflows/build-iw4radiant.yml
@@ -37,9 +37,9 @@ jobs:
         id: version
         shell: bash
         run: |
-          version_line="$(sed -n 's:^[[:space:]]*<VersionPrefix>\([^<]*\)</VersionPrefix>[[:space:]]*$:\1:p' apps/Iw4Radiant/Iw4Radiant.csproj)"
+          version_line="$(sed -n 's:^[[:space:]]*<VersionPrefix>\([^<]*\)</VersionPrefix>[[:space:]]*$:\1:p' apps/IW4.Radiant.Desktop/IW4.Radiant.Desktop.csproj)"
           if [[ ! "$version_line" =~ ^[0-9]+\.[0-9]+$ ]]; then
-            echo "Expected one major.minor VersionPrefix in apps/Iw4Radiant/Iw4Radiant.csproj." >&2
+            echo "Expected one major.minor VersionPrefix in apps/IW4.Radiant.Desktop/IW4.Radiant.Desktop.csproj." >&2
             exit 1
           fi
           public_version="${version_line}.${GITHUB_RUN_NUMBER}"
@@ -75,27 +75,10 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Publish D3dbspLinker
-        shell: bash
-        run: >-
-          dotnet publish tools/D3dbspLinker/D3dbspLinker.csproj
-          --configuration Release
-          --runtime ${{ matrix.runtime }}
-          --self-contained true
-          --output linker-publish
-          -p:ContinuousIntegrationBuild=true
-          -p:Version=${{ needs.version.outputs.public_version }}
-          -p:FileVersion=${{ needs.version.outputs.file_version }}
-          -p:InformationalVersion=${{ needs.version.outputs.informational_version }}
-          -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:DebugSymbols=false
-          -p:DebugType=None
-
       - name: Publish Radiant app
         shell: bash
         run: >-
-          dotnet publish apps/Iw4Radiant/Iw4Radiant.csproj
+          dotnet publish apps/IW4.Radiant.Desktop/IW4.Radiant.Desktop.csproj
           --configuration Release
           --runtime ${{ matrix.runtime }}
           --self-contained true
@@ -108,16 +91,6 @@ jobs:
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:DebugSymbols=false
           -p:DebugType=None
-
-      - name: Add D3dbspLinker to app release
-        shell: bash
-        run: |
-          linker_name="D3dbspLinker"
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            linker_name="D3dbspLinker.exe"
-          fi
-          test -f "linker-publish/${linker_name}"
-          cp "linker-publish/${linker_name}" "publish/${linker_name}"
 
       - name: Remove symbol files
         shell: bash
@@ -146,7 +119,7 @@ jobs:
           <plist version="1.0">
           <dict>
               <key>CFBundleExecutable</key>
-              <string>Iw4Radiant</string>
+              <string>IW4.Radiant.Desktop</string>
               <key>CFBundleIdentifier</key>
               <string>io.github.jacob-schroeder.iw4radiant</string>
               <key>CFBundleName</key>

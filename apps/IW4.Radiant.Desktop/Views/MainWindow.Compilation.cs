@@ -1,0 +1,182 @@
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
+using IW4.Formats.SourceFormat.Material;
+using IW4.Radiant.Desktop.Compilation;
+using IW4.Radiant.Desktop.Editing;
+using IW4.Radiant.Desktop.Materials;
+using IW4.Radiant.Desktop.MapSource;
+
+namespace IW4.Radiant.Desktop.Views;
+
+public partial class MainWindow
+{
+    private string? _buildEmitterAssetsPath;
+    private string? _buildOutputFolder;
+
+    private async void BuildD3dbsp_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs.BlocksInput) return;
+        FinishGestures();
+        try
+        {
+            var file = await _dialogs.ShowModalAsync(async () =>
+            {
+                string? folder = Path.GetDirectoryName(_session.FilePath);
+                return await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+                {
+                    Title = "Compile BSP (.d3dbsp)",
+                    SuggestedFileName = Path.GetFileNameWithoutExtension(_session.FilePath ?? "mp_untitled.map"),
+                    DefaultExtension = "d3dbsp", ShowOverwritePrompt = true,
+                    SuggestedStartLocation = folder is null ? null : await StorageProvider.TryGetFolderFromPathAsync(folder),
+                    FileTypeChoices = [new FilePickerFileType("Compiled IW4 map") { Patterns = ["*.d3dbsp"] }]
+                });
+            });
+            if (file is null) return;
+            string path = file.TryGetLocalPath() ?? throw new NotSupportedException("Choose a local folder for the compiled map.");
+            if (!Path.GetExtension(path).Equals(".d3dbsp", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Choose a filename ending in .d3dbsp.");
+            MapDocument sourceDocument = _session.Document;
+            MapDocument document = sourceDocument.Clone();
+            var (materials, models) = ResolveBuildAssets(document);
+            Func<SelectionPath, bool> navigate = CreateBuildNavigator(sourceDocument);
+            var dialog = new MapBuildWindow(document, path, materials, models, _session.FilePath, navigate);
+            await _dialogs.ShowModalAsync(() => dialog.ShowDialog<object?>(this));
+            if (dialog.BuildAttempted)
+                Workspace.SetBuildResult(dialog.BuildOutput, dialog.BuildProblem, dialog.BuildErrorLocation,
+                    navigate, dialog.CompletedBspPath is { } previewPath ? () => ShowBspPreviewAsync(previewPath) : null);
+            if (dialog.CompletedBspPath is { } completedPath)
+            {
+                RememberBuiltBsp(completedPath, sourceDocument);
+                SetStatus($"Built .d3dbsp: {completedPath}");
+                if (dialog.PreviewRequested) await ShowBspPreviewAsync(completedPath);
+            }
+        }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+        {
+            await _dialogs.MessageAsync("Cannot build .d3dbsp", exception.Message);
+        }
+    }
+
+    private async void Build_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs.BlocksInput) return;
+        FinishGestures();
+        if (!Workspace.TryApplyFogDraft(out string? fogError))
+        {
+            await _dialogs.MessageAsync("Cannot build map", fogError ?? "Global fog draft is invalid.");
+            return;
+        }
+        if (!await _files.SaveAsync(false) || _session.FilePath is not { } sourcePath) return;
+        try
+        {
+            MapDocument sourceDocument = _session.Document;
+            MapDocument document = sourceDocument.Clone();
+            var (materials, models) = ResolveBuildAssets(document);
+            string sourceFolder = Path.GetDirectoryName(sourcePath) ??
+                throw new InvalidDataException("The saved map has no containing directory.");
+            string buildFolder = Path.Combine(sourceFolder, "map_build");
+            Func<SelectionPath, bool> navigate = CreateBuildNavigator(sourceDocument);
+            var dialog = new MapBuildWindow(document, sourcePath, materials, models,
+                _buildEmitterAssetsPath ?? FindEmitterAssetDirectory(sourcePath) ?? "",
+                _buildOutputFolder ?? (Directory.Exists(buildFolder) ? buildFolder : sourceFolder),
+                navigate);
+            await _dialogs.ShowModalAsync(() => dialog.ShowDialog<object?>(this));
+            if (dialog.BuildAttempted)
+            {
+                string? compiledPath = dialog.CompletedDirectory is { } directory
+                    ? Path.Combine(directory, Path.GetFileNameWithoutExtension(sourcePath) + ".d3dbsp") : null;
+                Workspace.SetBuildResult(dialog.BuildOutput, dialog.BuildProblem, dialog.BuildErrorLocation,
+                    navigate, compiledPath is not null ? () => ShowBspPreviewAsync(compiledPath) : null);
+            }
+            if (dialog.CompletedDirectory is not { } completedDirectory) return;
+            _buildEmitterAssetsPath = dialog.EmitterAssetDirectory;
+            _buildOutputFolder = dialog.OutputFolder;
+            string bspPath = Path.Combine(completedDirectory,
+                Path.GetFileNameWithoutExtension(sourcePath) + ".d3dbsp");
+            RememberBuiltBsp(bspPath, sourceDocument);
+            SetStatus($"Built PS3 map: {completedDirectory}");
+            if (dialog.PreviewRequested) await ShowBspPreviewAsync(bspPath);
+        }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+        {
+            await _dialogs.MessageAsync("Cannot build map", exception.Message);
+        }
+    }
+
+    private static string? FindEmitterAssetDirectory(string mapPath)
+    {
+        for (DirectoryInfo? directory = new(Path.GetDirectoryName(mapPath) ?? "");
+             directory is not null;
+             directory = directory.Parent)
+        {
+            string raw = Path.Combine(directory.FullName, "raw");
+            if (Directory.Exists(Path.Combine(raw, "fx")) &&
+                Directory.Exists(Path.Combine(raw, "soundaliases")))
+                return raw;
+        }
+        return null;
+    }
+
+    private Func<SelectionPath, bool> CreateBuildNavigator(MapDocument sourceDocument)
+    {
+        var targets = new Dictionary<SelectionPath, object>();
+        for (int entityIndex = 0; entityIndex < sourceDocument.Entities.Count; entityIndex++)
+        {
+            MapEntity entity = sourceDocument.Entities[entityIndex];
+            targets.Add(new SelectionPath(entityIndex), entity);
+            for (int brushIndex = 0; brushIndex < entity.Brushes.Count; brushIndex++)
+                targets.Add(new SelectionPath(entityIndex, Brush: brushIndex), entity.Brushes[brushIndex]);
+            for (int terrainIndex = 0; terrainIndex < entity.Terrains.Count; terrainIndex++)
+                targets.Add(new SelectionPath(entityIndex, Terrain: terrainIndex), entity.Terrains[terrainIndex]);
+        }
+        return location =>
+        {
+            if (!ReferenceEquals(_session.Document, sourceDocument) ||
+                !targets.TryGetValue(location, out object? target) ||
+                !ReferenceEquals(location.Resolve(sourceDocument), target) ||
+                !_session.Visibility.CanSelect(sourceDocument, target)) return false;
+            _session.Select(target);
+            if (!ReferenceEquals(_session.Selection.Active, target)) return false;
+            FrameSelection_Click(this, new RoutedEventArgs());
+            SetStatus("Selected the object reported by the build error.");
+            return true;
+        };
+    }
+
+    private (Dictionary<string, MaterialSource> Materials, Dictionary<string, XModelSource> Models)
+        ResolveBuildAssets(MapDocument document)
+    {
+        document = PrefabLibrary.ExpandForCompilation(document, _session.FilePath);
+        IReadOnlyDictionary<string, WaterMaterialDefinition> waterDefinitions =
+            WaterMaterialAuthoring.ReadDefinitions(document.World.Properties);
+        string[] shadowModelNames = document.Entities
+            .Where(entity => entity.ClassName == "misc_model" && MapModelCompiler.CastsShadow(entity))
+            .Select(entity => entity.Properties.GetValueOrDefault("model") ?? "")
+            .Distinct(StringComparer.Ordinal).ToArray();
+        bool hasPrimaryLocalLights = document.Entities.Any(entity => entity.ClassName == "light" &&
+            MapLight.TryCreate(entity, document.ResolveTargets(entity), out MapLight light, out _) && light.IsPrimary);
+        bool hasStages = document.Entities.Any(entity => entity.ClassName == "stage");
+        // Stage and local-primary assignment need every static model's bounds, independently
+        // of whether its geometry participates in the shadow bake.
+        IEnumerable<string> modelNames = hasStages || hasPrimaryLocalLights
+            ? document.Entities.Where(entity => entity.ClassName == "misc_model")
+                .Select(entity => entity.Properties.GetValueOrDefault("model") ?? "").Distinct(StringComparer.Ordinal)
+            : shadowModelNames;
+        var models = new Dictionary<string, XModelSource>(StringComparer.Ordinal);
+        foreach (string name in modelNames)
+            models.Add(name, Workspace.Models.ResolveModel(name) ??
+                throw new InvalidDataException($"Model '{name}' is unavailable. Load it in the model browser before building."));
+        var materials = new Dictionary<string, MaterialSource>(StringComparer.Ordinal);
+        foreach (string name in document.Brushes.SelectMany(brush => brush.Faces)
+                     .Select(face => face.Material).Concat(document.Terrains.Select(terrain => terrain.Material))
+                     .Concat(shadowModelNames.SelectMany(name => models[name].Document.Materials).Select(material => material.Name))
+                     .Concat(document.Brushes.Where(BrushGlass.IsGlass).SelectMany(BrushGlassCompiler.RequiredMaterialNames))
+                     .Distinct(StringComparer.Ordinal))
+        {
+            if (ClipBrushMaterial.IsCollisionOnly(name) || CaulkMaterial.IsCaulk(name)) continue;
+            materials.Add(name, ResolveMaterial(name, waterDefinitions) ??
+                throw new InvalidDataException($"Material '{name}' is unavailable. Load it in the asset browser before building."));
+        }
+        return (materials, models);
+    }
+}

@@ -168,7 +168,7 @@ public static class XModelCharacterLodGenerator
             {
                 throw new NotSupportedException(
                     "Automatic LOD generation could not load its bundled meshoptimizer library. " +
-                    "Reinstall D3dbspLinker with its native libraries. Supported platforms are Apple Silicon, " +
+                    "Reinstall the authoring application with its native libraries. Supported platforms are Apple Silicon, " +
                     "Windows x64/arm64, and Linux x64/arm64.", exception);
             }
             if (outputCount < (nuint)3 || outputCount > (nuint)output.Length || outputCount % (nuint)3 != 0)

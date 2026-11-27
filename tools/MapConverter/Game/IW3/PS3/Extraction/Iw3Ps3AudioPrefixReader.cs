@@ -1,22 +1,12 @@
 using System.Buffers.Binary;
+using IW4.Game.Assets.Sound;
+using MapConverter.Game.IW3.Audio;
 
 namespace MapConverter.Game.IW3.PS3.Extraction;
 
-internal sealed record Iw3Ps3SourceSoundRow(
-    string? SecondaryAlias, string? ChainAlias,
-    int Sequence, float VolumeMin, float VolumeMax, float PitchMin, float PitchMax,
-    float DistanceMin, float DistanceMax, int Flags,
-    float SlavePercentage, float Probability, float LfePercentage,
-    float CenterPercentage, int StartDelay, float EnvelopMin, float EnvelopMax,
-    float EnvelopPercentage, byte[]? SpeakerMap, string? SpeakerMapName,
-    string? LoadedSoundName, byte[]? LoadedPayload,
-    uint PackageIndex, int PackageOffset, int PackageLength);
-
-internal sealed record Iw3Ps3SourceSound(string Name, IReadOnlyList<Iw3Ps3SourceSoundRow> Rows);
-
 internal static partial class Iw3Ps3FastFileCatalog
 {
-    internal static IReadOnlyDictionary<string, Iw3Ps3SourceSound> ReadSourceSounds(
+    internal static IReadOnlyDictionary<string, Iw3SourceSound> ReadSourceSounds(
         string path, IReadOnlySet<string> names, CancellationToken token)
     {
         var (data, end) = ReadDecoded(path, token);
@@ -38,7 +28,7 @@ internal static partial class Iw3Ps3FastFileCatalog
     {
         private sealed record SourceLoadedSound(string Name, Region? Payload);
 
-        internal Dictionary<string, Iw3Ps3SourceSound> SourceSounds { get; } =
+        internal Dictionary<string, Iw3SourceSound> SourceSounds { get; } =
             new(StringComparer.Ordinal);
         internal Dictionary<string, byte[]> SourceLoadedSounds { get; } =
             new(StringComparer.Ordinal);
@@ -62,7 +52,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                     Pointer? aliases = ReadArray(rawAliases, 4,
                         Size(count, 0x5c), "sound-alias-rows");
                     var dependencies = new HashSet<int>();
-                    var rows = new List<Iw3Ps3SourceSoundRow>();
+                    var rows = new List<Iw3SourceSoundRow>();
                     if (aliases is not null && rawAliases == uint.MaxValue)
                     {
                         for (int index = 0; index < count; index++)
@@ -106,7 +96,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                                     packageLength = checked((int)U32(file + 12));
                                 }
                                 int speakerOffset = speaker?.Region.FileOffset ?? -1;
-                                rows.Add(new Iw3Ps3SourceSoundRow(secondary, chain,
+                                rows.Add(new Iw3SourceSoundRow(secondary, chain,
                                     checked((int)U32(row + 0x14)),
                                     F32(row + 0x18), F32(row + 0x1c),
                                     F32(row + 0x20), F32(row + 0x24),
@@ -117,8 +107,9 @@ internal static partial class Iw3Ps3FastFileCatalog
                                     checked((int)U32(row + 0x44)),
                                     F32(row + 0x4c), F32(row + 0x50),
                                     F32(row + 0x54), speakerOffset < 0 ? null :
-                                        _data.AsSpan(speakerOffset, 0x198).ToArray(),
-                                    speaker?.Value as string, loadedName, loaded,
+                                        ReadSpeakerMap(_data.AsSpan(speakerOffset, SpeakerMap.SerializedSize),
+                                            speaker?.Value as string ?? name),
+                                    loadedName, loaded,
                                     package, packageOffset, packageLength));
                             }
                         }
@@ -127,7 +118,7 @@ internal static partial class Iw3Ps3FastFileCatalog
                         throw Unsupported("sound alias list has no inline alias rows");
                     if (_sourceSoundNames is { } wanted &&
                         (wanted.Count == 0 || wanted.Contains(name)) &&
-                        !SourceSounds.TryAdd(name, new Iw3Ps3SourceSound(name, rows)))
+                        !SourceSounds.TryAdd(name, new Iw3SourceSound(name, rows)))
                         throw Invalid($"duplicate source sound '{name}'");
                     return Named("sound", name, root, dependencies);
                 }
@@ -207,6 +198,43 @@ internal static partial class Iw3Ps3FastFileCatalog
             if (map is not null && raw == uint.MaxValue)
                 map = Remember(map with { Value = ReadString(U32(map.Region.FileOffset + 4)) });
             return map;
+        }
+
+        private static SpeakerMap ReadSpeakerMap(ReadOnlySpan<byte> bytes, string name)
+        {
+            var channels = new SpeakerMapChannel[2];
+            for (int channel = 0; channel < channels.Length; channel++)
+            {
+                var outputs = new XAudioChannelMap[2];
+                for (int output = 0; output < outputs.Length; output++)
+                {
+                    int offset = 8 + channel * SpeakerMapChannel.SerializedSize +
+                        output * XAudioChannelMap.SerializedSize;
+                    var speakers = new SpeakerLevels[6];
+                    for (int index = 0; index < speakers.Length; index++)
+                    {
+                        int cell = offset + 4 + index * SpeakerLevels.SerializedSize;
+                        speakers[index] = new SpeakerLevels
+                        {
+                            Speaker = BinaryPrimitives.ReadInt32BigEndian(bytes[cell..]),
+                            NumLevels = BinaryPrimitives.ReadInt32BigEndian(bytes[(cell + 4)..]),
+                            Level0 = BinaryPrimitives.ReadSingleBigEndian(bytes[(cell + 8)..]),
+                            Level1 = BinaryPrimitives.ReadSingleBigEndian(bytes[(cell + 12)..])
+                        };
+                    }
+                    outputs[output] = new XAudioChannelMap
+                    {
+                        EntryCount = BinaryPrimitives.ReadInt32BigEndian(bytes[offset..]),
+                        Speakers = speakers
+                    };
+                }
+                channels[channel] = new SpeakerMapChannel { Outputs = outputs };
+            }
+            return new SpeakerMap
+            {
+                IsDefault = bytes[0], Padding = bytes.Slice(1, 3).ToArray(),
+                Name = name, Channels = channels
+            };
         }
 
         private float F32(int offset) => BinaryPrimitives.ReadSingleBigEndian(_data.AsSpan(offset, 4));

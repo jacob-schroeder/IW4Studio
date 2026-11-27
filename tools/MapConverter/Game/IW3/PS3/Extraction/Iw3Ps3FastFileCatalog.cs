@@ -9,6 +9,7 @@ using IW4.Game.Assets.Physics;
 using IW4.Game.Assets.RawFile;
 using IW4.Game.Assets.Image;
 using IW4.Game.Assets.Fx;
+using MapConverter.Game.IW3.Audio;
 using MapConverter.Game.IW3.PC.Images;
 using MapConverter.Game.IW3.PC.Extraction;
 using MapConverter.Game.IW3.PS3.Materials;
@@ -38,7 +39,7 @@ internal static partial class Iw3Ps3FastFileCatalog
         Iw3Ps3ShaderLibrary stockSources,
         string? vehicleRecipeSource,
         out IReadOnlySet<string> splitStaticModelNames,
-        out IReadOnlyDictionary<string, Iw3Ps3SourceSound> mapSounds,
+        out IReadOnlyDictionary<string, Iw3SourceSound> mapSounds,
         out (string Script, string[] ModelNames, string[] EffectNames, string[] SoundNames) vehicleRecipes,
         CancellationToken token)
     {

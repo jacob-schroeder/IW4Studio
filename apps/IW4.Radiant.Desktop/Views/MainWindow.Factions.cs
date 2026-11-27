@@ -1,0 +1,39 @@
+using Avalonia.Interactivity;
+using IW4.Formats.SourceFormat.Character;
+
+namespace IW4.Radiant.Desktop.Views;
+
+public partial class MainWindow
+{
+    private async void Factions_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_dialogs.BlocksInput) return;
+        FinishGestures();
+        try
+        {
+            MapFactionSettings before = MapFactionAuthoring.Read(_session.Document.World.Properties);
+            var window = new FactionsWindow(before, FindBootstrapAssets(), _session.FilePath);
+            MapFactionSettings? selected = await _dialogs.ShowModalAsync(() => window.ShowDialog<MapFactionSettings?>(this));
+            if (selected is null || selected == before) return;
+            _session.Edit(() => MapFactionAuthoring.Write(_session.Document.World.Properties, selected));
+            Workspace.Camera.RefreshWalkPlayerAppearance();
+            SetStatus("Faction choices and appearances updated. Save the map and rebuild to use them in game.");
+        }
+        catch (Exception exception) when (FileOperationErrors.IsExpected(exception))
+        {
+            await _dialogs.MessageAsync("Cannot open factions", exception.Message);
+        }
+    }
+
+    private string? FindBootstrapAssets()
+    {
+        string local = Path.Combine(AppContext.BaseDirectory, "bootstrap", "ps3");
+        if (Directory.Exists(Path.Combine(local, "xmodel_native"))) return local;
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            string candidate = Path.Combine(directory.FullName, "Resources", "Bootstrap", "ps3");
+            if (Directory.Exists(Path.Combine(candidate, "xmodel_native"))) return candidate;
+        }
+        return null;
+    }
+}

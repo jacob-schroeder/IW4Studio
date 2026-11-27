@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:IW4.Radiant.Desktop.Views"
+             x:Class="IW4.Radiant.Desktop.Views.FxSoundBrowser">
+    <Grid RowDefinitions="Auto,*,Auto" Background="#222427" RowSpacing="4">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="12,5,12,0">
+            <TextBox x:Name="SearchBox" Classes="compact" PlaceholderText="Search assets" />
+            <Button x:Name="ChooseSourceButton" Grid.Column="1" Content="Choose library…" Classes="panelAction" />
+        </Grid>
+        <Grid Grid.Row="1" ColumnDefinitions="*,184" ColumnSpacing="8" Margin="12,0">
+            <ListBox x:Name="AssetList" Background="Transparent" BorderThickness="0" Padding="0">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="views:FxSoundAsset">
+                        <StackPanel Margin="2,3" Spacing="1">
+                            <TextBlock Text="{CompiledBinding DisplayName}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{CompiledBinding Category}" Classes="caption" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock x:Name="EmptyState" Classes="caption" Text="Choose a library to browse assets."
+                       Margin="12" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       IsHitTestVisible="False" />
+            <Border Grid.Column="1" Background="#292C31" CornerRadius="7" Padding="8">
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+              <StackPanel Spacing="4">
+                <TextBlock Text="Selected asset" Classes="fieldLabel" />
+                <Grid RowDefinitions="Auto,Auto" RowSpacing="4">
+                    <Button x:Name="PreviewButton" Content="Preview" Classes="panelAction" IsEnabled="False"
+                            ToolTip.Tip="Inspect this asset before placing it in the map." />
+                    <Button x:Name="UseOnSelectedSoundButton" Grid.Row="1" Content="Use on selected sound"
+                            Classes="compact panelAction" IsVisible="False" IsEnabled="False"
+                            ToolTip.Tip="Change the one selected sound marker to this sound." />
+                </Grid>
+                <TextBlock x:Name="AssetName" Text="Select an asset" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                           FontFamily="Menlo,Consolas,monospace" FontSize="11" />
+                <TextBlock x:Name="AssetDetail" Classes="caption" TextWrapping="Wrap" />
+                <TextBlock x:Name="PreviewStateText" Classes="caption" Text="Select an asset to preview."
+                           TextWrapping="Wrap" />
+              </StackPanel>
+            </ScrollViewer>
+            </Border>
+        </Grid>
+        <StackPanel Grid.Row="2" Spacing="4" Margin="12,0,12,8">
+            <TextBlock x:Name="SourceText" Text="Choose the raw library" Classes="caption"
+                       TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="MapPreviewStateText" Classes="caption" IsVisible="False"
+                       Text="Map sounds off · use Sounds above the camera." TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="ResultText" Classes="caption" Text="Use the same raw library as Build PS3 map."
+                       TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+    </Grid>
+</UserControl>

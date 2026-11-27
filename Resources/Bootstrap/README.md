@@ -1,6 +1,6 @@
 # PS3 map startup assets
 
-`ps3/` is the disk source bundle for the current Rangers/OpFor Free-for-all and Team Deathmatch profile. D3dbspLinker copies it to `bootstrap/ps3/` beside the executable during build and publish. Normal `build` commands load these files automatically and require no donor fastfile or original image package.
+`ps3/` is the disk source bundle for the current Rangers/OpFor Free-for-all and Team Deathmatch profile. Iw4Radiant copies it to `bootstrap/ps3/` beside the executable during build and publish. Normal `build` commands load these files automatically and require no donor fastfile or original image package.
 
 Full IW3 PC and IW3 PS3 conversions accept `--factions us/russia` (the default Rangers/Russian airborne bundle) or `--factions tf141/opfor` (Afghan's desert TF141/Middle Eastern OpFor bundle). F# `FactionRules` selects the model and faction-icon roots together with the map GSC's `game["allies"]` and `game["axis"]` values. The Afghan native IDs are `socom_141_desert` and `opforce_composite`. Its player classes include assault, SMG, LMG, shotgun, sniper, and riot shield, with their heads, viewhands, and faction cases. These profiles use the game's existing character and mptype scripts.
 
@@ -15,7 +15,7 @@ The original assets were extracted offline from the local PS3 `mp_terminal.ff` d
 Regenerate into a new staging directory before replacing reviewed sources:
 
 ```sh
-D3dbspLinker export-bootstrap /path/to/mp_terminal.ff /path/to/raw /path/to/new-bootstrap
+IW4.Radiant.Desktop --d3dbsp-linker export-bootstrap /path/to/mp_terminal.ff /path/to/raw /path/to/new-bootstrap
 ```
 
 Extraction may load original dependency zones and their adjacent image packages. It is separate from the ordinary map build command. Missing complete source data fails explicitly.
@@ -57,7 +57,7 @@ The weapon's `heavygun_fire` and `minigun_rumble` definitions, plus their four `
 Offline regeneration, for maintainers only:
 
 ```sh
-D3dbspLinker export-assets /path/to/mp_checkpoint.ff /path/to/raw /path/to/new-turret-bundle --weapon turret_minigun_mp --xmodel weapon_minigun --dependencies /path/to/common_mp.ff
+IW4.Radiant.Desktop --d3dbsp-linker export-assets /path/to/mp_checkpoint.ff /path/to/raw /path/to/new-turret-bundle --weapon turret_minigun_mp --xmodel weapon_minigun --dependencies /path/to/common_mp.ff
 ```
 
 In IW4Radiant, open the **Weapons** tab (or **Create → Weapons…**) and drag **Mounted minigun** onto a camera surface or grid, or use **Place mounted minigun**. Both this browser and the existing gameplay entity menu create the same `misc_turret` with its model and weapon references already set. The browser reads the bundled native model for its thumbnail and supplies model/material fallbacks for viewport drawing; loaded library assets retain precedence in the scene. No separate model extraction is required.
@@ -73,7 +73,7 @@ The supported runtime profile comes from PS3 `mp_favela.ff`, model DynEntity lis
 Offline extraction with `common_mp.ff` recovered 55 asset definitions. Of 144 source/payload files, 121 matched existing bootstrap files exactly and 23 were added (270,012 bytes). Normal map builds resolve these sources without loading stock fastfiles:
 
 ```sh
-D3dbspLinker export-assets /path/to/mp_favela.ff /path/to/raw /path/to/new-soccer-bundle --xmodel soccer_ball --dependencies /path/to/common_mp.ff
+IW4.Radiant.Desktop --d3dbsp-linker export-assets /path/to/mp_favela.ff /path/to/raw /path/to/new-soccer-bundle --xmodel soccer_ball --dependencies /path/to/common_mp.ff
 ```
 
 On 2026-09-29 the user built a fastfile containing the authored ball, loaded it on PS3, and confirmed that shooting it made it bounce around. This is user-reported authored-map loading and bullet-response evidence; the candidate was not independently hashed. The user then confirmed that walking into the stock Favela ball does not move it, matching the authored ball, and explicitly accepted RAD-028 as complete and working on PS3 hardware. Explosion response and multiplayer synchronization remain unverified. No physics values were changed for the player-contact comparison.
