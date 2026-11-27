@@ -12,11 +12,10 @@ namespace IW4.Studio.Desktop.Workbench.Tools.ImageFilePak;
 public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
 {
     private readonly IWorkbenchSelectionContext _selectionContext;
-    private readonly IReadOnlyList<ImageFilePakEntryViewModel> _allEntries;
-    private readonly IReadOnlyDictionary<
-        WorkbenchStreamedImageIdentity,
-        ImageFilePakEntryViewModel> _entriesByIdentity;
-    private IReadOnlyList<ImageFilePakEntryViewModel> _visibleEntries;
+    private FastFileWorkspace? _workspaceToCapture;
+    private IReadOnlyList<ImageFilePakEntryViewModel> _allEntries = [];
+    private Dictionary<WorkbenchStreamedImageIdentity, ImageFilePakEntryViewModel> _entriesByIdentity = [];
+    private IReadOnlyList<ImageFilePakEntryViewModel> _visibleEntries = [];
     private ImageFilePakEntryViewModel? _selectedEntry;
     private string _searchText = string.Empty;
     private bool _disposed;
@@ -25,15 +24,25 @@ public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
         FastFileWorkspace workspace,
         IWorkbenchSelectionContext selectionContext)
     {
-        ArgumentNullException.ThrowIfNull(workspace);
+        _workspaceToCapture = workspace ?? throw new ArgumentNullException(nameof(workspace));
 
         _selectionContext = selectionContext
             ?? throw new ArgumentNullException(nameof(selectionContext));
-        _allEntries = CaptureEntries(workspace);
-        _entriesByIdentity = _allEntries.ToDictionary(entry => entry.Identity);
-        _visibleEntries = _allEntries;
         _selectionContext.SelectionChanged +=
             SelectionContext_SelectionChanged;
+    }
+
+    internal void EnsureCaptured()
+    {
+        if (_workspaceToCapture is not { } workspace)
+            return;
+
+        IReadOnlyList<ImageFilePakEntryViewModel> entries = CaptureEntries(workspace);
+        _entriesByIdentity = entries.ToDictionary(entry => entry.Identity);
+        _allEntries = entries;
+        _workspaceToCapture = null;
+        RebuildProjection();
+        OnPropertyChanged(nameof(TotalCount));
     }
 
     public IReadOnlyList<ImageFilePakEntryViewModel> VisibleEntries
@@ -90,18 +99,22 @@ public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
             return;
 
         _disposed = true;
+        _workspaceToCapture = null;
         _selectionContext.SelectionChanged -=
             SelectionContext_SelectionChanged;
     }
 
     internal ImageFilePakEntryViewModel RequireEntry(
-        WorkbenchStreamedImageIdentity identity) =>
-        _entriesByIdentity.TryGetValue(
+        WorkbenchStreamedImageIdentity identity)
+    {
+        EnsureCaptured();
+        return _entriesByIdentity.TryGetValue(
             identity,
             out ImageFilePakEntryViewModel? entry)
             ? entry
             : throw new KeyNotFoundException(
                 "The streamed image is not part of this workspace.");
+    }
 
     private static IReadOnlyList<ImageFilePakEntryViewModel> CaptureEntries(
         FastFileWorkspace workspace)
@@ -130,9 +143,9 @@ public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
     private void RebuildProjection()
     {
         string query = SearchText.Trim();
-        ImageFilePakEntryViewModel[] visible = query.Length == 0
-            ? _allEntries.ToArray()
-            : _allEntries
+        IReadOnlyList<ImageFilePakEntryViewModel> visible = query.Length == 0
+            ? _allEntries
+            : Array.AsReadOnly(_allEntries
                 .Where(entry => string.Join(
                         ' ',
                         entry.Name,
@@ -140,11 +153,11 @@ public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
                         entry.PackageText,
                         entry.DimensionsText)
                     .Contains(query, StringComparison.OrdinalIgnoreCase))
-                .ToArray();
+                .ToArray());
         bool selectedEntryIsHidden =
             SelectedEntry is not null &&
             !visible.Contains(SelectedEntry);
-        VisibleEntries = Array.AsReadOnly(visible);
+        VisibleEntries = visible;
         if (selectedEntryIsHidden)
         {
             _selectionContext.Clear(
@@ -160,6 +173,8 @@ public sealed class ImageFilePakToolViewModel : ObservableObject, IDisposable
         object? sender,
         WorkbenchSelectionChangedEventArgs args)
     {
+        if (args.Current?.Identity.StreamedImageIdentity is not null)
+            EnsureCaptured();
         ImageFilePakEntryViewModel? desired =
             args.Current?.Identity.StreamedImageIdentity is { } identity &&
             _entriesByIdentity.TryGetValue(

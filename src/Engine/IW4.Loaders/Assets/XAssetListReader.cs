@@ -85,7 +85,8 @@ public sealed class XAssetListReader
 
         context.PointerReader.BeginInlinePayload(pointerRead, alignment: 4);
         int pointerTableSourceOffset = cursor.Offset;
-        byte[] pointerTable = context.Blocks.Load(cursor, checked(count * sizeof(int)), out XBlockAddress pointerTableAddress);
+        ReadOnlyMemory<byte> pointerTable = context.Blocks.LoadMemory(
+            cursor, checked(count * sizeof(int)), out XBlockAddress pointerTableAddress);
         var tableCursor = new FastFileCursor(pointerTable, pointerTableAddress);
 
         var pointerOffsets = new int[count];
@@ -135,7 +136,8 @@ public sealed class XAssetListReader
 
         context.PointerReader.BeginInlinePayload(assetsPointerRead, alignment: 4);
         int assetTableSourceOffset = cursor.Offset;
-        byte[] assetTable = context.Blocks.Load(cursor, checked(count * XAssetSize), out XBlockAddress assetTableAddress);
+        ReadOnlyMemory<byte> assetTable = context.Blocks.LoadMemory(
+            cursor, checked(count * XAssetSize), out XBlockAddress assetTableAddress);
         var tableCursor = new FastFileCursor(assetTable, assetTableAddress);
 
         var assets = new XAssetListEntrySnapshot[count];

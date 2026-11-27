@@ -1,5 +1,6 @@
+using System.Buffers;
 using System.Buffers.Binary;
-using System.Runtime.InteropServices;
+using System.IO.Compression;
 
 namespace IW4.Loaders.Compression;
 
@@ -11,6 +12,8 @@ internal static class Deflate
     private const int AdlerMaximumChunkLength = 5_552;
     private const int MaximumDecodedFrameSize = 0x10000;
     private const int AdlerTrailerSize = sizeof(uint);
+    private static readonly bool UseStrictValidation =
+        AppContext.TryGetSwitch("System.IO.Compression.UseStrictValidation", out bool strict) && strict;
 
     /// <summary>
     /// PS3 packed-zone compressed frames are zlib streams with only the
@@ -20,8 +23,9 @@ internal static class Deflate
     /// a mismatch without discarding an otherwise decoded frame.
     /// </summary>
     public static int DecompressPs3HeaderlessZlib(
-        ReadOnlyMemory<byte> data,
+        ReadOnlySpan<byte> data,
         Span<byte> destination,
+        DeflateDecoder decoder,
         out uint storedAdler,
         out uint calculatedAdler)
     {
@@ -38,37 +42,46 @@ internal static class Deflate
         }
 
         int deflateLength = data.Length - AdlerTrailerSize;
-        storedAdler = BinaryPrimitives.ReadUInt32BigEndian(
-            data.Span.Slice(deflateLength, AdlerTrailerSize));
-        using Stream input = OpenReadOnlyStream(data[..deflateLength]);
-        using var stream = new System.IO.Compression.DeflateStream(
-            input,
-            System.IO.Compression.CompressionMode.Decompress);
-
+        storedAdler = BinaryPrimitives.ReadUInt32BigEndian(data[deflateLength..]);
+        decoder.Reset();
+        ReadOnlySpan<byte> source = data[..deflateLength];
         int decodedLength = 0;
-        while (decodedLength < MaximumDecodedFrameSize)
-        {
-            int read = stream.Read(
-                destination.Slice(
-                    decodedLength,
-                    MaximumDecodedFrameSize - decodedLength));
-            if (read == 0)
-                break;
-
-            decodedLength += read;
-        }
-
         Span<byte> overflowProbe = stackalloc byte[1];
-        if (decodedLength == MaximumDecodedFrameSize &&
-            stream.Read(overflowProbe) != 0)
+        while (true)
         {
-            throw new InvalidDataException(
-                $"A PS3 packed-zone frame inflated beyond 0x{MaximumDecodedFrameSize:X} bytes; " +
-                $"the native output window is 0x{MaximumDecodedFrameSize:X}.");
+            Span<byte> output = decodedLength == MaximumDecodedFrameSize
+                ? overflowProbe
+                : destination[decodedLength..MaximumDecodedFrameSize];
+            OperationStatus status = decoder.Decompress(
+                source,
+                output,
+                out int consumed,
+                out int written);
+            source = source[consumed..];
+            if (decodedLength == MaximumDecodedFrameSize && written != 0)
+            {
+                throw new InvalidDataException(
+                    $"A PS3 packed-zone frame inflated beyond 0x{MaximumDecodedFrameSize:X} bytes; " +
+                    $"the native output window is 0x{MaximumDecodedFrameSize:X}.");
+            }
+
+            decodedLength += written;
+            if (status == OperationStatus.InvalidData)
+                throw new InvalidDataException("The compressed PS3 packed-zone frame contains invalid Deflate data.");
+            if (status == OperationStatus.Done)
+                break;
+            if (status == OperationStatus.NeedMoreData && source.IsEmpty)
+            {
+                // DeflateStream permits an incomplete final block unless strict validation is enabled.
+                if (UseStrictValidation)
+                    throw new InvalidDataException("The compressed PS3 packed-zone frame is truncated.");
+                break;
+            }
+            if (consumed == 0 && written == 0)
+                throw new InvalidDataException("The compressed PS3 packed-zone frame made no decoding progress.");
         }
 
         calculatedAdler = ComputeAdler32(destination[..decodedLength]);
-
         return decodedLength;
     }
 
@@ -94,74 +107,5 @@ internal static class Deflate
         }
 
         return (b << 16) | a;
-    }
-
-    private static Stream OpenReadOnlyStream(ReadOnlyMemory<byte> data)
-    {
-        if (MemoryMarshal.TryGetArray(data, out ArraySegment<byte> segment))
-        {
-            return new MemoryStream(
-                segment.Array!,
-                segment.Offset,
-                segment.Count,
-                writable: false,
-                publiclyVisible: true);
-        }
-
-        return new ReadOnlyMemoryStream(data);
-    }
-
-    private sealed class ReadOnlyMemoryStream(ReadOnlyMemory<byte> memory) : Stream
-    {
-        private int _position;
-
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => memory.Length;
-
-        public override long Position
-        {
-            get => _position;
-            set => throw new NotSupportedException();
-        }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            ArgumentNullException.ThrowIfNull(buffer);
-            return Read(buffer.AsSpan(offset, count));
-        }
-
-        public override int Read(Span<byte> buffer)
-        {
-            int count = Math.Min(buffer.Length, memory.Length - _position);
-            if (count == 0)
-                return 0;
-
-            memory.Span.Slice(_position, count).CopyTo(buffer);
-            _position += count;
-            return count;
-        }
-
-        public override int ReadByte()
-        {
-            if (_position == memory.Length)
-                return -1;
-
-            return memory.Span[_position++];
-        }
-
-        public override void Flush()
-        {
-        }
-
-        public override long Seek(long offset, SeekOrigin origin) =>
-            throw new NotSupportedException();
-
-        public override void SetLength(long value) =>
-            throw new NotSupportedException();
-
-        public override void Write(byte[] buffer, int offset, int count) =>
-            throw new NotSupportedException();
     }
 }

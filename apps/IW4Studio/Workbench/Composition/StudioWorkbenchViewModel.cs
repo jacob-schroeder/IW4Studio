@@ -938,11 +938,18 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
         _gscWorkspaceWarmupCancellation.Dispose();
     }
 
-    private Control? ContentFor(string? toolId) =>
-        toolId is not null &&
-        _registrationsById.TryGetValue(toolId, out StudioToolRegistration? registration)
-            ? registration.Content
-            : null;
+    private Control? ContentFor(string? toolId)
+    {
+        if (toolId is null ||
+            !_registrationsById.TryGetValue(toolId, out StudioToolRegistration? registration))
+            return null;
+
+        if (toolId == StudioToolIds.ImageFilePak)
+            ImageFilePak.EnsureCaptured();
+        else if (toolId == StudioToolIds.PackFilePak)
+            PackFilePak.EnsureCaptured();
+        return registration.Content;
+    }
 
     private async Task ObserveGscWorkspaceWarmupAsync(
         Task<GscWorkspaceSnapshot> warmup,

@@ -14,11 +14,10 @@ namespace IW4.Studio.Desktop.Workbench.Tools.PackFilePak;
 public sealed class PackFilePakToolViewModel : ObservableObject, IDisposable
 {
     private readonly IWorkbenchSelectionContext _selectionContext;
-    private readonly IReadOnlyList<PackFilePakEntryViewModel> _allEntries;
-    private readonly IReadOnlyDictionary<
-        WorkbenchStreamedSoundIdentity,
-        PackFilePakEntryViewModel> _entriesByIdentity;
-    private IReadOnlyList<PackFilePakEntryViewModel> _visibleEntries;
+    private FastFileWorkspace? _workspaceToCapture;
+    private IReadOnlyList<PackFilePakEntryViewModel> _allEntries = [];
+    private Dictionary<WorkbenchStreamedSoundIdentity, PackFilePakEntryViewModel> _entriesByIdentity = [];
+    private IReadOnlyList<PackFilePakEntryViewModel> _visibleEntries = [];
     private PackFilePakEntryViewModel? _selectedEntry;
     private string _searchText = string.Empty;
     private bool _disposed;
@@ -27,13 +26,23 @@ public sealed class PackFilePakToolViewModel : ObservableObject, IDisposable
         FastFileWorkspace workspace,
         IWorkbenchSelectionContext selectionContext)
     {
-        ArgumentNullException.ThrowIfNull(workspace);
+        _workspaceToCapture = workspace ?? throw new ArgumentNullException(nameof(workspace));
         _selectionContext = selectionContext
             ?? throw new ArgumentNullException(nameof(selectionContext));
-        _allEntries = CaptureEntries(workspace);
-        _entriesByIdentity = _allEntries.ToDictionary(entry => entry.Identity);
-        _visibleEntries = _allEntries;
         _selectionContext.SelectionChanged += SelectionContext_SelectionChanged;
+    }
+
+    internal void EnsureCaptured()
+    {
+        if (_workspaceToCapture is not { } workspace)
+            return;
+
+        IReadOnlyList<PackFilePakEntryViewModel> entries = CaptureEntries(workspace);
+        _entriesByIdentity = entries.ToDictionary(entry => entry.Identity);
+        _allEntries = entries;
+        _workspaceToCapture = null;
+        RebuildProjection();
+        OnPropertyChanged(nameof(TotalCount));
     }
 
     public IReadOnlyList<PackFilePakEntryViewModel> VisibleEntries
@@ -90,17 +99,21 @@ public sealed class PackFilePakToolViewModel : ObservableObject, IDisposable
             return;
 
         _disposed = true;
+        _workspaceToCapture = null;
         _selectionContext.SelectionChanged -= SelectionContext_SelectionChanged;
     }
 
     internal PackFilePakEntryViewModel RequireEntry(
-        WorkbenchStreamedSoundIdentity identity) =>
-        _entriesByIdentity.TryGetValue(
+        WorkbenchStreamedSoundIdentity identity)
+    {
+        EnsureCaptured();
+        return _entriesByIdentity.TryGetValue(
             identity,
             out PackFilePakEntryViewModel? entry)
                 ? entry
                 : throw new KeyNotFoundException(
                     "The packed sound is not part of this workspace.");
+    }
 
     private static IReadOnlyList<PackFilePakEntryViewModel> CaptureEntries(
         FastFileWorkspace workspace)
@@ -173,9 +186,9 @@ public sealed class PackFilePakToolViewModel : ObservableObject, IDisposable
     private void RebuildProjection()
     {
         string query = SearchText.Trim();
-        PackFilePakEntryViewModel[] visible = query.Length == 0
-            ? _allEntries.ToArray()
-            : _allEntries
+        IReadOnlyList<PackFilePakEntryViewModel> visible = query.Length == 0
+            ? _allEntries
+            : Array.AsReadOnly(_allEntries
                 .Where(entry => string.Join(
                         ' ',
                         entry.Name,
@@ -185,11 +198,11 @@ public sealed class PackFilePakToolViewModel : ObservableObject, IDisposable
                         entry.PackageName,
                         entry.RangeText)
                     .Contains(query, StringComparison.OrdinalIgnoreCase))
-                .ToArray();
+                .ToArray());
         bool selectedEntryIsHidden =
             SelectedEntry is not null &&
             !visible.Contains(SelectedEntry);
-        VisibleEntries = Array.AsReadOnly(visible);
+        VisibleEntries = visible;
         if (selectedEntryIsHidden)
         {
             _selectionContext.Clear(
@@ -205,6 +218,8 @@ public sealed class PackFilePakToolViewModel : ObservableObject, IDisposable
         object? sender,
         WorkbenchSelectionChangedEventArgs args)
     {
+        if (args.Current?.Identity.StreamedSoundIdentity is not null)
+            EnsureCaptured();
         PackFilePakEntryViewModel? desired =
             args.Current?.Identity.StreamedSoundIdentity is { } identity &&
             _entriesByIdentity.TryGetValue(

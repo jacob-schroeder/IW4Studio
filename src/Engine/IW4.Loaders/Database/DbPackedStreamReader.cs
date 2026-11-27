@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.IO.Compression;
 using IW4.Loaders.Compression;
 using IW4.Runtime.Diagnostics;
 using IW4.Game.IO;
@@ -27,6 +28,7 @@ public sealed class DbPackedStreamReader
         }
 
         bool sawTerminator = false;
+        using var decoder = new DeflateDecoder();
         while (cursor.Offset < availableEnd)
         {
             if (cursor.Offset > availableEnd - sizeof(ushort))
@@ -76,8 +78,9 @@ public sealed class DbPackedStreamReader
             try
             {
                 int decompressedSize = Deflate.DecompressPs3HeaderlessZlib(
-                    compressed,
+                    compressed.Span,
                     output.GetSpan(FullBlockSize)[..FullBlockSize],
+                    decoder,
                     out uint storedAdler,
                     out uint calculatedAdler);
                 output.Advance(decompressedSize);
