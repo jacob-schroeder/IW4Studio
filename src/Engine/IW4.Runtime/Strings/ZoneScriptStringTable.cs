@@ -10,10 +10,15 @@ namespace IW4.Runtime.Strings;
 public sealed class ZoneScriptStringTable
 {
     private IReadOnlyList<XScriptStringEntry>? _entries;
+    private bool[] _referenced = [];
 
     public bool IsInitialized => _entries is not null;
 
     public IReadOnlyList<XScriptStringEntry> Entries => _entries ?? [];
+
+    // Table entries without asset references are standalone declarations in the editor.
+    public IEnumerable<string?> UnreferencedValues =>
+        Entries.Where(entry => !_referenced[entry.Index]).Select(entry => entry.Value);
 
     public void Initialize(IReadOnlyList<XScriptStringEntry> entries)
     {
@@ -32,6 +37,7 @@ public sealed class ZoneScriptStringTable
         }
 
         _entries = Array.AsReadOnly(copied);
+        _referenced = new bool[copied.Length];
     }
 
     public ScriptStringReference Resolve(
@@ -40,15 +46,6 @@ public sealed class ZoneScriptStringTable
         string memberName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(memberName);
-
-        if (rawLocalIndex == 0)
-        {
-            return new ScriptStringReference(
-                RawLocalIndex: 0,
-                Text: null,
-                RuntimeHandle: ScriptStringHandle.Null,
-                DestinationCellAddress: destinationCellAddress);
-        }
 
         IReadOnlyList<XScriptStringEntry> entries = _entries
             ?? throw new InvalidOperationException(
@@ -59,17 +56,7 @@ public sealed class ZoneScriptStringTable
                 $"{memberName} local script-string index 0x{rawLocalIndex:X4} is outside the XZone table of 0x{entries.Count:X} entries.");
         }
 
-        XScriptStringEntry entry = entries[rawLocalIndex];
-        if (entry.RuntimeHandle.IsNull || entry.Value is null)
-        {
-            throw new InvalidDataException(
-                $"{memberName} local script-string index 0x{rawLocalIndex:X4} resolves to a null table entry.");
-        }
-
-        return new ScriptStringReference(
-            RawLocalIndex: rawLocalIndex,
-            Text: entry.Value,
-            RuntimeHandle: entry.RuntimeHandle,
-            DestinationCellAddress: destinationCellAddress);
+        _referenced[rawLocalIndex] = true;
+        return new ScriptStringReference(entries[rawLocalIndex], destinationCellAddress);
     }
 }

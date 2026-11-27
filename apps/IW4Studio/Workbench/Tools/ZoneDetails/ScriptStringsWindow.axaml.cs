@@ -44,7 +44,7 @@ public sealed partial class ScriptStringsWindow : Window
             RefreshSummary();
             ApplyButton.IsEnabled = true;
             if (_rows.Count > 0)
-                StringsList.SelectedIndex = _rows.Count > 1 ? 1 : 0;
+                StringsList.SelectedIndex = 0;
         }
         catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException
             or ArgumentException or NotSupportedException or OverflowException or KeyNotFoundException)
@@ -61,9 +61,10 @@ public sealed partial class ScriptStringsWindow : Window
         ValueEditor.IsEnabled = row is not null;
         ValueEditor.IsReadOnly = row?.CanEdit != true;
         RemoveButton.IsEnabled = row?.CanEdit == true;
+        SetNullButton.IsEnabled = row?.CanEdit == true;
+        SetEmptyButton.IsEnabled = row?.CanEdit == true;
         EditLabel.Text = row switch
         {
-            { Index: 0 } => "Slot 0 is reserved.",
             { AssetUseCount: 1 } => "Required by 1 asset.",
             { AssetUseCount: > 1 } => $"Required by {row.AssetUseCount:N0} assets.",
             _ => "Selected string"
@@ -72,8 +73,6 @@ public sealed partial class ScriptStringsWindow : Window
 
     private void Add_Click(object? sender, RoutedEventArgs e)
     {
-        if (_rows.Count == 0)
-            _rows.Add(new ZoneScriptStringViewModel(0, null));
         var added = new ZoneScriptStringViewModel(_rows.Count, string.Empty);
         _rows.Add(added);
         StringsList.SelectedItem = added;
@@ -90,10 +89,20 @@ public sealed partial class ScriptStringsWindow : Window
         _rows.RemoveAt(index);
         for (int i = index; i < _rows.Count; i++)
             _rows[i].Index = i;
-        if (_rows.Count == 1 && _snapshot?.Rows.Count == 0)
-            _rows.Clear();
         StringsList.SelectedIndex = Math.Min(index, _rows.Count - 1);
         RefreshSummary();
+    }
+
+    private void SetNull_Click(object? sender, RoutedEventArgs e)
+    {
+        if (StringsList.SelectedItem is ZoneScriptStringViewModel { CanEdit: true } selected)
+            selected.Text = null;
+    }
+
+    private void SetEmpty_Click(object? sender, RoutedEventArgs e)
+    {
+        if (StringsList.SelectedItem is ZoneScriptStringViewModel { CanEdit: true } selected)
+            selected.Text = string.Empty;
     }
 
     private void RefreshSummary()

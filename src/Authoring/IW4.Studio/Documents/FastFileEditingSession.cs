@@ -682,7 +682,7 @@ public sealed partial class FastFileEditingSession : IDisposable
         }
     }
 
-    /// <summary>Captures source slots plus strings the current asset graph would append.</summary>
+    /// <summary>Captures the values used by the target assets and any standalone declarations.</summary>
     public ScriptStringEditSnapshot CaptureScriptStrings()
     {
         FastFileSaveRevision revision = CaptureRevision();
@@ -708,13 +708,13 @@ public sealed partial class FastFileEditingSession : IDisposable
                 throw new InvalidOperationException("The script-string table changed while it was being edited. Reopen the editor and try again.");
             if (values.Count > ushort.MaxValue + 1)
                 throw new ArgumentException("Script-string tables cannot exceed the 16-bit zone-local index range.", nameof(values));
-            if (values.Count != 0 && values[0] is not null)
-                throw new ArgumentException("Script-string slot zero must remain null.", nameof(values));
-
             string?[] candidate = values.ToArray();
-            for (int index = 1; index < candidate.Length; index++)
+            var candidateValues = new HashSet<string?>(StringComparer.Ordinal);
+            for (int index = 0; index < candidate.Length; index++)
             {
                 string? value = candidate[index];
+                if (!candidateValues.Add(value))
+                    throw new ArgumentException($"Script string {index} duplicates another table value.", nameof(values));
                 if (value is null)
                     continue;
                 if (value.Contains('\0') || value.Any(character => character > byte.MaxValue))
@@ -725,27 +725,31 @@ public sealed partial class FastFileEditingSession : IDisposable
                 }
             }
 
+            if (candidate.Length > ushort.MaxValue && !candidateValues.Contains(null))
+                throw new ArgumentException("At most 65,535 distinct non-null script strings can be interned.", nameof(values));
             ZoneLinkRequest previous = _revision.LinkRequest;
             if (candidate.SequenceEqual(snapshot.Rows.Select(row => row.Text), StringComparer.Ordinal))
                 return false;
 
-            if (candidate.Length == 1 && _savedScriptStrings.Count == 0)
-                candidate = [];
-
-            var retained = candidate.OfType<string>().ToHashSet(StringComparer.Ordinal);
             ZoneScriptStringRow? missing = snapshot.Rows.FirstOrDefault(row =>
-                row.AssetUseCount != 0 && row.Text is not null &&
-                !retained.Contains(row.Text));
+                row.AssetUseCount != 0 && !candidateValues.Contains(row.Text));
             if (missing is not null)
             {
                 throw new InvalidOperationException(
-                    $"Script string '{missing.Text}' is required by {missing.AssetUseCount} asset(s).");
+                    $"Script string '{missing.Text ?? "<null>"}' is required by {missing.AssetUseCount} asset(s).");
             }
 
+            var usedValues = snapshot.Rows
+                .Where(row => row.AssetUseCount != 0)
+                .Select(row => row.Text)
+                .ToHashSet(StringComparer.Ordinal);
+            string?[] additions = candidate.Where(value => !usedValues.Contains(value)).ToArray();
+            if (additions.SequenceEqual(previous.ScriptStrings, StringComparer.Ordinal))
+                return false;
             var request = previous.WithMetadata(
                 previous.LanguageMask,
                 previous.SelectedLanguageMask,
-                candidate);
+                additions);
             _revision = new FastFileSaveRevision(
                 checked(_revision.Revision + 1),
                 _revision.HeaderMetadata,
@@ -2909,9 +2913,8 @@ public sealed partial class FastFileEditingSession : IDisposable
     private bool HasPendingScriptStringChangeCore()
     {
         IReadOnlyList<string?> current = _revision.LinkRequest.ScriptStrings;
-        // The linker always emits null in reserved slot zero, including for legacy empty strings.
         return current.Count != _savedScriptStrings.Count ||
-            !current.Skip(1).SequenceEqual(_savedScriptStrings.Skip(1), StringComparer.Ordinal);
+            !current.SequenceEqual(_savedScriptStrings, StringComparer.Ordinal);
     }
 
     private sealed class DraftState

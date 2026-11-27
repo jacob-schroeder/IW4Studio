@@ -141,7 +141,7 @@ public sealed class StockFastFileRoundTripTests
             using FastFileWorkspace workspace = documentService.Open(
                 new FastFileDocumentOpenRequest(sourcePath, Isolated.Instance));
             ZoneLinkRequest sourceRequest = workspace.InitialLinkRequest;
-            HeaderEnvelope sourceHeader = CaptureHeaderEnvelope(workspace.LoadedZone);
+            HeaderEnvelope sourceHeader = CaptureHeaderEnvelope(workspace.LoadedZone, ignoreCreationTime: true);
 
             using (var editingSession = new FastFileEditingSession(workspace))
             {
@@ -173,7 +173,7 @@ public sealed class StockFastFileRoundTripTests
                 $"Canonical decoded zone mismatch for '{sourcePath}'");
             AssertHeaderEnvelopeMatches(
                 sourceHeader,
-                CaptureHeaderEnvelope(candidate.LoadedZone),
+                CaptureHeaderEnvelope(candidate.LoadedZone, ignoreCreationTime: true),
                 sourcePath,
                 destinationPath);
 
@@ -490,6 +490,92 @@ public sealed class StockFastFileRoundTripTests
         }
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("tag_origin")]
+    [InlineData("<null>")]
+    public void Authored_script_strings_can_use_slot_zero_for_text(string first)
+    {
+        string directory = CreateTemporaryDirectory();
+        try
+        {
+            var animation = new XAnimPartsAsset
+            {
+                Name = "qual/new",
+                BoneCounts = new byte[10],
+                BoneNameCount = 3,
+                Names = [
+                    new(0, first, default, default),
+                    new(0, "other", default, default),
+                    new(0, first, default, default)
+                ]
+            };
+            var request = new ZoneLinkRequest(
+                new LinkAssetPool([new LinkAssetProviderSource(animation)]),
+                [CreateOwnedRoot("animation", animation)], 1, 1, []);
+            string path = Path.Combine(directory, "fresh.ff");
+            WriteCanonicalFastFile(request, path);
+
+            using var workspace = new FastFileDocumentService().Open(new(path, Isolated.Instance));
+            Assert.Equal(new[] { first, "other" }, workspace.LoadedZone.XAssetList.ScriptStrings.Select(entry => entry.Value));
+            var saved = Assert.IsType<XAnimPartsAsset>(Assert.Single(workspace.LoadedZone.LoadedAssets).Asset);
+            Assert.Equal(new ushort[] { 0, 1, 0 }, saved.Names.Select(name => name.RawLocalIndex));
+            Assert.Equal(new[] { first, "other", first }, saved.Names.Select(name => name.Text));
+            Assert.False(saved.Names[0].RuntimeHandle.IsNull);
+            Assert.Empty(workspace.InitialLinkRequest.ScriptStrings);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void Script_string_table_editor_saves_null_empty_and_literal_declarations()
+    {
+        string directory = CreateTemporaryDirectory();
+        try
+        {
+            var service = new FastFileDocumentService();
+            string firstPath = Path.Combine(directory, "first.ff");
+            string secondPath = Path.Combine(directory, "second.ff");
+
+            using FastFileWorkspace blank = service.CreateBlank(1, 1);
+            using (var session = new FastFileEditingSession(blank))
+            {
+                Assert.True(session.ApplyScriptStrings(session.CaptureScriptStrings(), ["<null>", null, ""]));
+                AssertSaveSucceeded(session, firstPath);
+            }
+
+            using FastFileWorkspace first = service.Open(new(firstPath, Isolated.Instance));
+            var entries = first.LoadedZone.XAssetList.ScriptStrings;
+            Assert.Equal(new string?[] { null, "<null>", "" }, entries.Select(entry => entry.Value));
+            Assert.Equal(0, entries[0].Pointer.Raw);
+            Assert.Equal(PointerType.Null, entries[0].Pointer.Type);
+            Assert.True(entries[0].RuntimeHandle.IsNull);
+            Assert.All(entries.Skip(1), entry =>
+            {
+                Assert.Equal(PointerType.Inline, entry.Pointer.Type);
+                Assert.False(entry.RuntimeHandle.IsNull);
+            });
+            using (var session = new FastFileEditingSession(first))
+            {
+                var snapshot = session.CaptureScriptStrings();
+                Assert.All(snapshot.Rows, row => Assert.Equal(0, row.AssetUseCount));
+                Assert.True(session.ApplyScriptStrings(snapshot, ["", "<null>"]));
+                AssertSaveSucceeded(session, secondPath);
+            }
+
+            using FastFileWorkspace second = service.Open(new(secondPath, Isolated.Instance));
+            Assert.Equal(new[] { "", "<null>" }, second.LoadedZone.XAssetList.ScriptStrings.Select(entry => entry.Value));
+            Assert.Equal(PointerType.Inline, second.LoadedZone.XAssetList.ScriptStrings[0].Pointer.Type);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(directory);
+        }
+    }
+
     [Fact]
     public void XAnim_script_strings_rebuild_null_empty_and_shared_indices()
     {
@@ -505,8 +591,8 @@ public sealed class StockFastFileRoundTripTests
                 BoneCounts = new byte[10],
                 BoneNameCount = 4,
                 Names = [
-                    new ScriptStringReference(41, "", new ScriptStringHandle(41), semanticCell),
                     new ScriptStringReference(99, "tag_shared", new ScriptStringHandle(99), semanticCell),
+                    new ScriptStringReference(41, "", new ScriptStringHandle(41), semanticCell),
                     new ScriptStringReference(7, "tag_shared", new ScriptStringHandle(7), semanticCell),
                     new ScriptStringReference(0, null, ScriptStringHandle.Null, semanticCell)
                 ]
@@ -533,15 +619,21 @@ public sealed class StockFastFileRoundTripTests
 
             XAnimPartsAsset loadedAnimation = Assert.IsType<XAnimPartsAsset>(
                 Assert.Single(loaded.LoadedZone.LoadedAssets).Asset);
-            Assert.Equal(new ushort[] { 1, 2, 2, 0 },
+            Assert.Equal(new ushort[] { 2, 1, 2, 0 },
                 loadedAnimation.Names.Select(value => value.RawLocalIndex).ToArray());
-            Assert.Equal(new string?[] { "", "tag_shared", "tag_shared", null },
+            Assert.Equal(new string?[] { "tag_shared", "", "tag_shared", null },
                 loadedAnimation.Names.Select(value => value.Text).ToArray());
-            Assert.False(loadedAnimation.Names[0].RuntimeHandle.IsNull);
+            Assert.False(loadedAnimation.Names[1].RuntimeHandle.IsNull);
             Assert.Equal(
-                loadedAnimation.Names[1].RuntimeHandle,
+                loadedAnimation.Names[0].RuntimeHandle,
                 loadedAnimation.Names[2].RuntimeHandle);
             Assert.True(loadedAnimation.Names[3].RuntimeHandle.IsNull);
+
+            using var session = new FastFileEditingSession(loaded);
+            var snapshot = session.CaptureScriptStrings();
+            Assert.Throws<InvalidOperationException>(() => session.ApplyScriptStrings(snapshot, ["", "tag_shared"]));
+            Assert.Throws<InvalidOperationException>(() => session.ApplyScriptStrings(snapshot, [null, "tag_shared"]));
+            Assert.False(session.ApplyScriptStrings(snapshot, ["tag_shared", "", null]));
         }
         finally
         {
@@ -1019,11 +1111,16 @@ public sealed class StockFastFileRoundTripTests
         return operation(loadSession, loaded);
     }
 
-    private static HeaderEnvelope CaptureHeaderEnvelope(LoadedXZone loaded) =>
-        new(
-            loaded.Header.PackedStreamOffset,
-            loaded.Header.SerializedHeaderLength,
-            loaded.Header.SerializedHeaderBytes.ToArray());
+    private static HeaderEnvelope CaptureHeaderEnvelope(LoadedXZone loaded, bool ignoreCreationTime = false)
+    {
+        byte[] bytes = loaded.Header.SerializedHeaderBytes.ToArray();
+        if (ignoreCreationTime)
+        {
+            // Save As writes a new FILETIME immediately after the AllowOnlineUpdate byte.
+            bytes.AsSpan(DbHeader.UnsignedPrefixLength + sizeof(byte), sizeof(ulong)).Clear();
+        }
+        return new(loaded.Header.PackedStreamOffset, loaded.Header.SerializedHeaderLength, bytes);
+    }
 
     private static void AssertHeaderEnvelopeMatches(
         HeaderEnvelope source,

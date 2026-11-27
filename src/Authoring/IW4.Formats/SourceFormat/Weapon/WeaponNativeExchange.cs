@@ -433,7 +433,7 @@ public sealed class WeaponNativeExchange
         public override void Write(Utf8JsonWriter writer, ScriptStringReference value,
             JsonSerializerOptions options)
         {
-            if (value.Text is null && value.RawLocalIndex != 0)
+            if (!value.HasResolvedValue)
                 throw new InvalidDataException($"Weapon script string {value.RawLocalIndex} has no text.");
             if (value.Text is null) writer.WriteNullValue();
             else writer.WriteStringValue(value.Text);

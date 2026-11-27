@@ -22,23 +22,27 @@ using IW4.Game.Assets.Vehicle;
 using IW4.Game.Assets.Weapon;
 using IW4.Game.Assets.XAnim;
 using IW4.Game.Assets.XModel;
+using IW4.Game.ScriptStrings;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
 
 namespace IW4.Linker.Plans;
 
 /// <summary>
-/// Stock PS3 comma-reference body. Provider-backed external rows are zeroed
-/// TEMP roots with one inline name XString in their schema-proven cell.
+/// Stock PS3 comma-reference body. Provider-backed external rows start from
+/// zeroed TEMP roots with one inline name XString in their schema-proven cell.
+/// Vehicle's inline script-string cells also resolve through the zone table.
 /// </summary>
 internal sealed class ExternalAssetLinkPlan : AssetLinkPlan
 {
     private ExternalAssetLinkPlan(
         AssetKey key,
+        XAssetType serializedType,
         string originalSerializedName,
         int rootSize,
         int namePointerOffset,
-        LinkStorageSymbol nameStorage)
+        LinkStorageSymbol nameStorage,
+        IReadOnlyList<ScriptStringReference>? vehicleTags = null)
         : base(
             key,
             originalSerializedName,
@@ -58,26 +62,44 @@ internal sealed class ExternalAssetLinkPlan : AssetLinkPlan
             XFileBlockType.TEMP,
             new byte[rootSize],
             alignment: 4,
-            root => [NameOperation(root, namePointerOffset)]);
+            root => serializedType == XAssetType.Vehicle
+                ? VehicleOperations(root, namePointerOffset, vehicleTags)
+                : [NameOperation(root, namePointerOffset)]);
+    }
+
+    private IEnumerable<LinkOperation> VehicleOperations(
+        LinkStorageSymbol root,
+        int namePointerOffset,
+        IReadOnlyList<ScriptStringReference>? vehicleTags)
+    {
+        yield return NameOperation(root, namePointerOffset);
+        for (int index = 0; index < VehicleDefAsset.ScriptStringCount; index++)
+        {
+            yield return VehicleLinkPlan.TrophyTagOperation(root, index,
+                vehicleTags is { Count: > 0 } ? vehicleTags[index] : null);
+        }
     }
 
     public static ExternalAssetLinkPlan Create(
         AssetKey key,
         XAssetType serializedType,
         string originalSerializedName,
-        LinkAssetFreezeScope freeze)
+        LinkAssetFreezeScope freeze,
+        IReadOnlyList<ScriptStringReference>? vehicleTags = null)
     {
         ArgumentNullException.ThrowIfNull(freeze);
         (int rootSize, int namePointerOffset) = GetShape(serializedType);
         return new ExternalAssetLinkPlan(
             key,
+            serializedType,
             originalSerializedName,
             rootSize,
             namePointerOffset,
             freeze.FreezeProviderName(
                 originalSerializedName,
                 namePointerOffset,
-                "Asset.Name"));
+                "Asset.Name"),
+            vehicleTags);
     }
 
     public static ExternalAssetLinkPlan CreateSynthetic(
@@ -88,6 +110,7 @@ internal sealed class ExternalAssetLinkPlan : AssetLinkPlan
         (int rootSize, int namePointerOffset) = GetShape(serializedType);
         return new ExternalAssetLinkPlan(
             key,
+            serializedType,
             originalSerializedName,
             rootSize,
             namePointerOffset,

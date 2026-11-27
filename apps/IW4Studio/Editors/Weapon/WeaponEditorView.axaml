@@ -117,6 +117,24 @@
                    FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource StudioErrorBrush}" />
       </StackPanel>
     </DataTemplate>
+    <DataTemplate DataType="{x:Type inspector:InspectorScriptStringPropertyRowViewModel}"
+                  x:DataType="inspector:InspectorScriptStringPropertyRowViewModel">
+      <StackPanel Width="250" Margin="0,0,12,12" Spacing="4">
+        <TextBlock Text="{Binding Label}" Classes="propertyLabel" />
+        <TextBox MinHeight="30" Padding="8,4"
+                 Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 IsReadOnly="{Binding IsReadOnly}"
+                 IsEnabled="{Binding !IsInteractionBlocked}"
+                 LostFocus="StagedInput_LostFocus" KeyDown="StagedInput_KeyDown" />
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="{Binding ValueKind}" VerticalAlignment="Center" />
+          <Button Content="Set null" Command="{Binding SetNullCommand}" />
+          <Button Content="Set empty" Command="{Binding SetEmptyCommand}" />
+        </StackPanel>
+        <TextBlock Text="{Binding ValidationMessage}" IsVisible="{Binding HasValidationError}"
+                   FontSize="9" TextWrapping="Wrap" Foreground="{DynamicResource StudioErrorBrush}" />
+      </StackPanel>
+    </DataTemplate>
     <DataTemplate DataType="{x:Type inspector:InspectorIntegerPropertyRowViewModel}"
                   x:DataType="inspector:InspectorIntegerPropertyRowViewModel">
       <StackPanel Width="250" Margin="0,0,12,12" Spacing="4" ToolTip.Tip="{Binding Description}">

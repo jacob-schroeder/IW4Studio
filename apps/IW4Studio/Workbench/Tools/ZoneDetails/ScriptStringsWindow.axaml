@@ -32,8 +32,12 @@
     <StackPanel Grid.Row="3" Spacing="4">
       <TextBlock x:Name="EditLabel" Text="Selected string" FontWeight="SemiBold" />
       <TextBox x:Name="ValueEditor" x:DataType="zone:ZoneScriptStringViewModel"
-               Text="{Binding Text, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+               Text="{Binding EditText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                IsEnabled="False" AutomationProperties.Name="Selected script string" />
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <Button x:Name="SetNullButton" Content="Set null" Click="SetNull_Click" IsEnabled="False" />
+        <Button x:Name="SetEmptyButton" Content="Set empty" Click="SetEmpty_Click" IsEnabled="False" />
+      </StackPanel>
     </StackPanel>
     <TextBlock Grid.Row="4" x:Name="ErrorText" IsVisible="False"
                Foreground="{DynamicResource StudioErrorBrush}" TextWrapping="Wrap" />

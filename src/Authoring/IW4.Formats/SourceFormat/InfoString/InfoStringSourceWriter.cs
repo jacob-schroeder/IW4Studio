@@ -165,7 +165,7 @@ internal sealed class InfoStringSourceWriter(string prefix)
         ArgumentNullException.ThrowIfNull(reference);
         if (reference.Text is not null)
             return reference.Text;
-        if (reference.RawLocalIndex != 0)
+        if (!reference.HasResolvedValue)
         {
             throw new InvalidDataException(
                 $"{field} script string {reference.RawLocalIndex} was not materialized.");

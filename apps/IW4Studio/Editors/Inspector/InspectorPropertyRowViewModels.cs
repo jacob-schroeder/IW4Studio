@@ -182,6 +182,7 @@ public abstract class InspectorStagedPropertyRowViewModel<TValue>
         }
 
         _appliedInput = Input;
+        OnValueApplied(value!);
         OnPropertyChanged(nameof(HasStagedValue));
         OnPropertyChanged(nameof(CanCommit));
         return true;
@@ -199,6 +200,7 @@ public abstract class InspectorStagedPropertyRowViewModel<TValue>
         string input = Format(value);
         _appliedInput = input;
         _input = input;
+        OnValueApplied(value);
         SetValidationMessage(null);
         OnPropertyChanged(nameof(Input));
         OnPropertyChanged(nameof(HasStagedValue));
@@ -206,6 +208,10 @@ public abstract class InspectorStagedPropertyRowViewModel<TValue>
     }
 
     protected abstract string Format(TValue value);
+
+    protected virtual void OnValueApplied(TValue value)
+    {
+    }
 
     protected abstract bool TryParse(
         string input,
@@ -254,6 +260,69 @@ public sealed class InspectorTextPropertyRowViewModel
         value = input;
         error = _validate?.Invoke(input);
         return error is null;
+    }
+}
+
+public sealed class InspectorScriptStringPropertyRowViewModel
+    : InspectorStagedPropertyRowViewModel<string?>
+{
+    private readonly Action<string?>? _apply;
+    private readonly Func<string, string?>? _validate;
+    private string? _appliedValue;
+
+    public InspectorScriptStringPropertyRowViewModel(
+        string label,
+        string fieldPath,
+        string? value,
+        Action<string?>? apply,
+        Func<string, string?>? validate)
+        : base(label, fieldPath, value ?? string.Empty, apply, null, apply is null)
+    {
+        _apply = apply;
+        _validate = validate;
+        _appliedValue = value;
+        SetNullCommand = new ViewModelCommand(() => SetValue(null), () => IsEditable);
+        SetEmptyCommand = new ViewModelCommand(() => SetValue(string.Empty), () => IsEditable);
+        ValidateInput();
+    }
+
+    public string ValueKind => _appliedValue switch
+    {
+        null => "Current: null",
+        "" => "Current: empty",
+        _ => "Current: text"
+    };
+
+    public ViewModelCommand SetNullCommand { get; }
+
+    public ViewModelCommand SetEmptyCommand { get; }
+
+    protected override string Format(string? value) => value ?? string.Empty;
+
+    protected override bool TryParse(string input, out string? value, out string? error)
+    {
+        value = input;
+        error = _validate?.Invoke(input);
+        return error is null;
+    }
+
+    protected override void OnValueApplied(string? value)
+    {
+        _appliedValue = value;
+        OnPropertyChanged(nameof(ValueKind));
+    }
+
+    protected override void OnInteractionStateChanged()
+    {
+        SetNullCommand.RaiseCanExecuteChanged();
+        SetEmptyCommand.RaiseCanExecuteChanged();
+    }
+
+    private void SetValue(string? value)
+    {
+        if (_apply is null || !IsEditable || !TryApply(() => _apply(value)))
+            return;
+        RefreshAppliedValue(value);
     }
 }
 

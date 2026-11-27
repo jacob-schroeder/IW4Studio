@@ -42,7 +42,7 @@ public sealed class FastFileDocument
             target.FreezeLinkRoots(),
             target.Header.LanguageMask,
             target.Header.SelectedLanguageMask,
-            target.XAssetList.ScriptStrings.Select(entry => entry.Value));
+            target.Context.ZoneScriptStrings.UnreferencedValues);
         InitialHeaderMetadata = DbHeaderAuthoringMetadata.FromHeader(target.Header);
         _editableProviderIndices = providers
             .Select((provider, index) => (provider, index))

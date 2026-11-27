@@ -1220,8 +1220,9 @@ internal static class Iw3PcMapConverter
 
             var preview = images.LoadImage?.ToResidentImage() ??
                 throw new InvalidDataException($"The load zone '{paths.LoadName}' has no menu preview image.");
+            var uiText = options.UiTextOverride ?? extraction.MenuText;
             byte[] uiFastFile = Ps3MapUiZoneBuilder.Build(MapUiRules.PreviewName(paths.MapName), preview,
-                MapUiRules.CustomLocalizations(paths.MapName, extraction.MenuText.Title, extraction.MenuText.Description, options.Factions));
+                MapUiRules.CustomLocalizations(paths.MapName, uiText.Title, uiText.Description, options.Factions));
 
             Directory.CreateDirectory(paths.OutputDirectory);
             string token = Guid.NewGuid().ToString("N");

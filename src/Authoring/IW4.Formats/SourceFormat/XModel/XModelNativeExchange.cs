@@ -223,7 +223,7 @@ public sealed class XModelNativeExchange
             throw new InvalidDataException($"XModel '{name}' has incomplete native model arrays.");
         string?[] boneNames = model.BoneNames.Select((reference, index) =>
         {
-            if (reference is null || (reference.Text is null && reference.RawLocalIndex != 0))
+            if (reference is null || !reference.HasResolvedValue)
                 throw new InvalidDataException($"XModel '{name}' bone {index} has no resolved script-string text.");
             return reference.Text;
         }).ToArray();

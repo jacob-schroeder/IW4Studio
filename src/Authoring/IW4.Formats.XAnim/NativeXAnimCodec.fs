@@ -67,6 +67,7 @@ type internal NativeAnimation() =
 
 and [<AllowNullLiteral>] internal NativeNotify() =
     [<JsonInclude>]
+    [<JsonRequired>]
     member val Name: string = null with get, set
     [<JsonInclude>]
     member val Time = 0.0f with get, set
@@ -172,12 +173,18 @@ module internal NativeXAnimCodec =
         value
 
     let private text value =
-        if String.IsNullOrWhiteSpace(value) || (value |> Seq.exists Char.IsControl) then
-            raise (InvalidDataException("XAnim script strings must have semantic text."))
+        if not (isNull value) && (value |> Seq.exists Char.IsControl) then
+            raise (InvalidDataException("XAnim script strings cannot contain control characters."))
         value
 
     let private scriptString value =
         ScriptStringReference(0us, text value, ScriptStringHandle.Null, Unchecked.defaultof<_>)
+
+    let private scriptStringText (reference: ScriptStringReference) name kind =
+        if isNull reference then fail name $"has a missing {kind} script-string reference."
+        if not reference.HasResolvedValue then
+            fail name $"has an unmaterialized {kind} script string {reference.RawLocalIndex}."
+        text reference.Text
 
     let private finiteVec (value: Vec3) =
         Single.IsFinite(value.X) && Single.IsFinite(value.Y) && Single.IsFinite(value.Z)
@@ -343,11 +350,12 @@ module internal NativeXAnimCodec =
             asset.IndexCount <> count indices.FrameIndices ||
             not (Single.IsFinite asset.Framerate && Single.IsFinite asset.Frequency) then
             fail name "has incomplete native streams or counts."
-        for value in names do
-            text (if isNull value then null else value.Text) |> ignore
-        for value in notify do
+        for index = 0 to names.Count - 1 do
+            scriptStringText names[index] name $"bone name {index}" |> ignore
+        for index = 0 to notify.Count - 1 do
+            let value = notify[index]
             if isNull value then fail name "has a null notify."
-            text (if isNull value.Name then null else value.Name.Text) |> ignore
+            scriptStringText value.Name name $"notify {index} name" |> ignore
             if not (Single.IsFinite value.Time) then fail name "has a non-finite notify time."
         if asset.NumFrames <= uint16 Byte.MaxValue && (indices.FrameIndices |> Seq.exists (fun value -> value > uint16 Byte.MaxValue)) then
             fail name "has an index outside the native byte encoding."
@@ -381,8 +389,8 @@ module internal NativeXAnimCodec =
             BoneNameCount = asset.BoneNameCount, NotifyCount = asset.NotifyCount,
             AssetType = byte asset.AssetType, Pad1F = asset.Pad1F,
             Framerate = asset.Framerate, Frequency = asset.Frequency,
-            Names = (asset.Names |> Seq.map (fun value -> text value.Text) |> Seq.toArray),
-            Notify = (asset.Notify |> Seq.map (fun value -> NativeNotify(Name = text value.Name.Text, Time = value.Time)) |> Seq.toArray),
+            Names = (asset.Names |> Seq.map (fun value -> value.Text) |> Seq.toArray),
+            Notify = (asset.Notify |> Seq.map (fun value -> NativeNotify(Name = value.Name.Text, Time = value.Time)) |> Seq.toArray),
             PackedDataStreams = NativeStreams(
                 QuantizedBytes = (streams.QuantizedBytes |> Seq.toArray),
                 QuantizedShorts = (streams.QuantizedShorts |> Seq.toArray),

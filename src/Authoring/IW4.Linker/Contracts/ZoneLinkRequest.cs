@@ -82,6 +82,7 @@ public sealed class ZoneLinkRequest
 
     public LinkAssetPool Assets => _assets.Value;
     public IReadOnlyList<LinkRoot> Roots => _roots;
+    /// <summary>Explicit standalone strings to emit in addition to values used by assets.</summary>
     public IReadOnlyList<string?> ScriptStrings => _scriptStrings;
     public uint LanguageMask { get; }
     public uint SelectedLanguageMask { get; }

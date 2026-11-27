@@ -25,4 +25,5 @@ public sealed record MapConverterOptions(
     int? ImageFileIndex,
     string OutputDirectory,
     string? WorldTemplatePath,
-    FactionProfile Factions = FactionProfile.UsRussia);
+    FactionProfile Factions = FactionProfile.UsRussia,
+    (string Title, string Description)? UiTextOverride = null);

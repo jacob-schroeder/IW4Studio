@@ -258,8 +258,7 @@ public static class FastFileSourceExporter
                     Format = "iw4-ps3-map-bootstrap", Version = 1,
                     FragmentProgramUploadCapacity = world.FragmentProgramUploadCapacity,
                     LanguageMask = workspace.InitialLinkRequest.LanguageMask,
-                    SelectedLanguageMask = workspace.InitialLinkRequest.SelectedLanguageMask,
-                    ScriptStrings = workspace.InitialLinkRequest.ScriptStrings.ToArray()
+                    SelectedLanguageMask = workspace.InitialLinkRequest.SelectedLanguageMask
                 };
                 File.WriteAllText(Path.Combine(staging, Ps3MapBootstrap.FileName), JsonSerializer.Serialize(settings, Ps3MapBootstrap.JsonOptions));
             }

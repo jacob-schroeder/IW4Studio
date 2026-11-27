@@ -24,7 +24,7 @@ internal static class MilTntBombMp
             Scale = 1f,
             NoScalePartBits = [0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u],
             BoneNames = [
-                new ScriptStringReference(0, null, default, default)
+                new ScriptStringReference(0, string.Empty, default, default)
             ],
             PartClassification = [0x00],
             BaseMat = [

@@ -61,7 +61,8 @@ internal static class Iw3Ps3MapConverter
             .ToArray();
         Iw3OutputPublication.ValidateDestinations(names.Select(name => Path.Combine(output, name)), inputFiles);
         byte[] ui = Iw3Ps3MapUiCompiler.Build(mapName, sourceDirectory,
-            Path.GetFullPath(options.SourceLibraryDirectory ?? sourceDirectory), options.Factions, token);
+            Path.GetFullPath(options.SourceLibraryDirectory ?? sourceDirectory), options.Factions,
+            options.UiTextOverride, token);
         string prefix = mapName + "/";
         var shaders = new Iw3Ps3ShaderLibrary();
         var images = new Iw3Ps3ImageLibrary(prefix);

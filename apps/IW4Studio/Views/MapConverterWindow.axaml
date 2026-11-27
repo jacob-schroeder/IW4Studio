@@ -104,6 +104,18 @@
             <TextBox Name="OutputPath" AutomationProperties.Name="Destination folder" />
           </DockPanel>
         </StackPanel>
+        <CheckBox Name="OverwriteUi" Content="Overwrite UI" />
+        <StackPanel Spacing="14" IsVisible="{Binding #OverwriteUi.IsChecked}">
+          <StackPanel Spacing="5">
+            <TextBlock Classes="fieldLabel" Text="Map Name" />
+            <TextBox Name="MapDisplayName" AutomationProperties.Name="Map Name" />
+          </StackPanel>
+          <StackPanel Spacing="5">
+            <TextBlock Classes="fieldLabel" Text="Map Description" />
+            <TextBox Name="MapDescription" Height="96" AcceptsReturn="True" TextWrapping="Wrap"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Map Description" />
+          </StackPanel>
+        </StackPanel>
       </StackPanel>
     </ScrollViewer>
 

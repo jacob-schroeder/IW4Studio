@@ -109,6 +109,34 @@ public sealed class XAnimNativeExchangeTests
     }
 
     [Theory]
+    [InlineData("null", null)]
+    [InlineData("\"\"", "")]
+    public void Native_script_strings_round_trip_null_and_empty_values(
+        string notifyNameJson, string? expectedNotifyName)
+    {
+        using TempSource source = new();
+        source.Write(KnownSource
+            .Replace("\"names\":[\"root\",\"weapon\"]", "\"names\":[null,\"\"]")
+            .Replace("\"name\":\"fire\",\"time\":0.25",
+                $"\"name\":{notifyNameJson},\"time\":0.25"));
+
+        XAnimPartsAsset asset = Exchange.Link(source.Directory, "sample");
+        Assert.Equal(new string?[] { null, "" }, asset.Names.Select(name => name.Text));
+        Assert.Equal(expectedNotifyName, Assert.Single(asset.Notify).Name.Text);
+
+        Exchange.Unlink(source.Directory, asset);
+        using JsonDocument json = JsonDocument.Parse(File.ReadAllText(source.Path));
+        Assert.Equal(JsonValueKind.Null, json.RootElement.GetProperty("names")[0].ValueKind);
+        Assert.Equal("", json.RootElement.GetProperty("names")[1].GetString());
+        JsonElement notifyName = json.RootElement.GetProperty("notify")[0].GetProperty("name");
+        Assert.Equal(expectedNotifyName is null ? JsonValueKind.Null : JsonValueKind.String,
+            notifyName.ValueKind);
+        XAnimPartsAsset relinked = Exchange.Link(source.Directory, "sample");
+        Assert.Equal(new string?[] { null, "" }, relinked.Names.Select(name => name.Text));
+        Assert.Equal(expectedNotifyName, relinked.Notify[0].Name.Text);
+    }
+
+    [Theory]
     [InlineData("trans", "{\"size\":0,\"smallTrans\":7,\"pad3\":19,\"frame0\":{\"x\":1,\"y\":2,\"z\":3},\"frames\":null}")]
     [InlineData("quat2", "{\"size\":0,\"pad2\":11,\"pad3\":12,\"frame0\":{\"value0\":-4,\"value1\":5},\"frames\":null}")]
     [InlineData("quat", "{\"size\":0,\"pad2\":13,\"pad3\":14,\"frame0\":{\"value0\":1,\"value1\":2,\"value2\":3,\"value3\":4},\"frames\":null}")]
@@ -202,7 +230,7 @@ public sealed class XAnimNativeExchangeTests
     [InlineData("\"indexCount\":2", "\"indexCount\":3")]
     [InlineData("\"boneCounts\":\"AQIDBAUGBwgJCg==\"", "\"boneCounts\":\"AQID\"")]
     [InlineData("\"quantizedBytes\":\"AP8=\"", "\"quantizedBytes\":null")]
-    [InlineData("\"names\":[\"root\",\"weapon\"]", "\"names\":[\"root\",null]")]
+    [InlineData("\"names\":[\"root\",\"weapon\"]", "\"names\":null")]
     [InlineData("\"notify\":[{\"name\":\"fire\",\"time\":0.25}]", "\"notify\":[null]")]
     public void Link_rejects_invalid_identity_or_incomplete_native_arrays(string original, string replacement)
     {

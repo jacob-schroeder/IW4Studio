@@ -75,22 +75,32 @@ public sealed partial class MapConverterWindow : Window
             SelectedPlatform is not { } platform)
             return;
 
-        if (!ReadRequiredPath(MapPath, "Choose the map fastfile.", out string map) ||
-            !ReadRequiredPath(LoadPath, "Choose the load fastfile.", out string load) ||
-            !ReadRequiredPath(OutputPath, "Choose a destination folder.", out string output))
+        if (!ReadRequiredText(MapPath, "Choose the map fastfile.", out string map) ||
+            !ReadRequiredText(LoadPath, "Choose the load fastfile.", out string load) ||
+            !ReadRequiredText(OutputPath, "Choose a destination folder.", out string output))
             return;
+
+        (string Title, string Description)? uiTextOverride = null;
+        if (OverwriteUi.IsChecked == true)
+        {
+            if (!ReadRequiredText(MapDisplayName, "Enter a map name.", out string title) ||
+                !ReadRequiredText(MapDescription, "Enter a map description.", out string description))
+                return;
+            uiTextOverride = (title, description);
+        }
 
         using var cancellation = new CancellationTokenSource();
         try
         {
+            map = map.Trim();
             bool ps3 = platform == SourcePlatform.Ps3;
             string? sourceLibrary = OptionalPath(ps3 ? Ps3StringsPath : PcLibraryPath);
-            var options = new MapConverterOptions(game, platform, map, load,
+            var options = new MapConverterOptions(game, platform, map, load.Trim(),
                 IwdPath: ps3 ? null : OptionalPath(IwdPath),
                 SourceFastFileDirectory: ps3 ? OptionalPath(Ps3StockPath) ?? Path.GetDirectoryName(Path.GetFullPath(map)) : null,
                 SourceLibraryDirectory: sourceLibrary,
                 BootstrapFastFilePath: null, ImageFileIndex: -1,
-                OutputDirectory: output, WorldTemplatePath: null);
+                OutputDirectory: output.Trim(), WorldTemplatePath: null, UiTextOverride: uiTextOverride);
 
             _conversion = cancellation;
             SetRunning(true);
@@ -121,10 +131,10 @@ public sealed partial class MapConverterWindow : Window
     private static string? OptionalPath(TextBox field) =>
         string.IsNullOrWhiteSpace(field.Text) ? null : field.Text.Trim();
 
-    private bool ReadRequiredPath(TextBox field, string message, out string path)
+    private bool ReadRequiredText(TextBox field, string message, out string value)
     {
-        path = field.Text?.Trim() ?? string.Empty;
-        if (path.Length != 0)
+        value = field.Text ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(value))
             return true;
         ShowReport(message);
         field.Focus();

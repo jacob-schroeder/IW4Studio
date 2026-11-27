@@ -9,7 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-    <VersionPrefix>1.2.0</VersionPrefix>
+    <VersionPrefix>1.2</VersionPrefix>
     <Title>IW4 Studio</Title>
     <Authors>Jacob Schroeder</Authors>
     <Description>Studio and workspace editor for IW4 (Infinity Ward) fastfiles on the Playstation 3 platform.</Description>

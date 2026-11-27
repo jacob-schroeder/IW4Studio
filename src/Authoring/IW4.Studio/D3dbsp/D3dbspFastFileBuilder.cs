@@ -1179,7 +1179,7 @@ public static partial class D3dbspFastFileBuilder
             roots,
             bootstrap?.LanguageMask ?? RequireTemplate().InitialLinkRequest.LanguageMask,
             bootstrap?.SelectedLanguageMask ?? RequireTemplate().InitialLinkRequest.SelectedLanguageMask,
-            bootstrap?.ScriptStrings ?? RequireTemplate().InitialLinkRequest.ScriptStrings);
+            scriptStrings: []);
 
         cancellationToken.ThrowIfCancellationRequested();
         ZoneLinkResult link = new ZoneLinker().Link(request);

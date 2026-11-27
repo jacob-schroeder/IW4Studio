@@ -8,8 +8,7 @@ using IW4.Linker.Plans;
 namespace IW4.Linker.Linking;
 
 /// <summary>
-/// One zone-local string slot. Use counts belong to the first slot for duplicate text,
-/// since linked asset references resolve to that canonical index.
+/// One zone-local string slot and the number of distinct assets that use it.
 /// </summary>
 public sealed record ZoneScriptStringRow(int Index, string? Text, int AssetUseCount);
 
@@ -92,18 +91,19 @@ public sealed class ZoneLinker
     {
         ArgumentNullException.ThrowIfNull(request);
         ResolvedLinkGraph graph = ResolveGraph(request);
-        var usersBySlot = new Dictionary<int, HashSet<AssetKey>>();
+        AssetRow[] rows = BuildAssetRows(request.Roots, graph.Roots, graph.DependencyClosure);
+        var usersByValue = new Dictionary<ScriptStringValue, HashSet<AssetKey>>();
         ScriptStringTable table = BuildScriptStringTable(
-            graph.Roots.Select(root => root.Provider), graph.DependencyClosure,
+            rows.Select(row => row.Provider), graph.DependencyClosure,
             request.ScriptStrings, RecordUse);
         return Array.AsReadOnly(table.Values.Select((text, index) =>
-            new ZoneScriptStringRow(index, text, usersBySlot.GetValueOrDefault(index)?.Count ?? 0))
+            new ZoneScriptStringRow(index, text, usersByValue.GetValueOrDefault(new(text))?.Count ?? 0))
             .ToArray());
 
-        void RecordUse(ushort slot, AssetKey asset)
+        void RecordUse(ScriptStringValue value, AssetKey asset)
         {
-            if (!usersBySlot.TryGetValue(slot, out HashSet<AssetKey>? users))
-                usersBySlot.Add(slot, users = []);
+            if (!usersByValue.TryGetValue(value, out HashSet<AssetKey>? users))
+                usersByValue.Add(value, users = []);
             users.Add(asset);
         }
     }
@@ -1171,21 +1171,13 @@ public sealed class ZoneLinker
     private static ScriptStringTable BuildScriptStringTable(
         IEnumerable<ProviderBinding?> rootProviders,
         IReadOnlyDictionary<DependencyEdge, ProviderBinding> dependencyClosure,
-        IReadOnlyList<string?> sourceValues,
-        Action<ushort, AssetKey>? recordUse = null)
+        IReadOnlyList<string?> declarations,
+        Action<ScriptStringValue, AssetKey>? recordUse = null)
     {
-        var values = new List<string?>(sourceValues);
-        // Null references serialize as local index zero, including unused weapon
-        // notetrack entries. An inherited source string must not occupy that slot.
-        if (values.Count != 0)
-            values[0] = null;
-        var indices = new Dictionary<string, ushort>(StringComparer.Ordinal);
-        for (int index = 1; index < sourceValues.Count; index++)
-        {
-            string? value = sourceValues[index];
-            if (value is not null)
-                indices.TryAdd(value, checked((ushort)index));
-        }
+        // Loaded strings already have interned handles. New text is interned in deterministic
+        // graph order after those handles. Text identity also reconciles different input pools.
+        const int newHandle = int.MaxValue;
+        var order = new Dictionary<ScriptStringValue, (int Handle, int Discovery)>();
         var visited = new HashSet<ProviderSymbol>();
         // Emission needs each shared cell once. Usage counts need each asset that reaches it.
         var visitedStorage = recordUse is null
@@ -1198,9 +1190,32 @@ public sealed class ZoneLinker
                 Visit(provider);
         }
 
-        return new ScriptStringTable(
-            Array.AsReadOnly(values.ToArray()),
-            indices);
+        foreach (string? text in declarations)
+            Collect(new(text), newHandle);
+
+        if (order.Count > ushort.MaxValue + (order.ContainsKey(new(null)) ? 1 : 0))
+            throw new InvalidDataException("The selected asset graph exceeds the 16-bit script-string handle range.");
+
+        string?[] values = new string?[order.Count];
+        var indices = new Dictionary<ScriptStringValue, ushort>(order.Count);
+        foreach (var entry in order.OrderBy(pair => pair.Value.Handle).ThenBy(pair => pair.Value.Discovery))
+        {
+            ushort index = checked((ushort)indices.Count);
+            indices.Add(entry.Key, index);
+            values[index] = entry.Key.Text;
+        }
+        return new ScriptStringTable(values, indices);
+
+        void Collect(ScriptStringValue value, int handle)
+        {
+            if (value.Text is null)
+                handle = 0;
+
+            if (!order.TryGetValue(value, out var existing))
+                order.Add(value, (handle, order.Count));
+            else if (existing.Handle == newHandle && handle != newHandle)
+                order[value] = (handle, existing.Discovery);
+        }
 
         void Visit(ProviderBinding provider)
         {
@@ -1212,24 +1227,9 @@ public sealed class ZoneLinker
                 _ => { },
                 script =>
                 {
-                    if (script.Text is null)
-                        return;
-                    if (!indices.TryGetValue(script.Text, out ushort index))
-                    {
-                        if (values.Count == 0)
-                            values.Add(null);
-                        if (values.Count > ushort.MaxValue)
-                        {
-                            throw new InvalidDataException(
-                                "The selected asset graph exceeds the 16-bit script-string index range.");
-                        }
-
-                        index = checked((ushort)values.Count);
-                        indices.Add(script.Text, index);
-                        values.Add(script.Text);
-                    }
-
-                    recordUse?.Invoke(index, provider.Key);
+                    var value = new ScriptStringValue(script.Text);
+                    Collect(value, script.Handle.IsNull ? newHandle : script.Handle.Value);
+                    recordUse?.Invoke(value, provider.Key);
                 },
                 visitedStorage);
         }
@@ -1287,7 +1287,7 @@ public sealed class ZoneLinker
 
     private readonly record struct ScriptStringTable(
         IReadOnlyList<string?> Values,
-        IReadOnlyDictionary<string, ushort> Indices);
+        IReadOnlyDictionary<ScriptStringValue, ushort> Indices);
 
     private readonly record struct ResolvedLinkGraph(
         ResolvedRoot[] Roots,

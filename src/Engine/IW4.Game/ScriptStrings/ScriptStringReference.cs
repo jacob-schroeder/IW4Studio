@@ -10,4 +10,16 @@ public sealed record ScriptStringReference(
     ushort RawLocalIndex,
     string? Text,
     ScriptStringHandle RuntimeHandle,
-    XBlockAddress DestinationCellAddress);
+    XBlockAddress DestinationCellAddress)
+{
+    private readonly bool _resolvedNullEntry;
+
+    public ScriptStringReference(XScriptStringEntry entry, XBlockAddress destination)
+        : this(checked((ushort)entry.Index), entry.Value, entry.RuntimeHandle, destination)
+    {
+        _resolvedNullEntry = RawLocalIndex != 0 && Text is null;
+    }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasResolvedValue => Text is not null || RawLocalIndex == 0 || _resolvedNullEntry;
+}

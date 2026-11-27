@@ -49,6 +49,9 @@ internal sealed record AliasCellStorageLinkOperation(
     string FieldPath,
     LinkStorageSymbol? FirstPublicationMaterialization = null) : LinkOperation;
 
+// Both a null pointer and a nonnull empty CString can be keys in the local-index map.
+internal readonly record struct ScriptStringValue(string? Text);
+
 internal sealed record ScriptStringLinkOperation : LinkOperation
 {
     public ScriptStringLinkOperation(
@@ -58,7 +61,7 @@ internal sealed record ScriptStringLinkOperation : LinkOperation
     {
         ArgumentNullException.ThrowIfNull(value);
         ArgumentException.ThrowIfNullOrWhiteSpace(fieldPath);
-        if (value.Text is null && value.RawLocalIndex != 0)
+        if (!value.HasResolvedValue)
         {
             throw new NotSupportedException(
                 $"{fieldPath} retains nonzero zone-local index " +
@@ -67,11 +70,13 @@ internal sealed record ScriptStringLinkOperation : LinkOperation
 
         Cell = cell;
         Text = value.Text;
+        Handle = value.RuntimeHandle;
         FieldPath = fieldPath;
     }
 
     public LinkStorageCell Cell { get; }
     public string? Text { get; }
+    public ScriptStringHandle Handle { get; }
     public string FieldPath { get; }
 }
 

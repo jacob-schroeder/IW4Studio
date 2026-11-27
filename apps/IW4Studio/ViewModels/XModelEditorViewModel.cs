@@ -1370,12 +1370,10 @@ public sealed class XModelEditorViewModel
             materialRows));
 
         var boneRows = model.BoneNames
-            .Select((bone, index) => (bone.Text, Index: index))
-            .Where(value => !string.IsNullOrWhiteSpace(value.Text))
-            .Select(value => (InspectorPropertyRowViewModel)ReadOnly(
-                $"Bone {value.Index}",
-                $"xmodel.boneNames[{value.Index}]",
-                value.Text!))
+            .Select((bone, index) => (InspectorPropertyRowViewModel)ReadOnly(
+                $"Bone {index}",
+                $"xmodel.boneNames[{index}]",
+                bone.Text is null ? "<null>" : $"\"{bone.Text}\""))
             .ToList();
         if (boneRows.Count == 0)
         {

@@ -45,7 +45,8 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
                 key,
                 XAssetType.Vehicle,
                 originalSerializedName,
-                freeze);
+                freeze,
+                definition.TrophyTags);
         }
 
         return new VehicleLinkPlan(key, originalSerializedName, definition, freeze);
@@ -73,11 +74,11 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
             definition.CompassEnemyIcon is not null ||
             definition.SurfaceSoundPrefixPointer.Raw != 0 ||
             definition.SurfaceSoundPrefix is not null ||
-            !IsZeroReferenceTags(definition.TrophyTags) ||
+            !HasValidReferenceTags(definition.TrophyTags) ||
             !EnumerateSoundFields(definition).All(item => IsZero(item.Field)))
         {
             throw new InvalidDataException(
-                "A comma-prefixed Vehicle provider must have a zeroed reference body.");
+                "A comma-prefixed Vehicle provider must have a zeroed reference body and identical resolved trophy tags.");
         }
 
     }
@@ -219,14 +220,7 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
                 yield return DirectOperation(root, sound.Offset, target, sound.Path);
         }
         for (int index = 0; index < trophyTags.Count; index++)
-        {
-            yield return new ScriptStringLinkOperation(
-                new LinkStorageCell(
-                    root,
-                    checked(VehicleDefAsset.ScriptStringOffset + index * sizeof(ushort))),
-                trophyTags[index],
-                $"Vehicle.TrophyTags[{index}]");
-        }
+            yield return TrophyTagOperation(root, index, trophyTags[index]);
         if (compassFriendly is { } friendly)
             yield return ProviderOperation(root, 0x1d8, friendly);
         if (compassEnemy is { } enemy)
@@ -562,10 +556,16 @@ internal sealed class VehicleLinkPlan : AssetLinkPlan
         }
     }
 
-    private static bool IsZeroReferenceTags(
+    internal static ScriptStringLinkOperation TrophyTagOperation(
+        LinkStorageSymbol root, int index, ScriptStringReference? value) =>
+        new(new LinkStorageCell(root, VehicleDefAsset.ScriptStringOffset + index * sizeof(ushort)),
+            value ?? new ScriptStringReference(0, null, default, default), $"Vehicle.TrophyTags[{index}]");
+
+    private static bool HasValidReferenceTags(
         IReadOnlyList<ScriptStringReference> values) =>
         values.Count == 0 || values.All(value =>
-            value is not null && value.RawLocalIndex == 0 && value.Text is null);
+            value is not null && value.HasResolvedValue &&
+            string.Equals(value.Text, values[0].Text, StringComparison.Ordinal));
 
     private static bool IsZero(VehicleSoundAliasField field) =>
         field is not null &&

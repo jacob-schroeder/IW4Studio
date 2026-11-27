@@ -703,7 +703,7 @@ public sealed partial class WeaponDraft
         ScriptStringReference current,
         ScriptStringReference value)
     {
-        string? text = string.IsNullOrEmpty(value.Text) ? null : value.Text;
+        string? text = value.Text;
         return StringEquals(current.Text, text)
             ? current
             : new ScriptStringReference(0, text, ScriptStringHandle.Null, default);

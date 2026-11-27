@@ -10,11 +10,11 @@ internal sealed class LinkStorageEmissionState
     private readonly Dictionary<LinkAliasCellSymbol, XBlockAddress>
         _aliasCellPublications = new(ReferenceEqualityComparer.Instance);
     private readonly Stack<List<LinkStorageSymbol>> _tempScopes = [];
-    private readonly IReadOnlyDictionary<string, ushort> _scriptStringIndices;
+    private readonly IReadOnlyDictionary<ScriptStringValue, ushort> _scriptStringIndices;
 
     public LinkStorageEmissionState(
         ZoneEmissionWriter output,
-        IReadOnlyDictionary<string, ushort> scriptStringIndices)
+        IReadOnlyDictionary<ScriptStringValue, ushort> scriptStringIndices)
     {
         Output = output ?? throw new ArgumentNullException(nameof(output));
         _scriptStringIndices = scriptStringIndices ??
@@ -148,12 +148,8 @@ internal sealed class LinkStorageEmissionState
             case ScriptStringLinkOperation script:
             {
                 ResolvedCell cell = ResolveCell(script.Cell, sizeof(ushort));
-                ushort index = script.Text is null
-                    ? (ushort)0
-                    : _scriptStringIndices.TryGetValue(script.Text, out ushort resolved)
-                        ? resolved
-                        : throw new InvalidDataException(
-                            $"{script.FieldPath} value '{script.Text}' is absent from the rebuilt script-string table.");
+                if (!_scriptStringIndices.TryGetValue(new(script.Text), out ushort index))
+                    throw new InvalidDataException($"{script.FieldPath} value is absent from the rebuilt script-string table.");
                 Output.PatchUInt16(cell.SourceOffset, index);
                 break;
             }

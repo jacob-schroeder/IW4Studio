@@ -24,7 +24,7 @@ public sealed class ZoneDetailsToolViewModel : ObservableObject
                         ? blockSizes[index]
                         : 0))
                 .ToArray());
-        RefreshScriptStrings(session.LinkRequest.ScriptStrings);
+        RefreshScriptStrings(loadedZone.XAssetList.ScriptStrings.Select(entry => entry.Value));
         AssetCount = loadedZone.XAssetList.Assets.Count.ToString("N0", CultureInfo.InvariantCulture);
     }
 
@@ -42,11 +42,11 @@ public sealed class ZoneDetailsToolViewModel : ObservableObject
 
     internal void ApplyScriptStrings(ScriptStringEditSnapshot snapshot, IReadOnlyList<string?> values)
     {
-        bool changed = _session.ApplyScriptStrings(snapshot, values);
-        RefreshScriptStrings(changed ? _session.LinkRequest.ScriptStrings : values);
+        var applied = _session.ApplyScriptStrings(snapshot, values) ? _session.CaptureScriptStrings() : snapshot;
+        RefreshScriptStrings(applied.Rows.Select(row => row.Text));
     }
 
-    private void RefreshScriptStrings(IReadOnlyList<string?> values)
+    private void RefreshScriptStrings(IEnumerable<string?> values)
     {
         ScriptStrings = values
             .Select((text, index) => new ZoneScriptStringViewModel(index, text))

@@ -14,7 +14,7 @@ public sealed class ZoneScriptStringViewModel(int index, string? text, int asset
     }
 
     public int AssetUseCount { get; } = assetUseCount;
-    public bool CanEdit => Index != 0 && AssetUseCount == 0;
+    public bool CanEdit => AssetUseCount == 0;
 
     public string? Text
     {
@@ -22,7 +22,21 @@ public sealed class ZoneScriptStringViewModel(int index, string? text, int asset
         set
         {
             if (CanEdit && SetProperty(ref _text, value))
+            {
                 OnPropertyChanged(nameof(Value));
+                OnPropertyChanged(nameof(EditText));
+            }
+        }
+    }
+
+    public string EditText
+    {
+        get => Text ?? string.Empty;
+        set
+        {
+            string input = value ?? string.Empty;
+            if (!string.Equals(input, EditText, StringComparison.Ordinal))
+                Text = input;
         }
     }
 
@@ -30,6 +44,7 @@ public sealed class ZoneScriptStringViewModel(int index, string? text, int asset
     {
         null => "<null>",
         "" => "<empty>",
+        "<null>" or "<empty>" => $"\"{Text}\"",
         _ => Text
     };
 }
