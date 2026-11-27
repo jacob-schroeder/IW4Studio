@@ -1,12 +1,6 @@
 using IW4.Linker.Packaging;
 using System.Text;
-using IW4.Game.Assets;
 using IW4.Game.Assets.Image;
-using IW4.Game.Assets.Material;
-using IW4.Game.Assets.TechniqueSet;
-using IW4.Linker.Contracts;
-using IW4.Game.Database.Streaming;
-using MapConverter.Game.IW3.PC.Conversion;
 using MapConverter.Game.IW3.PS3.Extraction;
 using MapConverter.Game.IW3.PS3.Images;
 using MapConverter.Game.IW3.PS3.Rules;
@@ -36,15 +30,6 @@ internal static class Iw3Ps3MapUiCompiler
         var images = new Iw3Ps3ImageLibrary("");
         images.AddFastFile(uiPath, token);
         GfxImageAsset image = images.ResolvePreviewAt(uiPath, root, mapName);
-        var techniques = new MaterialTechniqueSetAsset { Name = ",2d" };
-        // Same opaque, linear-clamped native UI material as the existing
-        // Havana/Shipment previews; no COD4 shader or map PAK dependency.
-        MaterialAsset material = Ps3LoadZoneBuilder.CreateBackdropMaterial(
-            MapUiRules.PreviewName(mapName), 0x8800180000000000, image,
-            MaterialSamplerState.FilterLinear | MaterialSamplerState.ClampMask,
-            TextureSemantic.TwoDimensional, 0x18128812, techniques, (MaterialSortKey)34);
-        BaseAsset[] roots = [image, material, .. localizations];
-        return Iw3PcMapConverter.LinkAndPackage(MapUiRules.ZoneName(mapName), roots, [techniques],
-            new Dictionary<AssetKey, ImageFileStreamLanguageReferences>());
+        return Ps3MapUiZoneBuilder.Build(MapUiRules.PreviewName(mapName), image, localizations);
     }
 }

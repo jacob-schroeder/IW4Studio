@@ -24,7 +24,8 @@ internal sealed record Iw3PcExtractionResult(
     string LoadAssetDirectory,
     string LoadZoneSourcePath,
     Iw3PcSourceLibrary? SourceLibrary,
-    Iw3PcVehicleRecipes VehicleRecipes);
+    Iw3PcVehicleRecipes VehicleRecipes,
+    (string? Title, string? Description) MenuText);
 
 /// <summary>
 /// Reads IW3 PC source assets and converts the map BSP
@@ -91,10 +92,12 @@ internal static class Iw3PcExtractionBackend
                 scratchDirectory,
                 cancellationToken).ConfigureAwait(false);
 
+        var menuText = sourceLibrary?.MenuText ?? default;
         Iw3PcWorldExtraction world;
         if (sourceLibrary is null)
         {
             var mapZone = Iw3PcZone.Load(mapFastFilePath, cancellationToken);
+            menuText = ReadMenuText(mapZone, mapName, menuText);
             world = Iw3PcWorldConverter.Convert(mapZone, d3dbspPath, textured: true, cancellationToken);
             await ExtractStandaloneAsync(mapZone, mapFastFilePath, mapAssetDirectory, iwdPath,
                 worldOnly: false, cancellationToken).ConfigureAwait(false);
@@ -121,7 +124,9 @@ internal static class Iw3PcExtractionBackend
         }
         else
         {
-            await ExtractStandaloneAsync(Iw3PcZone.Load(loadFastFilePath, cancellationToken), loadFastFilePath,
+            var loadZone = Iw3PcZone.Load(loadFastFilePath, cancellationToken);
+            menuText = ReadMenuText(loadZone, mapName, menuText);
+            await ExtractStandaloneAsync(loadZone, loadFastFilePath,
                 loadAssetDirectory, iwdPath, worldOnly: false, cancellationToken).ConfigureAwait(false);
         }
 
@@ -134,8 +139,13 @@ internal static class Iw3PcExtractionBackend
             loadAssetDirectory,
             loadZoneSourcePath,
             sourceLibrary,
-            vehicleRecipes);
+            vehicleRecipes,
+            menuText);
     }
+
+    internal static (string? Title, string? Description) ReadMenuText(Iw3PcZone zone, string mapName,
+        (string? Title, string? Description) existing) =>
+        (existing.Title ?? zone.ReadLocalize(mapName), existing.Description ?? zone.ReadLocalize(mapName + "_desc"));
 
     internal static async Task ExtractStandaloneAsync(Iw3PcZone zone, string fastFilePath,
         string outputDirectory, string? iwdPath, bool worldOnly, CancellationToken token)

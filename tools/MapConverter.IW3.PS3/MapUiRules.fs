@@ -66,6 +66,11 @@ module internal MapUiRules =
            LocalizeAsset(Name = mapName + "_desc", Value = description)
            FactionLocalization(mapName, factions) |]
 
+    let CustomLocalizations(mapName: string, title: string, description: string, factions: FactionProfile) =
+        let displayName = if String.IsNullOrWhiteSpace title then mapName else title
+        let displayDescription = if String.IsNullOrWhiteSpace description then mapName + " custom map" else description
+        Localizations(mapName, displayName, displayDescription, factions)
+
     /// Frontend previews must be resident before the map or its named PAK is
     /// loaded. Retain PS3 pixels and use the native custom-UI image profile.
     let PreviewImage(mapName: string, root: ReadOnlySpan<byte>, payload: ReadOnlyMemory<byte>) =

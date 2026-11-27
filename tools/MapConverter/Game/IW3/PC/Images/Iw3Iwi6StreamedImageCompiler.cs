@@ -5,7 +5,36 @@ namespace MapConverter.Game.IW3.PC.Images;
 
 internal sealed record Iw3Iwi6StreamedImageCompilation(
     GfxImageAsset Image,
-    IReadOnlyList<ReadOnlyMemory<byte>> StreamPartPayloads);
+    IReadOnlyList<ReadOnlyMemory<byte>> StreamPartPayloads)
+{
+    internal GfxImageAsset ToResidentImage()
+    {
+        if (Image.MapType != MapType.TwoDimensional || Image.IsCubemap ||
+            Image.TextureSemantic != TextureSemantic.TwoDimensional)
+            throw new InvalidDataException($"Image '{Image.Name}' is not a two-dimensional preview.");
+        if (Image.PayloadByteCount != 0)
+            return Image;
+
+        int[] partByteCounts = GfxImageStreamData.ValidateProfileAndComputePartByteCounts(Image.StreamData);
+        int activePartCount = Array.FindLastIndex(partByteCounts, count => count != 0) + 1;
+        if (activePartCount == 0 || StreamPartPayloads.Count != GfxImageStreamData.EntryCount)
+            throw new InvalidDataException($"Image '{Image.Name}' has no complete stream payload.");
+        var payload = new byte[partByteCounts.Sum()];
+        int offset = 0;
+        for (int part = activePartCount - 1; part >= 0; part--)
+        {
+            if (StreamPartPayloads[part].Length != partByteCounts[part])
+                throw new InvalidDataException($"Image '{Image.Name}' has an incomplete stream part {part}.");
+            StreamPartPayloads[part].Span.CopyTo(payload.AsSpan(offset, partByteCounts[part]));
+            offset += partByteCounts[part];
+        }
+        GfxImageStreamData topPart = Image.StreamData[activePartCount - 1];
+        return Iw3Iwi6StreamedImageCompiler.CreateResidentImage(
+            Image.Name ?? throw new InvalidDataException("Compiled image has no name."),
+            Image.Format, checked((byte)topPart.LevelMarker), topPart.Width, topPart.Height,
+            false, payload, Image.TextureSemantic, Image.UseSrgbReads != 0);
+    }
+}
 
 /// <summary>
 /// Converts one IW3 IWI6 image into an owned PS3 IW4 GfxImage.
@@ -191,32 +220,8 @@ internal static class Iw3Iwi6StreamedImageCompiler
         {
             // The PS3 wire image has no noPicmip field. Full resident storage
             // preserves the source resolution without stream quality reduction.
-            var image = new GfxImageAsset
-            {
-                Format = format,
-                LevelCount = checked((byte)mipCount),
-                DimensionCount = GfxImageDimension.TwoDimensional,
-                MultiFaceControl = isCubemap ? (byte)1 : (byte)0,
-                TextureControl1 = TextureControl1,
-                Width = width,
-                Height = height,
-                Depth = 1,
-                MemoryLocation = GfxImageMemoryLocation.Local,
-                MapType = isCubemap ? MapType.Cube : MapType.TwoDimensional,
-                TextureSemantic = semantic,
-                Category = ImageCategory.LoadFromFile,
-                UseSrgbReads = useSrgbReads ? (byte)1 : (byte)0,
-                CardMemory = checked((uint)payload.Length),
-                BaseWidth = width,
-                BaseHeight = height,
-                BaseDepth = 1,
-                BaseLevelCount = checked((byte)mipCount),
-                Cached = GfxImageCached.No,
-                StreamData = Enumerable.Repeat(new GfxImageStreamData(0, 0, 0), GfxImageStreamData.EntryCount).ToArray(),
-                PayloadByteCount = payload.Length,
-                PayloadBytes = payload,
-                Name = imageName
-            };
+            GfxImageAsset image = CreateResidentImage(imageName, format, checked((byte)mipCount),
+                width, height, isCubemap, payload, semantic, useSrgbReads);
             return new Iw3Iwi6StreamedImageCompilation(
                 image,
                 Array.AsReadOnly(new ReadOnlyMemory<byte>[GfxImageStreamData.EntryCount]));
@@ -334,6 +339,39 @@ internal static class Iw3Iwi6StreamedImageCompiler
         return new Iw3Iwi6StreamedImageCompilation(
             image,
             Array.AsReadOnly(streamPartPayloads));
+    }
+
+    internal static GfxImageAsset CreateResidentImage(
+        string imageName, byte format, byte mipCount, ushort width, ushort height,
+        bool isCubemap, byte[] payload, TextureSemantic semantic,
+        bool useSrgbReads)
+    {
+        return new GfxImageAsset
+        {
+            Format = format,
+            LevelCount = mipCount,
+            DimensionCount = GfxImageDimension.TwoDimensional,
+            MultiFaceControl = isCubemap ? (byte)1 : (byte)0,
+            TextureControl1 = TextureControl1,
+            Width = width,
+            Height = height,
+            Depth = 1,
+            MemoryLocation = GfxImageMemoryLocation.Local,
+            MapType = isCubemap ? MapType.Cube : MapType.TwoDimensional,
+            TextureSemantic = semantic,
+            Category = ImageCategory.LoadFromFile,
+            UseSrgbReads = useSrgbReads ? (byte)1 : (byte)0,
+            CardMemory = checked((uint)payload.Length),
+            BaseWidth = width,
+            BaseHeight = height,
+            BaseDepth = 1,
+            BaseLevelCount = mipCount,
+            Cached = GfxImageCached.No,
+            StreamData = Enumerable.Repeat(new GfxImageStreamData(0, 0, 0), GfxImageStreamData.EntryCount).ToArray(),
+            PayloadByteCount = payload.Length,
+            PayloadBytes = payload,
+            Name = imageName
+        };
     }
 
     private static void CreateStreamParts(

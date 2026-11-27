@@ -50,6 +50,7 @@ internal sealed class Iw3PcSourceLibrary
     }
 
     internal IReadOnlyList<string> IwdPaths { get; }
+    internal (string? Title, string? Description) MenuText { get; private set; }
     internal SortedSet<string> MissingSoundReferences { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     internal void RecordSoundPayloadSource(string path, string archive)
@@ -195,8 +196,16 @@ internal sealed class Iw3PcSourceLibrary
             Catalog catalog;
             try
             {
-                catalog = isPs3 ? Iw3Ps3FastFileCatalog.Read(path, cancellationToken)
-                    : CreateCatalog(Iw3PcZone.Load(path, cancellationToken));
+                if (isPs3)
+                    catalog = Iw3Ps3FastFileCatalog.Read(path, cancellationToken);
+                else
+                {
+                    var zone = Iw3PcZone.Load(path, cancellationToken);
+                    catalog = CreateCatalog(zone);
+                    if (role is "map" or "load")
+                        library.MenuText = Iw3PcExtractionBackend.ReadMenuText(zone,
+                            Path.GetFileNameWithoutExtension(mapFF), library.MenuText);
+                }
                 await VerifyHashAsync(path, hash, cancellationToken).ConfigureAwait(false);
                 ValidateCatalog(catalog);
             }

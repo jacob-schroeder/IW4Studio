@@ -78,7 +78,7 @@ internal sealed class Iw3Ps3MaterialCompiler(
                 : toolSort is { } mappedTool
                 ? (mappedTool, sourceCameraRegion)
                 : Iw3MaterialCompiler.ConvertSortAndCameraRegion(root[5], sourceCameraRegion,
-                    entries, setName, source.Name);
+                    entries, setName, source.Name, techniqueSet);
 
         MaterialTextureDef[] textures = source.Textures.Select((texture, index) =>
             CompileTexture(texture, source.Name, index)).ToArray();

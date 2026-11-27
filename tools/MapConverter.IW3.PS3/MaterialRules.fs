@@ -98,6 +98,15 @@ module internal MaterialRules =
             Nullable MaterialSortKey.AdditiveBlend
         | _ -> Nullable()
 
+    /// An emissive pass that samples resolvedPostSun needs the PS3 distortion draw order.
+    let EmissiveSortKey43(techniqueSet: MaterialTechniqueSetAsset) =
+        let needsPostSun (slot: MaterialTechniqueSlot) =
+            slot.Type = MaterialTechniqueType.Emissive && not (isNull slot.Technique) &&
+            slot.Technique.Flags.HasFlag(MaterialTechniqueFlags.NeedsResolvedPostSun)
+        if not (isNull techniqueSet) && Seq.exists needsPostSun techniqueSet.TechniqueSlots then
+            MaterialSortKey.Distortion
+        else MaterialSortKey.AdditiveBlend
+
     /// Native PS3 IW4 materials/cloud_dust_mote.json has emissive
     /// particle_cloud at sort 34; its _sort sibling uses 50, so this route is
     /// deliberately limited to the matching COD4 material and source key.

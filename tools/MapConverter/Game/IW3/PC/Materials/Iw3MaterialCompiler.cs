@@ -720,6 +720,7 @@ internal static class Iw3MaterialCompiler
                     stateEntries,
                     techniqueSetName,
                     sourceName,
+                    resolvedTechniqueSet,
                     decalState);
 
             var material = new MaterialAsset
@@ -768,6 +769,7 @@ internal static class Iw3MaterialCompiler
             IReadOnlyList<MaterialStateBitsEntry> stateEntries,
             string techniqueSetName,
             string sourceName,
+            MaterialTechniqueSetAsset? resolvedTechniqueSet,
             GfxStateBits? decalState = null)
     {
         if (MaterialRules.ParticleCloudSort(sourceSortKey, sourceCameraRegion, techniqueSetName, sourceName)
@@ -830,7 +832,8 @@ internal static class Iw3MaterialCompiler
             38 when lit => MaterialSortKey.WindowInside,
             39 when lit => MaterialSortKey.WindowOutside,
             43 when lit => (MaterialSortKey)29,
-            43 when emissive || ui => MaterialSortKey.AdditiveBlend,
+            43 when emissive => MaterialRules.EmissiveSortKey43(resolvedTechniqueSet),
+            43 when ui => MaterialSortKey.AdditiveBlend,
             48 when emissive => MaterialSortKey.EffectAutoSort,
             _ => throw MaterialError(sourceName,
                 $"source sort key {sourceSortKey} has no verified PS3 mapping for this technique family")

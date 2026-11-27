@@ -3,6 +3,15 @@ namespace MapConverter.IW3.PC.Readers;
 
 public sealed partial class Iw3PcZone
 {
+    internal string? ReadLocalize(string key)
+    {
+        var asset = Assets.LastOrDefault(entry => entry.Type == "localize" &&
+            string.Equals(entry.Name, key, StringComparison.OrdinalIgnoreCase));
+        if (asset is null) return null;
+        string value = String(asset.Offset);
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
     private sealed partial class Loader
     {
         // File sizes and offsets below describe the little-endian IW3 PC layout, independent of host word size.

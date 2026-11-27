@@ -1030,7 +1030,8 @@ internal static class Iw3PcMapConverter
                 effectiveImageFileIndex,
                 sourceLibrary: extraction.SourceLibrary,
                 ownedAssetNamePrefix: ownedAssetNamePrefix,
-                nativeStreamParts: nativeMaterials.ImageStreamPayloads);
+                nativeStreamParts: nativeMaterials.ImageStreamPayloads,
+                loadImageName: loadImageNames.Count == 1 ? loadImageNames.Single() : null);
             GfxImageAsset? sourceSkyImage = sourceSkyImageName is not null
                 ? images.AssetsBySourceName[sourceSkyImageName] : null;
             if (sourceSkyImage is not null && (IsExternal(sourceSkyImage) || sourceSkyImage.MapType != MapType.Cube))
@@ -1217,9 +1218,10 @@ internal static class Iw3PcMapConverter
 
             byte[] loadFastFile = BuildLoadFastFile(paths.LoadName, loadImageNames, images, loadRawFiles);
 
-            byte[] uiFastFile = LinkAndPackage(MapUiRules.ZoneName(paths.MapName),
-                [MapUiRules.FactionLocalization(paths.MapName, options.Factions)], [],
-                new Dictionary<AssetKey, ImageFileStreamLanguageReferences>());
+            var preview = images.LoadImage?.ToResidentImage() ??
+                throw new InvalidDataException($"The load zone '{paths.LoadName}' has no menu preview image.");
+            byte[] uiFastFile = Ps3MapUiZoneBuilder.Build(MapUiRules.PreviewName(paths.MapName), preview,
+                MapUiRules.CustomLocalizations(paths.MapName, extraction.MenuText.Title, extraction.MenuText.Description, options.Factions));
 
             Directory.CreateDirectory(paths.OutputDirectory);
             string token = Guid.NewGuid().ToString("N");
@@ -1533,7 +1535,8 @@ internal static class Iw3PcMapConverter
         bool useFallbackImages = false,
         Iw3PcSourceLibrary? sourceLibrary = null,
         string ownedAssetNamePrefix = "",
-        IReadOnlyDictionary<GfxImageAsset, IReadOnlyList<byte[]>>? nativeStreamParts = null)
+        IReadOnlyDictionary<GfxImageAsset, IReadOnlyList<byte[]>>? nativeStreamParts = null,
+        string? loadImageName = null)
     {
         ImageRequirement[] ordered = requirements.Values
             .OrderBy(requirement => requirement.Name, StringComparer.OrdinalIgnoreCase)
@@ -1761,7 +1764,8 @@ internal static class Iw3PcMapConverter
             referencesByAsset,
             package,
             sortedFullImages.Length + waterImages.Length,
-            Array.AsReadOnly(fallbackImageNames.ToArray()));
+            Array.AsReadOnly(fallbackImageNames.ToArray()),
+            loadImageName is null ? null : fullImagesByName.GetValueOrDefault(loadImageName));
     }
 
     private static Iw3Iwi6StreamedImageCompilation CompileFallbackImage(
@@ -2834,7 +2838,8 @@ internal static class Iw3PcMapConverter
             StreamReferencesByAsset,
         ImageFilePackage? Package,
         int OwnedImageCount,
-        IReadOnlyList<string> FallbackImageNames);
+        IReadOnlyList<string> FallbackImageNames,
+        Iw3Iwi6StreamedImageCompilation? LoadImage);
 
     private sealed record TechniqueCompilationGraph(
         IReadOnlyDictionary<string, MaterialTechniqueSetAsset> AssetsByName,
