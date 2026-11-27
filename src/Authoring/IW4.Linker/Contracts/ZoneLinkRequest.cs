@@ -15,6 +15,7 @@ public sealed class ZoneLinkRequest
 {
     private readonly IReadOnlyList<LinkRoot> _roots;
     private readonly IReadOnlyList<string?> _scriptStrings;
+    private readonly Lazy<LinkAssetPool> _assets;
 
     public ZoneLinkRequest(
         LinkAssetPool assets,
@@ -22,8 +23,20 @@ public sealed class ZoneLinkRequest
         uint languageMask,
         uint selectedLanguageMask,
         IEnumerable<string?> scriptStrings)
+        : this(new Lazy<LinkAssetPool>(assets ?? throw new ArgumentNullException(nameof(assets))),
+            roots, languageMask, selectedLanguageMask, scriptStrings)
     {
-        Assets = assets ?? throw new ArgumentNullException(nameof(assets));
+    }
+
+    /// <summary>Prepares providers on first use from inputs owned by this revision.</summary>
+    public ZoneLinkRequest(
+        Lazy<LinkAssetPool> assets,
+        IEnumerable<LinkRoot> roots,
+        uint languageMask,
+        uint selectedLanguageMask,
+        IEnumerable<string?> scriptStrings)
+    {
+        _assets = assets ?? throw new ArgumentNullException(nameof(assets));
         ArgumentNullException.ThrowIfNull(roots);
         ArgumentNullException.ThrowIfNull(scriptStrings);
         if (!DbLanguageMask.IsSupported(languageMask))
@@ -67,11 +80,14 @@ public sealed class ZoneLinkRequest
         SelectedLanguageMask = selectedLanguageMask;
     }
 
-    public LinkAssetPool Assets { get; }
+    public LinkAssetPool Assets => _assets.Value;
     public IReadOnlyList<LinkRoot> Roots => _roots;
     public IReadOnlyList<string?> ScriptStrings => _scriptStrings;
     public uint LanguageMask { get; }
     public uint SelectedLanguageMask { get; }
+
+    public ZoneLinkRequest WithMetadata(uint languageMask, uint selectedLanguageMask, IEnumerable<string?> scriptStrings)
+        => new(_assets, Roots, languageMask, selectedLanguageMask, scriptStrings);
 
     internal int LanguageCount => BitOperations.PopCount(LanguageMask);
 }

@@ -118,7 +118,7 @@ public sealed partial class ZoneObjectCapture
                 ?? throw new InvalidDataException($"Pointer occurrence {pointer.Occurrence.Value} has no unique decoded-tape coordinate.");
             if (tapeOffset < 0 || tapeOffset > _tape.Length - sizeof(int) || !seenTapeOffsets.Add(tapeOffset))
                 throw new InvalidDataException($"Pointer occurrence {pointer.Occurrence.Value} has a duplicate or invalid relocation tape cell.");
-            if (BinaryPrimitives.ReadInt32BigEndian(_tape.AsSpan(tapeOffset, sizeof(int))) != pointer.Raw)
+            if (BinaryPrimitives.ReadInt32BigEndian(_tape.Span.Slice(tapeOffset, sizeof(int))) != pointer.Raw)
                 throw new InvalidDataException($"Pointer occurrence {pointer.Occurrence.Value} is not idempotent with its decoded tape word.");
 
             AllocationReference? source = pointer.Cell is { } sourceCell

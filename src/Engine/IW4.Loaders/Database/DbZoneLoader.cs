@@ -285,7 +285,7 @@ public sealed class DbZoneLoader
         byte[] buffer = _fileSystem.Sys_ReadToEnd(sysFile);
         var cursor = new FastFileCursor(buffer);
         DbHeader header = _dbHeaderReader.Read(cursor, context);
-        byte[] zoneBytes = _packedStreamReader.ReadZone(
+        ReadOnlyMemory<byte> zoneBytes = _packedStreamReader.ReadZoneMemory(
             cursor,
             header.FileSize,
             context.Diagnostics);
@@ -346,7 +346,7 @@ public sealed class DbZoneLoader
         if (!ReferenceEquals(zone.Memory, zoneMemory) || !ReferenceEquals(zone.File, file))
             throw new InvalidOperationException("DB_LoadXFile received mismatched XZone, XZoneMemory, and DBFile state.");
         if (context.Header != loadState.Header ||
-            !ReferenceEquals(context.DecodedZoneBytes, loadState.ZoneBytes))
+            !Nullable.Equals(context.DecodedZoneBytes, loadState.ZoneBytes))
         {
             throw new InvalidOperationException(
                 "DB_LoadXFile received state from a different DB_InitLoadXFile operation.");
@@ -376,7 +376,7 @@ public sealed class DbZoneLoader
                 $"Decoded zone semantic traversal ended at 0x{zoneCursor.Offset:X}, but XFile.Size " +
                 $"declares the meaningful end at 0x{declaredMeaningfulEnd:X}.");
         }
-        RecordZoneTailPadding(loadState.ZoneBytes, zoneCursor.Offset, context);
+        RecordZoneTailPadding(loadState.ZoneBytes.Span, zoneCursor.Offset, context);
         ZoneObjectObservation? observation = context.ZoneObjectCapture is null
             ? null
             : context.FreezeZoneObjectObservation();
@@ -389,7 +389,7 @@ public sealed class DbZoneLoader
             XFile: loadState.XFile,
             XAssetList: xassetList,
             LoadedAssets: Array.AsReadOnly(loadedAssets.ToArray()),
-            ZoneBytes: loadState.ZoneBytes,
+            DecodedZone: loadState.ZoneBytes,
             // Linker freezing may append compatibility warnings after DB load.
             Warnings: context.Diagnostics.Warnings,
             Observation: observation);
@@ -413,7 +413,7 @@ public sealed class DbZoneLoader
     }
 
     private static void RecordZoneTailPadding(
-        byte[] zone,
+        ReadOnlySpan<byte> zone,
         int sourceOffset,
         DbLoadContext context)
     {
@@ -426,7 +426,7 @@ public sealed class DbZoneLoader
                 $"Zone cursor ended at 0x{sourceOffset:X}, beyond decoded zone length 0x{zone.Length:X}.");
         }
 
-        ReadOnlySpan<byte> tail = zone.AsSpan(sourceOffset);
+        ReadOnlySpan<byte> tail = zone[sourceOffset..];
         if (tail.IndexOfAnyExcept((byte)0) >= 0)
         {
             throw new InvalidDataException(

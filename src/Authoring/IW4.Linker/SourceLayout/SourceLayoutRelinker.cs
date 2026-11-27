@@ -64,7 +64,7 @@ public sealed class SourceLayoutRelinker
     {
         if (objectFile.DeclaredLayout.BlockSizes.Count != XFile.BlockCount)
             throw new InvalidDataException("Zone object has invalid XFile block extents.");
-        byte[] tape = objectFile.DecodedTape.ToArray();
+        ReadOnlySpan<byte> tape = objectFile.DecodedTape.Span;
         var lifetimes = objectFile.TempLifetimes.ToDictionary(value => value.Epoch);
         foreach (BoundarySymbol boundary in objectFile.Boundaries)
         {
@@ -92,7 +92,7 @@ public sealed class SourceLayoutRelinker
                 throw new InvalidDataException("Zone object contains a relocation encoding unsupported by the PS3 fastfile linker.");
             if (relocation.TapeOffset < 0 || relocation.TapeOffset > tape.Length - relocation.Width || !seen.Add(relocation.TapeOffset))
                 throw new InvalidDataException("Zone object contains duplicate or out-of-range relocation tape cells.");
-            if (BinaryPrimitives.ReadInt32BigEndian(tape.AsSpan(relocation.TapeOffset, relocation.Width)) != relocation.CapturedRaw)
+            if (BinaryPrimitives.ReadInt32BigEndian(tape.Slice(relocation.TapeOffset, relocation.Width)) != relocation.CapturedRaw)
                 throw new InvalidDataException($"Relocation at 0x{relocation.TapeOffset:X} no longer matches its captured tape word.");
             if (relocation.Form != SerializedPointerForm.Null && relocation.Target is null)
                 throw new InvalidDataException($"Relocation at 0x{relocation.TapeOffset:X} has no target symbol.");

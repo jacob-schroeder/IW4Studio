@@ -6,7 +6,7 @@ namespace IW4.Linker.Plans;
 public sealed class ZoneObjectFile
 {
     internal ZoneObjectFile(
-        byte[] decodedTape,
+        ReadOnlyMemory<byte> decodedTape,
         XFile declaredLayout,
         IEnumerable<AllocationEvent> allocationLedger,
         IEnumerable<TempLifetime> tempLifetimes,
@@ -19,10 +19,7 @@ public sealed class ZoneObjectFile
         IEnumerable<BoundarySymbol> boundaries,
         IEnumerable<PointerRelocation> relocations)
     {
-        // ZoneObjectCapture transfers its private frozen tape. No mutable
-        // owner remains after Freeze, so an additional full-tape copy would
-        // only duplicate immutable source-layout storage.
-        DecodedTape = Array.AsReadOnly(decodedTape);
+        DecodedTape = decodedTape;
         DeclaredLayout = new XFile(declaredLayout.Size, declaredLayout.ExternalSize, declaredLayout.BlockSizes);
         AllocationLedger = Array.AsReadOnly(allocationLedger.ToArray());
         TempLifetimes = Array.AsReadOnly(tempLifetimes.ToArray());
@@ -37,7 +34,7 @@ public sealed class ZoneObjectFile
         ValidateSymbolOccurrences();
     }
 
-    public ReadOnlyCollection<byte> DecodedTape { get; }
+    public ReadOnlyMemory<byte> DecodedTape { get; }
     public XFile DeclaredLayout { get; }
     public ReadOnlyCollection<AllocationEvent> AllocationLedger { get; }
     public ReadOnlyCollection<TempLifetime> TempLifetimes { get; }

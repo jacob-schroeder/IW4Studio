@@ -53,7 +53,7 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
 
     public uint SelectedLanguageMask { get; set; }
     public DbHeader? Header { get; set; }
-    public byte[]? DecodedZoneBytes { get; set; }
+    public ReadOnlyMemory<byte>? DecodedZoneBytes { get; set; }
     internal bool CaptureZoneObject { get; set; } = true;
     internal ZoneObjectCaptureBridge? ZoneObjectCapture { get; private set; }
 
@@ -103,7 +103,7 @@ public sealed class DbLoadContext : DbLoadExecutionContext, IDbZoneLoadRuntimeCo
     internal DbZoneContributions FreezeZoneContributions() =>
         AssetLoadSession.FreezeZoneContributions();
 
-    internal void BeginZoneObjectCapture(byte[] decodedTape, XFile layout)
+    internal void BeginZoneObjectCapture(ReadOnlyMemory<byte> decodedTape, XFile layout)
     {
         if (ZoneObjectCapture is not null)
             throw new InvalidOperationException("This load context already owns a zone-object capture.");

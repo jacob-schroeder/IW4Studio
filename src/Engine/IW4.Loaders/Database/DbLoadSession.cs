@@ -128,13 +128,14 @@ public sealed class DbLoadSession : IDisposable
     public LoadedXZone DB_LoadXZone(
         string path,
         XZoneFlags flags = XZoneFlags.None,
-        uint unknown48 = 0)
+        uint unknown48 = 0,
+        bool captureZoneObject = true)
     {
         ThrowIfDisposed();
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
         string sourceName = Path.GetFileName(path);
-        DbLoadContext context = CreateContext(sourceName);
+        DbLoadContext context = CreateContext(sourceName, captureZoneObject);
         using SysFileHandle sysFile = _fileSystem.Sys_OpenFile(path);
         var file = new DbFile(sysFile.File, Path.GetFileNameWithoutExtension(path));
         LoadedXZone result = _loader.DB_LoadXZone(

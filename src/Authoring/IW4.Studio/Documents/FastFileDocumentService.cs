@@ -5,6 +5,7 @@ using IW4.Game.Zone;
 using IW4.Linker.Contracts;
 using IW4.Linker.Packaging;
 using IW4.Runtime.Diagnostics;
+using IW4.Runtime.Assets;
 
 namespace IW4.Studio.Documents;
 
@@ -65,15 +66,14 @@ public sealed class FastFileDocumentService
         DbLoadSession session)
     {
         LoadedXZone target = session.DB_LoadXZone(request.Path, XZoneFlags.DB_ZONE_DEV);
-        LinkAssetPool targetAssets = session.FreezeLinkAssetPool(target);
-        return CreateWorkspace(
-            request,
+        var targetZone = new WorkspaceZone(target, request.Path, true, true);
+        return new FastFileWorkspace(
+            new FastFileDocument(request, targetZone, session.CaptureTargetProviders(target)),
             session,
-            [new WorkspaceZone(target, request.Path, true, true)],
-            profileName: null,
+            [targetZone],
+            zonePlanProfileName: null,
             new FastFileDependencyGraph([new FastFileDependencyNode(
-                Path.GetFullPath(request.Path), DbDependencyRequestLoadStatus.Loaded, true)]),
-            targetAssets);
+                targetZone.PhysicalPath, DbDependencyRequestLoadStatus.Loaded, true)]));
     }
 
     private static FastFileWorkspace OpenDependencies(
@@ -82,14 +82,20 @@ public sealed class FastFileDocumentService
         DbLoadSession session)
     {
         string directory = DbZoneCatalog.ResolveDependencyDirectory(request.Path);
-        LinkAssetPool? targetAssets = null;
+        IReadOnlyList<XAssetProviderContribution>? targetProviders = null;
+        LinkAssetPool? preparedAssets = null;
         DbDependencyLoadExecution execution = DbDefaultZoneDependencyLoader.Execute(
             session,
             request.Path,
             plan.ProfileName,
             directory,
             DbZoneCatalog.ResolveAdditionalDependencyDirectories(directory),
-            target => targetAssets = session.FreezeLinkAssetPool(target));
+            target =>
+            {
+                targetProviders = session.CaptureTargetProviders(target);
+                preparedAssets = target.PrepareTargetProviders(targetProviders);
+            },
+            onlyBeforeFurtherZoneChanges: true);
         WorkspaceZone[] zones = execution.LoadedZones
             .Select(zone => new WorkspaceZone(
                 zone.LoadResult, zone.PhysicalPath, zone.IsTarget, zone.IsActive))
@@ -99,40 +105,13 @@ public sealed class FastFileDocumentService
                 request.PhysicalPath,
                 request.Status,
                 request.IsTarget)));
-        return CreateWorkspace(
-            request,
+        WorkspaceZone target = zones.Single(zone => zone.IsTarget);
+        targetProviders ??= session.CaptureTargetProviders(target.LoadResult);
+        return new FastFileWorkspace(
+            new FastFileDocument(request, target, targetProviders, preparedAssets),
             session,
             zones,
             plan.ProfileName,
-            graph,
-            targetAssets ?? throw new InvalidDataException(
-                "The dependency plan completed without freezing its target providers."));
-    }
-
-    private static FastFileWorkspace CreateWorkspace(
-        FastFileDocumentOpenRequest request,
-        DbLoadSession session,
-        IReadOnlyList<WorkspaceZone> zones,
-        string? profileName,
-        FastFileDependencyGraph graph,
-        LinkAssetPool targetAssets)
-    {
-        ArgumentNullException.ThrowIfNull(targetAssets);
-        WorkspaceZone target = zones.Single(zone => zone.IsTarget);
-        var linkRequest = new ZoneLinkRequest(
-            targetAssets,
-            target.LoadResult.FreezeLinkRoots(),
-            target.LoadResult.Header.LanguageMask,
-            target.LoadResult.Header.SelectedLanguageMask,
-            target.LoadResult.XAssetList.ScriptStrings.Select(entry => entry.Value));
-        return new FastFileWorkspace(
-            new FastFileDocument(
-                request,
-                target,
-                linkRequest),
-            session,
-            zones,
-            profileName,
             graph);
     }
 

@@ -16,18 +16,16 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
     private readonly IWorkbenchSelectionContext _selectionContext;
     private readonly EditorViewModel _editor;
     private readonly AssetPoolNavigatorSnapshot _assetPool;
-    private readonly IReadOnlyDictionary<long, AssetPoolSlotSnapshot> _slotsByProvider;
     private readonly Func<BaseAsset, TargetZoneRowIdentity?, WorkspaceAssetCatalogEntry> _applyImportedAsset;
     private readonly Func<AssetPackageImportPreview,
         IReadOnlyDictionary<AssetKey, AssetPackageConflictChoice>, int> _applyPackageImport;
     private readonly Dictionary<(long, XAssetType), AssetExplorerEntryViewModel> _targetsByProvider = [];
-    private readonly Dictionary<long, AssetExplorerEntryViewModel> _dependenciesByProvider = [];
+    private readonly Lazy<Dictionary<long, AssetExplorerEntryViewModel>> _dependenciesByProvider;
     private IReadOnlyList<AssetExplorerEntryViewModel> _allRows;
     private IReadOnlyList<AssetExplorerEntryViewModel> _targetSorted;
-    private IReadOnlyList<AssetExplorerEntryViewModel> _dependenciesSorted;
     private IReadOnlyList<FastFileContentsRow> _targetContents = [];
-    private IReadOnlyList<FastFileContentsRow> _dependencyContents = [];
-    private IReadOnlyList<FastFileContentsRow> _poolContents = [];
+    private readonly Lazy<IReadOnlyList<FastFileContentsRow>> _dependencyContents;
+    private readonly Lazy<IReadOnlyList<FastFileContentsRow>> _poolContents;
     private IReadOnlyList<FastFileContentsRow> _categoryRows = [];
     private IReadOnlyList<FastFileContentsRow> _contentsRows = [];
     private IReadOnlyList<FastFileAssetNavigatorGroup> _groups;
@@ -38,7 +36,6 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
     private string _contentsSearchText = string.Empty;
     private string _importStatusMessage = string.Empty;
     private bool _rebuildingCategories;
-    private bool _staticContentsCaptured;
     private bool _disposed;
 
     public FastFileAssetsNavigatorViewModel(
@@ -54,10 +51,13 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
         _applyImportedAsset = applyImportedAsset ?? throw new ArgumentNullException(nameof(applyImportedAsset));
         _applyPackageImport = applyPackageImport ?? throw new ArgumentNullException(nameof(applyPackageImport));
         _assetPool = assetPool ?? throw new ArgumentNullException(nameof(assetPool));
-        _slotsByProvider = _assetPool.Rows.ToDictionary(slot => slot.ActiveProviderId.Value);
         _allRows = [];
         _targetSorted = [];
-        _dependenciesSorted = [];
+        _dependenciesByProvider = new(() => _editor.CatalogEntries
+            .Where(row => row.Identity.DependencyIdentity.HasValue)
+            .ToDictionary(row => row.Identity.DependencyIdentity!.Value.ProviderId));
+        _dependencyContents = new(CreateDependencyContents);
+        _poolContents = new(CreatePoolContents);
         _groups = [];
         LocalizeTable = new LocalizeTableViewModel(editor.EditingSession);
         CaptureCatalogRows();
@@ -191,8 +191,8 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
 
     public bool HasContentsRows => ContentsRows.Count != 0;
     public int TargetContentsCount => _allRows.Count;
-    public int DependencyContentsCount => _dependenciesSorted.Count;
-    public int PoolContentsCount => _poolContents.Count;
+    public int DependencyContentsCount => _editor.Workspace.AssetCatalog.DependencyEntries.Count;
+    public int PoolContentsCount => _assetPool.Count;
     public string ContentsResultText => $"{ContentsRows.Count:N0} of {_categoryRows.Count:N0}";
     public string LocalizeResultText => ContentsRows.Count == _categoryRows.Count
         ? ContentsRows.Count == 1 ? "1 string" : $"{ContentsRows.Count:N0} strings"
@@ -238,13 +238,13 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
         var row = _editor.CatalogEntries.FirstOrDefault(candidate => candidate.Identity == identity);
         if (row is not null)
             OpenSelection(ToSelection(row));
-        else if (entry.DependencyIdentity is { } provider && _slotsByProvider.TryGetValue(provider.ProviderId, out var slot))
+        else if (entry.DependencyIdentity is { } provider && _assetPool.FindProviderRow(provider.ProviderId) is { } slot)
             TryOpenPoolRow(slot.Address, slot.ActiveProviderId);
     }
 
     internal bool TryOpenPoolRow(XAssetPoolAddress address, XAssetProviderId providerId)
     {
-        FastFileContentsRow? row = _poolContents.FirstOrDefault(candidate =>
+        FastFileContentsRow? row = _poolContents.Value.FirstOrDefault(candidate =>
             candidate.PoolAddress == address &&
             candidate.PoolSlot?.ActiveProviderId == providerId);
         if (row?.PoolSlot is not { } slot)
@@ -491,13 +491,6 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
             .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(row => row.Identity.TargetRowIdentity?.SerializedIndex ?? int.MaxValue)
             .ToArray());
-        if (!_staticContentsCaptured)
-        {
-            _dependenciesSorted = Array.AsReadOnly(catalog
-                .Where(row => row.Identity.DependencyIdentity is not null)
-                .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
-                .ToArray());
-        }
         string targetFile = _editor.TargetFileName;
         _targetsByProvider.Clear();
         foreach (AssetExplorerEntryViewModel row in _allRows)
@@ -506,64 +499,66 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
                 (row.Origin != WorkspaceAssetOrigin.TargetOwnedDefinition || resolved.Zone.IsTarget))
                 _targetsByProvider.TryAdd((resolved.ProviderId, row.AssetType), row);
         }
+        string ownedHint = $"Serialized in {targetFile}.";
+        string unresolvedHint = $"Serialized reference in {targetFile}; no active provider.";
         _targetContents = Array.AsReadOnly(_targetSorted.Select(row =>
         {
-            AssetPoolSlotSnapshot? provider = row.Entry.ResolvedProvider is { } resolved
-                ? _slotsByProvider.GetValueOrDefault(resolved.ProviderId)
-                : null;
-            string sourceHint = row.Entry.IsReferencePlaceholder
-                ? provider is null
-                    ? $"Serialized reference in {targetFile}; no active provider."
-                    : $"Serialized reference in {targetFile}; active provider: {provider.ProviderFileName}."
-                : $"Serialized in {targetFile}.";
+            string sourceHint = ownedHint;
+            if (row.Entry.IsReferencePlaceholder)
+                sourceHint = row.Entry.ResolvedProvider is { } resolved &&
+                    _assetPool.FindProviderSource(resolved.ProviderId) is { } source
+                        ? $"Serialized reference in {targetFile}; active provider: {source.FileName}."
+                        : unresolvedHint;
             return new FastFileContentsRow(row, null, targetFile, sourceHint);
         }).ToArray());
-        if (_staticContentsCaptured)
-            return;
-        _dependencyContents = Array.AsReadOnly(_dependenciesSorted.Select(row =>
-        {
-            long providerId = row.Identity.DependencyIdentity!.Value.ProviderId;
-            _dependenciesByProvider.Add(providerId, row);
-            AssetPoolSlotSnapshot? provider = _slotsByProvider.GetValueOrDefault(providerId);
-            string file = provider?.ProviderFileName ?? "Unknown source";
-            return new FastFileContentsRow(row, null, file,
-                provider is null
-                    ? "The dependency provider has no known physical fastfile."
-                    : file == "Unzoned"
-                        ? "The dependency provider is unzoned; no physical fastfile is known."
-                        : file == "Unknown source"
-                            ? $"Dependency provider {provider.ActiveProviderOwner} has no known physical fastfile."
-                        : $"Dependency provider: {file}.");
-        }).ToArray());
-        _poolContents = Array.AsReadOnly(_assetPool.Rows.Select(slot =>
-        {
-            return new FastFileContentsRow(null, slot, slot.ProviderFileName,
-                slot.ProviderFileName == "Unzoned"
-                    ? "Active pool provider is unzoned; no physical fastfile is known."
-                    : slot.ProviderFileName == "Unknown source"
-                        ? $"Active pool provider {slot.ActiveProviderOwner} has no known physical fastfile."
-                    : $"Active pool provider: {slot.ProviderFileName}.",
-                ResolvePoolCatalogEntry);
-        }).ToArray());
-        _staticContentsCaptured = true;
     }
+
+    private IReadOnlyList<FastFileContentsRow> CreateDependencyContents() =>
+        Array.AsReadOnly(_editor.CatalogEntries
+            .Where(row => row.Identity.DependencyIdentity.HasValue)
+            .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(row =>
+            {
+                var source = _assetPool.FindProviderSource(row.Identity.DependencyIdentity!.Value.ProviderId);
+                string hint = source?.FileName switch
+                {
+                    null => "The dependency provider has no known physical fastfile.",
+                    "Unzoned" => "The dependency provider is unzoned; no physical fastfile is known.",
+                    "Unknown source" => $"Dependency provider {source.Value.Owner} has no known physical fastfile.",
+                    var file => $"Dependency provider: {file}."
+                };
+                return new FastFileContentsRow(row, null, source?.FileName ?? "Unknown source", hint);
+            }).ToArray());
+
+    private IReadOnlyList<FastFileContentsRow> CreatePoolContents() =>
+        Array.AsReadOnly(_assetPool.Rows.Select(slot =>
+            new FastFileContentsRow(null, slot, slot.ProviderFileName,
+                slot.ProviderFileName switch
+                {
+                    "Unzoned" => "Active pool provider is unzoned; no physical fastfile is known.",
+                    "Unknown source" => $"Active pool provider {slot.ActiveProviderOwner} has no known physical fastfile.",
+                    var file => $"Active pool provider: {file}."
+                },
+                ResolvePoolCatalogEntry)).ToArray());
 
     private AssetExplorerEntryViewModel? ResolvePoolCatalogEntry(AssetPoolSlotSnapshot slot) =>
         _targetsByProvider.GetValueOrDefault((slot.ActiveProviderId.Value, slot.AssetType))
-        ?? _dependenciesByProvider.GetValueOrDefault(slot.ActiveProviderId.Value);
+        ?? _dependenciesByProvider.Value.GetValueOrDefault(slot.ActiveProviderId.Value);
 
     private void SelectionContext_SelectionChanged(
         object? sender, WorkbenchSelectionChangedEventArgs args)
     {
         if (args.Current is
             { Source: WorkbenchAssetSelectionSource.AssetPool,
-              Identity.AssetPoolAddress: { } poolAddress } &&
-            _poolContents.FirstOrDefault(row => row.PoolAddress == poolAddress &&
-                row.PoolSlot?.ActiveProviderId == args.Current.ProviderId) is { } poolRow)
+              Identity.AssetPoolAddress: { } poolAddress })
         {
-            SetProperty(ref _selectedRow, null, nameof(SelectedRow));
-            RevealPoolRow(poolRow);
-            return;
+            if (_poolContents.Value.FirstOrDefault(row => row.PoolAddress == poolAddress &&
+                row.PoolSlot?.ActiveProviderId == args.Current.ProviderId) is { } poolRow)
+            {
+                SetProperty(ref _selectedRow, null, nameof(SelectedRow));
+                RevealPoolRow(poolRow);
+                return;
+            }
         }
         AssetExplorerEntryViewModel? desired = args.Current is
             { Source: WorkbenchAssetSelectionSource.FastFileAssets,
@@ -664,7 +659,7 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
         if (selection.Identity.AssetPoolAddress is { } address)
         {
             scope = FastFileAssetContentsScope.AssetPool;
-            row = _poolContents.FirstOrDefault(r => r.PoolAddress == address &&
+            row = _poolContents.Value.FirstOrDefault(r => r.PoolAddress == address &&
                 r.PoolSlot?.ActiveProviderId == selection.ProviderId);
         }
         else if (selection.Identity.TargetRowIdentity is { } target)
@@ -675,7 +670,7 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
         else if (selection.Identity.DependencyIdentity is { } dependency)
         {
             scope = FastFileAssetContentsScope.Dependencies;
-            row = _dependencyContents.FirstOrDefault(r => r.CatalogIdentity?.DependencyIdentity == dependency);
+            row = _dependencyContents.Value.FirstOrDefault(r => r.CatalogIdentity?.DependencyIdentity == dependency);
         }
         else
             return false;
@@ -752,8 +747,8 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
     private IReadOnlyList<FastFileContentsRow> ScopeContentsRows() => ContentsScope switch
     {
         FastFileAssetContentsScope.ThisFastFile => _targetContents,
-        FastFileAssetContentsScope.Dependencies => _dependencyContents,
-        FastFileAssetContentsScope.AssetPool => _poolContents,
+        FastFileAssetContentsScope.Dependencies => _dependencyContents.Value,
+        FastFileAssetContentsScope.AssetPool => _poolContents.Value,
         _ => throw new InvalidDataException($"Unknown Contents scope '{ContentsScope}'.")
     };
 

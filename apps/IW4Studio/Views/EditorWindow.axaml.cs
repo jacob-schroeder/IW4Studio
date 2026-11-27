@@ -610,7 +610,7 @@ public sealed partial class EditorWindow : Window
 
             output.SetLength(0);
             output.Position = 0;
-            await output.WriteAsync(workbench.Workspace.LoadedZone.ZoneBytes);
+            await output.WriteAsync(workbench.Workspace.LoadedZone.DecodedZone);
             await output.FlushAsync();
             workbench.ConsoleOutput.Append(
                 Workbench.Tools.ConsoleOutput.ConsoleOutputLevel.Information,

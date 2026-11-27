@@ -19,7 +19,7 @@ internal sealed class ZoneObjectCaptureBridge
     private bool _frozen;
     private long _tempEpoch = 1;
 
-    public ZoneObjectCaptureBridge(ReadOnlySpan<byte> decodedTape, XFile layout) => _capture = new(decodedTape, layout);
+    public ZoneObjectCaptureBridge(ReadOnlyMemory<byte> decodedTape, XFile layout) => _capture = new(decodedTape, layout);
 
     public long CurrentTempEpoch => _tempEpoch;
 

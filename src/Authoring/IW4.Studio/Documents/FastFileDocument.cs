@@ -1,15 +1,15 @@
 using IW4.Game.Database;
+using IW4.Game.Zone;
 using IW4.Loaders.Database;
 using IW4.Linker.Contracts;
 using IW4.Linker.Plans;
 using IW4.Linker.Packaging;
+using IW4.Runtime.Assets;
 
 namespace IW4.Studio.Documents;
 
 /// <summary>
-/// One immutable imported or blank fastfile document. Imported documents keep
-/// their loaded view for workbench consumers, while canonical Save As starts
-/// only from the immediately frozen semantic link request.
+/// The target as loaded, including its wire order and the definitions contributed by this zone.
 /// </summary>
 public sealed class FastFileDocument
 {
@@ -17,24 +17,45 @@ public sealed class FastFileDocument
     private readonly FastFileDocumentOpenRequest? _request;
     private readonly string? _sourcePath;
     private readonly LoadedXZone? _loadedZone;
+    private readonly Dictionary<XAssetProviderId, int> _editableProviderIndices;
 
     internal FastFileDocument(
         FastFileDocumentOpenRequest request,
         WorkspaceZone targetZone,
-        ZoneLinkRequest initialLinkRequest)
+        IReadOnlyList<XAssetProviderContribution> providers,
+        LinkAssetPool? preparedAssets = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(targetZone);
-        ArgumentNullException.ThrowIfNull(initialLinkRequest);
-
-        _request = request;
+        ArgumentNullException.ThrowIfNull(providers);
         if (!targetZone.IsTarget)
             throw new ArgumentException("The document target must be marked as target.", nameof(targetZone));
+
+        _request = request;
         _sourcePath = targetZone.PhysicalPath;
-        _loadedZone = targetZone.LoadResult;
-        InitialLinkRequest = initialLinkRequest;
-        InitialHeaderMetadata = DbHeaderAuthoringMetadata.FromHeader(
-            targetZone.LoadResult.Header);
+        LoadedXZone target = targetZone.LoadResult;
+        _loadedZone = target;
+        InitialLinkRequest = new ZoneLinkRequest(
+            preparedAssets is null
+                ? new Lazy<LinkAssetPool>(() => target.PrepareTargetProviders(providers))
+                : new Lazy<LinkAssetPool>(preparedAssets),
+            target.FreezeLinkRoots(),
+            target.Header.LanguageMask,
+            target.Header.SelectedLanguageMask,
+            target.XAssetList.ScriptStrings.Select(entry => entry.Value));
+        InitialHeaderMetadata = DbHeaderAuthoringMetadata.FromHeader(target.Header);
+        _editableProviderIndices = providers
+            .Select((provider, index) => (provider, index))
+            .Where(item => !item.provider.IsReferencePlaceholder && item.provider.AssetType is
+                (XAssetType.PhysPreset or XAssetType.PhysCollmap or XAssetType.XModelSurfs or
+                 XAssetType.Tracer or XAssetType.SndCurve or XAssetType.LoadedSound or
+                 XAssetType.VertexShader or XAssetType.PixelShader))
+            .GroupBy(item => AssetKey.FromWireName(
+                CanonicalAssetFamily.FromSerializedType(item.provider.AssetType),
+                LoadedZoneLinkExtensions.TargetProviderName(item.provider)))
+            .Where(group => group.Count() == 1)
+            .Select(group => group.Single())
+            .ToDictionary(item => item.provider.Id, item => item.index);
     }
 
     internal FastFileDocument(
@@ -45,6 +66,7 @@ public sealed class FastFileDocument
             throw new ArgumentNullException(nameof(initialLinkRequest));
         InitialHeaderMetadata = initialHeaderMetadata ??
             throw new ArgumentNullException(nameof(initialHeaderMetadata));
+        _editableProviderIndices = [];
     }
 
     public bool IsBlank => _loadedZone is null;
@@ -60,7 +82,12 @@ public sealed class FastFileDocument
     public LoadedXZone LoadedZone => _loadedZone ??
         throw new InvalidOperationException("A blank fastfile document has no loaded zone.");
 
-    /// <summary>The immutable semantic state captured at open or blank creation.</summary>
+    internal int? TargetProviderIndex(XAssetProviderId id) =>
+        _editableProviderIndices.TryGetValue(id, out int index) ? index : null;
+
+    internal LinkAssetProvider TargetProviderAt(int index) => InitialLinkRequest.Assets.Providers[index];
+
+    /// <summary>The target's ordered roots, script strings, and canonical linker inputs.</summary>
     public ZoneLinkRequest InitialLinkRequest { get; }
 
     /// <summary>The immutable authored header values captured at open or blank creation.</summary>

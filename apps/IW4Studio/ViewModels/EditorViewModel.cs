@@ -307,23 +307,26 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
             .ToArray();
         var rebuiltByIdentity = rebuilt.ToDictionary(entry => entry.Identity);
 
-        HashSet<EditorHostKey> liveHostKeys = rebuilt
-            .SelectMany(entry => new[]
-            {
-                EditorHostKey.From(entry, isRuntimePreview: false),
-                EditorHostKey.From(entry, isRuntimePreview: true)
-            })
-            .ToHashSet();
-        EditorHostKey[] removedHostKeys = _editorHosts
-            .Where(pair =>
-                !liveHostKeys.Contains(pair.Key) ||
-                !rebuiltByIdentity.ContainsKey(pair.Value.Entry.Identity))
-            .Select(pair => pair.Key)
-            .ToArray();
-        foreach (EditorHostKey key in removedHostKeys)
+        if (_editorHosts.Count != 0)
         {
-            if (_editorHosts.Remove(key, out AssetEditorHostViewModel? host))
-                host.Dispose();
+            HashSet<EditorHostKey> liveHostKeys = rebuilt
+                .SelectMany(entry => new[]
+                {
+                    EditorHostKey.From(entry, isRuntimePreview: false),
+                    EditorHostKey.From(entry, isRuntimePreview: true)
+                })
+                .ToHashSet();
+            EditorHostKey[] removedHostKeys = _editorHosts
+                .Where(pair =>
+                    !liveHostKeys.Contains(pair.Key) ||
+                    !rebuiltByIdentity.ContainsKey(pair.Value.Entry.Identity))
+                .Select(pair => pair.Key)
+                .ToArray();
+            foreach (EditorHostKey key in removedHostKeys)
+            {
+                if (_editorHosts.Remove(key, out AssetEditorHostViewModel? host))
+                    host.Dispose();
+            }
         }
 
         if (_selectedIdentity is { } selectedIdentity &&

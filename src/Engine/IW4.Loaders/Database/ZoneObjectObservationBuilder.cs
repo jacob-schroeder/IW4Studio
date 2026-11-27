@@ -7,7 +7,7 @@ namespace IW4.Loaders.Database;
 /// <summary>Records loader facts without interpreting them as link symbols.</summary>
 internal sealed class ZoneObjectObservationBuilder
 {
-    private readonly byte[] _tape;
+    private readonly ReadOnlyMemory<byte> _tape;
     private readonly XFile _layout;
     private readonly List<ZoneObjectObservationEvent> _events = [];
     private readonly Dictionary<long, ZonePointerRead> _pointers = [];
@@ -17,9 +17,9 @@ internal sealed class ZoneObjectObservationBuilder
     private long _nextTempEpoch = 1;
     private bool _frozen;
 
-    public ZoneObjectObservationBuilder(ReadOnlySpan<byte> tape, XFile layout)
+    public ZoneObjectObservationBuilder(ReadOnlyMemory<byte> tape, XFile layout)
     {
-        _tape = tape.ToArray();
+        _tape = tape;
         _layout = new XFile(layout.Size, layout.ExternalSize, layout.BlockSizes);
     }
 

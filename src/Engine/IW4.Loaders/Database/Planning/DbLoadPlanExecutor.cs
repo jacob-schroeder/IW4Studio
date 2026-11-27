@@ -13,7 +13,8 @@ public static class DbLoadPlanExecutor
     public static DbZonePlanExecutionResult Execute(
         DbZoneLoadPlan plan,
         DbLoadSession session,
-        Action<DbZonePlanRequest, LoadedXZone>? onZoneLoaded = null)
+        Action<DbZonePlanRequest, LoadedXZone>? onZoneLoaded = null,
+        bool captureTargetZoneObject = true)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(session);
@@ -70,7 +71,7 @@ public static class DbLoadPlanExecutor
                             request.ZoneInfo.Name,
                             request.ZoneInfo.AllocFlags,
                             XZoneFlags.None),
-                        captureZoneObject: request.IsTarget);
+                        captureZoneObject: request.IsTarget && captureTargetZoneObject);
                     loadedZones.Add(loaded);
                     onZoneLoaded?.Invoke(request, loaded);
                     if (request.IsTarget)

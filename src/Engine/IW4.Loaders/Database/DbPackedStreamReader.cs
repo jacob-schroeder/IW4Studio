@@ -1,4 +1,7 @@
 using System.Buffers;
+using System.Buffers.Binary;
+using System.Runtime.InteropServices;
+using IW4.Game.Zone;
 using System.IO.Compression;
 using IW4.Loaders.Compression;
 using IW4.Runtime.Diagnostics;
@@ -16,9 +19,24 @@ public sealed class DbPackedStreamReader
         uint declaredFileSize,
         LoadDiagnostics diagnostics)
     {
+        ReadOnlyMemory<byte> decoded = ReadZoneMemory(cursor, declaredFileSize, diagnostics);
+        if (MemoryMarshal.TryGetArray(decoded, out ArraySegment<byte> segment) &&
+            segment.Array is { } array && segment.Offset == 0 && segment.Count == array.Length)
+            return array;
+
+        return decoded.ToArray();
+    }
+
+    // The returned slice owns its backing array; its Length is the decoded byte count.
+    internal ReadOnlyMemory<byte> ReadZoneMemory(
+        FastFileCursor cursor,
+        uint declaredFileSize,
+        LoadDiagnostics diagnostics)
+    {
         ArgumentNullException.ThrowIfNull(diagnostics);
 
         var output = new ArrayBufferWriter<byte>();
+        bool readSizeHint = false;
         int availableEnd = cursor.Length;
         if (availableEnd < cursor.Offset + sizeof(ushort))
         {
@@ -67,6 +85,11 @@ public sealed class DbPackedStreamReader
                     $"payload byte(s) past the actual file end 0x{availableEnd:X}.");
             }
             ReadOnlyMemory<byte> compressed = cursor.ReadMemory(compressedSize);
+            if (!readSizeHint && output.WrittenCount >= sizeof(uint))
+            {
+                readSizeHint = true;
+                ReserveDecodedLength(output, availableEnd);
+            }
 
             if (blockSize == 0)
             {
@@ -107,7 +130,20 @@ public sealed class DbPackedStreamReader
                 $"Packed stream has no terminator in the available file range ending at 0x{availableEnd:X}; " +
                 "continuing with all complete packed blocks.");
         }
-        return output.WrittenSpan.ToArray();
+        // Keep final partial pages without retaining a large, unused growth buffer.
+        return output.FreeCapacity > FullBlockSize ? output.WrittenSpan.ToArray() : output.WrittenMemory;
+    }
+
+    private static void ReserveDecodedLength(ArrayBufferWriter<byte> output, int packedLength)
+    {
+        uint size = BinaryPrimitives.ReadUInt32BigEndian(output.WrittenSpan);
+        long meaningfulEnd = (long)size + XFile.SerializedSize;
+        long paddedLength = (meaningfulEnd + FullBlockSize - 1) / FullBlockSize * FullBlockSize;
+        // An unvalidated header is a capacity hint only. Larger or unusually
+        // compressible zones grow normally as their actual bytes arrive.
+        long maxHint = Math.Min(512L * 1024 * 1024, (long)packedLength * 8);
+        if (paddedLength > output.Capacity && paddedLength <= maxHint)
+            output.GetMemory((int)paddedLength - output.WrittenCount);
     }
 
     private static bool HasPaddedTerminator(ReadOnlyMemory<byte> tail)

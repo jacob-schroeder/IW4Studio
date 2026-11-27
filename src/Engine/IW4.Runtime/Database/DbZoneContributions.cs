@@ -53,7 +53,8 @@ public sealed class DbZoneContributions
 
     public IReadOnlyList<XAssetProviderId> AssetProviders { get; }
 
-    internal IReadOnlyList<XAssetProviderContribution> ProviderContributions { get; }
+    /// <summary>Provider occurrences retained in this zone's registration order.</summary>
+    public IReadOnlyList<XAssetProviderContribution> ProviderContributions { get; }
 
     public IReadOnlyList<ScriptStringHandle> ScriptStrings { get; }
 }

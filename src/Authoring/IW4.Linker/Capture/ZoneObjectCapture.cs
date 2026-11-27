@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using IW4.Game.Pointers;
 using IW4.Game.Zone;
 using IW4.Linker.Plans;
+using IW4.Loaders.Database;
 
 namespace IW4.Linker;
 
@@ -13,7 +14,7 @@ public sealed partial class ZoneObjectCapture
 {
     private const long RootTempEpoch = 1;
 
-    private readonly byte[] _tape;
+    private readonly ReadOnlyMemory<byte> _tape;
     private readonly XFile _layout;
     private readonly List<CapturedAllocation> _allocations = [];
     private readonly Dictionary<CaptureOccurrence, CapturedAllocation> _allocationByOccurrence = [];
@@ -34,8 +35,18 @@ public sealed partial class ZoneObjectCapture
     private bool _frozen;
 
     public ZoneObjectCapture(ReadOnlySpan<byte> decodedTape, XFile declaredLayout)
+        : this((ReadOnlyMemory<byte>)decodedTape.ToArray(), declaredLayout)
     {
-        _tape = decodedTape.ToArray();
+    }
+
+    internal ZoneObjectCapture(ZoneObjectObservation observation)
+        : this(observation.DecodedTape, observation.Layout)
+    {
+    }
+
+    private ZoneObjectCapture(ReadOnlyMemory<byte> decodedTape, XFile declaredLayout)
+    {
+        _tape = decodedTape;
         _layout = new XFile(declaredLayout.Size, declaredLayout.ExternalSize, declaredLayout.BlockSizes);
         var rootLifetime = new TempLifetimeRecord(RootTempEpoch, 0, null);
         _tempLifetimes.Add(rootLifetime);

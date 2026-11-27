@@ -12,5 +12,5 @@ namespace IW4.Loaders.Database;
 public sealed record XFileLoadState(
     DbHeader Header,
     XFile XFile,
-    byte[] ZoneBytes,
+    ReadOnlyMemory<byte> ZoneBytes,
     int XFileDataOffset);

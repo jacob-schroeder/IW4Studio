@@ -16,7 +16,7 @@ public static class ZoneObjectObservationTranslator
 
     private static ZoneObjectImport Replay(ZoneObjectObservation observation)
     {
-        var capture = new ZoneObjectCapture(observation.DecodedTape.Span, observation.Layout);
+        var capture = new ZoneObjectCapture(observation);
         var occurrences = new Dictionary<long, CaptureOccurrence>();
         var providerOccurrences = new Dictionary<BaseAsset, CaptureOccurrence>(ReferenceEqualityComparer.Instance);
         foreach (ZoneObjectObservationEvent @event in observation.Events)

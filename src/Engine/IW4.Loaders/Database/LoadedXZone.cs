@@ -20,10 +20,12 @@ public sealed record LoadedXZone(
     XFile XFile,
     XAssetListSnapshot XAssetList,
     IReadOnlyList<XAssetLoadResult> LoadedAssets,
-    byte[] ZoneBytes,
+    ReadOnlyMemory<byte> DecodedZone,
     IReadOnlyList<string> Warnings,
     ZoneObjectObservation? Observation)
 {
+    public ReadOnlySpan<byte> ZoneBytes => DecodedZone.Span;
+
     public IGfxImagePayloadResolver ImagePayloadResolver { get; init; } =
         UnavailableGfxImagePayloadResolver.Instance;
 

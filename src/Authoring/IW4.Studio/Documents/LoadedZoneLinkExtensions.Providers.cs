@@ -47,19 +47,11 @@ public static partial class LoadedZoneLinkExtensions
     public static LinkAssetPool FreezeLinkAssetPool(this DbLoadSession session, LoadedXZone targetZone)
     {
         ArgumentNullException.ThrowIfNull(session);
-        ArgumentNullException.ThrowIfNull(targetZone);
-        if (!session.LoadHistory.Any(zone => ReferenceEquals(zone, targetZone)))
-            throw new ArgumentException("The target zone was not loaded by this session.", nameof(targetZone));
-
         long revision = session.AssetPool.Revision;
-        DbLoadedXZone registeredTarget = session.Runtime.Zones.SingleOrDefault(zone =>
-                zone.Handle == targetZone.Context.ZoneOwner &&
-                ReferenceEquals(zone.Context, targetZone.Context))
-            ?? throw new InvalidOperationException($"Target zone '{targetZone.SourceName}' is not active in the runtime registry.");
+        DbLoadedXZone target = GetRegisteredTarget(session, targetZone);
         LinkAssetPool result = new(
-            session.AssetPool.Slots
-                .SelectMany(slot => slot.Providers)
-                .Where(provider => provider.Owner == registeredTarget.Handle)
+            session.AssetPool.Slots.SelectMany(slot => slot.Providers)
+                .Where(provider => provider.Owner == target.Handle)
                 .OrderBy(provider => provider.RegistrationSequence)
                 .Select(provider => CreateProviderSource(targetZone, provider)),
             targetZone.Context.Diagnostics.Warn);
@@ -69,10 +61,47 @@ public static partial class LoadedZoneLinkExtensions
         return result;
     }
 
+    internal static IReadOnlyList<XAssetProviderContribution> CaptureTargetProviders(
+        this DbLoadSession session,
+        LoadedXZone targetZone) => GetRegisteredTarget(session, targetZone).Contributions.ProviderContributions;
+
+    private static DbLoadedXZone GetRegisteredTarget(DbLoadSession session, LoadedXZone targetZone)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(targetZone);
+        if (!session.LoadHistory.Any(zone => ReferenceEquals(zone, targetZone)))
+            throw new ArgumentException("The target zone was not loaded by this session.", nameof(targetZone));
+
+        return session.Runtime.Zones.SingleOrDefault(zone =>
+                zone.Handle == targetZone.Context.ZoneOwner &&
+                ReferenceEquals(zone.Context, targetZone.Context))
+            ?? throw new InvalidOperationException($"Target zone '{targetZone.SourceName}' is not active in the runtime registry.");
+    }
+
+    internal static LinkAssetPool PrepareTargetProviders(
+        this LoadedXZone targetZone,
+        IReadOnlyList<XAssetProviderContribution> providers)
+    {
+        ArgumentNullException.ThrowIfNull(targetZone);
+        ArgumentNullException.ThrowIfNull(providers);
+        if (providers.Any(provider => provider is null || provider.Owner != targetZone.Context.ZoneOwner))
+            throw new ArgumentException("Target provider occurrences must belong to the loaded target zone.", nameof(providers));
+
+        return new LinkAssetPool(
+            providers.Select(provider => CreateProviderSource(targetZone, provider)),
+            targetZone.Context.Diagnostics.Warn);
+    }
+
+    internal static string TargetProviderName(XAssetProviderContribution provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        return DbLoadExecutionContext.NormalizeLoadedAssetName(
+            provider.IsReferencePlaceholder ? "," + provider.Name : provider.Name);
+    }
+
     private static LinkAssetProviderSource CreateProviderSource(LoadedXZone zone, XAssetProviderContribution provider)
     {
-        string serializedName = DbLoadExecutionContext.NormalizeLoadedAssetName(
-            provider.IsReferencePlaceholder ? "," + provider.Name : provider.Name);
+        string serializedName = TargetProviderName(provider);
         bool nameWasNormalized = !string.Equals(serializedName,
             provider.Asset.SerializedAssetName, StringComparison.Ordinal);
         return CreateCapturedProviderSource(

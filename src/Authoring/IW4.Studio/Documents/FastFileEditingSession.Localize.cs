@@ -138,12 +138,9 @@ public sealed partial class FastFileEditingSession
                         LinkAssetProviderSourceDisposition.AuthoredDetached)
                     : new LinkAssetProviderSource(definition).AsAuthoredDetached();
             }).ToArray();
-            LinkAssetPool authored;
             try
             {
-                authored = _authoredAssets
-                    .WithoutProviders(pending.Select(item => item.Key))
-                    .WithHighestPrecedenceProviders(sources);
+                PublishEditedProviders(pending.Select(item => item.Key).ToArray(), sources);
             }
             catch (InvalidDataException exception)
             {
@@ -151,8 +148,6 @@ public sealed partial class FastFileEditingSession
                     $"Localize {string.Join(", ", pending.Select(item => item.Key))}: {exception.Message}",
                     exception);
             }
-            Publish(authored, _revision.LinkRequest.Roots,
-                publishedProviderKeys: pending.Select(item => item.Key));
             foreach (var item in pending)
                 item.State.SetCurrent(item.Draft, _revision.Revision);
             RebuildChangeSet();

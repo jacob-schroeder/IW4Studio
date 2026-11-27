@@ -100,18 +100,70 @@ public sealed record AssetPoolSlotSnapshot
 /// </summary>
 public sealed class AssetPoolNavigatorSnapshot
 {
+    private readonly record struct CapturedSlot(
+        XAssetPoolAddress Address,
+        XAssetType AssetType,
+        string Name,
+        int ProviderCount,
+        XAssetProviderId ActiveProviderId,
+        DbZoneHandle ActiveProviderOwner,
+        long ActiveProviderRegistrationSequence,
+        bool IsReferencePlaceholder,
+        string? ProviderZone,
+        string ProviderFileName,
+        bool HasEditableCatalogEntry);
+
+    private readonly CapturedSlot[] _slots;
+    private readonly IReadOnlyDictionary<long, int> _slotIndexByProvider;
+    private readonly Func<XAssetType, string?, bool> _hasDesktopEditor;
+    private readonly Lazy<IReadOnlyList<AssetPoolSlotSnapshot>> _rows;
+
     private AssetPoolNavigatorSnapshot(
         long revision,
-        IEnumerable<AssetPoolSlotSnapshot> rows)
+        CapturedSlot[] slots,
+        IReadOnlyDictionary<long, int> slotIndexByProvider,
+        Func<XAssetType, string?, bool> hasDesktopEditor)
     {
         Revision = revision;
-        Rows = Array.AsReadOnly(rows.ToArray());
+        _slots = slots;
+        _slotIndexByProvider = slotIndexByProvider;
+        _hasDesktopEditor = hasDesktopEditor;
+        _rows = new Lazy<IReadOnlyList<AssetPoolSlotSnapshot>>(CreateRows);
     }
 
     public long Revision { get; }
+    public int Count => _slots.Length;
+
+    internal (string FileName, DbZoneHandle Owner)? FindProviderSource(long providerId) =>
+        _slotIndexByProvider.TryGetValue(providerId, out int index)
+            ? (_slots[index].ProviderFileName, _slots[index].ActiveProviderOwner)
+            : null;
+
+    internal AssetPoolSlotSnapshot? FindProviderRow(long providerId) =>
+        _slotIndexByProvider.TryGetValue(providerId, out int index) ? Rows[index] : null;
 
     /// <summary>Stable pool-slot order as exposed by XAssetPool.Slots.</summary>
-    public IReadOnlyList<AssetPoolSlotSnapshot> Rows { get; }
+    public IReadOnlyList<AssetPoolSlotSnapshot> Rows => _rows.Value;
+
+    private IReadOnlyList<AssetPoolSlotSnapshot> CreateRows() =>
+        Array.AsReadOnly(_slots.Select(slot =>
+        {
+            bool hasEditor = _hasDesktopEditor(slot.AssetType, slot.Name);
+            return new AssetPoolSlotSnapshot(
+                slot.Address,
+                slot.AssetType,
+                AssetExplorerEntryViewModel.GetDisplayName(slot.AssetType, slot.Name),
+                XAssetStableIdentity.NormalizeLookupName(slot.Name),
+                slot.ProviderCount,
+                slot.ActiveProviderId,
+                slot.ActiveProviderOwner,
+                slot.ActiveProviderRegistrationSequence,
+                slot.IsReferencePlaceholder,
+                slot.ProviderZone,
+                slot.ProviderFileName,
+                hasEditor,
+                hasEditor && !slot.IsReferencePlaceholder && slot.HasEditableCatalogEntry);
+        }).ToArray());
 
     public static AssetPoolNavigatorSnapshot Capture(
         FastFileWorkspace workspace,
@@ -122,28 +174,30 @@ public sealed class AssetPoolNavigatorSnapshot
 
         XAssetPool pool = workspace.LoadedZone.Context.AssetPool;
         long revision = pool.Revision;
-        XAssetSlot[] slots = pool.Slots.ToArray();
-        AssetPoolSlotSnapshot[] rows = slots.Select(slot =>
+        var zonesByOwner = workspace.LoadedZones.ToDictionary(
+            zone => zone.LoadResult.Context.ZoneOwner,
+            zone => (zone.LogicalZoneName, FileName: Path.GetFileName(zone.PhysicalPath)));
+        IReadOnlyCollection<XAssetSlot> runtimeSlots = pool.Slots;
+        var slots = new CapturedSlot[runtimeSlots.Count];
+        var slotIndexByProvider = new Dictionary<long, int>(runtimeSlots.Count);
+        int index = 0;
+        foreach (XAssetSlot slot in runtimeSlots)
         {
             XAssetProviderContribution provider = slot.ActiveProvider;
             string? zoneName = null;
             string providerFileName = "Unzoned";
             if (!provider.Owner.IsNone)
             {
-                WorkspaceZone? zone = workspace.LoadedZones
-                    .FirstOrDefault(candidate => candidate.LoadResult.Context.ZoneOwner == provider.Owner);
-                zoneName = zone?.LogicalZoneName ?? provider.Owner.ToString();
-                providerFileName = zone is null
-                    ? "Unknown source"
-                    : Path.GetFileName(zone.PhysicalPath);
+                zonesByOwner.TryGetValue(provider.Owner, out var zone);
+                zoneName = zone.LogicalZoneName ?? provider.Owner.ToString();
+                providerFileName = zone.FileName ?? "Unknown source";
             }
 
-            bool hasEditor = hasDesktopEditor(slot.AssetType, slot.Name);
-            return new AssetPoolSlotSnapshot(
+            slotIndexByProvider.Add(provider.Id.Value, index);
+            slots[index++] = new CapturedSlot(
                 slot.Address,
                 slot.AssetType,
-                AssetExplorerEntryViewModel.GetDisplayName(slot.AssetType, slot.Name),
-                XAssetStableIdentity.NormalizeLookupName(slot.Name),
+                slot.Name,
                 slot.Providers.Count,
                 provider.Id,
                 provider.Owner,
@@ -151,10 +205,8 @@ public sealed class AssetPoolNavigatorSnapshot
                 provider.IsReferencePlaceholder,
                 zoneName,
                 providerFileName,
-                hasEditor,
-                hasEditor && !provider.IsReferencePlaceholder &&
                 workspace.AssetCatalog.FindEditablePoolEntry(provider.Id)?.AssetType == slot.AssetType);
-        }).ToArray();
+        }
 
         if (pool.Revision != revision)
         {
@@ -162,6 +214,7 @@ public sealed class AssetPoolNavigatorSnapshot
                 "The runtime asset pool changed while its navigator snapshot was being captured.");
         }
 
-        return new AssetPoolNavigatorSnapshot(revision, rows);
+        return new AssetPoolNavigatorSnapshot(
+            revision, slots, slotIndexByProvider, hasDesktopEditor);
     }
 }

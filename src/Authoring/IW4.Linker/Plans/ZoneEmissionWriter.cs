@@ -140,13 +140,10 @@ internal sealed class ZoneEmissionWriter
         if (alignment <= 0 || (alignment & (alignment - 1)) != 0)
             throw new ArgumentOutOfRangeException(nameof(alignment));
 
-        byte[] meaningful = _source.ToArray();
-        int paddedLength = AlignUp(meaningful.Length, alignment);
-        if (paddedLength == meaningful.Length)
-            return meaningful;
-
-        Array.Resize(ref meaningful, paddedLength);
-        return meaningful;
+        int length = SourceLength;
+        byte[] padded = new byte[AlignUp(length, alignment)];
+        _source.GetBuffer().AsSpan(0, length).CopyTo(padded);
+        return padded;
     }
 
     private void EnsureBalanced()

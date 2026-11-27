@@ -7,7 +7,7 @@ namespace IW4.Loaders.Database;
 /// <summary>Retained decoded input and ordered physical observations from one zone load.</summary>
 public sealed class ZoneObjectObservation
 {
-    internal ZoneObjectObservation(byte[] decodedTape, XFile layout, IReadOnlyList<ZoneObjectObservationEvent> events)
+    internal ZoneObjectObservation(ReadOnlyMemory<byte> decodedTape, XFile layout, IReadOnlyList<ZoneObjectObservationEvent> events)
     {
         DecodedTape = decodedTape;
         Layout = new XFile(layout.Size, layout.ExternalSize, layout.BlockSizes);

@@ -695,18 +695,17 @@ public sealed class TransactionalSaveAsService
                 candidatePath,
                 dependencyDirectory,
                 DbZoneCatalog.ResolveAdditionalDependencyDirectories(
-                    dependencyDirectory),
-                target => _ = loadSession.FreezeLinkAssetPool(target));
+                    dependencyDirectory));
         }
         else
         {
             loadedZone = loadSession.DB_LoadXZone(
                 candidatePath,
-                XZoneFlags.DB_ZONE_DEV);
+                XZoneFlags.DB_ZONE_DEV,
+                captureZoneObject: false);
             DbDefaultZoneDependencyLoader.ValidatePs3VertexShaderCapacity(
                 loadSession,
                 targetZoneName);
-            _ = loadSession.FreezeLinkAssetPool(loadedZone);
         }
 
         cancellationToken.ThrowIfCancellationRequested();

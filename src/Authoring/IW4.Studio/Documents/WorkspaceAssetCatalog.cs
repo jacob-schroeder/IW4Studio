@@ -6,7 +6,6 @@ using IW4.Game.Assets.XModel;
 using IW4.Formats.D3dbsp;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
-using IW4.Loaders.Database;
 using IW4.Runtime.Assets;
 using IW4.Runtime.Database;
 
@@ -50,6 +49,8 @@ public sealed record WorkspaceAssetResolvedProvider(
 /// <summary>Link-request-derived catalog. Root ownership is never inferred from runtime pool precedence.</summary>
 public sealed class WorkspaceAssetCatalogEntry
 {
+    private readonly (FastFileDocument Document, int Index)? _targetProvider;
+
     internal WorkspaceAssetCatalogEntry(
         TargetZoneRowIdentity? targetRowIdentity,
         WorkspaceAssetOrigin origin,
@@ -64,7 +65,7 @@ public sealed class WorkspaceAssetCatalogEntry
         WorkspaceAssetResolvedProvider? resolvedProvider = null,
         WorkspaceAssetProviderZone? providerZone = null,
         WorkspaceDependencyAssetIdentity? dependencyIdentity = null,
-        LinkAssetProvider? targetProvider = null)
+        (FastFileDocument Document, int Index)? targetProvider = null)
     {
         if ((targetRowIdentity is null) == (dependencyIdentity is null))
         {
@@ -87,7 +88,7 @@ public sealed class WorkspaceAssetCatalogEntry
         ResolvedProvider = resolvedProvider;
         ProviderZone = providerZone ?? resolvedProvider?.Zone;
         DependencyIdentity = dependencyIdentity;
-        TargetProvider = targetProvider;
+        _targetProvider = targetProvider;
     }
     public TargetZoneRowIdentity? TargetRowIdentity { get; }
     public WorkspaceDependencyAssetIdentity? DependencyIdentity { get; }
@@ -113,7 +114,9 @@ public sealed class WorkspaceAssetCatalogEntry
             StringComparison.OrdinalIgnoreCase) == true;
     public bool HasDefinition => Definition is not null;
     internal IW4.Game.Assets.BaseAsset? Definition { get; }
-    internal LinkAssetProvider? TargetProvider { get; }
+    internal bool HasTargetProvider => _targetProvider.HasValue;
+    internal LinkAssetProvider? TargetProvider => _targetProvider is { } provider
+        ? provider.Document.TargetProviderAt(provider.Index) : null;
 }
 
 public sealed class WorkspaceAssetCatalog
@@ -194,13 +197,6 @@ public sealed class WorkspaceAssetCatalog
         ILookup<AssetKey, LinkRoot> rootsByKey = document.InitialLinkRequest.Roots
             .Where(root => root.Asset.HasValue)
             .ToLookup(root => root.Asset.GetValueOrDefault());
-        ILookup<AssetKey, LinkAssetProvider> editableProviders =
-            document.InitialLinkRequest.Assets.Providers
-                .Where(provider =>
-                    provider.SerializedType is (XAssetType.PhysPreset or XAssetType.PhysCollmap or XAssetType.XModelSurfs or XAssetType.Tracer or XAssetType.SndCurve or XAssetType.LoadedSound
-                        or XAssetType.VertexShader or XAssetType.PixelShader) &&
-                    !provider.IsReferencePlaceholder)
-                .ToLookup(provider => provider.Key);
         WorkspaceAssetCatalogEntry[] targetEntries = document.InitialLinkRequest.Roots
             .Select((root, index) =>
             {
@@ -245,20 +241,20 @@ public sealed class WorkspaceAssetCatalog
                             : null
                         : provider?.Asset;
                 bool isShader = root.SerializedType is XAssetType.VertexShader or XAssetType.PixelShader;
-                LinkAssetProvider? shaderProvider =
+                int? shaderProviderIndex =
                     isShader && root.Intent == LinkRootIntent.Owned &&
                     root.Asset is { } key && rootsByKey[key].Take(2).Count() == 1 &&
                     activePoolProvider is not null && activeProviderZone is not null &&
                     ReferenceEquals(definition, activePoolProvider.Asset)
                         ? FindEditableTargetProvider(
-                            activeSlotsByKey[key], activeProviderZone, editableProviders[key])
+                            document, activeSlotsByKey[key], activeProviderZone)
                         : null;
                 return root.Intent switch
                 {
                     LinkRootIntent.Owned => new WorkspaceAssetCatalogEntry(
                         identity,
                         WorkspaceAssetOrigin.TargetOwnedDefinition,
-                        isShader && shaderProvider is null
+                        isShader && shaderProviderIndex is null
                             ? WorkspaceAssetAccess.ReadOnly
                             : WorkspaceAssetAccess.Editable,
                         WorkspaceAssetContentSource.TargetAuthoredBaseline,
@@ -270,7 +266,7 @@ public sealed class WorkspaceAssetCatalog
                         sourceRow.HeaderKind,
                         resolvedProvider,
                         activeProviderZone,
-                        targetProvider: shaderProvider)
+                        targetProvider: shaderProviderIndex is { } shaderIndex ? (document, shaderIndex) : null)
                     {
                         OverrideSourceFile = root.SerializedType == XAssetType.Weapon &&
                             activePoolProvider?.Id == provider?.ProviderId && root.Asset is { } weaponKey
@@ -337,14 +333,14 @@ public sealed class WorkspaceAssetCatalog
                 .Where(value => !rootsByKey.Contains(value.key))
                 .Select(value =>
                 {
-                    LinkAssetProvider? targetProvider = FindEditableTargetProvider(
-                        value.slot, value.providerZone, editableProviders[value.key]);
+                    int? targetProviderIndex = FindEditableTargetProvider(
+                        document, value.slot, value.providerZone);
                     return new WorkspaceAssetCatalogEntry(
                         null,
                         WorkspaceAssetOrigin.DependencyOnly,
                         value.provider.IsReferencePlaceholder
                             ? WorkspaceAssetAccess.ContentUnavailable
-                            : targetProvider is null
+                            : targetProviderIndex is null
                                 ? WorkspaceAssetAccess.ReadOnly
                                 : WorkspaceAssetAccess.Editable,
                         value.provider.IsReferencePlaceholder
@@ -365,7 +361,7 @@ public sealed class WorkspaceAssetCatalog
                         dependencyIdentity: new WorkspaceDependencyAssetIdentity(
                             document.DocumentId,
                             value.provider.Id.Value),
-                        targetProvider: targetProvider)
+                        targetProvider: targetProviderIndex is { } providerIndex ? (document, providerIndex) : null)
                     {
                         IsReferencePlaceholder = value.provider.IsReferencePlaceholder
                     };
@@ -374,10 +370,10 @@ public sealed class WorkspaceAssetCatalog
         return new WorkspaceAssetCatalog(document, targetEntries, dependencyEntries, patchWeaponSources);
     }
 
-    private static LinkAssetProvider? FindEditableTargetProvider(
+    private static int? FindEditableTargetProvider(
+        FastFileDocument document,
         XAssetSlot slot,
-        WorkspaceAssetProviderZone zone,
-        IEnumerable<LinkAssetProvider> targetProviders)
+        WorkspaceAssetProviderZone zone)
     {
         XAssetProviderContribution active = slot.ActiveProvider;
         if (!zone.IsTarget ||
@@ -388,13 +384,7 @@ public sealed class WorkspaceAssetCatalog
             return null;
         }
 
-        LinkAssetProvider[] matches = targetProviders.Take(2).ToArray();
-        return matches.Length == 1 && string.Equals(
-            matches[0].OriginalSerializedName,
-            DbLoadExecutionContext.NormalizeLoadedAssetName(active.Name),
-            StringComparison.Ordinal)
-            ? matches[0]
-            : null;
+        return document.TargetProviderIndex(active.Id);
     }
 
     private static WorkspaceAssetProviderZone ResolveProviderZone(

@@ -28,7 +28,8 @@ public static class DbDefaultZoneDependencyLoader
         string profileName,
         string dependencyDirectory,
         IEnumerable<string> additionalDependencyDirectories,
-        Action<LoadedXZone> onTargetLoaded)
+        Action<LoadedXZone> onTargetLoaded,
+        bool onlyBeforeFurtherZoneChanges = false)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
@@ -49,12 +50,16 @@ public static class DbDefaultZoneDependencyLoader
             _ => throw new NotSupportedException(
                 $"Studio dependency profile '{profileName}' is not available.")
         };
+        // Preserve a target snapshot before later requests can replace or retire its providers.
+        bool notifyAtTarget = !onlyBeforeFurtherZoneChanges || plan.RequestsInScope.Any(request =>
+            request.Position == DbZonePlanPosition.AfterTarget &&
+            ((request.IsLoad && request.FileExists) || request.ZoneInfo.FreeFlags != XZoneFlags.None));
         DbZonePlanExecutionResult execution = DbLoadPlanExecutor.Execute(
             plan,
             session,
             (request, loaded) =>
             {
-                if (request.IsTarget)
+                if (request.IsTarget && notifyAtTarget)
                     onTargetLoaded(loaded);
             });
         DbZonePlanRequest[] loadedRequests = plan.RequestsInScope
@@ -104,16 +109,13 @@ public static class DbDefaultZoneDependencyLoader
         string targetZoneName,
         string candidatePath,
         string dependencyDirectory,
-        IEnumerable<string> additionalDependencyDirectories,
-        Action<LoadedXZone> onTargetLoaded)
+        IEnumerable<string> additionalDependencyDirectories)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetZoneName);
         ArgumentException.ThrowIfNullOrWhiteSpace(candidatePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(dependencyDirectory);
         ArgumentNullException.ThrowIfNull(additionalDependencyDirectories);
-        ArgumentNullException.ThrowIfNull(onTargetLoaded);
-
         var catalog = new DbZoneCatalog(
             dependencyDirectory,
             additionalDependencyDirectories);
@@ -125,12 +127,8 @@ public static class DbDefaultZoneDependencyLoader
         DbZonePlanExecutionResult execution = DbLoadPlanExecutor.Execute(
             plan,
             session,
-            (request, loaded) =>
-            {
-                ValidatePs3VertexShaderCapacity(session, loaded.Zone.Name);
-                if (request.IsTarget)
-                    onTargetLoaded(loaded);
-            });
+            (_, loaded) => ValidatePs3VertexShaderCapacity(session, loaded.Zone.Name),
+            captureTargetZoneObject: false);
         return execution.Target;
     }
 

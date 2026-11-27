@@ -7,6 +7,7 @@ using IW4.Game.Assets.Physics;
 using IW4.Formats.D3dbsp;
 using IW4.Game.Zone;
 using IW4.Linker.Contracts;
+using IW4.Loaders.Database;
 using IW4.Runtime.Assets;
 using IW4.Studio.Desktop.Editors;
 using IW4.Studio.Desktop.Editors.AssetReferences;
@@ -59,6 +60,7 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
     private readonly GscUsagesPresenter _gscUsagesPresenter;
     private readonly IReadOnlyDictionary<string, StudioToolRegistration> _registrationsById;
     private readonly WorkbenchEditorDiagnosticsBridge _editorDiagnosticsBridge;
+    private int _loggedTargetWarnings;
     private readonly MenuEditingCoordinator _menuEditingCoordinator;
     private readonly MenuTextResourceResolver _menuTextResourceResolver;
     private IAssetEditorPropertiesRevealSource? _propertiesRevealSource;
@@ -246,13 +248,9 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
             AppendInitialOutput();
             foreach (WorkspaceZone zone in Workspace.LoadedZones)
             {
-                foreach (string warning in zone.LoadResult.Warnings)
-                {
-                    ConsoleOutput.Append(
-                        ConsoleOutputLevel.Warning,
-                        "Fastfile Load",
-                        $"{zone.LoadResult.SourceName}: {warning}");
-                }
+                int count = LogLoadWarnings(zone.LoadResult, 0);
+                if (zone.IsTarget)
+                    _loggedTargetWarnings = count;
             }
             Diagnostics.ReplaceBySource(
                 "Workspace",
@@ -746,9 +744,20 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
         _selectionContext.Select(tab.Selection);
     }
 
+    private int LogLoadWarnings(LoadedXZone zone, int start)
+    {
+        int count = zone.Warnings.Count;
+        for (int index = start; index < count; index++)
+            ConsoleOutput.Append(ConsoleOutputLevel.Warning, "Fastfile Load",
+                $"{zone.SourceName}: {zone.Warnings[index]}");
+        return count;
+    }
+
     public void LogSaveResult(SaveAsResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
+        if (!Workspace.IsBlank)
+            _loggedTargetWarnings = LogLoadWarnings(Workspace.LoadedZone, _loggedTargetWarnings);
         if (result.Succeeded)
             RefreshAssetDependencies();
         ConsoleOutput.Append(
@@ -1039,7 +1048,7 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
         ConsoleOutput.Append(
             ConsoleOutputLevel.Information,
             "Asset Pool",
-            $"Captured {AssetPool.Rows.Count:N0} runtime slots at revision {AssetPool.Revision:N0}.");
+            $"Captured {AssetPool.Count:N0} runtime slots at revision {AssetPool.Revision:N0}.");
         ConsoleOutput.Append(
             ConsoleOutputLevel.Information,
             "Workspace",
