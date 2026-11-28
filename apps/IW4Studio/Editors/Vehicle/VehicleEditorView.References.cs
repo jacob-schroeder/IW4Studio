@@ -60,7 +60,6 @@ public sealed partial class VehicleEditorView
                 Matches(field, query))
             .ToArray();
 
-        ReferenceTitle.Text = group ?? "References";
         AssignedHeading.Text = candidates.Length > 0 && candidates.All(field => field.ReferenceType == XAssetType.Sound)
             ? "Assigned alias" : "Assigned asset";
         NoSlotsMessage.IsVisible = candidates.Length == 0;

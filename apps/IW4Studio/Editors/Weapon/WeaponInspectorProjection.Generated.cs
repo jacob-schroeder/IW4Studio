@@ -144,8 +144,8 @@ internal static class WeaponInspectorProjection
                 break;
         }
         if (vm.SelectedIndexedRow is { } selected) AddIndexedRows(vm, draft, definition, selected, rows);
-        if (rows.Count == 0) rows.Add(ReadOnly("Selection", "weapon.selection", "No editable semantic values are present for this selection."));
-        return new InspectorSelectionViewModel(vm.SelectedIndexedRow?.Title ?? vm.SelectedCategory.Title, "WEAPON", [new InspectorSectionViewModel(vm.SelectedCategory.Title, rows)], "The selected Weapon values are edited here; storage provenance remains read-only.");
+        if (rows.Count == 0) rows.Add(ReadOnly("Selection", "weapon.selection", "No editable fields in this selection."));
+        return new InspectorSelectionViewModel(vm.SelectedIndexedRow?.Title ?? vm.SelectedCategory.Title, "WEAPON", [new InspectorSectionViewModel(vm.SelectedCategory.Title, rows)]);
     }
 
     private static void AddWeaponFlashEffectFieldsRows(WeaponEditorViewModel vm, List<InspectorPropertyRowViewModel> rows, WeaponFlashEffectFields current)
@@ -626,7 +626,7 @@ internal static class WeaponInspectorProjection
             return;
         }
         if (selected.IsMalformed)
-            rows.Add(ReadOnly("Storage", "weapon.selection.storage", "Malformed native table; collection shape must be corrected outside this non-resizing editor."));
+            rows.Add(ReadOnly("Storage", "weapon.selection.storage", "This table has an invalid shape and cannot be edited here."));
         if (!selected.CanEditValue)
             return;
         int index = selected.Index;

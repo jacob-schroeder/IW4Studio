@@ -100,14 +100,14 @@ public sealed class WorkbenchAssetSelectionRouter
                     targetEntry!,
                     OpensCatalogEditor: true,
                     UnavailableReason: null)
-                : Unavailable("The selected target row is not present in this workspace catalog.");
+                : Unavailable("This entry is no longer in the open fastfile.");
         }
 
         if (selection.Identity.DependencyIdentity is { } dependency)
         {
             return _dependencies.TryGetValue(dependency, out var dependencyEntry)
                 ? new WorkbenchAssetSelectionRoute(dependencyEntry, true, null)
-                : Unavailable("The selected dependency is not present in this workspace catalog.");
+                : Unavailable("This dependency is unavailable in the current workspace.");
         }
 
         if (selection.Source == WorkbenchAssetSelectionSource.AssetPool &&
@@ -116,7 +116,7 @@ public sealed class WorkbenchAssetSelectionRouter
             var owned = selection.ProviderId is { } id ? _catalog.FindEditablePoolEntry(id) : null;
             if (owned is null || owned.AssetType != selection.AssetType ||
                 !string.Equals(owned.NormalizedName, selection.NormalizedName, StringComparison.Ordinal))
-                return Unavailable("This selection no longer identifies an editable provider in the opened fastfile.");
+                return Unavailable("This asset is no longer editable in the open fastfile.");
             return new WorkbenchAssetSelectionRoute(owned, true, null);
         }
 
@@ -157,7 +157,7 @@ public sealed class WorkbenchAssetSelectionRouter
         if (entry is null)
         {
             return Unavailable(
-                "This runtime pool slot has no matching catalog entry in the loaded workspace.");
+                "This asset pool entry has no match in the current workspace.");
         }
 
         return new WorkbenchAssetSelectionRoute(

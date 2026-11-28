@@ -1,5 +1,6 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:desktop="using:IW4.Studio.Desktop"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="IW4.Studio.Desktop.App"
              Name="IW4 Studio">
@@ -38,6 +39,18 @@
     </Style>
     <Style Selector=":is(Window)[IsExtendedIntoWindowDecorations=True]:not(Window[WindowState=FullScreen]) Border.studioTitleBar">
       <Setter Property="Padding" Value="{OnPlatform Default='12,0,198,0', macOS='82,0,12,0', x:TypeArguments=Thickness}" />
+    </Style>
+
+    <Style Selector="ContentPresenter.platformBadge">
+      <Setter Property="Content" Value="{x:Static desktop:AssemblyConst.Platform}" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Padding" Value="7,2" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioAccentStrongBrush}" />
+      <Setter Property="FontSize" Value="12" />
     </Style>
     
     <Style Selector="TabStrip > TabStripItem, TabControl > TabItem">

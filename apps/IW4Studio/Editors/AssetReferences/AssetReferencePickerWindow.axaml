@@ -185,7 +185,7 @@
       <Grid Grid.Row="6"
             ColumnDefinitions="*,Auto"
             ColumnSpacing="12">
-        <TextBlock Text="Unresolved entries remain selectable so an existing authored name can be preserved."
+        <TextBlock Text="You can select an unresolved entry to keep its existing name."
                    VerticalAlignment="Center"
                    FontSize="11"
                    TextWrapping="Wrap"

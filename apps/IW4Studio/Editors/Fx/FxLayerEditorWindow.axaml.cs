@@ -56,7 +56,7 @@ public sealed partial class FxLayerEditorWindow : Window
         FxDraft draft = session.OpenDraft<FxDraft>();
         _workingDocument = FxSourceDocument.FromJson(draft.Json, draft.AssetName);
         RefreshDocument();
-        SetStatus("Edit layers, then apply them to the workspace. Source Dump is a separate action.");
+        SetStatus("Edit layers, then apply your changes.");
     }
 
     private void RefreshDocument(int? selectIndex = null)
@@ -80,7 +80,7 @@ public sealed partial class FxLayerEditorWindow : Window
     {
         string dirty = _document.IsDirty ? " • local edits" : "";
         AssetTitle.Text = _document.AssetName + dirty;
-        PathText.Text = "Workspace FX · use Studio Source Dump to export files";
+        PathText.Text = "Export files with Source Dump";
         Title = $"{_document.AssetName}{(_document.IsDirty ? " *" : "")} — Edit FX layers";
         UndoButton.IsEnabled = _document.CanUndo;
         RedoButton.IsEnabled = _document.CanRedo;
@@ -116,7 +116,7 @@ public sealed partial class FxLayerEditorWindow : Window
         {
             Inspector.Children.Add(new TextBlock
             {
-                Text = "This layer is kept exactly as authored in the source graph. Its specialized fields are read-only here.",
+                Text = "This layer cannot be edited.",
                 TextWrapping = TextWrapping.Wrap
             });
             return;
@@ -145,7 +145,7 @@ public sealed partial class FxLayerEditorWindow : Window
         AddInput("Authored local speed", FxSourceField.Speed);
         Inspector.Children.Add(new TextBlock
         {
-            Text = "Speed scales the authored velocity curve and its stored total deltas together. Layers with no authored motion need a moving template.",
+            Text = "Speed changes the whole motion curve. Layers without motion need a moving template.",
             FontSize = 11, TextWrapping = TextWrapping.Wrap,
             Foreground = new SolidColorBrush(Color.Parse("#99A5B4"))
         });
@@ -213,7 +213,7 @@ public sealed partial class FxLayerEditorWindow : Window
         {
             _document.SetField(_selectedIndex, field, text);
             RefreshFieldValues();
-            SetStatus("Change committed locally. Apply to add it to the workspace draft.");
+            SetStatus("Change ready to apply.");
             RefreshHeader();
             RefreshLayerLabels();
             SchedulePreview();
@@ -417,7 +417,7 @@ public sealed partial class FxLayerEditorWindow : Window
         {
             _document.StartFromTemplate(template);
             RefreshDocument(0);
-            SetStatus($"Started from {selected}. Apply to add this copy to the workspace draft.");
+            SetStatus($"Started from {selected}. Apply to keep this copy.");
         }
         catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or
             ArgumentException or OverflowException or System.Text.Json.JsonException)
@@ -535,10 +535,8 @@ public sealed partial class FxLayerEditorWindow : Window
                 Margin = new Thickness(24), Spacing = 18,
                 Children =
                 {
-                    new TextBlock { Text = $"Apply layer changes to {name}?", FontSize = 19,
+                    new TextBlock { Text = $"Changes to {name} have not been applied.", FontSize = 19,
                         FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
-                    new TextBlock { Text = "The changes are still local to this dialog.",
-                        TextWrapping = TextWrapping.Wrap },
                     actions
                 }
             };

@@ -499,16 +499,13 @@ public sealed partial class StudioWorkbenchViewModel : ObservableObject, IDispos
 
     public string EditorFallbackHeading =>
         SelectedEditorTab?.Route is { IsResolved: false }
-            ? "No workspace editor target was found"
-            : "No editor exists for this resource yet";
+            ? "Asset unavailable"
+            : "No editor available";
 
     public string EditorFallbackMessage =>
         !string.IsNullOrWhiteSpace(SelectedEditorTab?.Route?.UnavailableReason)
             ? SelectedEditorTab!.Route!.UnavailableReason!
-            : string.IsNullOrWhiteSpace(SelectedKind)
-            ? "This resource can still be inspected in the Properties tool."
-            : $"A {SelectedKind} editor has not been implemented in IW4 Studio. " +
-              "The resource remains available for metadata inspection.";
+            : "View asset details in Properties.";
 
     public string TargetFileName => Editor.TargetFileName;
 

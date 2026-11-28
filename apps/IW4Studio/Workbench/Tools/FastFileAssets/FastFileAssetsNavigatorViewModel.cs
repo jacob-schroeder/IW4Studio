@@ -499,15 +499,15 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
                 (row.Origin != WorkspaceAssetOrigin.TargetOwnedDefinition || resolved.Zone.IsTarget))
                 _targetsByProvider.TryAdd((resolved.ProviderId, row.AssetType), row);
         }
-        string ownedHint = $"Serialized in {targetFile}.";
-        string unresolvedHint = $"Serialized reference in {targetFile}; no active provider.";
+        string ownedHint = $"Stored in {targetFile}.";
+        string unresolvedHint = $"Referenced by {targetFile}. The source file is unavailable.";
         _targetContents = Array.AsReadOnly(_targetSorted.Select(row =>
         {
             string sourceHint = ownedHint;
             if (row.Entry.IsReferencePlaceholder)
                 sourceHint = row.Entry.ResolvedProvider is { } resolved &&
                     _assetPool.FindProviderSource(resolved.ProviderId) is { } source
-                        ? $"Serialized reference in {targetFile}; active provider: {source.FileName}."
+                        ? $"Referenced by {targetFile}. Loaded from {source.FileName}."
                         : unresolvedHint;
             return new FastFileContentsRow(row, null, targetFile, sourceHint);
         }).ToArray());
@@ -522,10 +522,10 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
                 var source = _assetPool.FindProviderSource(row.Identity.DependencyIdentity!.Value.ProviderId);
                 string hint = source?.FileName switch
                 {
-                    null => "The dependency provider has no known physical fastfile.",
-                    "Unzoned" => "The dependency provider is unzoned; no physical fastfile is known.",
-                    "Unknown source" => $"Dependency provider {source.Value.Owner} has no known physical fastfile.",
-                    var file => $"Dependency provider: {file}."
+                    null => "The source fastfile for this dependency is unknown.",
+                    "Unzoned" => "This dependency has no assigned zone or known source fastfile.",
+                    "Unknown source" => $"The source fastfile for {source.Value.Owner} is unknown.",
+                    var file => $"Loaded from {file}."
                 };
                 return new FastFileContentsRow(row, null, source?.FileName ?? "Unknown source", hint);
             }).ToArray());
@@ -535,9 +535,9 @@ public sealed partial class FastFileAssetsNavigatorViewModel : ObservableObject,
             new FastFileContentsRow(null, slot, slot.ProviderFileName,
                 slot.ProviderFileName switch
                 {
-                    "Unzoned" => "Active pool provider is unzoned; no physical fastfile is known.",
-                    "Unknown source" => $"Active pool provider {slot.ActiveProviderOwner} has no known physical fastfile.",
-                    var file => $"Active pool provider: {file}."
+                    "Unzoned" => "This asset has no assigned zone or known source fastfile.",
+                    "Unknown source" => $"The source fastfile for {slot.ActiveProviderOwner} is unknown.",
+                    var file => $"Loaded from {file}."
                 },
                 ResolvePoolCatalogEntry)).ToArray());
 

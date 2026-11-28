@@ -153,7 +153,7 @@ public sealed class WorkbenchEditorDiagnosticsBridge : IDisposable
                         SourceName,
                         editorHost.HasHostedEditor
                             ? $"No asset validation errors for '{editorHost.Title}'."
-                            : $"No editor is implemented for {editorHost.Entry.AssetType}.")
+                            : $"No editor is available for {editorHost.Entry.AssetType}.")
                 ]);
             return;
         }

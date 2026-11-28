@@ -225,7 +225,7 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
             _ => "CONTENTS"
         };
     public string SchemaHelpText =>
-        "Fields reference types; cardinality shows fixed counts or enum keys. Friendly names are inferred.";
+        "Fields show their type and count or enum keys. Display names may be inferred from use.";
     public bool HasVisibleRows => VisibleRows.Count != 0;
     public string EmptySelectionMessage => SelectedNavigationNode is null
         ? "This definition set contains no schema definitions."
@@ -1258,7 +1258,7 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
         string? alias = BestReferenceAlias(definition, category, index);
         return alias is null
             ? identity
-            : $"{identity} · inferred as {alias}";
+            : $"{identity} · shown as {alias}";
     }
 
     internal static string FormatReferenceDescription(
@@ -1270,12 +1270,12 @@ public sealed class StructuredDataDefEditorViewModel : ObservableObject,
         if (category == StructuredDataTypeCategory.DataStruct &&
             IsRootStruct(definition, index))
         {
-            return $"Root schema type. Serialized identity remains {identity}.";
+            return $"Root schema type. Stored identity: {identity}.";
         }
 
         return BestReferenceAlias(definition, category, index) is null
-            ? $"No friendly name is inferred. Serialized identity remains {identity}."
-            : $"Display name is inferred from schema usage. Serialized identity remains {identity}.";
+            ? $"Stored identity: {identity}."
+            : $"Display name is inferred from use. Stored identity: {identity}.";
     }
 
     internal static string FormatType(

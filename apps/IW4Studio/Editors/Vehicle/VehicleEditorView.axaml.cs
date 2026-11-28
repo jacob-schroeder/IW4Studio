@@ -465,15 +465,13 @@ public sealed partial class VehicleEditorView : UserControl
         }
         if (field.IsBoolean)
         {
-            var choice = new ToggleSwitch
+            var choice = new CheckBox
             {
                 IsEnabled = editable,
-                OnContent = null,
-                OffContent = null,
                 HorizontalAlignment = HorizontalAlignment.Left
             };
             value.Converter = BooleanValueConverter.Instance;
-            choice.Bind(ToggleSwitch.IsCheckedProperty, value);
+            choice.Bind(CheckBox.IsCheckedProperty, value);
             editor = choice;
         }
         else if (field.Choices.Count > 0)

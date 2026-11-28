@@ -193,7 +193,7 @@ public sealed class MenuFileEditorViewModel
     [
         new("Registrations", MenuCount.ToString("N0")),
         new("Selected", SelectedRegistration?.Name ?? "None"),
-        new("Authority", AuthorityText(
+        new("Access", AuthorityText(
             _selectedResolution,
             Designer.IsEditable))
     ];
@@ -280,7 +280,7 @@ public sealed class MenuFileEditorViewModel
         RebuildRegistrations(added);
         StatusMessage = result.Changed
             ? $"Added Menu registration '{menuName}'."
-            : "The MenuFile already contained that registration state.";
+            : $"Menu '{menuName}' is already registered.";
         NotifyEditorStateChanged();
     }
 
@@ -291,8 +291,7 @@ public sealed class MenuFileEditorViewModel
             throw new InvalidOperationException("No MenuFile registration is selected.");
         if (SameLogicalName(selected.MenuName, menuName))
         {
-            StatusMessage =
-                "The selected registration already targets that logical Menu.";
+            StatusMessage = $"This registration already points to '{menuName}'.";
             return;
         }
         ApplyStructuralEdit(new RetargetMenuFileRegistrationEdit(
@@ -349,8 +348,8 @@ public sealed class MenuFileEditorViewModel
         RefreshValidation();
         RebuildRegistrations(selectedId);
         StatusMessage = result.Changed
-            ? "Reverted the complete MenuFile row to its authored baseline."
-            : "The MenuFile already matched its baseline.";
+            ? "MenuFile changes reverted."
+            : "No changes to revert.";
         NotifyEditorStateChanged();
     }
 
@@ -398,8 +397,7 @@ public sealed class MenuFileEditorViewModel
             return;
         }
 
-        StatusMessage =
-            "MenuFile content is unavailable because this reference has no resolved provider.";
+        StatusMessage = "The referenced MenuFile could not be found.";
     }
 
     private MenuEditorSnapshot ApplyRegistrationMenuEdit(
@@ -423,8 +421,8 @@ public sealed class MenuFileEditorViewModel
         _snapshot = _coordinator.ReadMenuFile(rowIdentity);
         RefreshValidation();
         StatusMessage = result.Changed
-            ? "Applied the selected Menu change to its logical authority."
-            : "The selected Menu authority already contained that value.";
+            ? "Menu change applied."
+            : "This value is already set.";
         NotifyEditorStateChanged();
         return result.Resolution.Menu
             ?? throw new InvalidDataException(
@@ -456,8 +454,8 @@ public sealed class MenuFileEditorViewModel
         RefreshValidation();
         RebuildRegistrations(selectedId);
         StatusMessage = result.Changed
-            ? "Applied the MenuFile registration change."
-            : "The MenuFile already contained that registration state.";
+            ? "Menu registrations updated."
+            : "No registration changes to apply.";
         NotifyEditorStateChanged();
     }
 
@@ -649,8 +647,7 @@ public sealed class MenuFileEditorViewModel
         {
             _pendingCoordinatorRefresh = true;
             StatusMessage =
-                "The document changed in another editor; reset the staged " +
-                "Properties value to refresh before applying it again.";
+                "This document changed in another editor. Reset the value in Properties before applying it again.";
             return;
         }
 
@@ -667,8 +664,7 @@ public sealed class MenuFileEditorViewModel
             _snapshot = _coordinator.ReadMenuFile(rowIdentity);
             RebuildRegistrations(selectedId);
             RefreshValidation();
-            StatusMessage =
-                "Refreshed MenuFile registrations and logical Menu authority.";
+            StatusMessage = "Menu registrations refreshed.";
             _pendingCoordinatorRefresh = false;
             NotifyEditorStateChanged();
         }
@@ -767,8 +763,8 @@ public sealed class MenuFileEditorViewModel
         bool canEditHere) => (resolution?.Kind, canEditHere) switch
     {
         (MenuAuthorityResolutionKind.Editable, true) => "Editable",
-        (MenuAuthorityResolutionKind.Editable, false) => "Owner elsewhere",
-        (MenuAuthorityResolutionKind.ReadOnlyProvider, _) => "Dependency",
+        (MenuAuthorityResolutionKind.Editable, false) => "Read-only here",
+        (MenuAuthorityResolutionKind.ReadOnlyProvider, _) => "Read-only dependency",
         (MenuAuthorityResolutionKind.Conflict, _) => "Conflict",
         (MenuAuthorityResolutionKind.Unavailable, _) => "Unavailable",
         _ => "—"

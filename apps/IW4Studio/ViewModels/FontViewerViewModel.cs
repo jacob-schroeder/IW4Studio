@@ -183,7 +183,7 @@ public sealed class FontViewerViewModel
                 _materialStatus is { IsResolved: true })
             {
                 return HasUnappliedChanges
-                    ? "Compiled IW4 candidate — not yet applied"
+                    ? "Imported font preview — ready to Apply"
                     : "IW4 glyph metrics and font atlas";
             }
             if (_textStatus is { UsesGameGlyphs: true })
@@ -320,7 +320,7 @@ public sealed class FontViewerViewModel
             _compiledCandidate = null;
             _replacementSource = null;
             LoadCurrentFont();
-            StatusMessage = "The compiled Font already matches the applied asset.";
+            StatusMessage = "The imported font already matches the current font.";
             NotifyEditingStateChanged();
             return false;
         }
@@ -329,7 +329,7 @@ public sealed class FontViewerViewModel
         _replacementSource = null;
         LoadCurrentFont();
         StatusMessage =
-            "Applied the Font, cloned normal/glow Materials, and inline atlas Image atomically.";
+            "Applied the Font, its normal and glow Materials, and atlas Image.";
         NotifyEditingStateChanged();
         return true;
     }
@@ -354,8 +354,8 @@ public sealed class FontViewerViewModel
         SetDiagnostics([]);
         LoadCurrentFont();
         StatusMessage = reverted
-            ? "Reverted the Font and its owned Materials/Image to the saved baseline."
-            : "The Font already matches its saved baseline.";
+            ? "Reverted the font, its materials, and its atlas image."
+            : "No changes to revert.";
         NotifyEditingStateChanged();
     }
 

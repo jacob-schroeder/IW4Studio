@@ -44,8 +44,8 @@ public sealed class D3dbspEditorViewModel
         _supportsFileRoundTrip =
             D3dbspAssetTypeFacts.IsOwnedD3dbspName(_assetName);
         _statusMessage = _supportsFileRoundTrip
-            ? "Import creates or replaces synchronized target rows; export uses the current resolved group."
-            : "This grouped entry contains .d3dbsp in its name, but file import and export require an owned wire name ending in .d3dbsp.";
+            ? string.Empty
+            : "Import and export require an owned asset name ending in .d3dbsp.";
     }
 
     public string AssetName => _assetName;
@@ -94,7 +94,7 @@ public sealed class D3dbspEditorViewModel
         new("Selected asset type", SelectedAssetType),
         new("Group members", GeneratedAssetTypes.Count.ToString()),
         new("D3DBSP file I/O", _supportsFileRoundTrip ? "Available" : "Unavailable for this wire name"),
-        new("Selected entry access", IsEditable ? "Editable target row" : "Resolved read-only entry")
+        new("Access", IsEditable ? "Editable" : "Read only")
     ];
 
     public IReadOnlyList<AssetValidationIssue> Diagnostics => _diagnostics;
@@ -108,7 +108,7 @@ public sealed class D3dbspEditorViewModel
 
         IsBusy = true;
         SetDiagnostics([]);
-        StatusMessage = "Compiling the D3DBSP into its synchronized asset group...";
+        StatusMessage = "Importing D3DBSP assets…";
         try
         {
             D3dbspWorkspaceAssetGroup current = _session.CaptureD3dbspGroup();
@@ -124,10 +124,10 @@ public sealed class D3dbspEditorViewModel
                     fragmentProgramUploadCapacity);
             string discardedLighting = imported.DiscardedLightByteCount == 0
                 ? string.Empty
-                : $" Discarded {imported.DiscardedLightByteCount:N0} compiled light bytes via the lossy fullbright workaround.";
+                : $" Discarded {imported.DiscardedLightByteCount:N0} bytes of compiled lighting for the fullbright import.";
             StatusMessage =
                 $"Imported {sourceName} as {imported.AssetName}: " +
-                $"replaced {imported.ReplacedRowCount} and added {imported.AddedRowCount} target rows." +
+                $"replaced {imported.ReplacedRowCount} and added {imported.AddedRowCount} assets." +
                 discardedLighting;
             return true;
         }
@@ -153,12 +153,12 @@ public sealed class D3dbspEditorViewModel
         IsBusy = true;
         bool handedOffForWrite = false;
         SetDiagnostics([]);
-        StatusMessage = "Reconstructing a compiled D3DBSP from the synchronized asset group...";
+        StatusMessage = "Preparing the D3DBSP export…";
         try
         {
             D3dbspFile file = await Task.Run(
                 _session.CreateD3dbspFile);
-            StatusMessage = "The synchronized asset group is ready to export.";
+            StatusMessage = "D3DBSP is ready to export.";
             handedOffForWrite = true;
             return file;
         }
@@ -181,7 +181,7 @@ public sealed class D3dbspEditorViewModel
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationName);
         IsBusy = false;
         SetDiagnostics([]);
-        StatusMessage = $"Exported the synchronized D3DBSP group to {destinationName}.";
+        StatusMessage = $"Exported D3DBSP to {destinationName}.";
     }
 
     public void ReportExportCancelled()

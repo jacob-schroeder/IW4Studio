@@ -275,9 +275,7 @@ public sealed class LightDefEditorViewModel
             PreviewStatus =
                 $"{result.Preview.Width:N0} × " +
                 $"{result.Preview.Height:N0} · {result.Preview.Format}";
-            PreviewDetails =
-                $"Decoded from {result.PayloadSource}. The lookup is expanded to " +
-                "fill the preview so narrow falloff strips remain visible.";
+            PreviewDetails = $"Decoded from {result.PayloadSource}.";
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {

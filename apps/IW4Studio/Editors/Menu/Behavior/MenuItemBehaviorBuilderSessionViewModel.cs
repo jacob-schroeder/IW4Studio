@@ -16,7 +16,7 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
     private readonly MenuItemBehaviorValidator _behaviorValidator;
     private MenuItemBehaviorBuilderNavigationItemViewModel _selectedNavigationItem;
     private bool _hasUnsavedChanges;
-    private string _statusMessage = "No local behavior changes.";
+    private string _statusMessage = "No behavior changes.";
     private string? _validationMessage;
     private string? _externalValidationMessage;
     private bool _hasLocalValidationError;
@@ -271,7 +271,7 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
         {
             StatusMessage = _hasLocalValidationError
                 ? "Resolve the validation errors before applying."
-                : "Make a local behavior change before applying.";
+                : "Make a behavior change before applying.";
             return false;
         }
 
@@ -286,7 +286,7 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
     {
         IsSubmitting = false;
         SetValidationMessage(message);
-        StatusMessage = "The host rejected the behavior change. Edit it or retry.";
+        StatusMessage = "Could not apply behavior changes. Edit them or retry.";
     }
 
     /// <summary>Creates a complete immutable behavior value if the draft is valid.</summary>
@@ -325,20 +325,20 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
             return true;
 
         IsDiscardConfirmationVisible = true;
-        StatusMessage = "Discard the local behavior changes or continue editing.";
+        StatusMessage = "Discard behavior changes or continue editing.";
         return false;
     }
 
     public void KeepEditing()
     {
         IsDiscardConfirmationVisible = false;
-        StatusMessage = "Continue editing local behavior changes.";
+        StatusMessage = "Continue editing behavior changes.";
     }
 
     public void ConfirmDiscard()
     {
         IsDiscardConfirmationVisible = false;
-        StatusMessage = "Local behavior changes discarded.";
+        StatusMessage = "Behavior changes discarded.";
     }
 
     private void ChildChanged()
@@ -350,7 +350,7 @@ public sealed class MenuItemBehaviorBuilderSessionViewModel : ObservableObject
         RefreshValidation();
         HasUnsavedChanges = true;
         IsDiscardConfirmationVisible = false;
-        StatusMessage = "Local behavior changes have not been applied.";
+        StatusMessage = "Behavior changes have not been applied.";
     }
 
     private void RefreshValidation()

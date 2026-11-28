@@ -415,7 +415,7 @@ public sealed class MaterialEditorViewModel
         _stagedImport = null;
         LoadCurrentDraft();
         StatusMessage = applied
-            ? "Applied the Material and its isolated inline Image provider atomically."
+            ? "Applied the Material and its image."
             : "The imported Material image already matches the applied asset.";
         NotifyEditingStateChanged();
         return applied;
@@ -440,8 +440,8 @@ public sealed class MaterialEditorViewModel
         SetDiagnostics([]);
         LoadCurrentDraft();
         StatusMessage = reverted
-            ? "Reverted the Material and its owned imported Image to the saved baseline."
-            : "The Material already matches its saved baseline.";
+            ? "Reverted the Material and its imported image to their saved versions."
+            : "No changes to revert.";
         NotifyEditingStateChanged();
     }
 

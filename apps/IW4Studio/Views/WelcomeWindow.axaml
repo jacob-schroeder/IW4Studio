@@ -159,13 +159,12 @@
       </ScrollViewer>
     </Grid>
 
-    <Border Grid.Row="2" Padding="18,8" Background="{StaticResource WelcomeCharcoal}"
+    <Border Grid.Row="2" Padding="18,5" Background="{StaticResource WelcomeCharcoal}"
             BorderThickness="0,1,0,0" BorderBrush="{StaticResource WelcomeBorder}">
-      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7">
-        <Ellipse Width="5" Height="5" Fill="{DynamicResource StudioAccentStrongBrush}" VerticalAlignment="Center" />
-        <TextBlock Grid.Column="1" Text="{Binding PlatformLabel}" FontSize="12" Foreground="{DynamicResource StudioAccentStrongBrush}" />
-        <TextBlock Grid.Column="2" Text="{Binding DesktopVersionLabel, StringFormat='IW4 Studio {0}'}"
-                   FontSize="12" Foreground="{StaticResource WelcomeMuted}" />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+        <ContentPresenter Classes="platformBadge" />
+        <TextBlock Grid.Column="1" Text="{Binding DesktopVersionLabel, StringFormat='IW4 Studio {0}'}"
+                   VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource WelcomeMuted}" />
       </Grid>
     </Border>
 

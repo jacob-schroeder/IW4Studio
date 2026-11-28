@@ -80,11 +80,11 @@
             <TextBlock Text="{Binding ExampleNameHint}" TextWrapping="Wrap"/>
             <TextBlock Text="Reading the program" Margin="0,8,0,0" FontWeight="SemiBold"/>
             <TextBlock Text="Technique passes shows what feeds each uniform. Program parameters lists its compiled type and binding." TextWrapping="Wrap"/>
-            <TextBlock Text="TEXCOORD0 carries data between shader stages. TEXUNIT0 selects a texture unit. Studio uses names retained in the program for shader parameters. It names recovered calculations from their operations. Registers such as iw4_H0 can still appear where separate calculations share channels or a write depends on a condition." TextWrapping="Wrap"/>
+            <TextBlock Text="TEXCOORD0 carries data between shader stages. TEXUNIT0 selects a texture unit. Parameter names come from the compiled program when available. Registers such as iw4_H0 may appear when calculations share channels or writes are conditional." TextWrapping="Wrap"/>
             <TextBlock Text="Compiling an edit" Margin="0,8,0,0" FontWeight="SemiBold"/>
             <TextBlock Text="Built-in Cg supports vector math, swizzles, dot, min, max, saturate, and scalar comparisons. Vertex constants use explicit bindings such as uniform float4 scale : C4. Pixel shaders accept named numeric uniforms, TEXUNIT-bound sampler2D textures, and scalar if statements guarding assignments. They write COLOR0. Matrices, loops, and WPOS currently require a compiler with wider Cg support." TextWrapping="Wrap"/>
             <TextBlock Text="Installed PS3DK and sce-cgc compilers appear in the compiler menu." TextWrapping="Wrap"/>
-            <TextBlock Text="Studio keeps applied Cg source in your local user data. Reopen the shader on the same computer and account to see the exact text. A shader name, stage, and identical compiled program share the most recently saved source." TextWrapping="Wrap"/>
+            <TextBlock Text="Applied Cg source is saved to your local user data. Reopen the shader on the same computer and account to see the most recently saved source for that shader and compiled program." TextWrapping="Wrap"/>
             <TextBlock Text="A recovery #error marks missing shader behavior. Next missing operation jumps to the code that needs replacing. You can also supply complete Cg source for the same pass. Leaving the shader untouched preserves its compiled program." TextWrapping="Wrap"/>
             <TextBlock Text="Compiler references" Margin="0,8,0,0" FontWeight="SemiBold"/>
             <HyperlinkButton Content="NVIDIA Cg language specification" NavigateUri="https://developer.download.nvidia.com/cg/Cg_language.html"/>

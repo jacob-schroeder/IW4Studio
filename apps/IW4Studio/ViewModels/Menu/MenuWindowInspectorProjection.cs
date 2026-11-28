@@ -22,10 +22,7 @@ internal static partial class MenuInspectorProjection
                 window,
                 isRoot,
                 supportsOwnerDraw: true,
-                update: update),
-            isRoot
-                ? "The root Window Rect defines the Menu canvas. RectClient is preserved runtime state."
-                : "Rect edits the Item's authored local geometry. Resolved rect shows the derived runtime geometry.");
+                update: update));
 
     private static IReadOnlyList<InspectorSectionViewModel> WindowSections(
         MenuDesignerViewModel designer,
@@ -50,7 +47,7 @@ internal static partial class MenuInspectorProjection
                                 Name = EmptyToNull(value)
                             }),
                         isRoot
-                            ? "The root Window name is the Menu identity and is locked."
+                            ? "The root window uses the menu's name."
                             : null),
                     Text(
                         "Group",
@@ -84,8 +81,8 @@ internal static partial class MenuInspectorProjection
                                         value)
                                 }),
                         isRoot
-                            ? "Authored Menu screen geometry."
-                            : "Authored Item geometry relative to the root Menu."),
+                            ? "Position and size of the menu on screen."
+                            : "Position and size relative to the menu."),
                     Choice(
                         "Horizontal",
                         isRoot
@@ -142,8 +139,8 @@ internal static partial class MenuInspectorProjection
                         isRoot ? window.RectClient : window.Rect,
                         apply: null,
                         isRoot
-                            ? "Runtime client geometry is preserved read-only for the root Menu."
-                            : "Preserved runtime screen geometry; the game derives it from the authored Item rectangle and root Menu.")
+                            ? "The root window's client rectangle in the game."
+                            : "The game calculates this screen position from the item and menu rectangles.")
                 ]),
             new InspectorSectionViewModel(
                 "APPEARANCE",
@@ -195,7 +192,7 @@ internal static partial class MenuInspectorProjection
                         isMissing: designer.IsAssetReferenceMissing(
                             XAssetType.Material,
                             window.BackgroundMaterialName),
-                        description: "Backgrounds reference Material assets. Selection is enabled when the shared asset picker is attached."),
+                        description: "Backgrounds reference Material assets."),
                     Color(
                         "Foreground",
                         "window.foreColor",
@@ -275,7 +272,7 @@ internal static partial class MenuInspectorProjection
                                         clientIndex,
                                         replacement)
                                 }),
-                            description: "Serialized per-client initial state; the game may update these flags at runtime."))
+                            description: "Initial flags for each client. The game can change them during play."))
                 ])
         ];
     }
@@ -296,15 +293,14 @@ internal static partial class MenuInspectorProjection
                     {
                         OwnerDraw = value
                     }),
-                "Numeric runtime callback selector. Each named choice identifies the HUD or UI content drawn by that handler."));
+                "Select the HUD or menu content the game draws here."));
         }
         else if (window.OwnerDraw is not WindowOwnerDraw.None)
         {
             rows.Add(ReadOnly(
                 "Owner draw (inactive)",
                 "window.ownerDraw",
-                OwnerDrawDisplay(window.OwnerDraw),
-                "Preserved selector on an Item type that does not execute the owner-draw paint path."));
+                OwnerDrawDisplay(window.OwnerDraw)));
         }
 
         if (window.OwnerDrawFlags != 0)
@@ -312,8 +308,7 @@ internal static partial class MenuInspectorProjection
             rows.Add(ReadOnly(
                 "Owner-draw flags (raw)",
                 "window.ownerDrawFlags",
-                $"0x{window.OwnerDrawFlags:X8}",
-                "Legacy owner-draw visibility selector. The PS3 and Xbox 360 MW2 helpers ignore it, so no per-bit authoring semantics are established."));
+                $"0x{window.OwnerDrawFlags:X8}"));
         }
 
         return rows;

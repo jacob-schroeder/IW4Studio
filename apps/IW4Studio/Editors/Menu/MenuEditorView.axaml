@@ -25,6 +25,7 @@
                      TextTrimming="CharacterEllipsis"
                      Foreground="{DynamicResource StudioTextBrush}" />
           <TextBlock Text="{Binding StatusMessage}"
+                     IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                      FontSize="9"
                      TextTrimming="CharacterEllipsis"
                      Foreground="{DynamicResource StudioTextMutedBrush}" />

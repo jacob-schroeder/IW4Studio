@@ -56,10 +56,9 @@ internal sealed class MenuInlineDefinitionDiscardDialog : Window
                     new TextBlock
                     {
                         Text =
-                            $"'{currentName}' currently owns an inline definition. " +
-                            $"Retargeting it to '{replacementName}' converts this " +
-                            "registration to a reference and discards that inline " +
-                            "definition. The MenuFile can still be reverted before Save As.",
+                            $"Retargeting '{currentName}' to '{replacementName}' changes " +
+                            "the registration to a reference and discards its inline definition. " +
+                            "You can revert the MenuFile before Save As.",
                         TextWrapping = TextWrapping.Wrap
                     },
                     new StackPanel

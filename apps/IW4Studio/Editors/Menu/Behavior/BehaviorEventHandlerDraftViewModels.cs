@@ -633,7 +633,7 @@ public sealed class BehaviorOpaqueEventHandlerDraftViewModel
     }
 
     public string Description =>
-        $"Imported handler type 0x{_handler.EventType:X2} is preserved read-only.";
+        $"Handler type 0x{_handler.EventType:X2} is read-only.";
 
     internal override IEnumerable<MenuBehaviorEventHandlerEntry> ToEntries()
     {
@@ -650,7 +650,7 @@ public sealed class BehaviorMissingEventHandlerDraftViewModel
         MenuBehaviorEventHandlerEntry entry)
         : base("Missing handler") => _entry = entry;
 
-    public string Description => "The imported handler pointer is null and is preserved.";
+    public string Description => "This entry has no handler.";
 
     internal override IEnumerable<MenuBehaviorEventHandlerEntry> ToEntries()
     {
@@ -667,7 +667,7 @@ public sealed class BehaviorUnsupportedEventHandlerDraftViewModel
         MenuBehaviorEventHandlerEntry entry)
         : base("Unsupported handler") => _entry = entry;
 
-    public string Description => "This imported handler shape is preserved read-only.";
+    public string Description => "This handler is read-only.";
 
     internal override IEnumerable<MenuBehaviorEventHandlerEntry> ToEntries()
     {

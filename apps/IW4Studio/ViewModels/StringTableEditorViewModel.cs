@@ -350,7 +350,7 @@ public sealed class StringTableEditorViewModel
                 _draft = editorSession.OpenDraft<StringTableDraft>();
                 _diagnostics = editorSession.Validation.Issues;
                 _statusMessage = IsGeneratedConfigStringBaseline
-                    ? "Generated PS3 configstring transport baseline. Edit the owning map, scripts, or assets; ordinary saves preserve this table."
+                    ? "This PS3 configstring table is generated. Edit the owning map, scripts, or assets; saving preserves this table."
                     : string.Empty;
                 break;
 
@@ -361,8 +361,8 @@ public sealed class StringTableEditorViewModel
                         StringTableReadOnlySnapshot.CaptureResolvedProvider(
                             editorSession);
                     _statusMessage = IsGeneratedConfigStringBaseline
-                        ? "Generated PS3 configstring transport baseline. Edit the owning map, scripts, or assets; ordinary saves preserve this table."
-                        : "Detached read-only copy of the catalog-resolved provider.";
+                        ? "This PS3 configstring table is generated. Edit the owning map, scripts, or assets; saving preserves this table."
+                        : "This table comes from a read-only source.";
                 }
                 catch (InvalidDataException exception)
                 {
@@ -379,7 +379,7 @@ public sealed class StringTableEditorViewModel
 
             case WorkspaceAssetAccess.ContentUnavailable:
                 _statusMessage =
-                    "StringTable content is unavailable because this reference has no resolved provider.";
+                    "This reference has no available StringTable content.";
                 break;
 
             default:
@@ -526,7 +526,7 @@ public sealed class StringTableEditorViewModel
             StatusMessage = IsGeneratedConfigStringBaseline
                 ? "Generated configstring baselines cannot be edited directly; edit the owning map, scripts, or assets instead."
                 : IsEditable
-                    ? "There are no staged StringTable changes to apply."
+                    ? "No changes to apply."
                     : "This StringTable is read-only or its content is unavailable.";
             return;
         }
@@ -588,7 +588,7 @@ public sealed class StringTableEditorViewModel
         {
             StatusMessage = IsGeneratedConfigStringBaseline
                 ? "Generated configstring baselines cannot be reverted directly."
-                : "Read-only StringTable content cannot be reverted because it has no target-owned draft.";
+                : "This StringTable is read-only and cannot be reverted.";
             return;
         }
 
@@ -598,7 +598,7 @@ public sealed class StringTableEditorViewModel
         _hasStructuralChanges = false;
         Diagnostics = _editorSession.Validation.Issues;
         StatusMessage =
-            "Reverted the detached StringTable draft to its authored baseline.";
+            "Reverted the StringTable to its saved version.";
         RefreshTable();
     }
 

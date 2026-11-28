@@ -39,7 +39,7 @@ public sealed class LocalizeEditorViewModel
                 _valueInput = DisplayValue(_draft.Value);
                 _diagnostics = editorSession.Validation.Issues;
                 _statusMessage =
-                    "Value edits are staged until Apply. The key remains locked as row identity.";
+                    "Edit the value, then Apply. The key cannot be changed.";
                 break;
 
             case WorkspaceAssetAccess.ReadOnly:
@@ -50,7 +50,7 @@ public sealed class LocalizeEditorViewModel
                             editorSession);
                     _valueInput = DisplayValue(_readOnlySnapshot.Value);
                     _statusMessage =
-                        "Detached read-only copy of the catalog-resolved provider.";
+                        "This value comes from a read-only source.";
                 }
                 catch (InvalidDataException exception)
                 {
@@ -67,7 +67,7 @@ public sealed class LocalizeEditorViewModel
 
             case WorkspaceAssetAccess.ContentUnavailable:
                 _statusMessage =
-                    "Localize content is unavailable because this reference has no resolved provider.";
+                    "This reference has no available Localize value.";
                 break;
 
             default:
@@ -150,7 +150,7 @@ public sealed class LocalizeEditorViewModel
         if (!CanApply || _draft is null)
         {
             StatusMessage = IsEditable
-                ? "There is no staged Localize change to apply."
+                ? "No changes to apply."
                 : "This Localize value is read-only or unavailable.";
             return;
         }
@@ -166,7 +166,7 @@ public sealed class LocalizeEditorViewModel
             ValueInput = DisplayValue(_draft.Value);
             StatusMessage = changed
                 ? "Applied the localized value."
-                : "The localized value already matched the current draft.";
+                : "The localized value is already up to date.";
             NotifyStagingStateChanged();
             OnPropertyChanged(nameof(EditorProperties));
         }
@@ -184,7 +184,7 @@ public sealed class LocalizeEditorViewModel
         if (!CanRevert)
         {
             StatusMessage =
-                "Read-only Localize content cannot be reverted because it has no target-owned draft.";
+                "This Localize value is read-only and cannot be reverted.";
             return;
         }
 
@@ -193,7 +193,7 @@ public sealed class LocalizeEditorViewModel
         Diagnostics = _editorSession.Validation.Issues;
         ValueInput = DisplayValue(_draft.Value);
         StatusMessage =
-            "Reverted the detached Localize draft to its authored baseline.";
+            "Reverted the Localize value to its saved version.";
         NotifyStagingStateChanged();
         OnPropertyChanged(nameof(EditorProperties));
     }

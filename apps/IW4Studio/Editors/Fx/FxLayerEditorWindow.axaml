@@ -33,7 +33,7 @@
           <StackPanel Margin="14,12" Spacing="4">
             <TextBlock Text="LAYERS" FontSize="11" FontWeight="Bold"
                        Foreground="{DynamicResource StudioTextMutedBrush}" />
-            <TextBlock Text="Unsupported layers are preserved read-only."
+            <TextBlock Text="Unsupported layers cannot be edited."
                        TextWrapping="Wrap" FontSize="10"
                        Foreground="{DynamicResource StudioTextSubtleBrush}" />
           </StackPanel>

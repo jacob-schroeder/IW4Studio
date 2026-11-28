@@ -152,8 +152,8 @@ public sealed class XModelEditorViewModel
     public string ImportedLodNotice => !IsImportedLodSelected
         ? string.Empty
         : _compiledCandidate?.IsSuccess == true
-            ? "STAGED GEOMETRY · COMPILED PREVIEW · APPLY TO PUBLISH"
-            : "STAGED GEOMETRY · COMPILATION BLOCKED · REVIEW DIAGNOSTICS";
+            ? "IMPORTED GEOMETRY · READY TO APPLY"
+            : "IMPORTED GEOMETRY · REVIEW ISSUES BEFORE APPLY";
 
     public XModelLodItemViewModel? SelectedLod
     {
@@ -226,7 +226,7 @@ public sealed class XModelEditorViewModel
     public bool CanExportXModel => !IsImportedLodSelected && _model is not null && SelectedLod is not null;
 
     public string SelectedLodExportSummary => IsImportedLodSelected
-        ? "Imported geometry is compiled locally; Apply it before re-exporting the native baseline."
+        ? "Apply the imported geometry before exporting this LOD."
         : SelectedLod is null
         ? "No loaded LOD selected"
         : $"LOD {SelectedLod.LodIndex} · {SelectedLod.VertexCount:N0} vertices · {SelectedLod.TriangleCount:N0} triangles";
@@ -241,8 +241,8 @@ public sealed class XModelEditorViewModel
         {
             if (IsImportedLodSelected)
                 return _compiledCandidate?.IsSuccess == true
-                    ? "STAGED GEOMETRY · COMPILED PREVIEW"
-                    : "STAGED GEOMETRY · COMPILATION BLOCKED";
+                    ? "IMPORTED GEOMETRY · READY TO APPLY"
+                    : "IMPORTED GEOMETRY · REVIEW ISSUES";
 
             LodAuthoredMaterialSummary summary =
                 SummarizeAuthoredMaterials(SelectedLod?.Lod);
@@ -285,7 +285,7 @@ public sealed class XModelEditorViewModel
                     new("Geometry", $"{imported.VertexCount:N0} vertices · {imported.TriangleCount:N0} triangles"),
                     new("Materials", imported.MaterialCount.ToString("N0")),
                     new("Skeleton", skeleton),
-                    new("Status", _compiledCandidate?.IsSuccess == true ? "Ready to apply" : "Resolve compilation diagnostics")
+                    new("Status", _compiledCandidate?.IsSuccess == true ? "Ready to apply" : "Review issues before applying")
                 ];
             }
 
@@ -354,8 +354,8 @@ public sealed class XModelEditorViewModel
         bool reverted = _session.Revert();
         CaptureAndBuild();
         StatusMessage = reverted
-            ? $"Reverted the XModel and its owned XModelSurfs, Materials, and Images to the saved baseline. {StatusMessage}"
-            : $"The XModel already matched its saved baseline. {StatusMessage}";
+            ? $"Reverted the XModel, its surfaces, materials, and images. {StatusMessage}"
+            : $"No changes to revert. {StatusMessage}";
     }
 
     public bool ApplyCompiledDraft()
@@ -380,7 +380,7 @@ public sealed class XModelEditorViewModel
         if (applied)
         {
             CaptureAndBuild();
-            StatusMessage = "Applied the XModel, XModelSurfs, imported Materials, and Images atomically.";
+            StatusMessage = "Applied the XModel, its surfaces, imported Materials, and Images.";
         }
         else
         {
@@ -474,7 +474,7 @@ public sealed class XModelEditorViewModel
         if (_disposed || IsImportedLodSelected || _model is null || SelectedLod is null)
         {
             blockers = [IsImportedLodSelected
-                ? "Apply the compiled imported LOD before exporting the native baseline."
+                ? "Apply the imported LOD before exporting it."
                 : "No loaded XModel LOD is selected for export."];
             return false;
         }
@@ -1015,9 +1015,9 @@ public sealed class XModelEditorViewModel
         if (SelectedAssemblyLod is { IsImported: true } imported)
         {
             StatusMessage =
-                $"Editable draft · LOD {imported.LodIndex} staged from " +
+                $"Imported LOD {imported.LodIndex} from " +
                 $"'{imported.SourceDisplay}'; " +
-                (_compiledCandidate?.IsSuccess == true ? "compiled candidate ready for Apply." : "resolve the listed compilation blockers before Apply.");
+                (_compiledCandidate?.IsSuccess == true ? "ready to Apply." : "resolve the listed issues before Apply.");
             return;
         }
         if (_buildFailure is not null)
@@ -1038,7 +1038,7 @@ public sealed class XModelEditorViewModel
             $"{summary.PassCount:N0} authored pass" +
             (summary.PassCount == 1 ? string.Empty : "es") +
             $", {summary.ReadyGroupCount:N0} of {summary.GroupCount:N0} " +
-            "surface groups scene-ready";
+            "surface groups ready to preview";
         if (_rendererFailure is not null)
         {
             StatusMessage =
@@ -1051,12 +1051,12 @@ public sealed class XModelEditorViewModel
                 upload.BlockedGroupCount;
             StatusMessage =
                 $"{authoredStatus}; {upload.ExecutableGroupCount:N0} of " +
-                $"{total:N0} groups OpenGL-executable, " +
+                $"{total:N0} groups can render in OpenGL, " +
                 $"{upload.BlockedGroupCount:N0} blocked.";
             return;
         }
 
-        StatusMessage = $"{authoredStatus}; OpenGL preflight pending.";
+        StatusMessage = $"{authoredStatus}. Waiting for the OpenGL preview.";
     }
 
     private void ResetRendererStatus()
@@ -1088,7 +1088,7 @@ public sealed class XModelEditorViewModel
                     surface is null
                         ? "xmodel.preview.opengl"
                         : $"{AuthoredMaterialPath(surface)}.opengl",
-                    $"OpenGL preflight: {diagnostic}",
+                    $"Preview rendering check: {diagnostic}",
                     AssetValidationSeverity.Warning));
             }
         }
@@ -1287,7 +1287,7 @@ public sealed class XModelEditorViewModel
                     _workingDraft.CollisionLod == 0xFF ? "none" : _workingDraft.CollisionLod.ToString(CultureInfo.InvariantCulture),
                     IsEditable ? value => { _workingDraft.SetCollisionLod(value == "none" ? (byte)0xFF : byte.Parse(value, CultureInfo.InvariantCulture)); RefreshAssemblyProjection(SelectedAssemblyLod?.LodIndex); } : null,
                     "Imported collision geometry compiles conservative collision trees only for this selected LOD."),
-                ReadOnly("Preview", "xmodel.collision.preview", _scene is null ? "No compiled candidate" : $"{_scene.Lods.FirstOrDefault(lod => lod.LodIndex == _workingDraft.CollisionLod)?.CollisionTriangleCount ?? 0:N0} collision triangles"),
+                ReadOnly("Preview", "xmodel.collision.preview", _scene is null ? "No geometry preview" : $"{_scene.Lods.FirstOrDefault(lod => lod.LodIndex == _workingDraft.CollisionLod)?.CollisionTriangleCount ?? 0:N0} collision triangles"),
                 ReadOnly("hitBoxModel", "xmodel.hitBoxModel", "Converter-only; not a runtime XModel field.")
             };
             for (int collisionIndex = 0; collisionIndex < _workingDraft.CollisionSurfaces.Count; collisionIndex++)
@@ -1394,7 +1394,7 @@ public sealed class XModelEditorViewModel
             selectionName,
             "XMODEL",
             sections,
-            "Detailed XModel fields. Skeleton names, hierarchy, and bind pose are currently read-only.");
+            "Skeleton names, hierarchy, and bind pose are currently read-only.");
     }
 
     private static InspectorReadOnlyPropertyRowViewModel ReadOnly(

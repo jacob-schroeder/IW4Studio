@@ -55,7 +55,7 @@ public sealed class EditorViewModel : ObservableObject, IDisposable
         TargetPath = Path.GetFullPath(workspace.SourcePath);
         ModeName = workspace.ZonePlanProfileName is null
             ? "Single file"
-            : workspace.ZonePlanProfileName + ".elf dependencies";
+            : workspace.ZonePlanProfileName + " dependencies";
         ActiveZoneCount = workspace.ActiveZones.Count;
         LoadedZoneCount = workspace.LoadedZones.Count;
         ActiveZoneNames = string.Join(

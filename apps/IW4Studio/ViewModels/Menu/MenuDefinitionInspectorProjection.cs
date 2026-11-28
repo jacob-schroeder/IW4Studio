@@ -28,7 +28,7 @@ internal static partial class MenuInspectorProjection
                             "Name",
                             "menu.window.name",
                             snapshot.Name,
-                            "The root name is the serialized Menu identity and is locked."),
+                            "This name identifies the menu and is read-only."),
                         ReadOnly(
                             "Items",
                             "menu.items",
@@ -51,7 +51,7 @@ internal static partial class MenuInspectorProjection
                                 {
                                     Font = EmptyToNull(value)
                                 }),
-                            "Font-set string used by the Menu definition."),
+                            "Name of the menu's font set."),
                         new InspectorBooleanPropertyRowViewModel(
                             "Fullscreen",
                             "menu.fullscreen",
@@ -83,10 +83,7 @@ internal static partial class MenuInspectorProjection
                                 {
                                     ImageTrack = value
                                 }),
-                            "Menu-level material-registration class supplied by " +
-                            "the raw-menu load context. UI menus normally use " +
-                            "UI (3) and HUD menus use HUD (7). Child Items inherit " +
-                            "this value; changing it updates every resolved Item."),
+                            "UI menus normally use UI (3) and HUD menus use HUD (7). Changing the track updates every resolved item in this menu."),
                         Text(
                             "Allowed bind",
                             "menu.allowedBinding",
@@ -107,7 +104,7 @@ internal static partial class MenuInspectorProjection
                                 {
                                     SoundName = EmptyToNull(value)
                                 }),
-                            "This is an authored sound-set string, not a Sound XAsset reference.")
+                            "Enter the name of the sound set.")
                     ]),
                 new InspectorSectionViewModel(
                     "TRANSITION AND FOCUS",
@@ -191,7 +188,7 @@ internal static partial class MenuInspectorProjection
                     ]),
                 Behavior(designer, snapshot)
             ],
-            "Select the Window or an Item in the outline for its authored fields.");
+            "Select a window or item in the outline to see its properties.");
     }
 
     private static InspectorSectionViewModel Behavior(
@@ -211,8 +208,7 @@ internal static partial class MenuInspectorProjection
                         : null,
                     "Open the Menu behavior builder",
                     "Open Menu behavior builder",
-                    "Edit MenuDef event hooks and key handlers in one " +
-                    "atomic modal."),
+                    "Edit MenuDef event hooks and key handlers."),
                 ReadOnly(
                     "On open",
                     "menu.onOpen",

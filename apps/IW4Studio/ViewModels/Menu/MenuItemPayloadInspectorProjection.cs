@@ -47,9 +47,7 @@ internal static partial class MenuInspectorProjection
                         "Visible text start",
                         "item.payload.paintOffset",
                         edit.PaintOffset.ToString(CultureInfo.InvariantCulture),
-                        "Internal int32 index of the first character drawn in an " +
-                        "edit field. The runtime resets and moves it to keep the " +
-                        "cursor visible, so it is preserved read-only.")
+                        "Index of the first visible character. It changes as the cursor moves.")
                 ]);
                 break;
 
@@ -59,8 +57,7 @@ internal static partial class MenuInspectorProjection
                     ReadOnly(
                         "Draw padding",
                         "item.payload.drawPadding",
-                        list.DrawPadding.ToString(CultureInfo.InvariantCulture),
-                        "Computed ListBox paint state is preserved read-only."),
+                        list.DrawPadding.ToString(CultureInfo.InvariantCulture)),
                     ListFloat("Element width", "item.payload.elementWidth", list.ElementWidth, update,
                         (payload, number) => payload with { ElementWidth = number }),
                     ListFloat("Element height", "item.payload.elementHeight", list.ElementHeight, update,
@@ -266,8 +263,7 @@ internal static partial class MenuInspectorProjection
                 rows.Add(ReadOnly(
                     "Authored fields",
                     "item.payload",
-                    "None",
-                    "TextScroll timing is runtime state and is intentionally hidden."));
+                    "None"));
                 break;
 
             default:
@@ -298,23 +294,21 @@ internal static partial class MenuInspectorProjection
                         {
                             Special = number
                         }),
-                    "UI feeder identifier used to query ListBox rows, content, and selection. The runtime stores feeder IDs as floats, although authored values are commonly whole numbers.")
+                    "Selects the data source for this list. Feeder IDs are usually whole numbers.")
             ],
             ItemDefType.OwnerDraw =>
             [
                 ReadOnly(
                     "Special (unused)",
                     "item.special",
-                    item.Special.ToString("R", CultureInfo.InvariantCulture),
-                    "Legacy float passed through the owner-draw API. The checked PS3 and Xbox 360 MW2 dispatchers never consume it, so it is preserved read-only.")
+                    item.Special.ToString("R", CultureInfo.InvariantCulture))
             ],
             _ when item.Special != 0f =>
             [
                 ReadOnly(
                     "Special (raw)",
                     "item.special",
-                    item.Special.ToString("R", CultureInfo.InvariantCulture),
-                    "Preserved nonzero value with no proven meaning for this Item type.")
+                    item.Special.ToString("R", CultureInfo.InvariantCulture))
             ],
             _ => []
         };

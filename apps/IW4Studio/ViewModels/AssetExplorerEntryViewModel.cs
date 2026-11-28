@@ -75,12 +75,11 @@ public sealed class AssetExplorerEntryViewModel
             WorkspaceAssetAccess.ContentUnavailable => "CONTENT UNAVAILABLE",
             _ => throw new InvalidDataException($"Unknown workspace access '{entry.Access}'.")
         };
-        Description = BuildDescription(entry, ResolutionBadge, EditorBadge);
+        Description = BuildDescription(OwnershipBadge, AccessBadge, ResolutionBadge, EditorBadge);
         ToolTipText = string.Join(
             Environment.NewLine,
             entry.OriginalName == string.Empty ? $"{Name} (empty serialized name)" : Name,
             $"Type: {AssetType}",
-            $"Origin: {Origin}",
             $"Access: {AccessBadge}",
             $"Ownership: {OwnershipBadge}",
             $"Resolution: {ResolutionBadge}",
@@ -185,8 +184,9 @@ public sealed class AssetExplorerEntryViewModel
     };
 
     private static string BuildDescription(
-        WorkspaceAssetCatalogEntry entry,
+        string ownership,
+        string access,
         string resolution,
         string editor) =>
-        $"{entry.Origin} · {entry.Access}. {resolution}. {editor}.";
+        $"{ownership} · {access}. {resolution}. {editor}.";
 }

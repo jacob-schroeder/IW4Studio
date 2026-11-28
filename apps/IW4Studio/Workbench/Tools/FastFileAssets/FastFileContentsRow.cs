@@ -49,7 +49,7 @@ public sealed class FastFileContentsRow : ObservableObject
     public bool IsReferencePlaceholder => PoolSlot?.IsReferencePlaceholder ??
         CatalogEntry?.Entry.IsReferencePlaceholder == true;
     public string PlaceholderHint => PoolSlot is { } slot
-        ? slot.IsReferencePlaceholder ? "Active pool provider is a reference placeholder." : string.Empty
+        ? slot.IsReferencePlaceholder ? "The active asset is a reference." : string.Empty
         : CatalogEntry?.PlaceholderHint ?? string.Empty;
     public bool HasOverride => CatalogEntry?.OverrideHint is not null;
     public string? OverrideHint => CatalogEntry?.OverrideHint;

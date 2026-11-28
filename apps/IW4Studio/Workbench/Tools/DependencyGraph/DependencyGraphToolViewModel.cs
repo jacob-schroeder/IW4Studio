@@ -14,7 +14,7 @@ public sealed class DependencyGraphToolViewModel
 
         LoadProfile = workspace.Document.Request.Mode switch
         {
-            ZonePlan plan => $"{plan.ProfileName}.elf",
+            ZonePlan plan => plan.ProfileName,
             _ => "Single file"
         };
         var nodes = workspace.DependencyGraph?.Nodes ?? [];

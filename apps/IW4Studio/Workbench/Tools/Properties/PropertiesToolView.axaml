@@ -331,7 +331,7 @@
                   IsVisible="{Binding HasOpenCommand}" Command="{Binding OpenCommand}"
                   ToolTip.Tip="Open the referenced asset" />
         </Grid>
-        <TextBlock Text="Reference is not resolved in the current asset pool."
+        <TextBlock Text="The referenced asset could not be found in the current asset pool."
                    IsVisible="{Binding IsMissing}"
                    FontSize="9"
                    TextWrapping="Wrap"

@@ -962,7 +962,7 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
                 semanticModel,
                 WeaponModelSlotState.Resolved,
                 IsEditable && !malformedStorage,
-                "Authored in this Weapon draft",
+                "From this Weapon",
                 malformedStorage);
         }
         XModelAsset? resolved = null;
@@ -1215,8 +1215,8 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
         CompletePreviewProjection();
         WeaponModelSlotItemViewModel? slot = ModelSlots.FirstOrDefault(candidate => candidate.StableKey == selectedKey);
         if (!HasDefinition || slot is null) { CompleteEmptyPreview(WeaponPreviewState.NoSelection, "Select a model slot", "No model selected"); return; }
-        if (slot.State == WeaponModelSlotState.TableAbsent) { CompleteEmptyPreview(WeaponPreviewState.TableAbsent, "This native model table is absent", $"{slot.RoleLabel} · table absent"); return; }
-        if (slot.State == WeaponModelSlotState.Malformed) { CompleteEmptyPreview(WeaponPreviewState.Malformed, "This native model table is malformed", $"{slot.RoleLabel} · malformed table"); return; }
+        if (slot.State == WeaponModelSlotState.TableAbsent) { CompleteEmptyPreview(WeaponPreviewState.TableAbsent, "No model list is available", $"{slot.RoleLabel} · table absent"); return; }
+        if (slot.State == WeaponModelSlotState.Malformed) { CompleteEmptyPreview(WeaponPreviewState.Malformed, "The model list is damaged", $"{slot.RoleLabel} · malformed table"); return; }
         if (slot.State == WeaponModelSlotState.Empty) { CompleteEmptyPreview(WeaponPreviewState.Empty, "This model slot is empty", $"{slot.RoleLabel} · empty"); return; }
         if (slot.ResolvedModel is not { } model)
         {
@@ -1484,7 +1484,7 @@ public sealed partial class WeaponEditorViewModel : ObservableObject,
         WeaponIndexedRowKind.BounceSound => "Selected surface sound",
         WeaponIndexedRowKind.TurretSpinUpSound or
         WeaponIndexedRowKind.TurretSpinDownSound => "Selected barrel-spin sound",
-        _ => "Selected semantic slot"
+        _ => "Selected slot"
     };
 
     private static string OverviewCardTitle(string path)

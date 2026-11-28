@@ -65,12 +65,12 @@ internal sealed class FontPreviewMaterialResolver : IMenuPreviewMaterialResolver
                 (_, row) => row.Image is { } image
                     ? UiMaterialPreviewImageResolution.Canonical(image)
                     : UiMaterialPreviewImageResolution.Unavailable(
-                        "The detached font material row has no image."));
+                        "The font material has no image for this texture."));
             if (!plan.CanAttemptTextureDecode ||
                 plan.SelectedImage is not { } atlas)
             {
                 string reason = plan.Blockers.Count == 0
-                    ? "No detached 2D atlas image is available."
+                    ? "No 2D atlas image is available."
                     : string.Join(" ", plan.Blockers.Select(blocker => blocker.Message));
                 return MenuPreviewMaterialResolution.Failed(
                     $"Compiled font material '{requestedName}' cannot be previewed: {reason}",

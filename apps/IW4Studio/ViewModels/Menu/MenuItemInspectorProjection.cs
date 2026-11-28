@@ -33,7 +33,7 @@ internal static partial class MenuInspectorProjection
                                 .ToString("N0"))
                     ])
             ],
-            "Select an Item to inspect it. Structural commands are hosted by the designer toolbar.");
+            "Select an item to see its properties.");
 
     private static InspectorSelectionViewModel Item(
         MenuDesignerViewModel designer,
@@ -57,7 +57,7 @@ internal static partial class MenuInspectorProjection
                                 "State",
                                 "item.resolution",
                                 "Unresolved",
-                                "This serialized Item pointer has no detached definition.")
+                                "The referenced item could not be found.")
                         ])
                 ]);
         }
@@ -87,8 +87,7 @@ internal static partial class MenuInspectorProjection
                         designer.CanChangeSelectedItemType
                             ? designer.ChangeSelectedItemType
                             : null,
-                        "Changing Type rebuilds the type-specific payload with " +
-                        "safe defaults; common Item and Window fields remain."),
+                        "Changing the type resets its type-specific settings. Shared item and window settings are kept."),
                     Text(
                         "Text",
                         "item.text",
@@ -103,12 +102,7 @@ internal static partial class MenuInspectorProjection
                         "Payload type tag",
                         "item.dataType",
                         PayloadTypeTag(value.DataType),
-                        "Internal int32 discriminator for the allocated native " +
-                        "type-data union. Runtime accessors use it to select the " +
-                        "EditField, ListBox, Multi, or related payload. It may " +
-                        "differ from Type in existing assets. New items and type " +
-                        "changes derive it automatically; it is never authored " +
-                        "independently."),
+                        "Identifies the type-specific settings stored with this item. It can differ from Type in existing items and updates automatically when you change Type."),
                     Choice(
                         "Owner-draw alignment",
                         "item.align",
@@ -119,7 +113,7 @@ internal static partial class MenuInspectorProjection
                             {
                                 Align = alignment
                             }),
-                        "Horizontal alignment passed to owner-draw handlers. It does not control ordinary item text; use Text align for that."),
+                        "Aligns owner-drawn content horizontally. Use Text align for ordinary text."),
                     Choice(
                         "Font",
                         "item.fontEnum",
@@ -182,8 +176,7 @@ internal static partial class MenuInspectorProjection
                             : style => update(current => current with
                             {
                                 TextStyle = style
-                            }),
-                        "Text rendering effect passed to IW4's text-draw helpers."),
+                            })),
                     IntegerChoice(
                         "Game message window",
                         "item.gameMessageWindowIndex",
@@ -198,7 +191,7 @@ internal static partial class MenuInspectorProjection
                             {
                                 GameMessageWindowIndex = number
                             }),
-                        "Used only by GameMessageWindow items; the runtime accepts indices 0 through 3."),
+                        "GameMessageWindow items can use windows 0 through 3."),
                     IntegerChoice(
                         "Game message mode",
                         "item.gameMessageWindowMode",
@@ -213,7 +206,7 @@ internal static partial class MenuInspectorProjection
                             {
                                 GameMessageWindowMode = number
                             }),
-                        "Used only by GameMessageWindow items; the runtime accepts modes 0 through 3."),
+                        "GameMessageWindow items can use modes 0 through 3."),
                     Flags(
                         "Item flags",
                         "item.itemFlags",
@@ -224,7 +217,7 @@ internal static partial class MenuInspectorProjection
                             {
                                 ItemFlags = flags
                             }),
-                        "Special text-source flags. Unknown serialized bits are preserved.")
+                        "Controls where the item gets its text.")
                 ]),
             .. WindowSections(
                 designer,
@@ -256,7 +249,7 @@ internal static partial class MenuInspectorProjection
                             {
                                 DvarFlags = flags
                             }),
-                        "Chooses what a match does: enable, disable, show, hide, or permit scripted focus. Unknown serialized bits are preserved."),
+                        "Choose what happens when the condition matches."),
                     Text(
                         "Condition dvar",
                         "item.dvarTest",
@@ -267,7 +260,7 @@ internal static partial class MenuInspectorProjection
                             {
                                 DvarTest = EmptyToNull(text)
                             }),
-                        "Name of the dvar whose current value is read as text and compared case-insensitively against Match values. If either condition field is empty, the runtime treats the condition as true.",
+                        "The dvar to check against Match values. If either field is empty, the condition always matches.",
                         showInfoIcon: true),
                     Text(
                         "Match values",
@@ -279,7 +272,7 @@ internal static partial class MenuInspectorProjection
                             {
                                 EnableDvar = EmptyToNull(text)
                             }),
-                        "Text is correct here: this is a case-insensitive OR-list, not a dvar name. Whitespace or semicolons separate values, quotes preserve spaces, and comparison is textual rather than numeric. Example: \"war\"; \"dom\".",
+                        "Matches any listed value, ignoring case. Whitespace or semicolons separate values, quotes preserve spaces, and comparison is textual rather than numeric. Example: \"war\"; \"dom\".",
                         showInfoIcon: true),
                     new InspectorAssetReferencePropertyRowViewModel(
                         "Focus sound",
@@ -297,8 +290,7 @@ internal static partial class MenuInspectorProjection
                             : designer.RequestAssetReferenceSelection,
                         isMissing: designer.IsAssetReferenceMissing(
                             XAssetType.Sound,
-                            value.FocusSoundName),
-                        description: "Selection is enabled when the shared asset picker is attached.")
+                            value.FocusSoundName))
                 ]),
             new InspectorSectionViewModel(
                 "EFFECT",
@@ -307,9 +299,7 @@ internal static partial class MenuInspectorProjection
                         "Material track",
                         "item.imageTrack",
                         ImageTrack(value.ImageTrack),
-                        "Inherited from the parent Menu's material-registration " +
-                        "track. It controls dynamic material registration, not " +
-                        "which image is displayed, so it is read-only per Item."),
+                        "Set the material registration track on the parent menu."),
                     Color(
                         "Glow",
                         "item.glowColor",
@@ -330,10 +320,7 @@ internal static partial class MenuInspectorProjection
                             {
                                 DecayActive = enabled ? (byte)1 : (byte)0
                             }),
-                        "Native one-byte boolean. When enabled, text painting " +
-                        "runs the configured text-FX timing lifecycle and pulse " +
-                        "sounds. The runtime mutates the neighboring birth-time " +
-                        "and last-sound cache fields, not this toggle.")
+                        "Turns on this item's timed text effects and pulse sounds.")
                 ]),
             Payload(designer, value, updatePayload),
             ItemBehavior(designer, item, value.Behavior)
@@ -342,8 +329,7 @@ internal static partial class MenuInspectorProjection
         return new InspectorSelectionViewModel(
             MenuPresentationText.ItemTitle(value),
             value.Type.ToString().ToUpperInvariant(),
-            sections,
-            "Item and Window fields are presented together to avoid a second nested selection level.");
+            sections);
     }
 
     private static InspectorSectionViewModel ItemBehavior(
@@ -363,7 +349,7 @@ internal static partial class MenuInspectorProjection
                     "Open the event-handler and expression builder",
                     "Open Item behavior builder",
                     "Edit event hooks, key handlers, fixed expressions, and " +
-                    "float-expression bindings in one atomic modal."),
+                    "float-expression bindings."),
                 ReadOnly("Mouse enter text", "item.mouseEnterText", Bool(value.HasMouseEnterText)),
                 ReadOnly("Mouse exit text", "item.mouseExitText", Bool(value.HasMouseExitText)),
                 ReadOnly("Mouse enter", "item.mouseEnter", Bool(value.HasMouseEnter)),

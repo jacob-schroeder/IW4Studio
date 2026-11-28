@@ -65,6 +65,10 @@ jobs:
             runner: macos-15
             runtime: osx-arm64
             asset: iw4radiant-macos_arm64.tar.gz
+          - platform: linux_x64
+            runner: ubuntu-22.04
+            runtime: linux-x64
+            asset: iw4radiant-linux_x64.tar.gz
 
     steps:
       - name: Check out repository
@@ -142,6 +146,13 @@ jobs:
           mkdir -p "artifact/release/iw4radiant/${{ matrix.platform }}"
           tar -czf "artifact/release/iw4radiant/${{ matrix.platform }}/${{ matrix.asset }}" -C "$bundle_root" Iw4Radiant.app
 
+      - name: Package Linux build
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p "artifact/release/iw4radiant/${{ matrix.platform }}"
+          tar -czf "artifact/release/iw4radiant/${{ matrix.platform }}/${{ matrix.asset }}" -C publish .
+
       - name: Stage platform build
         uses: actions/upload-artifact@v4
         with:
@@ -176,6 +187,7 @@ jobs:
           assets=(
             "release-assets/release/iw4radiant/win_x64/iw4radiant-win_x64.zip"
             "release-assets/release/iw4radiant/macos_arm64/iw4radiant-macos_arm64.tar.gz"
+            "release-assets/release/iw4radiant/linux_x64/iw4radiant-linux_x64.tar.gz"
           )
           if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$release_tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"

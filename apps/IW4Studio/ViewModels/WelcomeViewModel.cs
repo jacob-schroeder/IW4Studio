@@ -13,7 +13,6 @@ public sealed class WelcomeViewModel : ObservableObject
     private bool _hasError;
 
     public string DesktopVersionLabel => AssemblyConst.AssemblyVersion;
-    public string PlatformLabel => AssemblyConst.Platform;
 
     public IReadOnlyList<RecentFastFileItem> RecentFiles { get; private set; } = [];
 

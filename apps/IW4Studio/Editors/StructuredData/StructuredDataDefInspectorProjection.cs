@@ -118,7 +118,7 @@ internal static class StructuredDataDefInspectorProjection
                             $"{path}.FormatChecksum",
                             definition.FormatChecksum,
                             definition.SetFormatChecksum,
-                            "Expert value stored by the engine. IW4 Studio preserves and writes it but does not calculate it."),
+                            "Enter the checksum manually. IW4 Studio cannot calculate it."),
                         HexUInt32(
                             viewModel,
                             "Size",
@@ -145,7 +145,7 @@ internal static class StructuredDataDefInspectorProjection
                         definition.RootType,
                         $"{path}.RootType"))
             ],
-            "Counts are derived from their ordered tables. The asset name and pointer cells remain locked.");
+            "Counts come from the tables. The asset name and pointer values cannot be edited.");
     }
 
     private static InspectorSelectionViewModel RootType(
@@ -548,7 +548,7 @@ internal static class StructuredDataDefInspectorProjection
                 $"{path}.UnionValue",
                 value.UnionValue,
                 value.SetUnionValue,
-                "Its meaning is not established for this category, so the raw value is preserved."));
+                "The meaning of this value is unknown for this category."));
         }
 
         return Array.AsReadOnly(result.ToArray());
@@ -700,7 +700,7 @@ internal static class StructuredDataDefInspectorProjection
                             "Stable serialized indices")
                     ])
             ],
-            "Counts are derived from the table. Adding, deleting, and reordering rows are intentionally unavailable.");
+            "The count comes from the table. Rows cannot be added, removed, or reordered.");
 
     private static InspectorSelectionViewModel Unavailable(string message) => new(
         "Unavailable selection",

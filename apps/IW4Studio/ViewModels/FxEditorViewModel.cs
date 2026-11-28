@@ -285,25 +285,19 @@ public sealed class FxEditorViewModel
             if (!HasPreview)
                 return _previewUnavailableReason;
 
-            var parts = new List<string>
-            {
-                "fixed editor seed 173",
-                "editor random approximation",
-                "root looping + one-shot rows",
-                "compiled visual and velocity curves"
-            };
+            var parts = new List<string> { "Random effects are approximate in the preview" };
             if (EmissionCount > 0)
-                parts.Add("emission rows shown structurally only");
+                parts.Add("emitted effects are not previewed");
             if (_previewScene!.DurationWasCapped)
-                parts.Add("timeline capped at 8 seconds");
+                parts.Add("preview limited to 8 seconds");
             if (_previewScene.InstanceLimitWasApplied)
-                parts.Add("instance count bounded for editor playback");
+                parts.Add("some instances omitted from the preview");
             return string.Join(" · ", parts);
         }
     }
 
     public string PreviewRepresentationText => SelectedElement is null
-        ? "Select an element to see its renderer fidelity."
+        ? "Select an element to see its preview limitations."
         : SelectedElement.PreviewRepresentation;
 
     public IReadOnlyList<FxVisualDependencyViewModel>
@@ -676,11 +670,9 @@ public sealed class FxEditorViewModel
 
         _selectedVisualScene = scene;
         _selectedVisualBuildStatus = scene.Diagnostics.Count == 0
-            ? "Prepared authored Material on the preview sphere · the renderer " +
-              "will execute its translated camera-color shader, samplers, " +
-              "textures, constants, and render state."
-            : "Authored Material on the preview sphere · " +
-              $"{scene.Diagnostics.Count:N0} scene diagnostic(s): " +
+            ? "Material ready to preview on the sphere."
+            : "Material preview on the sphere · " +
+              $"{scene.Diagnostics.Count:N0} {(scene.Diagnostics.Count == 1 ? "issue" : "issues")}: " +
               scene.Diagnostics[0];
     }
 
@@ -729,11 +721,9 @@ public sealed class FxEditorViewModel
         string lodText = $"{scene.Lods.Count:N0} LOD" +
             (scene.Lods.Count == 1 ? string.Empty : "s");
         _selectedVisualBuildStatus = scene.Diagnostics.Count == 0
-            ? $"Prepared XModel · {lodText} · the renderer will execute its " +
-              "available authored camera-color material shaders and textures."
-            : $"Prepared XModel · {lodText} · " +
-              $"{scene.Diagnostics.Count:N0} scene diagnostic(s); the renderer " +
-              $"will execute only available material passes. {scene.Diagnostics[0]}";
+            ? $"XModel ready to preview · {lodText}."
+            : $"XModel preview · {lodText} · " +
+              $"{scene.Diagnostics.Count:N0} {(scene.Diagnostics.Count == 1 ? "issue" : "issues")}; only available material passes are shown. {scene.Diagnostics[0]}";
     }
 
     private void BuildSelectedSoundPreview(

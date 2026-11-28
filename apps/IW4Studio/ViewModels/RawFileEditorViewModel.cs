@@ -94,14 +94,14 @@ public class RawFileEditorViewModel
             case WorkspaceAssetAccess.Editable:
                 _draft = editorSession.OpenDraft<RawFileDraft>();
                 _diagnostics = editorSession.Validation.Issues;
-                _statusMessage = "Detached target-owned draft.";
+                _statusMessage = string.Empty;
                 break;
 
             case WorkspaceAssetAccess.ReadOnly:
                 try
                 {
                     _readOnlySnapshot = RawFileReadOnlySnapshot.CaptureResolvedProvider(editorSession);
-                    _statusMessage = "Detached read-only copy of the catalog-resolved provider.";
+                    _statusMessage = "This file comes from a read-only source.";
                 }
                 catch (InvalidDataException exception)
                 {
@@ -114,7 +114,7 @@ public class RawFileEditorViewModel
                 break;
 
             case WorkspaceAssetAccess.ContentUnavailable:
-                _statusMessage = "RawFile content is unavailable because this reference has no resolved provider.";
+                _statusMessage = "This reference has no available RawFile content.";
                 break;
 
             default:
@@ -573,7 +573,7 @@ public class RawFileEditorViewModel
         }
         if (!HasPendingPayloadChanges)
         {
-            StatusMessage = "The RawFile draft already matches the editor content.";
+            StatusMessage = "No changes to apply.";
             return;
         }
 
@@ -655,7 +655,7 @@ public class RawFileEditorViewModel
             CurrentLogicalContentCopy(),
             _contentClassification,
             DisplayEncoding);
-        StatusMessage = "Exported a detached text/hex representation; no file was written.";
+        StatusMessage = "Prepared content for copying; no file was written.";
         return ExportedPayload;
     }
 
@@ -663,14 +663,14 @@ public class RawFileEditorViewModel
     {
         if (!CanClearBuffer)
         {
-            StatusMessage = "Only an editable uncompressed RawFile can use the nullable empty buffer form.";
+            StatusMessage = "Only an editable uncompressed RawFile can clear its buffer to null.";
             return;
         }
 
         _editorSession.Apply<RawFileDraft>(draft => draft.ClearBuffer());
         _draft = _editorSession.ReadDraft<RawFileDraft>();
         Diagnostics = _editorSession.Validation.Issues;
-        StatusMessage = "Replaced the detached payload with the nullable empty-buffer form.";
+        StatusMessage = "Cleared the file buffer to null.";
         RefreshPresentation();
     }
 
@@ -699,7 +699,7 @@ public class RawFileEditorViewModel
                 draft => draft.ReplaceBinaryContent(replacement));
             _draft = _editorSession.ReadDraft<RawFileDraft>();
             Diagnostics = _editorSession.Validation.Issues;
-            StatusMessage = $"Replaced the detached binary payload from '{fileName}'.";
+            StatusMessage = $"Replaced the file content from '{fileName}'.";
             RefreshPresentation();
         }
         catch (Exception exception) when (exception is ArgumentException or IOException or OverflowException)
@@ -718,14 +718,14 @@ public class RawFileEditorViewModel
     {
         if (!CanRevert)
         {
-            StatusMessage = "Read-only RawFile content cannot be reverted because it has no target-owned draft.";
+            StatusMessage = "This RawFile is read-only and cannot be reverted.";
             return;
         }
 
         _ = _editorSession.Revert();
         _draft = _editorSession.ReadDraft<RawFileDraft>();
         Diagnostics = _editorSession.Validation.Issues;
-        StatusMessage = "Reverted the detached RawFile draft to its authored baseline.";
+        StatusMessage = "Reverted the RawFile to its saved version.";
         RefreshPresentation();
     }
 
@@ -1164,11 +1164,11 @@ public class RawFileEditorViewModel
         bool changed,
         GscAnalysisOutcome? outcome)
     {
-        const string applied = "Applied logical content to the RawFile draft. " +
+        const string applied = "Applied the RawFile changes. " +
             "Use Save As to write the fastfile.";
         if (!changed)
         {
-            return "The RawFile draft already matched the editor content. " +
+            return "No changes to apply. " +
                 "Use Save As to write the fastfile.";
         }
         if (outcome is null)

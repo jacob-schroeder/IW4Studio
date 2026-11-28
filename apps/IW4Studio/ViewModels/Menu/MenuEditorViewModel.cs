@@ -122,7 +122,7 @@ public sealed class MenuEditorViewModel
     public IReadOnlyList<AssetEditorProperty> EditorProperties =>
     [
         new("Items", ItemCount.ToString("N0")),
-        new("Authority", AuthorityText(_resolution, IsEditable)),
+        new("Access", AuthorityText(_resolution, IsEditable)),
         new("Selection", Designer.SelectedNode?.KindText ?? "None")
     ];
 
@@ -160,8 +160,8 @@ public sealed class MenuEditorViewModel
         Designer.ReplaceDocument(result.Resolution.Menu);
         RefreshValidation();
         StatusMessage = result.Changed
-            ? "Reverted the logical Menu authority to its authored baseline."
-            : "The logical Menu authority already matched its baseline.";
+            ? "Menu changes reverted."
+            : "No changes to revert.";
         NotifyEditorStateChanged();
     }
 
@@ -199,8 +199,7 @@ public sealed class MenuEditorViewModel
                 MenuEditorSnapshot snapshot = MenuReadOnlySnapshot
                     .CaptureResolvedProvider(_session)
                     .Menu;
-                StatusMessage =
-                    "Detached read-only copy of the catalog-resolved Menu provider.";
+                StatusMessage = "This menu is read-only.";
                 return snapshot;
             }
             catch (InvalidDataException exception)
@@ -211,15 +210,14 @@ public sealed class MenuEditorViewModel
             }
         }
 
-        StatusMessage =
-            "Menu content is unavailable because this reference has no resolved provider.";
+        StatusMessage = "The referenced menu could not be found.";
         return null;
     }
 
     private MenuEditorSnapshot ApplyEdit(MenuEdit edit)
     {
         if (_rowIdentity is not { } rowIdentity || !IsEditable)
-            throw new InvalidOperationException("This Menu authority is read-only.");
+            throw new InvalidOperationException("This menu is read-only.");
 
         MenuAuthorityResolutionSnapshot expectedResolution = _resolution
             ?? throw new InvalidOperationException(
@@ -232,8 +230,8 @@ public sealed class MenuEditorViewModel
         _resolution = result.Resolution;
         RefreshValidation();
         StatusMessage = result.Changed
-            ? "Applied the Menu change to its logical authority."
-            : "The Menu authority already contained that value.";
+            ? "Menu change applied."
+            : "This value is already set.";
         NotifyEditorStateChanged();
         return result.Resolution.Menu
             ?? throw new InvalidDataException(
@@ -293,8 +291,7 @@ public sealed class MenuEditorViewModel
         {
             _pendingCoordinatorRefresh = true;
             StatusMessage =
-                "The document changed in another editor; reset the staged " +
-                "Properties value to refresh before applying it again.";
+                "This document changed in another editor. Reset the value in Properties before applying it again.";
             return;
         }
 
@@ -399,16 +396,16 @@ public sealed class MenuEditorViewModel
     {
         (MenuAuthorityResolutionKind.Editable, false) when
             resolution.Owner is { } owner =>
-            $"This occurrence is read-only; its logical authority is owned by row {owner.RowIdentity.SerializedIndex:N0}.",
+            $"This menu is read-only here. Edit its definition in row {owner.RowIdentity.SerializedIndex:N0}.",
         (MenuAuthorityResolutionKind.Editable, true) when resolution.Owner is
             { Kind: MenuAuthorityOccurrenceKind.MenuFileInlineDefinition } owner =>
-            $"Editing the first inline authority in MenuFile row {owner.RowIdentity.SerializedIndex:N0}. Recursive behavior is preserved read-only.",
+            $"Editing the menu in MenuFile row {owner.RowIdentity.SerializedIndex:N0}.",
         (MenuAuthorityResolutionKind.Editable, true) =>
-            "Editing the logical Menu authority. Recursive behavior is preserved read-only.",
+            string.Empty,
         (MenuAuthorityResolutionKind.ReadOnlyProvider, _) =>
-            "This Menu is supplied by a read-only dependency provider.",
+            "This menu comes from a read-only dependency.",
         (MenuAuthorityResolutionKind.Conflict, _) =>
-            "Conflicting complete definitions exist for this Menu; editing and Save are blocked until authority is unambiguous.",
+            "Resolve the conflicting definitions for this menu before editing or saving.",
         _ => "No complete Menu definition is available."
     };
 
@@ -417,8 +414,8 @@ public sealed class MenuEditorViewModel
         bool canEditHere) => (resolution?.Kind, canEditHere) switch
     {
         (MenuAuthorityResolutionKind.Editable, true) => "Editable",
-        (MenuAuthorityResolutionKind.Editable, false) => "Owner elsewhere",
-        (MenuAuthorityResolutionKind.ReadOnlyProvider, _) => "Dependency",
+        (MenuAuthorityResolutionKind.Editable, false) => "Read-only here",
+        (MenuAuthorityResolutionKind.ReadOnlyProvider, _) => "Read-only dependency",
         (MenuAuthorityResolutionKind.Conflict, _) => "Conflict",
         (MenuAuthorityResolutionKind.Unavailable, _) => "Unavailable",
         _ => "—"

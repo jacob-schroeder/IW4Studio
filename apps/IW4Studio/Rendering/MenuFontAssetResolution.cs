@@ -88,7 +88,7 @@ public sealed class MenuFontAssetResolution
                 new UiTextDiagnostic(
                     UiTextDiagnosticCode.FontAssetNotFound,
                     UiDiagnosticSeverity.Blocker,
-                    $"Font '{mapping.LookupName}' is not available from a complete active provider in the asset pool.")
+                    $"Font '{mapping.LookupName}' is unavailable in the current asset pool.")
             ]);
 
     internal static MenuFontAssetResolution RevisionChanged(

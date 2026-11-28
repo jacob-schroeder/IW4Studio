@@ -33,19 +33,58 @@
       <Setter Property="Foreground" Value="{DynamicResource StudioErrorBrush}" />
       <Setter Property="FontSize" Value="10" />
     </Style>
-    <Style Selector="ListBox.vehicleRail, ListBox.vehicleSlots">
+    <Style Selector="ListBox.vehicleSlots">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="Padding" Value="0" />
     </Style>
-    <Style Selector="ListBox.vehicleRail ListBoxItem, ListBox.vehicleSlots ListBoxItem">
+    <Style Selector="ListBox.vehicleSlots ListBoxItem">
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="Padding" Value="9,7" />
       <Setter Property="BorderThickness" Value="2,0,0,0" />
       <Setter Property="BorderBrush" Value="Transparent" />
     </Style>
-    <Style Selector="ListBox.vehicleRail ListBoxItem:selected, ListBox.vehicleSlots ListBoxItem:selected">
+    <Style Selector="ListBox.vehicleSlots ListBoxItem:selected">
       <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentBrush}" />
+    </Style>
+    <Style Selector="TabStrip.vehicleCategoryTabs">
+      <Setter Property="ItemsPanel">
+        <ItemsPanelTemplate><WrapPanel ItemSpacing="8" LineSpacing="4" /></ItemsPanelTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="TabStrip.vehicleCategoryTabs > TabStripItem">
+      <Setter Property="Template">
+        <ControlTemplate>
+          <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                            Background="{TemplateBinding Background}" Foreground="{TemplateBinding Foreground}"
+                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+        </ControlTemplate>
+      </Setter>
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioBorderBrush}" />
+      <Setter Property="Background" Value="{DynamicResource StudioSurfaceSunkenBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextMutedBrush}" />
+    </Style>
+    <Style Selector="TabStrip.vehicleCategoryTabs > TabStripItem:pointerover">
+      <Setter Property="Background" Value="{DynamicResource StudioControlHoverBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+    </Style>
+    <Style Selector="TabStrip.vehicleCategoryTabs > TabStripItem:selected">
+      <Setter Property="Background" Value="{DynamicResource StudioControlSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioAccentSecondaryBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StudioTextBrush}" />
+    </Style>
+    <Style Selector="TabStrip.vehicleCategoryTabs > TabStripItem:focus-visible">
+      <Setter Property="BorderBrush" Value="{DynamicResource StudioFocusBrush}" />
     </Style>
     <Style Selector="Expander.vehicleGroup">
       <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -133,17 +172,8 @@
         </Border>
       </Grid>
 
-      <Grid x:Name="HandlingPage" ColumnDefinitions="Auto,1.4*,*" ColumnSpacing="8" IsVisible="False">
-        <Border Classes="vehiclePanel" MinWidth="118">
-          <Grid RowDefinitions="Auto,*">
-            <Border Classes="vehicleHeader">
-              <TextBlock Text="Handling" Classes="vehicleTitle" />
-            </Border>
-            <ListBox x:Name="HandlingGroups" Grid.Row="1" Classes="vehicleRail" Margin="5"
-                     SelectionChanged="HandlingGroup_Changed" />
-          </Grid>
-        </Border>
-        <Border Grid.Column="1" Classes="vehiclePanel" Background="{DynamicResource StudioSurfaceSunkenBrush}">
+      <Grid x:Name="HandlingPage" ColumnDefinitions="1.4*,*" ColumnSpacing="8" IsVisible="False">
+        <Border Classes="vehiclePanel" Background="{DynamicResource StudioSurfaceSunkenBrush}">
           <Grid RowDefinitions="Auto,*,Auto">
             <Border Classes="vehicleHeader">
               <TextBlock x:Name="HandlingPreviewTitle" Text="Suspension travel" Classes="vehicleTitle" />
@@ -171,10 +201,14 @@
             </Border>
           </Grid>
         </Border>
-        <Border Grid.Column="2" Classes="vehiclePanel">
+        <Border Grid.Column="1" Classes="vehiclePanel">
           <Grid RowDefinitions="Auto,*">
             <Border Classes="vehicleHeader">
-              <TextBlock Text="Physics tuning" Classes="vehicleTitle" />
+              <StackPanel Spacing="6">
+                <TextBlock Text="Physics tuning" Classes="vehicleTitle" />
+                <TabStrip x:Name="HandlingGroups" Classes="vehicleCategoryTabs" AutomationProperties.Name="Physics tuning categories"
+                          SelectionChanged="HandlingGroup_Changed" />
+              </StackPanel>
             </Border>
             <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
               <StackPanel x:Name="HandlingFields" Margin="8" Spacing="7" />
@@ -183,20 +217,15 @@
         </Border>
       </Grid>
 
-      <Grid x:Name="ReferencesPage" ColumnDefinitions="Auto,1.2*,*" ColumnSpacing="8" IsVisible="False">
-        <Border Classes="vehiclePanel" MinWidth="130">
-          <Grid RowDefinitions="Auto,*">
-            <Border Classes="vehicleHeader">
-              <TextBlock Text="Bindings" Classes="vehicleTitle" />
-            </Border>
-            <ListBox x:Name="ReferenceGroups" Grid.Row="1" Classes="vehicleRail" Margin="5"
-                     SelectionChanged="ReferenceGroup_Changed" />
-          </Grid>
-        </Border>
-        <Border Grid.Column="1" Classes="vehiclePanel">
+      <Grid x:Name="ReferencesPage" ColumnDefinitions="1.5*,*" ColumnSpacing="8" IsVisible="False">
+        <Border Classes="vehiclePanel">
           <Grid RowDefinitions="Auto,Auto,*,Auto">
             <Border Classes="vehicleHeader">
-              <TextBlock x:Name="ReferenceTitle" Classes="vehicleTitle" TextTrimming="CharacterEllipsis" />
+              <StackPanel Spacing="4">
+                <TextBlock Text="Bindings" Classes="vehicleTitle" />
+                <TabStrip x:Name="ReferenceGroups" Classes="vehicleCategoryTabs" AutomationProperties.Name="Binding categories"
+                          SelectionChanged="ReferenceGroup_Changed" />
+              </StackPanel>
             </Border>
             <TextBox x:Name="SlotFilter" Grid.Row="1" Classes="vehicleInput" PlaceholderText="Filter slots"
                      AutomationProperties.Name="Filter reference slots" TextChanged="ReferenceFilter_Changed" Margin="8" />
@@ -229,7 +258,7 @@
                       IsCheckedChanged="ReferenceFilter_Changed" Margin="8" />
           </Grid>
         </Border>
-        <Border Grid.Column="2" Classes="vehiclePanel">
+        <Border Grid.Column="1" Classes="vehiclePanel">
           <ScrollViewer HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="12" Spacing="9">
               <TextBlock x:Name="SlotTitle" Text="Select a slot" Classes="vehicleTitle" TextWrapping="Wrap" />

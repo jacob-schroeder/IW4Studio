@@ -103,8 +103,8 @@
                   MinHeight="32"
                   Padding="10,5"
                   IsEnabled="{Binding SelectedWeaponEditor.CanRevert}"
-                  ToolTip.Tip="Revert the editable Weapon draft"
-                  AutomationProperties.Name="Revert Weapon draft"
+                  ToolTip.Tip="Revert weapon changes"
+                  AutomationProperties.Name="Revert weapon changes"
                   Click="RevertWeaponDraftButton_Click">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <materialIcons:MaterialIcon Kind="Undo" Width="16" Height="16" />
@@ -115,8 +115,8 @@
                   MinHeight="32"
                   Padding="12,5"
                   IsEnabled="{Binding SelectedWeaponEditor.CanApply}"
-                  ToolTip.Tip="Validate and apply the complete Weapon draft"
-                  AutomationProperties.Name="Apply Weapon draft"
+                  ToolTip.Tip="Validate and apply all weapon changes"
+                  AutomationProperties.Name="Apply weapon changes"
                   Click="ApplyWeaponDraftButton_Click">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" />
@@ -130,19 +130,20 @@
     <composition:StudioWorkbenchView Grid.Row="1" />
 
     <Border Grid.Row="2" Padding="12,0">
-      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="18">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="18">
+        <ContentPresenter Classes="platformBadge" />
         <composition:WorkbenchActivityIndicator
-            Grid.Column="0"
+            Grid.Column="1"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
             IsActive="{Binding ActivityStatus.IsActive}"
             Label="{Binding ActivityStatus.Label}" />
-        <TextBlock Grid.Column="1"
+        <TextBlock Grid.Column="2"
                    Text="{Binding ModeName}"
                    VerticalAlignment="Center"
                    FontSize="10"
                    Foreground="{DynamicResource StudioTextMutedBrush}" />
-        <TextBlock Grid.Column="2"
+        <TextBlock Grid.Column="3"
                    Text="{Binding SearchResultText}"
                    VerticalAlignment="Center"
                    FontSize="10"

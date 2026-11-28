@@ -89,8 +89,7 @@ internal sealed class MenuDuplicateDefinitionDialog : Window
                             new TextBlock
                             {
                                 Text =
-                                    $"Clone the complete inline definition for " +
-                                    $"'{sourceName}' under an independent asset identity.",
+                                    $"Create a separate Menu asset from '{sourceName}'.",
                                 TextWrapping = TextWrapping.Wrap
                             }
                         }

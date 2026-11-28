@@ -458,8 +458,7 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
         if (row.Image is not { } image)
         {
             return UiMaterialPreviewImageResolution.Unavailable(
-                "The material texture row does not resolve to a canonical " +
-                "GfxImage asset.");
+                "The material texture has no image.");
         }
         if (image.RuntimeAddress?.AssetPoolAddress is not { } address ||
             address.AssetType != XAssetType.Image ||
@@ -470,8 +469,7 @@ public sealed class MenuPreviewMaterialResolver : IMenuPreviewMaterialResolver
             slot.CanonicalAsset is not GfxImageAsset canonical)
         {
             return UiMaterialPreviewImageResolution.Unavailable(
-                $"Image '{image.Name ?? "unnamed image"}' has no complete " +
-                "active canonical provider.");
+                $"Image '{image.Name ?? "unnamed image"}' is unavailable in the current asset pool.");
         }
 
         return UiMaterialPreviewImageResolution.Canonical(canonical);

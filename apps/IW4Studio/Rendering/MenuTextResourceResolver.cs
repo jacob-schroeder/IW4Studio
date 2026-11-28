@@ -63,7 +63,7 @@ public sealed class MenuTextResourceResolver
             return MenuLocalizedTextResolution.Missing(
                 authoredText,
                 lookupName,
-                "The authored localization reference contains no key after '@'.",
+                "Enter a localization key after '@'.",
                 CaptureRevision());
         }
 
@@ -227,7 +227,7 @@ public sealed class MenuTextResourceResolver
                 : MenuLocalizedTextResolution.Missing(
                     authoredText,
                     lookupName,
-                    $"Localization '{lookupName}' exists in target authoring but has no value.",
+                    $"Localization '{lookupName}' has no value in the open fastfile.",
                     revision);
         }
 
@@ -245,7 +245,7 @@ public sealed class MenuTextResourceResolver
             return MenuLocalizedTextResolution.Missing(
                 authoredText,
                 lookupName,
-                $"Localization '{lookupName}' is not available from target authoring or a complete active provider in the asset pool.",
+                $"Localization '{lookupName}' is unavailable in the open fastfile and its loaded assets.",
                 revision);
         }
 
