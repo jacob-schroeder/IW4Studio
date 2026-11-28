@@ -19,11 +19,11 @@ internal sealed class MapReader
     {
         Expect("iwmap");
         MapToken version = Take();
-        if (version.Quoted || version.Value != "4" || version.LogicalLine != _tokens[0].LogicalLine)
+        if (version.Quoted || version.Span is not "4" || version.LogicalLine != _tokens[0].LogicalLine)
             throw Error(version, "Only native iwmap 4 source maps are supported.");
         var document = new MapDocument();
         document.Header.Clear();
-        while (HasToken && (Current.Quoted || Current.Value != "{"))
+        while (HasToken && (Current.Quoted || Current.Span is not "{"))
             ReadLine();
         if (!HasToken)
             throw Error(version, "Expected a worldspawn entity.");
@@ -41,9 +41,9 @@ internal sealed class MapReader
     {
         Expect("{");
         var entity = new MapEntity();
-        while (HasToken && (Current.Quoted || Current.Value != "}"))
+        while (HasToken && (Current.Quoted || Current.Span is not "}"))
         {
-            if (!Current.Quoted && Current.Value == "{")
+            if (!Current.Quoted && Current.Span is "{")
             {
                 ReadPrimitive(entity);
             }
@@ -55,7 +55,7 @@ internal sealed class MapReader
                     throw Error(value, "Expected a quoted entity property value on the same line.");
                 if (!entity.Properties.TryAdd(key.Value, value.Value))
                     throw Error(key, $"Duplicate entity property '{key.Value}' cannot be represented without loss.");
-                if (HasToken && Current.LogicalLine == key.LogicalLine && Current.Value != "}")
+                if (HasToken && Current.LogicalLine == key.LogicalLine && Current.Span is not "}")
                     throw Error(Current, "Unexpected text after an entity property.");
             }
             else
@@ -76,39 +76,38 @@ internal sealed class MapReader
         while (HasToken && depth != 0)
         {
             MapToken token = Take();
-            if (!token.Quoted && token.Value == "{")
+            if (!token.Quoted && token.Span is "{")
             {
                 depth++;
                 nested = true;
             }
-            if (!token.Quoted && token.Value == "}") depth--;
+            if (!token.Quoted && token.Span is "}") depth--;
         }
         if (depth != 0)
             throw Error(open, "Unterminated primitive block.");
         int end = _position - 1;
         int resume = _position;
-        string raw = _source[open.Start.._tokens[end].End];
         _position = begin;
         if (_position == end)
             throw Error(open, "Empty primitive block.");
-        if (Current.Value is "mesh" or "curve")
+        if (Current.Span is "mesh" or "curve")
         {
             MapTerrain? terrain = ReadTerrain(end);
             if (terrain is null)
-                entity.PreservedPrimitives.Add(raw);
+                entity.PreservedPrimitives.Add(_source[open.Start.._tokens[end].End]);
             else
                 entity.Terrains.Add(terrain);
         }
         else if (nested)
         {
-            entity.PreservedPrimitives.Add(raw);
+            entity.PreservedPrimitives.Add(_source[open.Start.._tokens[end].End]);
         }
         else
         {
             var brush = new MapBrush();
             while (_position < end)
             {
-                if (Current.Value == "(")
+                if (Current.Span is "(")
                     brush.Faces.Add(ReadFace());
                 else
                     brush.Directives.Add(ReadLine());
@@ -139,7 +138,7 @@ internal sealed class MapReader
         // Smoothing and any additional face attributes remain attached to this face.
         while (HasToken && Current.LogicalLine == start.LogicalLine)
         {
-            if (Current.Value is "{" or "}" or "(" or ")")
+            if (Current.Span is "{" or "}" or "(" or ")")
                 throw Error(Current, "Unexpected delimiter after a brush plane.");
             Take();
         }
@@ -149,10 +148,10 @@ internal sealed class MapReader
 
     private MapTerrain? ReadTerrain(int primitiveEnd)
     {
-        bool isCurve = Take().Value == "curve";
+        bool isCurve = Take().Span is "curve";
         Expect("{");
         var terrain = new MapTerrain { IsCurve = isCurve };
-        while (HasToken && Current.Value is "layer" or "contents" or "toolFlags")
+        while (HasToken && Current.Span is "layer" or "contents" or "toolFlags")
             terrain.Directives.Add(ReadLine());
         MapToken material = Take();
         RequireName(material);
@@ -160,7 +159,7 @@ internal sealed class MapReader
         MapToken lightmap = Take();
         RequireName(lightmap);
         terrain.Lightmap = lightmap.Value;
-        if (HasToken && Current.Value == "smoothing")
+        if (HasToken && Current.Span is "smoothing")
         {
             MapToken smoothing = Take();
             MapToken name = TakeOnLine(smoothing);
@@ -170,7 +169,7 @@ internal sealed class MapReader
                 return null;
         }
         MapToken dimensions = Current;
-        if (!int.TryParse(dimensions.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+        if (!int.TryParse(dimensions.Span, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
             return null;
         terrain.Width = ReadInt(dimensions);
         terrain.Height = ReadInt(dimensions);
@@ -178,7 +177,7 @@ internal sealed class MapReader
         terrain.Subdivision = ReadInt(dimensions);
         if (isCurve && (terrain.Width < 3 || terrain.Height < 3 || terrain.Width % 2 == 0 || terrain.Height % 2 == 0))
             return null;
-        if (HasToken && Current.LogicalLine == dimensions.LogicalLine && Current.Value != "(")
+        if (HasToken && Current.LogicalLine == dimensions.LogicalLine && Current.Span is not "(")
             return null;
         long count = (long)terrain.Width * terrain.Height;
         if (terrain.Width < 2 || terrain.Height < 2 || count > (primitiveEnd - _position) / 9)
@@ -198,29 +197,29 @@ internal sealed class MapReader
                 int index = column * terrain.Height + row;
                 terrain.Vertices[index] = new Vector3(ReadFloat(vertex), ReadFloat(vertex), ReadFloat(vertex));
                 Vector4 color = Vector4.One;
-                if (HasToken && Current.Value == "c")
+                if (HasToken && Current.Span is "c")
                 {
                     MapToken colorToken = Take();
                     float blue = ReadColor(colorToken), green = ReadColor(colorToken), red = ReadColor(colorToken);
                     color = new Vector4(red, green, blue, ReadColor(colorToken));
                 }
                 terrain.Colors[index] = color;
-                if (HasToken && Current.Value != "t" && Current.LogicalLine == vertex.LogicalLine)
+                if (HasToken && Current.Span is not "t" && Current.LogicalLine == vertex.LogicalLine)
                     return null;
                 MapToken texture = Expect("t");
                 terrain.TextureCoordinates[index] = new Vector2(ReadFloat(texture), ReadFloat(texture)) / 1024;
                 terrain.LightmapCoordinates[index] = new Vector2(ReadFloat(texture), ReadFloat(texture)) / 1024;
-                if (HasToken && Current.Value == "f")
+                if (HasToken && Current.Span is "f")
                 {
                     MapToken flags = Take();
                     terrain.EdgeFlags[index] = ReadInt(flags);
                 }
-                if (HasToken && Current.Value is not "v" and not ")" and not "}")
+                if (HasToken && Current.Span is not "v" and not ")" and not "}")
                     return null;
             }
             Expect(")");
         }
-        if (HasToken && Current.Value != "}")
+        if (HasToken && Current.Span is not "}")
             return null;
         Expect("}");
         return _position == primitiveEnd ? terrain : null;
@@ -246,7 +245,7 @@ internal sealed class MapReader
     private float ReadFloat(MapToken line)
     {
         MapToken token = TakeOnLine(line);
-        if (!float.TryParse(token.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out float value) || !float.IsFinite(value))
+        if (!float.TryParse(token.Span, NumberStyles.Float, CultureInfo.InvariantCulture, out float value) || !float.IsFinite(value))
             throw Error(token, $"Expected a finite number, found '{token.Value}'.");
         return value;
     }
@@ -254,14 +253,14 @@ internal sealed class MapReader
     private int ReadInt(MapToken line)
     {
         MapToken token = TakeOnLine(line);
-        if (!int.TryParse(token.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
+        if (!int.TryParse(token.Span, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
             throw Error(token, $"Expected an integer, found '{token.Value}'.");
         return value;
     }
 
     private static void RequireName(MapToken token)
     {
-        if (string.IsNullOrWhiteSpace(token.Value) || token.Value is "{" or "}" or "(" or ")" or ";")
+        if (token.Span.IsWhiteSpace() || token.Span is "{" or "}" or "(" or ")" or ";")
             throw Error(token, "Expected a material name.");
     }
 
@@ -270,7 +269,7 @@ internal sealed class MapReader
         MapToken first = Current;
         while (HasToken && Current.LogicalLine == first.LogicalLine)
         {
-            if (!Current.Quoted && Current.Value is "{" or "}" or "(" or ")")
+            if (!Current.Quoted && Current.Span is "{" or "}" or "(" or ")")
                 throw Error(Current, "Unexpected delimiter in a map directive.");
             Take();
         }
@@ -279,7 +278,7 @@ internal sealed class MapReader
 
     // Include complete trailing comments instead of truncating them at a physical line break.
     private string ThroughNextToken(int start) =>
-        _source[start..(HasToken ? Current.Start : _source.Length)].TrimEnd();
+        _source.AsSpan(start..(HasToken ? Current.Start : _source.Length)).TrimEnd().ToString();
 
     private bool HasToken => _position < _tokens.Count;
     private MapToken Current => HasToken ? _tokens[_position] :
@@ -294,7 +293,7 @@ internal sealed class MapReader
     private MapToken Expect(string value)
     {
         MapToken token = Take();
-        if (token.Quoted || token.Value != value)
+        if (token.Quoted || !token.Span.SequenceEqual(value))
             throw Error(token, $"Expected '{value}', found '{token.Value}'.");
         return token;
     }

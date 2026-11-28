@@ -89,7 +89,7 @@ internal static class BrushLightmapCompiler
 
             if (traversal is null)
             {
-                Parallel.For(0, height, parallelOptions, y => BakeRow(y, null, null, 0));
+                Parallel.For(0, height, parallelOptions, y => BakeRow(y, null, null, 0, 0));
                 directLuxels += (long)width * height;
                 ReportProgress(progress, "Direct lighting", "luxels", directLuxels, totalLuxels, ref directBucket);
             }
@@ -103,11 +103,22 @@ internal static class BrushLightmapCompiler
                 var irradiances = ArrayPool<Vector3>.Shared.Rent(capacity);
                 var sunPoints = ArrayPool<Vector3>.Shared.Rent(sunCapacity);
                 var sunVisibility = ArrayPool<float>.Shared.Rent(sunCapacity);
+                var sunRowOffsets = new int[bandHeight];
+                // Cache rows include the final column even when it falls between regular samples.
+                int sunSamplesPerRow = 0;
+                for (int x = 0; x < width; x++)
+                    if (NeedsSun(x, 0)) sunSamplesPerRow += 16;
                 try
                 {
                     for (int firstRow = 0; firstRow < height; firstRow += bandHeight)
                     {
                         int lastRow = Math.Min(firstRow + bandHeight, height);
+                        int sunSampleCount = 0;
+                        for (int y = firstRow; y < lastRow; y++)
+                        {
+                            sunRowOffsets[y - firstRow] = sunSampleCount;
+                            if (NeedsSun(0, y)) sunSampleCount += sunSamplesPerRow;
+                        }
                         Parallel.For(firstRow, lastRow, parallelOptions, y =>
                         {
                             for (int x = 0; x < width; x++)
@@ -119,24 +130,30 @@ internal static class BrushLightmapCompiler
                                 points[index] = point;
                                 normals[index] = polygon.Sample(point).Normal;
                             }
+                            int sunOffset = sunRowOffsets[y - firstRow];
                             for (int x = 0; x < width; x++)
-                            for (int py = 0; py < 2; py++)
-                            for (int px = 0; px < 2; px++)
-                            for (int sy = 0; sy < 2; sy++)
-                            for (int sx = 0; sx < 2; sx++)
                             {
-                                int index = (((y - firstRow) * width + x) * 4 + py * 2 + px) * 4 + sy * 2 + sx;
-                                sunPoints[index] = Position(x + (px - 0.5f) * 0.5f + (sx - 0.5f) * 0.25f,
-                                    y + (py - 0.5f) * 0.5f + (sy - 0.5f) * 0.25f);
+                                if (!NeedsSun(x, y)) continue;
+                                for (int py = 0; py < 2; py++)
+                                for (int px = 0; px < 2; px++)
+                                for (int sy = 0; sy < 2; sy++)
+                                for (int sx = 0; sx < 2; sx++)
+                                {
+                                    int index = sunOffset + (py * 2 + px) * 4 + sy * 2 + sx;
+                                    sunPoints[index] = Position(x + (px - 0.5f) * 0.5f + (sx - 0.5f) * 0.25f,
+                                        y + (py - 0.5f) * 0.5f + (sy - 0.5f) * 0.25f);
+                                }
+                                sunOffset += 16;
                             }
                         });
                         int luxelCount = (lastRow - firstRow) * width;
                         scene.BakeDiffuseSamples(points, normals, irradiances, luxelCount * 4, sunIndex,
                             traversal, parallelOptions);
-                        scene.BakeSunSamples(sunPoints, normal, sunVisibility, luxelCount * 16, sunIndex,
-                            traversal, parallelOptions);
+                        if (sunSampleCount > 0)
+                            scene.BakeSunSamples(sunPoints, normal, sunVisibility, sunSampleCount, sunIndex,
+                                traversal, parallelOptions);
                         Parallel.For(firstRow, lastRow, parallelOptions,
-                            y => BakeRow(y, irradiances, sunVisibility, firstRow));
+                            y => BakeRow(y, irradiances, sunVisibility, firstRow, sunRowOffsets[y - firstRow]));
                         directLuxels += (long)(lastRow - firstRow) * width;
                         ReportProgress(progress, "Direct lighting", "luxels", directLuxels, totalLuxels, ref directBucket);
                     }
@@ -150,11 +167,16 @@ internal static class BrushLightmapCompiler
                     ArrayPool<Vector3>.Shared.Return(points);
                 }
             }
-            void BakeRow(int y, Vector3[]? baked, float[]? bakedSun, int firstRow)
+            // Local-primary masks use local visibility. Only the cached bounce field also needs the Sun.
+            bool NeedsSun(int x, int y) => primaryLight == sunIndex ||
+                recordDirect && BrushLightingScene.IsDirectCacheLuxel(x, y, width, height);
+
+            void BakeRow(int y, Vector3[]? baked, float[]? bakedSun, int firstRow, int sunOffset)
             {
                 scene.CancellationToken.ThrowIfCancellationRequested();
                 for (int x = 0; x < width; x++)
                 {
+                    bool needsSun = NeedsSun(x, y);
                     Vector3 irradiance = Vector3.Zero, directForBounce = Vector3.Zero;
                     for (int sy = 0; sy < 2; sy++)
                     for (int sx = 0; sx < 2; sx++)
@@ -190,10 +212,12 @@ internal static class BrushLightmapCompiler
                         {
                             Vector3 sample = Position(x + (px - 0.5f) * 0.5f + (sx - 0.5f) * 0.25f,
                                 y + (py - 0.5f) * 0.5f + (sy - 0.5f) * 0.25f);
-                            float sun = bakedSun is not null
-                                ? bakedSun[(((y - firstRow) * width + x) * 4 + py * 2 + px) * 4 + sy * 2 + sx]
-                                : scene.SunVisibility(sample, normal, sunIndex);
-                            sunVisibility += sun;
+                            float sun = 0;
+                            if (needsSun)
+                            {
+                                sun = bakedSun is null ? scene.SunVisibility(sample, normal, sunIndex) : bakedSun[sunOffset++];
+                                sunVisibility += sun;
+                            }
                             visibility += primaryLight == sunIndex ? sun : scene.PrimaryVisibility(sample, normal, primaryLight);
                         }
                         totalSunVisibility += sunVisibility;

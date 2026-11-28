@@ -67,7 +67,7 @@ internal static class MapTokenizer
                         throw new FormatException($"Line {line}: Unexpected null character.");
                     position++;
                 }
-            tokens.Add(new MapToken(source[start..position], start, position, tokenLine, logicalLine));
+            tokens.Add(new MapToken(source, start, position, tokenLine, logicalLine));
         }
         return tokens;
     }

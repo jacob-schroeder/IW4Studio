@@ -76,26 +76,33 @@ internal static class TerrainPainting
         });
     }
 
-    internal static MapTerrain[] SelectedTerrains(EditorSession session) => SelectedVertices(session).Select(item => item.Terrain).ToArray();
+    internal static MapTerrain[] SelectedTerrains(EditorSession session) => SelectableParts(session)
+        .Select(part => part.Terrain).Distinct().ToArray();
+
+    private static IEnumerable<(MapTerrain Terrain, int? Vertex)> SelectableParts(EditorSession session)
+    {
+        foreach (object item in session.Selection.Items)
+        {
+            if (item is MapEntity entity)
+            {
+                foreach (MapTerrain patch in entity.Terrains)
+                    if (session.Visibility.CanSelect(session.Document, patch)) yield return (patch, null);
+            }
+            else if (EditorSelection.Owner(item) is MapTerrain terrain && session.Visibility.CanSelect(session.Document, terrain))
+                yield return (terrain, item is TerrainVertexSelection vertex ? vertex.Index : null);
+        }
+    }
 
     private static IEnumerable<(MapTerrain Terrain, int[] Indices)> SelectedVertices(EditorSession session)
     {
         var selected = new Dictionary<MapTerrain, HashSet<int>>();
-        foreach (object item in session.Selection.Items)
+        foreach (var (terrain, vertex) in SelectableParts(session))
         {
-            if (item is TerrainVertexSelection vertex) Add(vertex.Terrain, [vertex.Index]);
-            else if (item is MapTerrain terrain) Add(terrain, Enumerable.Range(0, terrain.Vertices.Length));
-            else if (item is MapEntity entity)
-                foreach (MapTerrain patch in entity.Terrains) Add(patch, Enumerable.Range(0, patch.Vertices.Length));
+            if (!selected.TryGetValue(terrain, out var indices)) selected.Add(terrain, indices = []);
+            if (vertex is int index) indices.Add(index);
+            else indices.UnionWith(Enumerable.Range(0, terrain.Vertices.Length));
         }
         return selected.Select(pair => (pair.Key, pair.Value.ToArray()));
-
-        void Add(MapTerrain terrain, IEnumerable<int> indices)
-        {
-            if (!session.Visibility.CanSelect(session.Document, terrain)) return;
-            if (!selected.TryGetValue(terrain, out var values)) selected.Add(terrain, values = []);
-            values.UnionWith(indices);
-        }
     }
 
     private static Vector4 Blend(Vector4 source, Vector4 target, float amount, bool alphaOnly)

@@ -55,6 +55,11 @@ internal sealed class OrthographicDrawing
     private Point _modelWireOrigin;
     private StreamGeometry? _modelWires;
     private StreamGeometry? _selectedModelWires;
+    private MapDocument? _curveDocument;
+    private readonly Dictionary<MapTerrain, (int Width, int Height, Vector3[] Controls, TerrainWireframe Wire)>
+        _curveWires = new(ReferenceEqualityComparer.Instance);
+
+    private readonly record struct TerrainWireframe(int Width, int Height, Vector3[] Vertices);
 
     internal OrthographicDrawing(OrthographicProjection projection) => _projection = projection;
     internal LeakPath? LeakPath { get; set; }
@@ -69,7 +74,13 @@ internal sealed class OrthographicDrawing
         if (session is not null)
         {
             EditorScene scene = session.Scene;
-            foreach (var brush in scene.Document.Brushes)
+            MapDocument document = scene.Document;
+            if (!ReferenceEquals(_curveDocument, document))
+            {
+                _curveDocument = document;
+                _curveWires.Clear();
+            }
+            foreach (var brush in document.Brushes)
             {
                 bool selected = IsWholeSelected(session, brush);
                 IReadOnlyList<MapPolygon> polygons = brush.GetPolygons();
@@ -84,8 +95,8 @@ internal sealed class OrthographicDrawing
                             ClipBrushMaterial.IsPlayerClip(polygon.Face.Material) ? ClipBrushPen : BrushPen);
                 }
             }
-            foreach (var terrain in scene.Document.Terrains)
-                DrawTerrain(context, terrain.GetSurface(), IsWholeSelected(session, terrain), !terrain.IsCurve);
+            foreach (var terrain in document.Terrains)
+                DrawTerrain(context, WireframeFor(terrain), IsWholeSelected(session, terrain), !terrain.IsCurve);
             DrawModelWireframes(context, scene, session.DeferPreviewLighting);
             var labels = new List<(string Text, Point Position, IBrush Brush, bool Priority)>();
             MapEntity? hovered = null;
@@ -301,7 +312,22 @@ internal sealed class OrthographicDrawing
         context.DrawLine(VerticalAxisPen, new Point(origin.X, 0), new Point(origin.X, _projection.Size.Height));
     }
 
-    private void DrawTerrain(DrawingContext context, MapTerrain terrain, bool selected, bool showPoints)
+    private TerrainWireframe WireframeFor(MapTerrain terrain)
+    {
+        if (!terrain.IsCurve) return new(terrain.Width, terrain.Height, terrain.Vertices);
+        // Live drags can move control points in place between scene invalidations.
+        if (_curveWires.TryGetValue(terrain, out var cached) &&
+            cached.Width == terrain.Width && cached.Height == terrain.Height &&
+            cached.Controls.AsSpan().SequenceEqual(terrain.Vertices))
+            return cached.Wire;
+
+        MapTerrain surface = terrain.GetSurface();
+        var wire = new TerrainWireframe(surface.Width, surface.Height, surface.Vertices);
+        _curveWires[terrain] = (terrain.Width, terrain.Height, (Vector3[])terrain.Vertices.Clone(), wire);
+        return wire;
+    }
+
+    private void DrawTerrain(DrawingContext context, TerrainWireframe terrain, bool selected, bool showPoints)
     {
         Pen pen = selected ? SelectedPen : TerrainPen;
         for (int x = 0; x < terrain.Width; x++)

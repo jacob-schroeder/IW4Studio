@@ -14,7 +14,7 @@ internal readonly record struct SurfaceProjection(
             throw new FormatException("A surface projection requires six numbers.");
         Span<float> values = stackalloc float[6];
         for (int index = 0; index < values.Length; index++)
-            if (tokens[index].Quoted || !float.TryParse(tokens[index].Value, NumberStyles.Float,
+            if (tokens[index].Quoted || !float.TryParse(tokens[index].Span, NumberStyles.Float,
                     CultureInfo.InvariantCulture, out values[index]) || !float.IsFinite(values[index]))
                 throw new FormatException("Surface projection values must be finite numbers.");
         return new(values[0], values[1], values[2], values[3], values[4], values[5], source[tokens[5].End..]);

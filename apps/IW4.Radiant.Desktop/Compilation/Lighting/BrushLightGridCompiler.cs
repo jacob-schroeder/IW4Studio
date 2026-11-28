@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Numerics;
 using IW4.Game.Assets.GfxMap;
 using IW4.Game.Codecs.GfxMap;
@@ -43,9 +44,10 @@ internal static class BrushLightGridCompiler
             progress?.Report("Light grid complete: oversized map uses the scene-center fallback; no grid entries baked.");
             return CreateFallbackLightGrid(centerColor);
         }
-        byte[]? primaryOwners = scene.HasPrimaryLocalLights
-            ? SelectPrimaryOwners(scene, mins, maxs, checked((int)entryCount))
-            : null;
+        byte[]? primaryOwners = null;
+        BitArray? solidBits = null;
+        if (scene.HasPrimaryLocalLights)
+            primaryOwners = SelectPrimaryOwners(scene, mins, maxs, checked((int)entryCount), out solidBits);
         var entries = new List<GfxLightGridEntry>(checked((int)entryCount));
         var black = new byte[GfxLightGridColors.SerializedSize];
         var colors = new List<GfxLightGridColors>
@@ -90,7 +92,9 @@ internal static class BrushLightGridCompiler
                 int z = index % depth;
                 Vector3 point = GridPoint(mins[0] + x, mins[1] + y, mins[2] + z);
                 points[sample] = point;
-                solid[sample] = scene.IsInsideSolid(point);
+                solid[sample] = solidBits is null
+                    ? scene.IsInsideSolid(point)
+                    : solidBits[index];
                 if (solid[sample]) continue;
                 activeIndex[sample] = activeCount;
                 activePoints[activeCount] = point;
@@ -210,20 +214,24 @@ internal static class BrushLightGridCompiler
     }
 
     private static byte[] SelectPrimaryOwners(BrushLightingScene scene, ushort[] mins, ushort[] maxs,
-        int entryCount)
+        int entryCount, out BitArray solidBits)
     {
         int rows = maxs[0] - mins[0] + 1;
         int columns = maxs[1] - mins[1] + 1;
         int depth = maxs[2] - mins[2] + 1;
         var owners = new byte[entryCount];
+        solidBits = new BitArray(entryCount);
         for (int x = 0; x < rows; x++)
         for (int y = 0; y < columns; y++)
         for (int z = 0; z < depth; z++)
         {
             scene.CancellationToken.ThrowIfCancellationRequested();
             Vector3 point = GridPoint(mins[0] + x, mins[1] + y, mins[2] + z);
-            owners[(x * columns + y) * depth + z] = scene.IsInsideSolid(point)
-                ? (byte)0 : scene.PrimaryLightAt(point);
+            int index = (x * columns + y) * depth + z;
+            if (scene.IsInsideSolid(point))
+                solidBits[index] = true;
+            else
+                owners[index] = scene.PrimaryLightAt(point);
         }
 
         // PS3 blends grid RGB, but ordinary Sun and local primary indices compete
